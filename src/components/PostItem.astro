@@ -1,0 +1,78 @@
+---
+import type { AnyEntry } from '../utils/content';
+import { excerpt, readingTime } from '../utils/content';
+import { formatDateShort, toISODate } from '../utils/date';
+import { withBase } from '../utils/url';
+
+interface Props {
+  entry: AnyEntry;
+  /** 手记不显示阅读时长 */
+  showReadingTime?: boolean;
+}
+
+const { entry, showReadingTime = true } = Astro.props;
+const { data } = entry;
+const href = entry.collection === 'posts' ? `/posts/${entry.id}/` : `/notes/${entry.id}/`;
+const pinned = 'pinned' in data && (data.pinned as number) > 0;
+const summary = excerpt(entry);
+const minutes = readingTime((entry as { body?: string }).body);
+---
+
+<li
+  class:list={['post-item', pinned && 'post-item--pinned']}
+  data-collection={entry.collection}
+>
+  <a class="post-item__link" href={withBase(href)}>
+    <div class="post-item__head">
+      <time class="post-item__date" datetime={toISODate(data.date)}>
+        {toISODate(data.date)}
+      </time>
+      <span class="post-item__title">{data.title}</span>
+      {data.draft && <span class="tag">草稿</span>}
+    </div>
+
+    {summary && <p class="post-item__summary">{summary}</p>}
+
+    {
+      'cover' in data && data.cover && (
+        <img class="post-item__cover" src={withBase(data.cover)} alt="" loading="lazy" />
+      )
+    }
+
+    <div class="post-item__foot">
+      {
+        data.tags.length > 0 && (
+          <ul class="tag-list">
+            {data.tags.map((tag: string) => (
+              <li>
+                <span class="tag">#{tag}</span>
+              </li>
+            ))}
+          </ul>
+        )
+      }
+      {showReadingTime && entry.collection === 'posts' && (
+        <span class="post-item__time">约 {minutes} 分钟</span>
+      )}
+    </div>
+  </a>
+</li>
+
+<style>
+  .post-item__foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--sp-4);
+    flex-wrap: wrap;
+    margin-top: var(--sp-2);
+  }
+  .post-item__foot :global(.tag-list) {
+    margin-top: 0;
+  }
+  .post-item__time {
+    font-size: var(--fs-xs);
+    color: var(--c-text-faint);
+    white-space: nowrap;
+  }
+</style>

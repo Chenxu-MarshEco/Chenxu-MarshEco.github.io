@@ -1,0 +1,91 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import PostItem from '../components/PostItem.astro';
+import { getNotes, getPosts } from '../utils/content';
+import site from '../site.config';
+import { withBase } from '../utils/url';
+
+const posts = await getPosts();
+const notes = await getNotes();
+const latest = posts.slice(0, site.homePostCount);
+const latestNotes = notes.slice(0, 5);
+const allTags = [...new Set([...posts, ...notes].flatMap((e) => e.data.tags ?? []))].slice(0, 12);
+
+const totalWords = [...posts, ...notes].reduce(
+  (sum, e) => sum + ((e as { body?: string }).body?.length ?? 0),
+  0
+);
+---
+
+<BaseLayout description={site.description}>
+  {
+    site.showTagline && (
+      <section class="hero">
+        <h1 class="hero__title">{site.title}</h1>
+        <p class="hero__tagline">{site.tagline}</p>
+        <div class="hero__meta">
+          <span>共 {posts.length + notes.length} 篇记录</span>
+          <span>约 {Math.round(totalWords / 1000)} 千字</span>
+          <a href={withBase('/rss.xml')}>订阅 RSS</a>
+        </div>
+      </section>
+    )
+  }
+
+  <section>
+    <h2 class="section-title">最近写的</h2>
+    {
+      latest.length > 0 ? (
+        <ul class="post-list">
+          {latest.map((entry) => (
+            <PostItem entry={entry} />
+          ))}
+        </ul>
+      ) : (
+        <p class="empty">
+          还没有文章。运行 <code>pnpm editor</code> 打开编辑器写第一篇吧。
+        </p>
+      )
+    }
+    {
+      posts.length > latest.length && (
+        <p style="margin-top: var(--sp-5)">
+          <a href={withBase('/posts')}>查看全部 {posts.length} 篇文章 →</a>
+        </p>
+      )
+    }
+  </section>
+
+  {
+    latestNotes.length > 0 && (
+      <section style="margin-top: var(--sp-8)">
+        <h2 class="section-title">最近的手记</h2>
+        <ul class="post-list">
+          {latestNotes.map((entry) => (
+            <PostItem entry={entry} showReadingTime={false} />
+          ))}
+        </ul>
+        <p style="margin-top: var(--sp-5)">
+          <a href={withBase('/notes')}>全部手记 →</a>
+        </p>
+      </section>
+    )
+  }
+
+  {
+    allTags.length > 0 && (
+      <section style="margin-top: var(--sp-8)">
+        <h2 class="section-title">常写的标签</h2>
+        <ul class="tag-cloud">
+          {allTags.map((tag) => (
+            <li>
+              <a class="tag" href={withBase(`/tags/${encodeURIComponent(tag)}/`)}>
+                #{tag}
+              </a>
+            </li>
+          ))}
+        </ul>
+      </section>
+    )
+  }
+</BaseLayout>

@@ -1,0 +1,67 @@
+---
+interface Heading {
+  depth: number;
+  slug: string;
+  text: string;
+}
+
+interface Props {
+  headings: Heading[];
+}
+
+const { headings } = Astro.props;
+// 只取二级和三级标题，太深的目录反而看不清
+const items = headings.filter((h) => h.depth >= 2 && h.depth <= 3);
+---
+
+{
+  items.length > 2 && (
+    <nav class="toc" aria-label="文章目录">
+      <p class="toc__title">目录</p>
+      <ul class="toc__list">
+        {items.map((h) => (
+          <li class:list={['toc__item', `toc__item--d${h.depth}`]}>
+            <a class="toc__link" href={`#${h.slug}`} data-toc-link={h.slug}>
+              {h.text}
+            </a>
+          </li>
+        ))}
+      </ul>
+    </nav>
+  )
+}
+
+<style>
+  .toc__item--d3 .toc__link {
+    padding-left: var(--sp-3);
+    font-size: var(--fs-xs);
+  }
+</style>
+
+<script>
+  // 滚动时高亮当前所在的标题
+  const links = Array.from(document.querySelectorAll<HTMLAnchorElement>('[data-toc-link]'));
+  if (links.length > 0) {
+    const targets = links
+      .map((link) => document.getElementById(link.dataset.tocLink ?? ''))
+      .filter((el): el is HTMLElement => el !== null);
+
+    const setActive = (id: string) => {
+      for (const link of links) {
+        link.classList.toggle('is-active', link.dataset.tocLink === id);
+      }
+    };
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const visible = entries
+          .filter((e) => e.isIntersecting)
+          .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
+        if (visible[0]) setActive(visible[0].target.id);
+      },
+      { rootMargin: '-5rem 0px -70% 0px', threshold: 0 }
+    );
+
+    for (const target of targets) observer.observe(target);
+  }
+</script>

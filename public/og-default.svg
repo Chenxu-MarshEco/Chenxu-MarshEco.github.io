@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="1200" height="630">
+  <rect width="1200" height="630" fill="#fbfaf8" />
+  <g stroke="#e5e1db" stroke-width="2">
+    <path d="M0 470h1200" />
+  </g>
+  <g stroke="#b4532a" stroke-width="6" stroke-linecap="round">
+    <path d="M120 470h960" />
+  </g>
+  <g fill="#b4532a">
+    <circle cx="120" cy="470" r="14" />
+    <circle cx="440" cy="470" r="14" />
+    <circle cx="760" cy="470" r="14" />
+    <circle cx="1080" cy="470" r="14" />
+  </g>
+  <text x="120" y="240" font-family="Georgia, serif" font-size="86" font-weight="700" fill="#1f1d1a">
+    你的站点名
+  </text>
+  <text x="120" y="320" font-family="system-ui, sans-serif" font-size="34" fill="#6b6660">
+    把这句话换成你自己的签名
+  </text>
+</svg>

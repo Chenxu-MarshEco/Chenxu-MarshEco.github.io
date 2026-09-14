@@ -1,0 +1,21 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import { withBase } from '../utils/url';
+---
+
+<BaseLayout title="页面走丢了" noindex narrow>
+  <div style="text-align:center; padding-block: var(--sp-8)">
+    <p
+      style="font-family: var(--font-display); font-size: 5rem; line-height: 1; color: var(--c-text-faint)"
+    >
+      404
+    </p>
+    <h1 class="page-header__title" style="margin-top: var(--sp-4)">这里什么都没有</h1>
+    <p style="color: var(--c-text-muted); margin-top: var(--sp-4)">
+      链接可能写错了，或者这篇文章已经被删掉了。
+    </p>
+    <p style="margin-top: var(--sp-6)">
+      <a class="pagination__link" href={withBase('/')}>回到首页</a>
+    </p>
+  </div>
+</BaseLayout>

@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light" data-mode="auto">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>本地内容编辑器</title>
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body data-type="posts">
+    <!-- ============ 顶栏 ============ -->
+    <header class="topbar">
+      <div class="topbar__brand">
+        <span class="brand__mark" aria-hidden="true"></span>
+        <span class="brand__text">
+          <strong id="brand-title">本地内容编辑器</strong>
+          <span class="brand__sub" id="brand-sub"></span>
+        </span>
+      </div>
+
+      <div class="topbar__status">
+        <span class="pill" id="status-pill" hidden></span>
+      </div>
+
+      <div class="topbar__actions">
+        <button type="button" class="btn btn--ghost" id="btn-preview" title="显示 / 隐藏预览">
+          预览
+        </button>
+        <button type="button" class="btn btn--ghost" id="btn-theme" title="切换主题">
+          <span id="theme-label">自动</span>
+        </button>
+        <button type="button" class="btn btn--primary" id="btn-save" title="保存（Ctrl+S）">
+          保存
+        </button>
+      </div>
+    </header>
+
+    <!-- ============ 三栏主体 ============ -->
+    <main class="layout" id="layout">
+      <!-- 左栏：类型 / 搜索 / 列表 -->
+      <aside class="col col--list">
+        <div class="col__head">
+          <div class="tabs" role="tablist" id="type-tabs">
+            <button type="button" class="tab is-active" role="tab" data-type="posts">文章</button>
+            <button type="button" class="tab" role="tab" data-type="notes">手记</button>
+          </div>
+          <div class="search">
+            <input type="search" id="search" placeholder="搜索标题或标签…" autocomplete="off" />
+          </div>
+        </div>
+
+        <ul class="doclist" id="doclist"></ul>
+
+        <div class="col__foot">
+          <button type="button" class="btn btn--block" id="btn-new">＋ 新建</button>
+        </div>
+      </aside>
+
+      <!-- 中栏：表单 + 正文 -->
+      <section class="col col--edit">
+        <div class="col__head col__head--edit">
+          <div class="filename" id="filename" title="当前文件">未选择文件</div>
+          <div class="edit-meta" id="edit-meta"></div>
+        </div>
+
+        <div class="col__body">
+          <form class="form" id="form" autocomplete="off" onsubmit="return false">
+            <div class="field">
+              <label class="field__label" for="f-title">标题 <span class="req">*</span></label>
+              <input type="text" id="f-title" class="input input--lg" placeholder="给它起个名字" />
+            </div>
+
+            <div class="field-row">
+              <div class="field">
+                <label class="field__label" for="f-date">日期 <span class="req">*</span></label>
+                <div class="field__pair">
+                  <input type="date" id="f-date" class="input" />
+                  <input type="time" id="f-time" class="input" title="可选，留空则只写日期" />
+                </div>
+              </div>
+
+              <div class="field field--posts-only">
+                <label class="field__label" for="f-updated-date">更新于</label>
+                <div class="field__pair">
+                  <input type="date" id="f-updated-date" class="input" />
+                  <input type="time" id="f-updated-time" class="input" />
+                </div>
+              </div>
+
+              <div class="field field--notes-only">
+                <label class="field__label" for="f-week">周次</label>
+                <input type="text" id="f-week" class="input" placeholder="2026-W37" />
+              </div>
+
+              <div class="field field--notes-only">
+                <label class="field__label" for="f-mood">心情</label>
+                <input type="text" id="f-mood" class="input" placeholder="晴 / 平静 / 有点忙" />
+              </div>
+            </div>
+
+            <div class="field">
+              <label class="field__label" for="f-tags-input">标签</label>
+              <div class="chips" id="tags-box">
+                <input type="text" id="f-tags-input" class="chips__input" placeholder="回车或逗号添加标签" />
+              </div>
+            </div>
+
+            <div class="field field--posts-only">
+              <label class="field__label" for="f-summary">摘要</label>
+              <textarea id="f-summary" class="input input--area" rows="3" placeholder="一句话说清这篇在讲什么（可留空）"></textarea>
+            </div>
+
+            <div class="field-row">
+              <div class="field field--posts-only">
+                <label class="field__label">封面图</label>
+                <div class="cover">
+                  <div class="cover__thumb" id="cover-thumb">
+                    <img id="cover-img" alt="" hidden />
+                    <span class="cover__empty" id="cover-empty">无封面</span>
+                  </div>
+                  <div class="cover__ops">
+                    <button type="button" class="btn btn--sm" id="btn-cover-upload">上传</button>
+                    <button type="button" class="btn btn--sm btn--ghost" id="btn-cover-clear">清除</button>
+                    <input type="text" id="f-cover" class="input input--sm" placeholder="/img/uploads/xxx.png" />
+                  </div>
+                </div>
+              </div>
+
+              <div class="field field--posts-only field--narrow">
+                <label class="field__label" for="f-pinned">置顶</label>
+                <input type="number" id="f-pinned" class="input" min="0" step="1" value="0" />
+                <p class="hint">数字越大越靠前，0 表示不置顶。</p>
+              </div>
+            </div>
+
+            <div class="field field--inline">
+              <label class="switch">
+                <input type="checkbox" id="f-draft" />
+                <span class="switch__track" aria-hidden="true"><span class="switch__dot"></span></span>
+                <span class="switch__label">草稿（不发布）</span>
+              </label>
+            </div>
+          </form>
+
+          <section class="editor">
+            <div class="editor__head">
+              <span class="editor__title">正文（Markdown）</span>
+              <span class="editor__count" id="body-count">0 字</span>
+            </div>
+
+            <div class="toolbar" id="toolbar">
+              <button type="button" class="tool" data-cmd="bold" title="加粗 (Ctrl+B)"><b>B</b></button>
+              <button type="button" class="tool" data-cmd="italic" title="斜体 (Ctrl+I)"><i>I</i></button>
+              <button type="button" class="tool" data-cmd="heading" title="标题">H</button>
+              <button type="button" class="tool" data-cmd="quote" title="引用">❝</button>
+              <span class="toolbar__sep"></span>
+              <button type="button" class="tool" data-cmd="ul" title="无序列表">•≡</button>
+              <button type="button" class="tool" data-cmd="ol" title="有序列表">1≡</button>
+              <span class="toolbar__sep"></span>
+              <button type="button" class="tool" data-cmd="code" title="行内代码">&lt;&gt;</button>
+              <button type="button" class="tool" data-cmd="codeblock" title="代码块">{ }</button>
+              <button type="button" class="tool" data-cmd="link" title="链接">🔗</button>
+              <button type="button" class="tool" data-cmd="image" title="插入图片">🖼</button>
+              <span class="toolbar__spacer"></span>
+              <button type="button" class="tool tool--wide" data-cmd="hr" title="分隔线">分隔线</button>
+            </div>
+
+            <textarea
+              id="f-body"
+              class="editor__area"
+              spellcheck="false"
+              placeholder="在这里写正文，支持 Markdown。&#10;&#10;## 小标题&#10;- 列表项&#10;**加粗** 和 *斜体* 都能用"
+            ></textarea>
+          </section>
+        </div>
+      </section>
+
+      <!-- 右栏：实时预览 -->
+      <section class="col col--preview">
+        <div class="col__head col__head--preview">
+          <span class="editor__title">预览</span>
+          <span class="preview__note" id="preview-note"></span>
+        </div>
+        <div class="col__body preview" id="preview"></div>
+      </section>
+    </main>
+
+    <!-- ============ 插入图片弹窗 ============ -->
+    <div class="modal" id="img-modal" hidden>
+      <div class="modal__mask" data-close="1"></div>
+      <div class="modal__panel" role="dialog" aria-modal="true" aria-label="插入图片">
+        <h3 class="modal__title">插入图片</h3>
+
+        <div class="field">
+          <label class="field__label">从本地文件上传</label>
+          <button type="button" class="btn btn--block" id="modal-pick">选择图片…</button>
+          <input type="file" id="modal-file" accept="image/png,image/jpeg,image/gif,image/webp,image/svg+xml" hidden />
+          <p class="hint" id="modal-upload-hint">支持 png / jpeg / gif / webp / svg，单张不超过 10MB。</p>
+        </div>
+
+        <div class="modal__divider"><span>或</span></div>
+
+        <div class="field">
+          <label class="field__label" for="modal-url">图片地址</label>
+          <input type="text" id="modal-url" class="input" placeholder="/img/uploads/xxx.png 或 https://…" />
+        </div>
+
+        <div class="field">
+          <label class="field__label" for="modal-alt">替代文字</label>
+          <input type="text" id="modal-alt" class="input" placeholder="图片说明（可留空）" />
+        </div>
+
+        <div class="modal__actions">
+          <button type="button" class="btn btn--ghost" data-close="1">取消</button>
+          <button type="button" class="btn btn--primary" id="modal-insert">插入</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 隐藏的封面文件输入 -->
+    <input type="file" id="cover-file" accept="image/png,image/jpeg,image/gif,image/webp,image/svg+xml" hidden />
+
+    <div class="toast" id="toast" hidden></div>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

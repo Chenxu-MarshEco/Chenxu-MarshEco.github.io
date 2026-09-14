@@ -1,0 +1,28 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import PostItem from '../../components/PostItem.astro';
+import { getNotes } from '../../utils/content';
+
+const notes = await getNotes();
+---
+
+<BaseLayout title="手记" description="短一点的日常记录">
+  <header class="page-header">
+    <h1 class="page-header__title">手记</h1>
+    <p class="page-header__desc">
+      比文章更短、更随意的记录：今天做了什么、看到什么、想到什么。共 {notes.length} 条。
+    </p>
+  </header>
+
+  {
+    notes.length === 0 ? (
+      <p class="empty">还没有手记。手记适合写一两句话，不用成篇。</p>
+    ) : (
+      <ul class="post-list">
+        {notes.map((entry) => (
+          <PostItem entry={entry} showReadingTime={false} />
+        ))}
+      </ul>
+    )
+  }
+</BaseLayout>

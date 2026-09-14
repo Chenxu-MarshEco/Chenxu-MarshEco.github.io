@@ -1,0 +1,82 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import site from '../site.config';
+import { withBase } from '../utils/url';
+
+const repoUrl = site.socials.find((s) => s.href.includes('github.com'))?.href ?? '';
+---
+
+<BaseLayout title="关于" description={`关于 ${site.title}`} narrow>
+  <header class="page-header">
+    <h1 class="page-header__title">关于</h1>
+    <p class="page-header__desc">{site.tagline}</p>
+  </header>
+
+  <div class="prose about-section">
+    <h2>关于本站</h2>
+    {site.aboutIntro.map((p) => <p>{p}</p>)}
+
+    <p>
+      这个站点用 Astro 构建，静态生成后托管在 GitHub Pages 上。
+      没有数据库、没有后端，所有内容都是仓库里的 Markdown 文件。
+      {repoUrl && (
+        <>
+          {' '}
+          源码在{' '}
+          <a href={repoUrl} target="_blank" rel="noopener noreferrer">
+            GitHub
+          </a>{' '}
+          上。
+        </>
+      )}
+    </p>
+  </div>
+
+  <div class="prose about-section">
+    <h2>联系</h2>
+    <ul class="about-list">
+      {
+        site.contacts.map((c) => (
+          <li>
+            <span class="about-list__label">{c.label}</span>
+            {c.href ? (
+              <a href={c.href} target="_blank" rel="noopener noreferrer">
+                {c.value}
+              </a>
+            ) : (
+              <span>{c.value}</span>
+            )}
+          </li>
+        ))
+      }
+    </ul>
+  </div>
+
+  {
+    site.friends.length > 0 && (
+      <div class="prose about-section">
+        <h2>友情链接</h2>
+        <ul class="friend-grid">
+          {site.friends.map((f) => (
+            <li>
+              <a class="friend-card" href={f.href} target="_blank" rel="noopener noreferrer">
+                {f.image && <img class="friend-card__img" src={withBase(f.image)} alt="" />}
+                <span>
+                  <span class="friend-card__name">{f.name}</span>
+                  {f.description && <span class="friend-card__desc">{f.description}</span>}
+                </span>
+              </a>
+            </li>
+          ))}
+        </ul>
+      </div>
+    )
+  }
+
+  <div class="prose about-section">
+    <h2>订阅</h2>
+    <p>
+      用任意 RSS 阅读器订阅 <a href={withBase('/rss.xml')}>/rss.xml</a> 就能跟进更新。
+    </p>
+  </div>
+</BaseLayout>

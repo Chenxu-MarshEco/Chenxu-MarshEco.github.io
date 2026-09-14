@@ -1,0 +1,36 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import site from '../site.config';
+import { withBase } from '../utils/url';
+---
+
+<BaseLayout title="友链" description="朋友们的地方" narrow>
+  <header class="page-header">
+    <h1 class="page-header__title">友链</h1>
+    <p class="page-header__desc">
+      这里放一些我常看的站点。想交换链接的话，写信告诉我你的站名、地址和一句话介绍。
+    </p>
+  </header>
+
+  {
+    site.friends.length === 0 ? (
+      <p class="empty">
+        还没有友链。打开 <code>src/site.config.ts</code>，往 friends 数组里加就行。
+      </p>
+    ) : (
+      <ul class="friend-grid">
+        {site.friends.map((f) => (
+          <li>
+            <a class="friend-card" href={f.href} target="_blank" rel="noopener noreferrer">
+              {f.image && <img class="friend-card__img" src={withBase(f.image)} alt="" />}
+              <span>
+                <span class="friend-card__name">{f.name}</span>
+                {f.description && <span class="friend-card__desc">{f.description}</span>}
+              </span>
+            </a>
+          </li>
+        ))}
+      </ul>
+    )
+  }
+</BaseLayout>

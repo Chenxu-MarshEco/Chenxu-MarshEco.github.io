@@ -1,0 +1,21 @@
+# 统一换行符，避免 Windows 和 GitHub Actions 之间来回改动整份文件
+* text=auto eol=lf
+
+# 二进制文件不要做行尾转换
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.otf binary
+*.zip binary
+
+# 锁文件在 diff 里折叠显示
+pnpm-lock.yaml linguist-generated=true
+
+# 构建产物不算语言统计
+dist/** linguist-generated=true

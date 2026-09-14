@@ -1,0 +1,60 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import { entryUrl, getNotes, getPosts } from '../utils/content';
+import { toISODate } from '../utils/date';
+import { withBase } from '../utils/url';
+
+const entries = [...(await getPosts()), ...(await getNotes())];
+
+// 按年份分组，组内按日期倒序
+const byYear = new Map<number, typeof entries>();
+for (const entry of entries) {
+  const year = entry.data.date.getUTCFullYear();
+  byYear.set(year, [...(byYear.get(year) ?? []), entry]);
+}
+const years = [...byYear.entries()]
+  .map(([year, items]) => ({
+    year,
+    items: items.sort((a, b) => b.data.date.getTime() - a.data.date.getTime()),
+  }))
+  .sort((a, b) => b.year - a.year);
+---
+
+<BaseLayout title="归档" description="按时间浏览全部内容">
+  <header class="page-header">
+    <h1 class="page-header__title">归档</h1>
+    <p class="page-header__desc">全部 {entries.length} 条记录，按年份倒序。</p>
+  </header>
+
+  {
+    years.length === 0 ? (
+      <p class="empty">还没有内容。</p>
+    ) : (
+      years.map(({ year, items }) => (
+        <section class="archive-year">
+          <h2 class="archive-year__label">
+            {year}
+            <span style="font-size: var(--fs-sm); color: var(--c-text-faint); margin-left: 0.6em">
+              {items.length} 条
+            </span>
+          </h2>
+          <ul class="archive-list">
+            {items.map((entry) => (
+              <li class="archive-list__item">
+                <span class="archive-list__date">{toISODate(entry.data.date).slice(5)}</span>
+                <a class="archive-list__title" href={withBase(entryUrl(entry))}>
+                  {entry.data.title}
+                </a>
+                {entry.collection === 'notes' && (
+                  <span class="tag" style="margin-left: auto">
+                    手记
+                  </span>
+                )}
+              </li>
+            ))}
+          </ul>
+        </section>
+      ))
+    )
+  }
+</BaseLayout>

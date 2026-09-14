@@ -1,0 +1,33 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import PostItem from '../../components/PostItem.astro';
+import { collectTags, filterByTag, getNotes, getPosts } from '../../utils/content';
+import { withBase } from '../../utils/url';
+
+export async function getStaticPaths() {
+  const entries = [...(await getPosts()), ...(await getNotes())];
+  return collectTags(entries).map(({ tag }) => ({
+    params: { tag },
+    props: { tag },
+  }));
+}
+
+const { tag } = Astro.props;
+const entries = [...(await getPosts()), ...(await getNotes())];
+const matched = filterByTag(entries, tag).sort(
+  (a, b) => b.data.date.getTime() - a.data.date.getTime()
+);
+---
+
+<BaseLayout title={`#${tag}`} description={`标签 ${tag} 下的全部内容`}>
+  <header class="page-header">
+    <h1 class="page-header__title">#{tag}</h1>
+    <p class="page-header__desc">
+      共 {matched.length} 条记录。<a href={withBase('/tags')}>← 全部标签</a>
+    </p>
+  </header>
+
+  <ul class="post-list">
+    {matched.map((entry) => <PostItem entry={entry} />)}
+  </ul>
+</BaseLayout>

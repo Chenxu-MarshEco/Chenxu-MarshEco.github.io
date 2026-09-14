@@ -1,0 +1,32 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import { collectTags, getNotes, getPosts } from '../../utils/content';
+import { withBase } from '../../utils/url';
+
+const entries = [...(await getPosts()), ...(await getNotes())];
+const tags = collectTags(entries);
+---
+
+<BaseLayout title="标签" description="按标签浏览全部内容">
+  <header class="page-header">
+    <h1 class="page-header__title">标签</h1>
+    <p class="page-header__desc">一共 {tags.length} 个标签。数字是使用次数。</p>
+  </header>
+
+  {
+    tags.length === 0 ? (
+      <p class="empty">还没有标签。在文章开头的 tags 里加几个词就会出现。</p>
+    ) : (
+      <ul class="tag-cloud">
+        {tags.map(({ tag, count }) => (
+          <li>
+            <a class="tag" href={withBase(`/tags/${encodeURIComponent(tag)}/`)}>
+              #{tag}
+              <span class="tag__count">{count}</span>
+            </a>
+          </li>
+        ))}
+      </ul>
+    )
+  }
+</BaseLayout>

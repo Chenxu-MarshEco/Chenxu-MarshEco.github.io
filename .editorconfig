@@ -1,0 +1,23 @@
+# 让不同编辑器保持一致的缩进风格
+# 大多数编辑器会自动识别这个文件，不需要额外安装插件
+
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 2
+
+# Markdown 里行尾的两个空格是有意义的（表示换行），不要自动删掉
+[*.md]
+trim_trailing_whitespace = false
+
+# Windows 批处理需要 CRLF，否则某些情况下会出问题
+[*.cmd]
+end_of_line = crlf
+
+[*.{yml,yaml}]
+indent_size = 2

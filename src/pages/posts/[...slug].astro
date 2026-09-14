@@ -1,0 +1,101 @@
+---
+import { render } from 'astro:content';
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import TableOfContents from '../../components/TableOfContents.astro';
+import { entryUrl, getPosts, neighbors, readingTime } from '../../utils/content';
+import { formatDateFull, toISODate } from '../../utils/date';
+import { withBase } from '../../utils/url';
+import site from '../../site.config';
+
+export async function getStaticPaths() {
+  const posts = await getPosts();
+  return posts.map((entry) => ({ params: { slug: entry.id }, props: { entry } }));
+}
+
+const { entry } = Astro.props;
+const { Content, headings } = await render(entry);
+const { data } = entry;
+
+const all = await getPosts();
+const { prev, next } = neighbors(all, entry.id);
+const minutes = readingTime(entry.body);
+const hasToc = site.showToc && headings.filter((h) => h.depth >= 2 && h.depth <= 3).length > 2;
+---
+
+<BaseLayout
+  title={data.title}
+  description={data.summary}
+  type="article"
+  publishedTime={data.date}
+  updatedTime={data.updated}
+  narrow
+>
+  <article class="post-layout" class:list={[hasToc && 'post-layout--with-toc']}>
+    <div>
+      <header class="post-header">
+        <h1 class="post-header__title">{data.title}</h1>
+        <div class="post-header__meta">
+          <time datetime={toISODate(data.date)}>{formatDateFull(data.date)}</time>
+          <span>约 {minutes} 分钟</span>
+          {
+            data.updated && (
+              <span>
+                （{toISODate(data.updated)} 修订）
+              </span>
+            )
+          }
+          {data.draft && <span class="tag">草稿</span>}
+        </div>
+        {
+          data.tags.length > 0 && (
+            <ul class="tag-list">
+              {data.tags.map((tag: string) => (
+                <li>
+                  <a class="tag" href={withBase(`/tags/${encodeURIComponent(tag)}/`)}>
+                    #{tag}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          )
+        }
+      </header>
+
+      {
+        data.cover && (
+          <img class="post-cover" src={withBase(data.cover)} alt="" loading="eager" />
+        )
+      }
+
+      <div class="prose">
+        <Content />
+      </div>
+
+      <footer class="post-footer">
+        <span>写于 {formatDateFull(data.date)}</span>
+        {data.tags.length > 0 && <span>标签：{data.tags.join(' / ')}</span>}
+      </footer>
+
+      {
+        (prev || next) && (
+          <nav class="post-nav" aria-label="相邻文章">
+            {prev && (
+              <a class="post-nav__link" href={withBase(entryUrl(prev))}>
+                <span class="post-nav__label">← 更新的一篇</span>
+                <span class="post-nav__title">{prev.data.title}</span>
+              </a>
+            )}
+            {next && (
+              <a class="post-nav__link" href={withBase(entryUrl(next))} style="text-align:right">
+                <span class="post-nav__label">更早的一篇 →</span>
+                <span class="post-nav__title">{next.data.title}</span>
+              </a>
+            )}
+          </nav>
+        )
+      }
+    </div>
+
+    {hasToc && <TableOfContents headings={headings} />}
+  </article>
+</BaseLayout>

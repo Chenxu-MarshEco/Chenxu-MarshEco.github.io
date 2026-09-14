@@ -1,0 +1,115 @@
+---
+import '../styles/global.css';
+import SiteHeader from '../components/SiteHeader.astro';
+import SiteFooter from '../components/SiteFooter.astro';
+import site from '../site.config';
+import { absoluteUrl, withBase } from '../utils/url';
+
+interface Props {
+  /** 页面标题，会拼在站点名前面。首页留空即可 */
+  title?: string;
+  description?: string;
+  type?: 'website' | 'article';
+  publishedTime?: Date;
+  updatedTime?: Date;
+  /** 设为 true 时告诉搜索引擎不要收录（草稿页、404 用） */
+  noindex?: boolean;
+  /** 页面主区域是否使用更窄的宽度（文章页用） */
+  narrow?: boolean;
+}
+
+const {
+  title,
+  description = site.description,
+  type = 'website',
+  publishedTime,
+  updatedTime,
+  noindex = false,
+  narrow = false,
+} = Astro.props;
+
+const pageTitle = title ? `${title} · ${site.title}` : `${site.title} · ${site.tagline}`;
+const canonical = absoluteUrl(Astro.url.pathname, Astro.site);
+const ogImage = absoluteUrl('/og-default.svg', Astro.site);
+---
+
+<!doctype html>
+<html lang={site.lang}>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="generator" content={Astro.generator} />
+
+    <title>{pageTitle}</title>
+    <meta name="description" content={description} />
+    <meta name="author" content={site.author} />
+    {noindex && <meta name="robots" content="noindex, nofollow" />}
+
+    <link rel="canonical" href={canonical} />
+    <link rel="icon" type="image/svg+xml" href={withBase('/favicon.svg')} />
+    <link
+      rel="alternate"
+      type="application/rss+xml"
+      title={site.title}
+      href={withBase('/rss.xml')}
+    />
+
+    <!-- 分享卡片 -->
+    <meta property="og:type" content={type} />
+    <meta property="og:site_name" content={site.title} />
+    <meta property="og:title" content={pageTitle} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={canonical} />
+    <meta property="og:image" content={ogImage} />
+    <meta property="og:locale" content="zh_CN" />
+    <meta name="twitter:card" content="summary_large_image" />
+
+    {publishedTime && (
+      <meta property="article:published_time" content={publishedTime.toISOString()} />
+    )}
+    {updatedTime && <meta property="article:modified_time" content={updatedTime.toISOString()} />}
+
+    <!-- 主题色：影响手机浏览器地址栏颜色，改 tokens.css 时记得同步这两个值 -->
+    <meta name="theme-color" content="#fbfaf8" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#16151a" media="(prefers-color-scheme: dark)" />
+
+    <!--
+      在页面绘制之前就把主题定下来，避免"先白闪一下再变黑"。
+      这段必须留在 head 里并且是 is:inline，不要改成外部脚本。
+    -->
+    <script is:inline>
+      (() => {
+        try {
+          const saved = localStorage.getItem('theme');
+          const mode = saved === 'light' || saved === 'dark' ? saved : 'auto';
+          const dark =
+            mode === 'dark' ||
+            (mode === 'auto' && matchMedia('(prefers-color-scheme: dark)').matches);
+          document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+          document.documentElement.dataset.themeMode = mode;
+        } catch {
+          document.documentElement.dataset.theme = 'light';
+        }
+      })();
+    </script>
+  </head>
+
+  <body>
+    <a class="skip-link" href="#main">跳到正文</a>
+    <SiteHeader />
+
+    <main id="main" class="site-main">
+      <div class:list={['container', narrow && 'container--narrow']}>
+        <slot />
+      </div>
+    </main>
+
+    <SiteFooter />
+  </body>
+</html>
+
+<style>
+  .container--narrow {
+    max-width: 52rem;
+  }
+</style>

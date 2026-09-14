@@ -1,0 +1,58 @@
+name: 部署到 GitHub Pages
+
+on:
+  # 推送到 main 分支时自动构建并发布
+  push:
+    branches: [main]
+  # 也可以在仓库的 Actions 页面手动点一下运行
+  workflow_dispatch:
+
+# 只有拥有这些权限，工作流才能把产物发布到 Pages
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# 同时只跑一个部署，新的推送会取消正在排队的旧任务
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 拉取代码
+        uses: actions/checkout@v4
+
+      - name: 准备 pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: 准备 Node
+        uses: actions/setup-node@v4
+        with:
+          # Astro 7 要求 Node >= 22.12.0，这里用本地验证过的 24
+          node-version: 24
+          cache: pnpm
+
+      - name: 安装依赖
+        run: pnpm install --frozen-lockfile
+
+      - name: 构建站点
+        run: pnpm build
+
+      - name: 上传构建产物
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: 发布到 Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

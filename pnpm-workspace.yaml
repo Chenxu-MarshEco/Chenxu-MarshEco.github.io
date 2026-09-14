@@ -1,0 +1,9 @@
+# pnpm 11 的配置文件（设置项都放在这里，不再放 package.json 的 "pnpm" 字段）
+# minimumReleaseAge: 新发布的包需要经过多久才允许安装（秒）。
+# 设为 0 是为了避免刚发布的依赖被供应链策略拦下；如果你更看重安全，可以改成 86400。
+minimumReleaseAge: 0
+
+# 允许执行安装脚本的依赖（不写在这里的依赖不会跑 postinstall）
+allowBuilds:
+  esbuild: true
+  sharp: true
