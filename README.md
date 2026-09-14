@@ -79,8 +79,35 @@ pnpm preview      # 预览构建结果
 --shadow-md: ...;      /* 阴影，想要完全扁平就改成 none */
 ```
 
-暗色主题在同一个文件下方 `@media (prefers-color-scheme: dark)` 里，
-**默认跟随系统设置**。只想用亮色就把那一整段删掉。
+暗色主题在同一个文件下方的 `:root[data-theme='dark']` 区块里。
+
+**暗色不是靠系统设置切换的**，而是靠 `<html>` 上的 `data-theme` 属性——右上角那个按钮可以在
+「自动 → 亮色 → 暗色」之间循环，选完记在浏览器本地。所以：
+
+- 想改暗色配色：改 `:root[data-theme='dark']` 里那些值，别去改媒体查询
+- 只想要亮色：删掉整个 `:root[data-theme='dark']` 区块，再删掉页头的主题按钮
+
+### 改颜色时的两个坑
+
+**1. `--c-text-faint` 不能随便调亮。** 它是全站最弱的文字（日期、栏目标题、页脚版权），
+需要同时满足在 `--c-bg` 和 `--c-bg-sunken` 两种底色上都达到 WCAG AA 的 4.5:1。
+当前值在两种底色上都是 4.6:1，已经贴着下限了。调亮一点就会不达标。
+
+**2. 代码高亮同时配了两套主题。** 见 `astro.config.mjs` 里的 `shikiConfig`：
+
+```js
+themes: {
+  light: 'github-light-default',
+  dark: 'github-dark-default',
+}
+```
+
+只配一套的话，在另一种主题下 token 颜色会和代码块背景撞在一起——浅色的字配浅色的底，
+几乎看不见。这是构建期发现不了的，必须真的渲染出来才知道。
+
+配色规则写在 `global.css` 的「代码高亮双主题取色」那段，按 `data-theme` 选用
+shiki 输出的 `--shiki-light` / `--shiki-dark` 变量。如果换了主题名，那段里针对
+注释色的那条规则（`--shiki-light:#6e7781`）可能就失效了，需要重新核对对比度。
 
 想放自己的字体：把字体文件丢进 `public/fonts/`，然后在 `global.css` 顶上加一段 `@font-face`。
 
@@ -176,7 +203,9 @@ pinned: 0              # 可选，大于 0 会置顶
 - **构建**：Astro 静态生成，输出纯 HTML/CSS，几乎没有 JS。
 - **内容**：Astro Content Collections + `glob()` loader，schema 用 Zod 校验。
 - **样式**：原生 CSS + CSS 自定义属性，没有引入任何 CSS 框架。
-- **唯一的前端脚本**：文章页目录的滚动高亮（IntersectionObserver）。
+- **前端脚本**：只有两处——① 页头里一小段内联脚本，在页面绘制前把主题定下来（避免闪白）；
+  ② 文章页目录的滚动高亮（IntersectionObserver）。除此之外没有客户端 JS。
+- **代码高亮**：构建期用 shiki 生成，亮色/暗色两套配色同时输出，切换主题不需要 JS 参与。
 - **站点图标 / og 图**：手写的 SVG。
 - **编辑器**：零依赖的 Node HTTP 服务（`tools/editor/server.mjs`），只监听 `127.0.0.1`。
 

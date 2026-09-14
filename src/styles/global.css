@@ -103,15 +103,17 @@ hr {
   margin: var(--sp-6) 0;
 }
 
-/* 跳到主内容（键盘无障碍） */
+/* 跳到主内容（键盘无障碍）
+   用「正文色作底、页面色作字」的反色方案：
+   这样在亮色和暗色主题下都自动是高对比度，不用单独配颜色 */
 .skip-link {
   position: absolute;
   left: -9999px;
   top: 0;
   z-index: 100;
   padding: var(--sp-3) var(--sp-4);
-  background: var(--c-accent);
-  color: #fff;
+  background: var(--c-text);
+  color: var(--c-bg);
   border-radius: 0 0 var(--r-md) 0;
 }
 .skip-link:focus {
@@ -668,6 +670,26 @@ hr {
   border: none;
   font-size: inherit;
   color: inherit;
+}
+
+/* 代码高亮的双主题取色。
+   shiki 把亮色和暗色两套颜色分别写进每个 token 的 CSS 变量
+   （--shiki-light / --shiki-dark），这里按 <html data-theme> 选一套用。
+   变量缺失时回落到继承，保证纯文本部分不会没颜色。 */
+.astro-code span {
+  color: var(--shiki-light, inherit);
+}
+:root[data-theme='dark'] .astro-code span {
+  color: var(--shiki-dark, inherit);
+}
+
+/* 亮色主题的注释色（#6e7781）在本站代码块底色上只有 4.1:1，
+   略低于 WCAG AA 要求的 4.5:1。这里只把这一个颜色压深到 5.3:1。
+   之所以能用选择器覆盖：shiki 的内联样式只负责写 --shiki-* 变量，
+   真正生效的 color 由上面两条规则给出，所以这里能盖住它。
+   如果以后换了代码高亮主题，这条规则可能就失效了，需要一并调整。 */
+.astro-code span[style*='--shiki-light:#6e7781' i] {
+  color: #5c6672;
 }
 
 .prose table {

@@ -23,8 +23,10 @@
   --c-text: #1f1d1a;
   /* 次级文字：日期、摘要、说明 */
   --c-text-muted: #6b6660;
-  /* 最弱的文字：版权、占位符 */
-  --c-text-faint: #9a938b;
+  /* 最弱的文字：版权、日期、栏目标题
+     注意：这个值不能随便调亮。它要同时满足在 --c-bg 和 --c-bg-sunken
+     上的 WCAG AA 对比度（4.5:1），当前值在两种底色上都是 4.6:1。 */
+  --c-text-faint: #736c64;
 
   /* 分割线、边框 */
   --c-border: #e5e1db;
@@ -136,7 +138,7 @@
 
   --c-text: #e8e5e1;
   --c-text-muted: #a29c96;
-  --c-text-faint: #6f6963;
+  --c-text-faint: #877f78;
 
   --c-border: #2e2c34;
   --c-border-strong: #403d47;
