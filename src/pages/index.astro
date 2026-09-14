@@ -67,25 +67,6 @@ const skyline = withBase('/img/home/skyline.png');
       />
       <div class="brand__text">
         <h1 class="brand__title" data-text="花涧堂">花涧堂</h1>
-
-        {/*
-          标题下的建筑檐口：徽派马头墙的阶梯状山墙 + 一座塔尖。
-          字形本身仍是汉仪文黑（真正的自定义字形需要专门的字体设计），
-          这里用建筑轮廓把标题"托"起来，让文字和宁波天际线发生关系。
-        */}
-        <svg class="brand__cornice" viewBox="0 0 600 46" aria-hidden="true">
-          <g fill="currentColor">
-            <!-- 左侧马头墙：三级阶梯 -->
-            <path d="M0 44 h74 v-9 h20 v-9 h20 v-9 h20 v-9 h12 v9 h20 v9 h20 v9 h20 v9 z" />
-            <!-- 中间塔尖（宁波中心那栋的轮廓） -->
-            <path d="M268 44 l7-30 3-12 4 12 7 30 z" />
-            <!-- 右侧马头墙：反向阶梯 -->
-            <path d="M600 44 h-74 v-9 h-20 v-9 h-20 v-9 h-20 v-9 h-12 v9 h-20 v9 h-20 v9 h-20 v9 z" />
-          </g>
-          <!-- 一道青色底线，呼应霓虹灯管 -->
-          <rect x="0" y="44" width="600" height="2" fill="#5ff0ff" opacity="0.75" />
-        </svg>
-
         <p class="brand__tagline">{site.tagline}</p>
       </div>
     </header>
@@ -93,7 +74,7 @@ const skyline = withBase('/img/home/skyline.png');
     <div class="boards">
       {
         site.homeBoards.map((board) => (
-          <section class="board" id={board.id}>
+          <a class="board" href={withBase(board.href)} id={board.id}>
             <div
               class="board__bg"
               style={`background-image:url(${withBase(board.image)})`}
@@ -102,25 +83,8 @@ const skyline = withBase('/img/home/skyline.png');
             <div class="board__body">
               <h2 class="board__title">{board.title}</h2>
               <p class="board__sub">{board.subtitle}</p>
-              <ul class="board__items">
-                {board.items.map((item) => (
-                  <li>
-                    {item.href ? (
-                      <a class="chip" href={withBase(item.href)}>
-                        {item.label}
-                        {item.note && <em>{item.note}</em>}
-                      </a>
-                    ) : (
-                      <span class="chip chip--todo">
-                        {item.label}
-                        <em>待定</em>
-                      </span>
-                    )}
-                  </li>
-                ))}
-              </ul>
             </div>
-          </section>
+          </a>
         ))
       }
     </div>
@@ -286,16 +250,6 @@ const skyline = withBase('/img/home/skyline.png');
     filter: blur(0.4px);
   }
 
-  /* 标题下的建筑檐口 */
-  .brand__cornice {
-    display: block;
-    width: min(100%, 34rem);
-    height: auto;
-    margin: 0.5rem 0 0.2rem;
-    color: rgba(255, 214, 238, 0.85);
-    filter: drop-shadow(0 0 8px rgba(255, 79, 163, 0.75));
-  }
-
   .brand__tagline {
     margin: 0.9rem 0 0;
     font-size: clamp(0.9rem, 1.6vw, 1.15rem);
@@ -323,15 +277,22 @@ const skyline = withBase('/img/home/skyline.png');
     min-height: clamp(260px, 34vh, 400px);
     display: flex;
     align-items: flex-end;
+    /* 整个板块是一个链接 */
+    text-decoration: none;
+    color: inherit;
     transition: transform 0.25s ease, box-shadow 0.25s ease;
   }
   .board:hover,
-  .board:focus-within {
+  .board:focus-visible {
     transform: translateY(-4px);
     box-shadow:
       0 0 0 1px rgba(255, 160, 210, 0.5) inset,
       0 0 34px rgba(255, 62, 165, 0.45),
       0 22px 60px rgba(10, 0, 20, 0.6);
+  }
+  .board:focus-visible {
+    outline: 2px solid #5ff0ff;
+    outline-offset: 3px;
   }
 
   .board__bg,
@@ -381,53 +342,6 @@ const skyline = withBase('/img/home/skyline.png');
     color: rgba(255, 226, 244, 0.82);
   }
 
-  .board__items {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.55rem;
-  }
-
-  .chip {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.4rem;
-    padding: 0.36rem 0.8rem;
-    border-radius: 999px;
-    font-size: 0.82rem;
-    letter-spacing: 0.05em;
-    color: #ffe6f6;
-    text-decoration: none;
-    background: rgba(40, 4, 52, 0.66);
-    border: 1px solid rgba(255, 120, 190, 0.45);
-    backdrop-filter: blur(3px);
-    transition: background 0.18s ease, border-color 0.18s ease, color 0.18s ease;
-  }
-  a.chip:hover,
-  a.chip:focus-visible {
-    background: rgba(212, 0, 123, 0.75);
-    border-color: #ffb3dd;
-    color: #fff;
-  }
-  .chip em {
-    font-style: normal;
-    font-size: 0.68rem;
-    padding: 0.05rem 0.34rem;
-    border-radius: 999px;
-    background: rgba(255, 255, 255, 0.16);
-    color: #ffd9ef;
-  }
-  /* 还没定去向的子版块：虚线框 + 待定标签 */
-  .chip--todo {
-    border-style: dashed;
-    border-color: rgba(255, 160, 210, 0.55);
-    color: rgba(255, 226, 244, 0.72);
-    background: rgba(40, 4, 52, 0.4);
-    cursor: default;
-  }
-
   /* ---------- 小屏 ---------- */
 
   @media (max-width: 760px) {
@@ -452,8 +366,7 @@ const skyline = withBase('/img/home/skyline.png');
   /* 关掉动画偏好 */
   @media (prefers-reduced-motion: reduce) {
     .board,
-    .board__bg,
-    .chip {
+    .board__bg {
       transition: none;
     }
     .board:hover {
@@ -465,9 +378,8 @@ const skyline = withBase('/img/home/skyline.png');
   }
 
   /* ============================================================
-     页头 / 页脚
-     它们不在本组件的 DOM 里，所以要用 :global 穿透作用域。
-     首页整屏都是深色蒸汽波背景，默认的浅色页头页脚会突兀。
+     首页专属：兜底底色与导航隐藏
+     页头页脚本身的深色适配在 global.css 里（首页和板块页共用）
      ============================================================ */
 
   /*
@@ -481,29 +393,12 @@ const skyline = withBase('/img/home/skyline.png');
     background-color: #2a0a3a;
   }
 
-  :global(body.is-home .site-header) {
-    position: relative;
-    z-index: 3;
-    background: transparent;
-    border-bottom-color: rgba(255, 120, 190, 0.22);
-  }
-  :global(body.is-home .site-title),
+  /*
+    首页顶部那排栏目链接整条去掉 —— 首页只留两个大板块作为入口。
+    这些入口挪到了「花娅陌域 → 花娅陌质流」页面里。
+    只隐藏链接本身，主题切换按钮保留（它不是栏目链接）。
+  */
   :global(body.is-home .site-nav__link) {
-    color: #ffe6f6;
-    text-shadow: 0 0 10px rgba(255, 79, 163, 0.7);
-  }
-  :global(body.is-home .site-nav__link:hover) {
-    color: #fff;
-  }
-  /* 页脚压在剪影上，需要一层暗底才读得清 */
-  :global(body.is-home .site-footer) {
-    position: relative;
-    z-index: 3;
-    background: linear-gradient(180deg, rgba(10, 0, 18, 0) 0%, rgba(10, 0, 18, 0.72) 45%);
-    border-top-color: rgba(255, 120, 190, 0.22);
-    color: rgba(255, 226, 244, 0.78);
-  }
-  :global(body.is-home .site-footer a) {
-    color: #ffb3dd;
+    display: none;
   }
 </style>

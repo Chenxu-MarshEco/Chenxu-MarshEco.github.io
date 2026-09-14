@@ -1,0 +1,12 @@
+---
+import BoardLayout from '../../layouts/BoardLayout.astro';
+import SubGrid from '../../components/SubGrid.astro';
+import site from '../../site.config';
+
+const board = site.homeBoards.find((b) => b.id === 'huaya');
+if (!board) throw new Error('site.config.ts 里找不到 id 为 huaya 的大板块');
+---
+
+<BoardLayout title={board.title} image={board.image}>
+  <SubGrid items={board.items} />
+</BoardLayout>

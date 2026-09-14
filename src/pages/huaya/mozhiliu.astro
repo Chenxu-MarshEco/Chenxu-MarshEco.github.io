@@ -1,0 +1,18 @@
+---
+/**
+ * 花娅陌质流 —— 站点各栏目的入口。
+ * 首页顶部导航去掉后，那些链接挪到了这里。
+ */
+import BoardLayout from '../../layouts/BoardLayout.astro';
+import SubGrid from '../../components/SubGrid.astro';
+import site from '../../site.config';
+---
+
+<BoardLayout
+  title="花娅陌质流"
+  image="/img/home/block-huaya.jpg"
+  backHref="/huaya"
+  backLabel="花娅陌域"
+>
+  <SubGrid items={site.sectionLinks} />
+</BoardLayout>

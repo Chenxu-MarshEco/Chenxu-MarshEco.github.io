@@ -1,0 +1,114 @@
+---
+/**
+ * 子版块网格。大板块页面里用它列出各个子版块。
+ * href 留空的显示成虚线「待定」占位，不是可点链接 —— 避免死链。
+ */
+import { withBase } from '../utils/url';
+
+interface Item {
+  label: string;
+  href?: string;
+}
+
+interface Props {
+  items: Item[];
+}
+
+const { items } = Astro.props;
+---
+
+<ul class="subgrid">
+  {
+    items.map((item) => (
+      <li>
+        {item.href ? (
+          <a class="subcard" href={withBase(item.href)}>
+            <span class="subcard__label">{item.label}</span>
+            <span class="subcard__arrow" aria-hidden="true">
+              →
+            </span>
+          </a>
+        ) : (
+          <span class="subcard subcard--todo">
+            <span class="subcard__label">{item.label}</span>
+            <span class="subcard__tag">待定</span>
+          </span>
+        )}
+      </li>
+    ))
+  }
+</ul>
+
+<style>
+  .subgrid {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+    gap: 0.9rem;
+  }
+
+  .subcard {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.8rem;
+    min-height: 64px;
+    padding: 0.9rem 1.1rem;
+    border-radius: 12px;
+    text-decoration: none;
+    color: #ffe6f6;
+    background: rgba(38, 4, 52, 0.62);
+    border: 1px solid rgba(255, 120, 190, 0.42);
+    backdrop-filter: blur(3px);
+    transition:
+      background 0.18s ease,
+      border-color 0.18s ease,
+      transform 0.18s ease;
+  }
+
+  a.subcard:hover,
+  a.subcard:focus-visible {
+    background: rgba(212, 0, 123, 0.72);
+    border-color: #ffb3dd;
+    color: #fff;
+    transform: translateY(-2px);
+  }
+
+  .subcard__label {
+    font-size: 1rem;
+    letter-spacing: 0.08em;
+  }
+
+  .subcard__arrow {
+    color: #ffb3dd;
+    font-size: 1.1rem;
+  }
+
+  /* 占位：虚线框，明确表示还没定 */
+  .subcard--todo {
+    border-style: dashed;
+    border-color: rgba(255, 160, 210, 0.5);
+    color: rgba(255, 226, 244, 0.7);
+    background: rgba(38, 4, 52, 0.34);
+    cursor: default;
+  }
+
+  .subcard__tag {
+    font-size: 0.7rem;
+    padding: 0.1rem 0.42rem;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.16);
+    color: #ffd9ef;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .subcard {
+      transition: none;
+    }
+    a.subcard:hover {
+      transform: none;
+    }
+  }
+</style>

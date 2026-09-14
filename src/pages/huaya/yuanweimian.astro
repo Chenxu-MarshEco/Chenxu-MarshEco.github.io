@@ -1,0 +1,74 @@
+---
+/**
+ * 花娅远位面 —— 友情链接。
+ */
+import BoardLayout from '../../layouts/BoardLayout.astro';
+import site from '../../site.config';
+
+const friends = site.friends.filter((f) => f.href);
+---
+
+<BoardLayout
+  title="花娅远位面"
+  image="/img/home/block-huaya.jpg"
+  backHref="/huaya"
+  backLabel="花娅陌域"
+>
+  {
+    friends.length > 0 ? (
+      <ul class="friends">
+        {friends.map((f) => (
+          <li class="friend">
+            <a class="friend__name" href={f.href} rel="noopener">
+              {f.name}
+            </a>
+            {f.description && <p class="friend__desc">{f.description}</p>}
+          </li>
+        ))}
+      </ul>
+    ) : (
+      <p class="empty">还没有添加友链。</p>
+    )
+  }
+</BoardLayout>
+
+<style>
+  .friends {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 0.9rem;
+  }
+
+  .friend {
+    padding: 1rem 1.2rem;
+    border-radius: 12px;
+    background: rgba(38, 4, 52, 0.62);
+    border: 1px solid rgba(255, 120, 190, 0.42);
+    backdrop-filter: blur(3px);
+  }
+
+  .friend__name {
+    font-size: 1.05rem;
+    letter-spacing: 0.06em;
+    color: #ffb3dd;
+    text-decoration: none;
+  }
+  .friend__name:hover {
+    color: #fff;
+    text-shadow: 0 0 12px rgba(255, 79, 163, 0.9);
+  }
+
+  .friend__desc {
+    margin: 0.45rem 0 0;
+    font-size: 0.85rem;
+    line-height: 1.6;
+    color: rgba(255, 226, 244, 0.72);
+  }
+
+  .empty {
+    color: rgba(255, 226, 244, 0.72);
+  }
+</style>

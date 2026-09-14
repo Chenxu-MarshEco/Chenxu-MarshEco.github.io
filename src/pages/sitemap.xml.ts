@@ -6,18 +6,30 @@ import type { APIRoute } from 'astro';
 import { getNotes, getPosts } from '../utils/content';
 import { absoluteUrl } from '../utils/url';
 import { toISODate } from '../utils/date';
+import site from '../site.config';
 
 export const GET: APIRoute = async ({ site: astroSite }) => {
   const entries = [...(await getPosts()), ...(await getNotes())];
 
   const staticPages = ['/', '/posts', '/notes', '/tags', '/archive', '/about', '/friends'];
 
+  /*
+    首页那两个大板块以及它们的子页面也要收录。
+    这些页面是后加的，早先 staticPages 是写死的，所以漏掉了 ——
+    feed-check 就是靠比对 sitemap 和 dist 里的真实页面发现这个问题的。
+    这里从 site.config 里取大板块，再补上花娅陌域下的两个固定子页面。
+  */
+  const boardPages = site.homeBoards.map((b) => b.href);
+  const huayaChildren = ['/huaya/mozhiliu', '/huaya/yuanweimian'];
+
+  const allStatic = [...staticPages, ...boardPages, ...huayaChildren];
+
   const tags = [...new Set(entries.flatMap((e) => e.data.tags ?? []))].map(
     (tag) => `/tags/${encodeURIComponent(tag)}/`
   );
 
   const urls = [
-    ...staticPages.map((p) => ({ loc: absoluteUrl(p, astroSite), lastmod: undefined })),
+    ...allStatic.map((p) => ({ loc: absoluteUrl(p, astroSite), lastmod: undefined })),
     ...tags.map((p) => ({ loc: absoluteUrl(p, astroSite), lastmod: undefined })),
     ...entries.map((entry) => ({
       loc: absoluteUrl(

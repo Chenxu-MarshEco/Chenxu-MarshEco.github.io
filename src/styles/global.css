@@ -146,6 +146,52 @@ hr {
   border-bottom: 1px solid var(--c-border);
 }
 
+/* ------------------------------------------------------------------
+ * 深色页面（首页与各大板块页）上的页头 / 页脚
+ *
+ * 这些页面整屏都是蒸汽波深色背景，而页头页脚默认跟着明暗主题走 ——
+ * 浅色主题下就是深色文字压在深紫背景上，实测对比度只有 1.x:1。
+ * 所以在这两类页面上强制用浅色文字。
+ * 放在 global.css 而不是某个页面里，因为它们属于全站 chrome，
+ * 每个深色页面都要用到。
+ * ------------------------------------------------------------------ */
+body.is-home .site-header,
+body.is-board .site-header {
+  background: transparent;
+  border-bottom-color: rgba(255, 120, 190, 0.22);
+}
+
+body.is-home .site-title,
+body.is-board .site-title,
+body.is-home .site-nav__link,
+body.is-board .site-nav__link {
+  color: #ffe6f6;
+  text-shadow: 0 0 10px rgba(255, 79, 163, 0.7);
+}
+
+body.is-home .site-nav__link:hover,
+body.is-board .site-nav__link:hover {
+  color: #fff;
+}
+
+body.is-home .site-nav__link[aria-current='page']::after,
+body.is-board .site-nav__link[aria-current='page']::after {
+  background: #ffb3dd;
+}
+
+/* 页脚压在剪影上，需要一层暗底才读得清 */
+body.is-home .site-footer,
+body.is-board .site-footer {
+  background: linear-gradient(180deg, rgba(10, 0, 18, 0) 0%, rgba(10, 0, 18, 0.72) 45%);
+  border-top-color: rgba(255, 120, 190, 0.22);
+  color: rgba(255, 226, 244, 0.82);
+}
+
+body.is-home .site-footer a,
+body.is-board .site-footer a {
+  color: #ffb3dd;
+}
+
 .site-header__inner {
   display: flex;
   align-items: center;

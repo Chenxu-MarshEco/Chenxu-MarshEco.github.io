@@ -36,6 +36,9 @@ export type HomeBoard = {
   subtitle: string;
   /** 板块背景图，放 public/img/home/ 下 */
   image: string;
+  /** 点击这个板块跳到哪里 */
+  href: string;
+  /** 该板块自己页面里的子版块。href 留空 = 占位 */
   items: HomeBoardItem[];
 };
 
@@ -69,15 +72,16 @@ export const site = {
   /**
    * 首页的两个大板块。
    *
-   * 每个大板块里放若干子版块。子版块的 href 留空就显示成「待定」占位，
-   * 填上地址就变成可点的链接 —— 所以先占位、以后再补内容不用改版式。
+   * 首页只显示这两个大板块本身（不显示子版块），点进去才在各自的
+   * 页面里列出 items。子版块的 href 留空就显示成「待定」占位。
    */
   homeBoards: [
     {
       id: 'yongcheng',
       title: '甬城晴雨',
-      subtitle: '这座城的天色、街巷与日常',
+      subtitle: '甬神晴奇雨仰',
       image: '/img/home/block-yongcheng.jpg',
+      href: '/yongcheng',
       items: [
         { label: '子版块一' },
         { label: '子版块二' },
@@ -88,16 +92,30 @@ export const site = {
     {
       id: 'huaya',
       title: '花娅陌域',
-      subtitle: '另一个方向的收藏与妄想',
+      subtitle: '绮花阈限带',
       image: '/img/home/block-huaya.jpg',
+      href: '/huaya',
       items: [
-        { label: '子版块一' },
-        { label: '子版块二' },
+        { label: '花娅陌质流', href: '/huaya/mozhiliu' },
+        { label: '花娅远位面', href: '/huaya/yuanweimian' },
         { label: '子版块三' },
         { label: '子版块四' },
       ],
     },
   ] as HomeBoard[],
+
+  /**
+   * 花娅陌质流 子页面里列出的站点栏目。
+   * 首页顶部导航已经去掉，这些入口挪到了这里。
+   */
+  sectionLinks: [
+    { label: '首页', href: '/' },
+    { label: '文章', href: '/posts' },
+    { label: '手记', href: '/notes' },
+    { label: '标签', href: '/tags' },
+    { label: '归档', href: '/archive' },
+    { label: '关于', href: '/about' },
+  ] as NavItem[],
 
   /** 关于页面里的自我介绍，支持 Markdown 换行（用 \n\n 分段） */
   aboutIntro: [
