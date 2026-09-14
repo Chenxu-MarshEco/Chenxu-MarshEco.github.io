@@ -186,7 +186,20 @@ pinned: 0              # 可选，大于 0 会置顶
 路径要从 `public/` 开始算。`public/img/a.png` 对应的写法是 `/img/a.png`。
 
 **推送失败**
-多半是网络问题，重试几次。也可能是还没登录 GitHub。
+先看是哪种。`发布到线上.cmd` 在推送前会先试连 GitHub，连不上会直接提示，不会等 push 到一半才报错。
+
+- **连不上 GitHub**：国内网络直连经常不通，需要开代理。开好 Clash Verge 的「系统代理」后，
+  再让 git 也走代理（只需设置一次）：
+  ```bash
+  git config --global http.proxy http://127.0.0.1:7890
+  git config --global https.proxy http://127.0.0.1:7890
+  ```
+  端口要和 Clash Verge 里「设置 → 端口」一致。取消用 `--unset` 换成同样的键名。
+- **提示没登录**：跑一次 `gh auth login` 重新授权。
+- **提示 rejected / non-fast-forward**：远端有本地没有的提交，先 `git pull --rebase` 再推。
+
+> 小提示：`github.com` 打不开时，`api.github.com` 和 `raw.githubusercontent.com` 往往是通的。
+> 「网页打不开」不等于完全连不上。
 
 **想换整体风格，但不想大改 CSS**
 主要改 `tokens.css` 里的颜色和字体就够了。想换版式再动 `global.css` 里的【组件样式】区块。
