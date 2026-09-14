@@ -1,6 +1,13 @@
 # 统一换行符，避免 Windows 和 GitHub Actions 之间来回改动整份文件
 * text=auto eol=lf
 
+# Windows 批处理必须用 CRLF。
+# 这条规则要放在上面那条之后：.gitattributes 里后面的规则覆盖前面的。
+# 如果用 LF，cmd.exe 解析会错位——每一行开头少一个字符，
+# 表现为「'cho.' is not recognized」这种报错，中文提示也会被吞掉。
+*.cmd text eol=crlf
+*.bat text eol=crlf
+
 # 二进制文件不要做行尾转换
 *.png binary
 *.jpg binary
