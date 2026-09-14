@@ -1,18 +1,15 @@
 ---
+/**
+ * 全站页脚。
+ * 版权那一行按用户要求删掉了，只留 RSS 与社交链接。
+ */
 import site from '../site.config';
 import { withBase } from '../utils/url';
-
-const year = new Date().getUTCFullYear();
-const range = site.since >= year ? `${year}` : `${site.since}–${year}`;
 ---
 
 <footer class="site-footer">
   <div class="container site-footer__inner">
-    <div>
-      © {range} {site.author}
-      {site.footerNote && <span> · {site.footerNote}</span>}
-    </div>
-    <div>
+    <div class="site-footer__links">
       <a href={withBase('/rss.xml')}>RSS</a>
       {
         site.socials.map((s) => (

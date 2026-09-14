@@ -2,58 +2,22 @@
 import BaseLayout from '../layouts/BaseLayout.astro';
 import site from '../site.config';
 import { withBase } from '../utils/url';
-
-const skyline = withBase('/img/home/skyline.png');
 ---
 
 <BaseLayout description={site.description} bodyClass="is-home">
   {/*
-    整屏背景。分成四层叠起来：
-      天空渐变 → 落日 → 扫描线 → 天际线（最前，挡住落日的下半部分）
-    position:fixed 是为了让天际线始终贴在视口底部，页面滚动时不动。
+    整屏背景是一张合成好的图片（2400x1350，228 KB）：
+    天空渐变、带横格栅的落日、宁波天际线、水面倒影、扫描线全在里面。
+
+    早先这里是四层实时叠加（渐变背景 + 带 drop-shadow 的落日 SVG +
+    整屏 mix-blend-mode 的扫描线 + 两张定位背景图）。实测那种做法
+    首屏要做混合与阴影计算，观感上"背景加载很慢"，而其实天际线图片
+    只有 29 KB。合成成一张平铺图片后渲染是瞬时的。
+
+    图片里的天际线取自用户提供的宁波照片，最高那栋（宁波中心大厦）
+    顶部的 V 形分叉是特意保留下来的 —— 那栋楼最有辨识度的就是这个轮廓。
   */}
-  <div class="vapor" aria-hidden="true">
-    <div class="vapor__sky"></div>
-
-    <div class="vapor__sun">
-      <svg viewBox="0 0 200 200" role="presentation">
-        <defs>
-          <linearGradient id="sunGrad" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stop-color="#fff6b0"></stop>
-            <stop offset="28%" stop-color="#ffd23f"></stop>
-            <stop offset="60%" stop-color="#ff9d2e"></stop>
-            <stop offset="100%" stop-color="#ff5200"></stop>
-          </linearGradient>
-          {/*
-            蒸汽波落日的关键：下半部分被横条切开，而且越往下條纹越粗。
-            用 mask 挖空，这样露出的是背后的天空，而不是画上去的颜色。
-          */}
-          <mask id="sunMask">
-            <rect width="200" height="200" fill="#fff"></rect>
-            <g fill="#000">
-              <rect y="102" width="200" height="3"></rect>
-              <rect y="112" width="200" height="4"></rect>
-              <rect y="123" width="200" height="5"></rect>
-              <rect y="135" width="200" height="7"></rect>
-              <rect y="148" width="200" height="9"></rect>
-              <rect y="162" width="200" height="11"></rect>
-              <rect y="177" width="200" height="14"></rect>
-            </g>
-          </mask>
-        </defs>
-        <circle cx="100" cy="100" r="100" fill="url(#sunGrad)" mask="url(#sunMask)"></circle>
-      </svg>
-    </div>
-
-    <div class="vapor__scan"></div>
-
-    <div class="vapor__sea">
-      <div class="vapor__skyline" style={`background-image:url(${skyline})`}></div>
-      <div class="vapor__reflectWrap">
-        <div class="vapor__reflect" style={`background-image:url(${skyline})`}></div>
-      </div>
-    </div>
-  </div>
+  <div class="vapor" aria-hidden="true"></div>
 
   <div class="home">
     <header class="brand">
@@ -93,100 +57,19 @@ const skyline = withBase('/img/home/skyline.png');
 
 <style>
   /* ============================================================
-     蒸汽波背景
+     蒸汽波背景 —— 一张合成图，不再分层实时叠加
      ============================================================ */
 
   .vapor {
     position: fixed;
     inset: 0;
     z-index: -1;
-    overflow: hidden;
     pointer-events: none;
-  }
-
-  /* 天空。底部压暗，因为天际线剪影会在那里落地 */
-  .vapor__sky {
-    position: absolute;
-    inset: 0;
-    background: linear-gradient(
-      180deg,
-      #1b0733 0%,
-      #3a0c56 12%,
-      #6a0f75 26%,
-      #a8007e 40%,
-      #d4007b 52%,
-      #f4557f 62%,
-      #ff9a5c 72%,
-      #ffc06a 78%,
-      #c23a6a 86%,
-      #5e1147 94%,
-      #2a0a35 100%
-    );
-  }
-
-  /* 落日。放在最高楼（宽度 54.3% 处）的左侧。
-     位置要和天际线的高度配合：天际线现在是 56vh，落日往上抬一些，
-     否则会被板块整块盖住。 */
-  .vapor__sun {
-    position: absolute;
-    left: 7vw;
-    width: 29vw;
-    bottom: 30vh;
-  }
-  .vapor__sun svg {
-    display: block;
-    width: 100%;
-    height: auto;
-    /* 让落日带一点辉光，跟霓虹标题呼应 */
-    filter: drop-shadow(0 0 3vw rgba(255, 160, 60, 0.55));
-  }
-
-  /* CRT 扫描线 */
-  .vapor__scan {
-    position: absolute;
-    inset: 0;
-    background: repeating-linear-gradient(
-      180deg,
-      rgba(0, 0, 0, 0.22) 0 1px,
-      rgba(0, 0, 0, 0) 1px 3px
-    );
-    mix-blend-mode: multiply;
-  }
-
-  .vapor__sea {
-    position: absolute;
-    left: 0;
-    right: 0;
-    bottom: 0;
-  }
-
-  /* 天际线剪影。
-     用 cover + 固定高度，让剪影放大到足够高 —— 尖塔才能从板块上方露出来。
-     按宽度等比缩放的话（100% auto）高度只有约 390px，尖塔正好藏在板块后面。
-     放大后用 background-position 居中，把两侧裁掉一部分，尖塔落在画面中间。 */
-  .vapor__skyline {
-    width: 100%;
-    height: clamp(240px, 56vh, 640px);
+    background-image: url('/img/home/home-bg.jpg');
     background-repeat: no-repeat;
+    /* 底边对齐：天际线和水面始终贴着视口底部，上方天空随屏幕高度伸缩 */
     background-position: center bottom;
     background-size: cover;
-  }
-
-  /* 水面倒影：整体上下翻转，再让容器把它裁短并向下淡出 */
-  .vapor__reflectWrap {
-    height: clamp(60px, 11vh, 130px);
-    overflow: hidden;
-    mask-image: linear-gradient(180deg, #000 0%, transparent 85%);
-    -webkit-mask-image: linear-gradient(180deg, #000 0%, transparent 85%);
-  }
-  .vapor__reflect {
-    width: 100%;
-    height: 100%;
-    background-repeat: no-repeat;
-    background-position: center bottom;
-    background-size: cover;
-    transform: scaleY(-1);
-    opacity: 0.3;
   }
 
   /* ============================================================
@@ -355,12 +238,7 @@ const skyline = withBase('/img/home/skyline.png');
     .brand__text {
       text-align: center;
     }
-    /* 手机上落日在这么窄的宽度里会糊成一团，往后挪并缩小 */
-    .vapor__sun {
-      left: 8vw;
-      width: 46vw;
-      bottom: 13vw;
-    }
+    /* 落日已经烘焙进背景图，这里不用再单独调位置了 */
   }
 
   /* 关掉动画偏好 */
@@ -391,14 +269,5 @@ const skyline = withBase('/img/home/skyline.png');
   */
   :global(body.is-home) {
     background-color: #2a0a3a;
-  }
-
-  /*
-    首页顶部那排栏目链接整条去掉 —— 首页只留两个大板块作为入口。
-    这些入口挪到了「花娅陌域 → 花娅陌质流」页面里。
-    只隐藏链接本身，主题切换按钮保留（它不是栏目链接）。
-  */
-  :global(body.is-home .site-nav__link) {
-    display: none;
   }
 </style>

@@ -1,29 +1,24 @@
 ---
+/**
+ * 全站页头。
+ *
+ * 导航链接已经全部去掉，只留左上角的站点名（点它回首页）。
+ * 栏目入口统一挪到了首页「花娅陌域 → 花娅陌质流」那个子页面里，
+ * 所以 site.nav 现在只被那一页用到。
+ *
+ * 主题切换按钮保留：它是外观开关、不是栏目导航，
+ * 去掉的话访客就没法切明暗了。
+ */
 import site from '../site.config';
 import ThemeToggle from './ThemeToggle.astro';
-import { isActive, withBase } from '../utils/url';
+import { withBase } from '../utils/url';
 
-const currentPath = Astro.url.pathname;
 const base = withBase('/');
 ---
 
 <header class="site-header">
   <div class="container site-header__inner">
     <a class="site-title" href={base}>{site.title}</a>
-
-    <nav class="site-nav" aria-label="主导航">
-      {
-        site.nav.map((item) => (
-          <a
-            class="site-nav__link"
-            href={withBase(item.href)}
-            aria-current={isActive(currentPath, withBase(item.href)) ? 'page' : undefined}
-          >
-            {item.label}
-          </a>
-        ))
-      }
-      <ThemeToggle />
-    </nav>
+    <ThemeToggle />
   </div>
 </header>

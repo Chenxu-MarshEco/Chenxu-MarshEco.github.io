@@ -259,10 +259,13 @@ body.is-board .site-footer a {
 }
 .site-footer__inner {
   display: flex;
-  justify-content: space-between;
   align-items: baseline;
   gap: var(--sp-4);
   flex-wrap: wrap;
+}
+/* 版权那行删掉后只剩链接了，居中摆放 */
+.site-footer__links {
+  margin-inline: auto;
 }
 .site-footer a {
   color: var(--c-text-muted);
