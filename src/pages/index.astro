@@ -1,91 +1,509 @@
 ---
 import BaseLayout from '../layouts/BaseLayout.astro';
-import PostItem from '../components/PostItem.astro';
-import { getNotes, getPosts } from '../utils/content';
 import site from '../site.config';
 import { withBase } from '../utils/url';
 
-const posts = await getPosts();
-const notes = await getNotes();
-const latest = posts.slice(0, site.homePostCount);
-const latestNotes = notes.slice(0, 5);
-const allTags = [...new Set([...posts, ...notes].flatMap((e) => e.data.tags ?? []))].slice(0, 12);
-
-const totalWords = [...posts, ...notes].reduce(
-  (sum, e) => sum + ((e as { body?: string }).body?.length ?? 0),
-  0
-);
+const skyline = withBase('/img/home/skyline.png');
 ---
 
-<BaseLayout description={site.description}>
-  {
-    site.showTagline && (
-      <section class="hero">
-        <h1 class="hero__title">{site.title}</h1>
-        <p class="hero__tagline">{site.tagline}</p>
-        <div class="hero__meta">
-          <span>共 {posts.length + notes.length} 篇记录</span>
-          <span>约 {Math.round(totalWords / 1000)} 千字</span>
-          <a href={withBase('/rss.xml')}>订阅 RSS</a>
-        </div>
-      </section>
-    )
-  }
+<BaseLayout description={site.description} bodyClass="is-home">
+  {/*
+    整屏背景。分成四层叠起来：
+      天空渐变 → 落日 → 扫描线 → 天际线（最前，挡住落日的下半部分）
+    position:fixed 是为了让天际线始终贴在视口底部，页面滚动时不动。
+  */}
+  <div class="vapor" aria-hidden="true">
+    <div class="vapor__sky"></div>
 
-  <section>
-    <h2 class="section-title">最近写的</h2>
-    {
-      latest.length > 0 ? (
-        <ul class="post-list">
-          {latest.map((entry) => (
-            <PostItem entry={entry} />
-          ))}
-        </ul>
-      ) : (
-        <p class="empty">
-          还没有文章。运行 <code>pnpm editor</code> 打开编辑器写第一篇吧。
-        </p>
-      )
-    }
-    {
-      posts.length > latest.length && (
-        <p style="margin-top: var(--sp-5)">
-          <a href={withBase('/posts')}>查看全部 {posts.length} 篇文章 →</a>
-        </p>
-      )
-    }
-  </section>
+    <div class="vapor__sun">
+      <svg viewBox="0 0 200 200" role="presentation">
+        <defs>
+          <linearGradient id="sunGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#fff6b0"></stop>
+            <stop offset="28%" stop-color="#ffd23f"></stop>
+            <stop offset="60%" stop-color="#ff9d2e"></stop>
+            <stop offset="100%" stop-color="#ff5200"></stop>
+          </linearGradient>
+          {/*
+            蒸汽波落日的关键：下半部分被横条切开，而且越往下條纹越粗。
+            用 mask 挖空，这样露出的是背后的天空，而不是画上去的颜色。
+          */}
+          <mask id="sunMask">
+            <rect width="200" height="200" fill="#fff"></rect>
+            <g fill="#000">
+              <rect y="102" width="200" height="3"></rect>
+              <rect y="112" width="200" height="4"></rect>
+              <rect y="123" width="200" height="5"></rect>
+              <rect y="135" width="200" height="7"></rect>
+              <rect y="148" width="200" height="9"></rect>
+              <rect y="162" width="200" height="11"></rect>
+              <rect y="177" width="200" height="14"></rect>
+            </g>
+          </mask>
+        </defs>
+        <circle cx="100" cy="100" r="100" fill="url(#sunGrad)" mask="url(#sunMask)"></circle>
+      </svg>
+    </div>
 
-  {
-    latestNotes.length > 0 && (
-      <section style="margin-top: var(--sp-8)">
-        <h2 class="section-title">最近的手记</h2>
-        <ul class="post-list">
-          {latestNotes.map((entry) => (
-            <PostItem entry={entry} showReadingTime={false} />
-          ))}
-        </ul>
-        <p style="margin-top: var(--sp-5)">
-          <a href={withBase('/notes')}>全部手记 →</a>
-        </p>
-      </section>
-    )
-  }
+    <div class="vapor__scan"></div>
 
-  {
-    allTags.length > 0 && (
-      <section style="margin-top: var(--sp-8)">
-        <h2 class="section-title">常写的标签</h2>
-        <ul class="tag-cloud">
-          {allTags.map((tag) => (
-            <li>
-              <a class="tag" href={withBase(`/tags/${encodeURIComponent(tag)}/`)}>
-                #{tag}
-              </a>
-            </li>
-          ))}
-        </ul>
-      </section>
-    )
-  }
+    <div class="vapor__sea">
+      <div class="vapor__skyline" style={`background-image:url(${skyline})`}></div>
+      <div class="vapor__reflectWrap">
+        <div class="vapor__reflect" style={`background-image:url(${skyline})`}></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="home">
+    <header class="brand">
+      <img
+        class="brand__logo"
+        src={withBase('/img/home/logo.png')}
+        alt="花涧堂徽记：龙环与塔吊艺术字"
+        width="512"
+        height="512"
+        decoding="async"
+      />
+      <div class="brand__text">
+        <h1 class="brand__title" data-text="花涧堂">花涧堂</h1>
+
+        {/*
+          标题下的建筑檐口：徽派马头墙的阶梯状山墙 + 一座塔尖。
+          字形本身仍是汉仪文黑（真正的自定义字形需要专门的字体设计），
+          这里用建筑轮廓把标题"托"起来，让文字和宁波天际线发生关系。
+        */}
+        <svg class="brand__cornice" viewBox="0 0 600 46" aria-hidden="true">
+          <g fill="currentColor">
+            <!-- 左侧马头墙：三级阶梯 -->
+            <path d="M0 44 h74 v-9 h20 v-9 h20 v-9 h20 v-9 h12 v9 h20 v9 h20 v9 h20 v9 z" />
+            <!-- 中间塔尖（宁波中心那栋的轮廓） -->
+            <path d="M268 44 l7-30 3-12 4 12 7 30 z" />
+            <!-- 右侧马头墙：反向阶梯 -->
+            <path d="M600 44 h-74 v-9 h-20 v-9 h-20 v-9 h-20 v-9 h-12 v9 h-20 v9 h-20 v9 h-20 v9 z" />
+          </g>
+          <!-- 一道青色底线，呼应霓虹灯管 -->
+          <rect x="0" y="44" width="600" height="2" fill="#5ff0ff" opacity="0.75" />
+        </svg>
+
+        <p class="brand__tagline">{site.tagline}</p>
+      </div>
+    </header>
+
+    <div class="boards">
+      {
+        site.homeBoards.map((board) => (
+          <section class="board" id={board.id}>
+            <div
+              class="board__bg"
+              style={`background-image:url(${withBase(board.image)})`}
+            />
+            <div class="board__veil" />
+            <div class="board__body">
+              <h2 class="board__title">{board.title}</h2>
+              <p class="board__sub">{board.subtitle}</p>
+              <ul class="board__items">
+                {board.items.map((item) => (
+                  <li>
+                    {item.href ? (
+                      <a class="chip" href={withBase(item.href)}>
+                        {item.label}
+                        {item.note && <em>{item.note}</em>}
+                      </a>
+                    ) : (
+                      <span class="chip chip--todo">
+                        {item.label}
+                        <em>待定</em>
+                      </span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </section>
+        ))
+      }
+    </div>
+  </div>
 </BaseLayout>
+
+<style>
+  /* ============================================================
+     蒸汽波背景
+     ============================================================ */
+
+  .vapor {
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    overflow: hidden;
+    pointer-events: none;
+  }
+
+  /* 天空。底部压暗，因为天际线剪影会在那里落地 */
+  .vapor__sky {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      180deg,
+      #1b0733 0%,
+      #3a0c56 12%,
+      #6a0f75 26%,
+      #a8007e 40%,
+      #d4007b 52%,
+      #f4557f 62%,
+      #ff9a5c 72%,
+      #ffc06a 78%,
+      #c23a6a 86%,
+      #5e1147 94%,
+      #2a0a35 100%
+    );
+  }
+
+  /* 落日。放在最高楼（宽度 54.3% 处）的左侧。
+     位置要和天际线的高度配合：天际线现在是 56vh，落日往上抬一些，
+     否则会被板块整块盖住。 */
+  .vapor__sun {
+    position: absolute;
+    left: 7vw;
+    width: 29vw;
+    bottom: 30vh;
+  }
+  .vapor__sun svg {
+    display: block;
+    width: 100%;
+    height: auto;
+    /* 让落日带一点辉光，跟霓虹标题呼应 */
+    filter: drop-shadow(0 0 3vw rgba(255, 160, 60, 0.55));
+  }
+
+  /* CRT 扫描线 */
+  .vapor__scan {
+    position: absolute;
+    inset: 0;
+    background: repeating-linear-gradient(
+      180deg,
+      rgba(0, 0, 0, 0.22) 0 1px,
+      rgba(0, 0, 0, 0) 1px 3px
+    );
+    mix-blend-mode: multiply;
+  }
+
+  .vapor__sea {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+  }
+
+  /* 天际线剪影。
+     用 cover + 固定高度，让剪影放大到足够高 —— 尖塔才能从板块上方露出来。
+     按宽度等比缩放的话（100% auto）高度只有约 390px，尖塔正好藏在板块后面。
+     放大后用 background-position 居中，把两侧裁掉一部分，尖塔落在画面中间。 */
+  .vapor__skyline {
+    width: 100%;
+    height: clamp(240px, 56vh, 640px);
+    background-repeat: no-repeat;
+    background-position: center bottom;
+    background-size: cover;
+  }
+
+  /* 水面倒影：整体上下翻转，再让容器把它裁短并向下淡出 */
+  .vapor__reflectWrap {
+    height: clamp(60px, 11vh, 130px);
+    overflow: hidden;
+    mask-image: linear-gradient(180deg, #000 0%, transparent 85%);
+    -webkit-mask-image: linear-gradient(180deg, #000 0%, transparent 85%);
+  }
+  .vapor__reflect {
+    width: 100%;
+    height: 100%;
+    background-repeat: no-repeat;
+    background-position: center bottom;
+    background-size: cover;
+    transform: scaleY(-1);
+    opacity: 0.3;
+  }
+
+  /* ============================================================
+     内容
+     ============================================================ */
+
+  .home {
+    position: relative;
+    padding: clamp(2rem, 6vh, 5rem) 0 clamp(3rem, 10vh, 7rem);
+    /* 给底部的天际线让出位置，正文不要压在楼群上 */
+    min-height: 78vh;
+  }
+
+  .brand {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: clamp(1rem, 3vw, 2.4rem);
+    flex-wrap: wrap;
+    margin-bottom: clamp(2.5rem, 7vh, 5rem);
+  }
+
+  .brand__logo {
+    width: clamp(96px, 13vw, 190px);
+    height: auto;
+    filter: drop-shadow(0 0 22px rgba(255, 90, 170, 0.5));
+  }
+
+  .brand__text {
+    text-align: left;
+  }
+
+  /*
+    霓虹标题。用多层 text-shadow 叠出辉光：内层亮、外层散。
+    字形本身来自汉仪文黑，靠辉光和两侧的描边做出霓虹灯管的感觉。
+  */
+  .brand__title {
+    position: relative;
+    margin: 0;
+    font-size: clamp(3rem, 9vw, 7.5rem);
+    line-height: 1.05;
+    letter-spacing: 0.06em;
+    color: #fff;
+    text-shadow:
+      0 0 4px #fff,
+      0 0 11px #ffd9ef,
+      0 0 22px #ff4fa3,
+      0 0 40px #ff2e8b,
+      0 0 70px #d4007b,
+      0 0 110px #8a0f75;
+  }
+  /* 底下再压一层错位的青色描边，做出灯管的立体感 */
+  .brand__title::before {
+    content: attr(data-text);
+    position: absolute;
+    inset: 0;
+    color: transparent;
+    -webkit-text-stroke: 1.5px rgba(95, 240, 255, 0.55);
+    transform: translate(3px, 3px);
+    z-index: -1;
+    filter: blur(0.4px);
+  }
+
+  /* 标题下的建筑檐口 */
+  .brand__cornice {
+    display: block;
+    width: min(100%, 34rem);
+    height: auto;
+    margin: 0.5rem 0 0.2rem;
+    color: rgba(255, 214, 238, 0.85);
+    filter: drop-shadow(0 0 8px rgba(255, 79, 163, 0.75));
+  }
+
+  .brand__tagline {
+    margin: 0.9rem 0 0;
+    font-size: clamp(0.9rem, 1.6vw, 1.15rem);
+    letter-spacing: 0.22em;
+    color: #ffd9ef;
+    text-shadow: 0 0 10px rgba(255, 79, 163, 0.8);
+  }
+
+  /* ---------- 两个大板块 ---------- */
+
+  .boards {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: clamp(1rem, 2.5vw, 2rem);
+  }
+
+  .board {
+    position: relative;
+    overflow: hidden;
+    border-radius: 14px;
+    border: 1px solid rgba(255, 120, 190, 0.42);
+    box-shadow:
+      0 0 0 1px rgba(0, 0, 0, 0.35) inset,
+      0 18px 50px rgba(10, 0, 20, 0.55);
+    min-height: clamp(260px, 34vh, 400px);
+    display: flex;
+    align-items: flex-end;
+    transition: transform 0.25s ease, box-shadow 0.25s ease;
+  }
+  .board:hover,
+  .board:focus-within {
+    transform: translateY(-4px);
+    box-shadow:
+      0 0 0 1px rgba(255, 160, 210, 0.5) inset,
+      0 0 34px rgba(255, 62, 165, 0.45),
+      0 22px 60px rgba(10, 0, 20, 0.6);
+  }
+
+  .board__bg,
+  .board__veil {
+    position: absolute;
+    inset: 0;
+    background-size: cover;
+    background-position: center;
+  }
+  .board__bg {
+    transition: transform 0.5s ease;
+  }
+  .board:hover .board__bg {
+    transform: scale(1.045);
+  }
+  /* 从下往上压暗，保证文字在任何底图上都读得清 */
+  .board__veil {
+    background-image: none;
+    background: linear-gradient(
+      180deg,
+      rgba(20, 2, 30, 0.15) 0%,
+      rgba(20, 2, 30, 0.55) 46%,
+      rgba(12, 0, 20, 0.9) 100%
+    );
+  }
+
+  .board__body {
+    position: relative;
+    padding: clamp(1.1rem, 2.4vw, 1.8rem);
+    width: 100%;
+  }
+
+  .board__title {
+    margin: 0;
+    font-size: clamp(1.4rem, 2.6vw, 2.1rem);
+    letter-spacing: 0.1em;
+    color: #fff;
+    text-shadow:
+      0 0 10px rgba(255, 79, 163, 0.9),
+      0 0 26px rgba(212, 0, 123, 0.7);
+  }
+
+  .board__sub {
+    margin: 0.35rem 0 1rem;
+    font-size: 0.86rem;
+    letter-spacing: 0.08em;
+    color: rgba(255, 226, 244, 0.82);
+  }
+
+  .board__items {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.55rem;
+  }
+
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.36rem 0.8rem;
+    border-radius: 999px;
+    font-size: 0.82rem;
+    letter-spacing: 0.05em;
+    color: #ffe6f6;
+    text-decoration: none;
+    background: rgba(40, 4, 52, 0.66);
+    border: 1px solid rgba(255, 120, 190, 0.45);
+    backdrop-filter: blur(3px);
+    transition: background 0.18s ease, border-color 0.18s ease, color 0.18s ease;
+  }
+  a.chip:hover,
+  a.chip:focus-visible {
+    background: rgba(212, 0, 123, 0.75);
+    border-color: #ffb3dd;
+    color: #fff;
+  }
+  .chip em {
+    font-style: normal;
+    font-size: 0.68rem;
+    padding: 0.05rem 0.34rem;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.16);
+    color: #ffd9ef;
+  }
+  /* 还没定去向的子版块：虚线框 + 待定标签 */
+  .chip--todo {
+    border-style: dashed;
+    border-color: rgba(255, 160, 210, 0.55);
+    color: rgba(255, 226, 244, 0.72);
+    background: rgba(40, 4, 52, 0.4);
+    cursor: default;
+  }
+
+  /* ---------- 小屏 ---------- */
+
+  @media (max-width: 760px) {
+    .boards {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .brand {
+      flex-direction: column;
+      text-align: center;
+    }
+    .brand__text {
+      text-align: center;
+    }
+    /* 手机上落日在这么窄的宽度里会糊成一团，往后挪并缩小 */
+    .vapor__sun {
+      left: 8vw;
+      width: 46vw;
+      bottom: 13vw;
+    }
+  }
+
+  /* 关掉动画偏好 */
+  @media (prefers-reduced-motion: reduce) {
+    .board,
+    .board__bg,
+    .chip {
+      transition: none;
+    }
+    .board:hover {
+      transform: none;
+    }
+    .board:hover .board__bg {
+      transform: none;
+    }
+  }
+
+  /* ============================================================
+     页头 / 页脚
+     它们不在本组件的 DOM 里，所以要用 :global 穿透作用域。
+     首页整屏都是深色蒸汽波背景，默认的浅色页头页脚会突兀。
+     ============================================================ */
+
+  /*
+    给 body 一个深色兜底。
+    两个作用：
+      1. 背景图没加载出来时（弱网、图挂了）页面还是深色，文字仍然读得清
+      2. 无障碍检测工具只认祖先链上的 background-color，固定定位的
+         背景层是兄弟节点、它看不到，会把深底浅字误判成 1.12:1 的低对比度
+  */
+  :global(body.is-home) {
+    background-color: #2a0a3a;
+  }
+
+  :global(body.is-home .site-header) {
+    position: relative;
+    z-index: 3;
+    background: transparent;
+    border-bottom-color: rgba(255, 120, 190, 0.22);
+  }
+  :global(body.is-home .site-title),
+  :global(body.is-home .site-nav__link) {
+    color: #ffe6f6;
+    text-shadow: 0 0 10px rgba(255, 79, 163, 0.7);
+  }
+  :global(body.is-home .site-nav__link:hover) {
+    color: #fff;
+  }
+  /* 页脚压在剪影上，需要一层暗底才读得清 */
+  :global(body.is-home .site-footer) {
+    position: relative;
+    z-index: 3;
+    background: linear-gradient(180deg, rgba(10, 0, 18, 0) 0%, rgba(10, 0, 18, 0.72) 45%);
+    border-top-color: rgba(255, 120, 190, 0.22);
+    color: rgba(255, 226, 244, 0.78);
+  }
+  :global(body.is-home .site-footer a) {
+    color: #ffb3dd;
+  }
+</style>

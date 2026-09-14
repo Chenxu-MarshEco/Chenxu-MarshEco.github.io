@@ -21,6 +21,24 @@ export type SocialLink = {
   note?: string;
 };
 
+/** 首页大板块里的一个子版块。href 留空 = 占位，暂不可点 */
+export type HomeBoardItem = {
+  label: string;
+  href?: string;
+  /** 子版块上的一行小字 */
+  note?: string;
+};
+
+/** 首页的一个大板块 */
+export type HomeBoard = {
+  id: string;
+  title: string;
+  subtitle: string;
+  /** 板块背景图，放 public/img/home/ 下 */
+  image: string;
+  items: HomeBoardItem[];
+};
+
 export const site = {
   /** 浏览器标题栏和页头显示的名字 */
   title: '花涧堂',
@@ -47,6 +65,39 @@ export const site = {
     { label: '友链', href: '/friends' },
     { label: '关于', href: '/about' },
   ] as NavItem[],
+
+  /**
+   * 首页的两个大板块。
+   *
+   * 每个大板块里放若干子版块。子版块的 href 留空就显示成「待定」占位，
+   * 填上地址就变成可点的链接 —— 所以先占位、以后再补内容不用改版式。
+   */
+  homeBoards: [
+    {
+      id: 'yongcheng',
+      title: '甬城晴雨',
+      subtitle: '这座城的天色、街巷与日常',
+      image: '/img/home/block-yongcheng.jpg',
+      items: [
+        { label: '子版块一' },
+        { label: '子版块二' },
+        { label: '子版块三' },
+        { label: '子版块四' },
+      ],
+    },
+    {
+      id: 'huaya',
+      title: '花娅陌域',
+      subtitle: '另一个方向的收藏与妄想',
+      image: '/img/home/block-huaya.jpg',
+      items: [
+        { label: '子版块一' },
+        { label: '子版块二' },
+        { label: '子版块三' },
+        { label: '子版块四' },
+      ],
+    },
+  ] as HomeBoard[],
 
   /** 关于页面里的自我介绍，支持 Markdown 换行（用 \n\n 分段） */
   aboutIntro: [

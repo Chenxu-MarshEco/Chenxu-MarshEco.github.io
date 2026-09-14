@@ -58,13 +58,12 @@
    * 2. 字体
    * ------------------------------------------------------------------ */
 
-  /* 正文字体：优先系统字体，中文回落到苹方/微软雅黑 */
-  --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, "PingFang SC",
+  /* 正文字体：汉仪文黑-85W（见 fonts.css），后面挂系统字体兜底 */
+  --font-sans: 'Huajiantang', system-ui, -apple-system, "Segoe UI", "PingFang SC",
     "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans SC", sans-serif;
-  /* 标题字体：想更有"文学感"可以把 --font-sans 换到这里，
-     或者在 fonts 目录放自己的字体文件后用 @font-face 引入 */
-  --font-display: Georgia, "Songti SC", "SimSun", "Noto Serif SC", serif;
-  /* 等宽字体：代码 */
+  /* 标题字体：同样用汉仪文黑，比宋体更贴合蒸汽波那种硬朗的调性 */
+  --font-display: 'Huajiantang', Georgia, "Songti SC", "Noto Serif SC", serif;
+  /* 等宽字体：代码。刻意不换——等宽场景下汉仪文黑不如专业等宽字体清晰 */
   --font-mono: ui-monospace, "Cascadia Code", "SF Mono", Menlo, Consolas,
     "Liberation Mono", monospace;
 

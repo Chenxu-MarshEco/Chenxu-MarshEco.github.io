@@ -1,0 +1,22 @@
+/* ------------------------------------------------------------------
+ * 站点字体：汉仪文黑-85W（原神使用的中文字体）
+ *
+ * 原字体 7 MB，直接放网页上太重。用 fontTools 子集化到
+ *   GB2312 一级字库（3755 常用字）+ 站点现有全部字符 + ASCII 与标点
+ * 共 3945 个码位，转 WOFF2 后 565 KB。
+ *
+ * font-weight 写成区间 100 900，而不是单一的 400：
+ * 只声明 400 的话，font-weight:700 的标题匹配不到这个字体，
+ * 会回落到系统字体，标题和正文就变成两种字形了。写成区间后
+ * 所有字重都命中它，粗体由浏览器合成。
+ * ------------------------------------------------------------------ */
+
+@font-face {
+  font-family: 'Huajiantang';
+  src:
+    url('/fonts/huajiantang.woff2') format('woff2'),
+    url('/fonts/huajiantang.woff') format('woff');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}

@@ -1,4 +1,5 @@
 ---
+import '../styles/fonts.css';
 import '../styles/global.css';
 import SiteHeader from '../components/SiteHeader.astro';
 import SiteFooter from '../components/SiteFooter.astro';
@@ -16,6 +17,8 @@ interface Props {
   noindex?: boolean;
   /** 页面主区域是否使用更窄的宽度（文章页用） */
   narrow?: boolean;
+  /** 挂到 <body> 上的 class，首页用它切换整屏背景 */
+  bodyClass?: string;
 }
 
 const {
@@ -26,6 +29,7 @@ const {
   updatedTime,
   noindex = false,
   narrow = false,
+  bodyClass = '',
 } = Astro.props;
 
 const pageTitle = title ? `${title} · ${site.title}` : `${site.title} · ${site.tagline}`;
@@ -47,6 +51,14 @@ const ogImage = absoluteUrl('/og-default.svg', Astro.site);
 
     <link rel="canonical" href={canonical} />
     <link rel="icon" type="image/svg+xml" href={withBase('/favicon.svg')} />
+    {/* 站点字体 565 KB，提前拉起来，否则首屏会闪一下系统字体 */}
+    <link
+      rel="preload"
+      as="font"
+      type="font/woff2"
+      href={withBase('/fonts/huajiantang.woff2')}
+      crossorigin
+    />
     <link
       rel="alternate"
       type="application/rss+xml"
@@ -94,7 +106,7 @@ const ogImage = absoluteUrl('/og-default.svg', Astro.site);
     </script>
   </head>
 
-  <body>
+  <body class={bodyClass}>
     <a class="skip-link" href="#main">跳到正文</a>
     <SiteHeader />
 
