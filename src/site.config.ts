@@ -23,9 +23,9 @@ export type SocialLink = {
 
 export const site = {
   /** 浏览器标题栏和页头显示的名字 */
-  title: '曼沫砾总线',
+  title: '花涧堂',
   /** 副标题 / 一句话签名，会显示在页头和首页 */
-  tagline: '把零碎的想法接上总线，慢慢发出去。',
+  tagline: '等待篠雨的日子里',
   /** 站点的 meta description，也会用于 RSS */
   description: '一个记录想法、笔记和一些不成熟作品的个人站点。',
 

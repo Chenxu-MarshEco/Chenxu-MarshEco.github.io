@@ -295,7 +295,7 @@ class Studio:
 
         # 标题
         self.glow_text(W / 2, 118, '花 娅 陌 质 流', self.f_title, '#ffffff', NEON)
-        self.canvas.create_text(W / 2, 162, text='把零碎的想法接上总线，慢慢发出去',
+        self.canvas.create_text(W / 2, 162, text='等待篠雨的日子里',
                                 font=self.f_sub, fill=NEON_SOFT, tags='ui')
 
         # 四个按钮
