@@ -196,10 +196,19 @@ pinned: 0              # 可选，大于 0 会置顶
   ```
   端口要和 Clash Verge 里「设置 → 端口」一致。取消用 `--unset` 换成同样的键名。
 - **提示没登录**：跑一次 `gh auth login` 重新授权。
+- **提示 `without workflow scope`**：`gh` 授权时默认不给 `workflow` 权限，而推送
+  `.github/workflows/` 下的文件需要它（GitHub 防止代码偷偷改你的 CI）。补权限：
+  ```bash
+  gh auth refresh -h github.com -s workflow
+  ```
+  在浏览器里确认后再推。这个设置一次就够了。
 - **提示 rejected / non-fast-forward**：远端有本地没有的提交，先 `git pull --rebase` 再推。
 
 > 小提示：`github.com` 打不开时，`api.github.com` 和 `raw.githubusercontent.com` 往往是通的。
 > 「网页打不开」不等于完全连不上。
+
+> 另一个提示：走代理访问时偶发 `EOF` 之类的瞬时中断很常见。遇到一次失败**先重试**，
+> 不一定是真的坏了——本项目的部署脚本就内置了自动重试。
 
 **想换整体风格，但不想大改 CSS**
 主要改 `tokens.css` 里的颜色和字体就够了。想换版式再动 `global.css` 里的【组件样式】区块。
