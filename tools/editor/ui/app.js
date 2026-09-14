@@ -828,6 +828,9 @@ function runToolbar(cmd) {
       break;
     }
     case 'image':
+      pickLocalImage();
+      break;
+    case 'image-url':
       openImageModal();
       break;
     case 'hr':
@@ -841,6 +844,90 @@ function runToolbar(cmd) {
 /* ---------------------------------------------------------------
    插入图片弹窗
    --------------------------------------------------------------- */
+
+/* ---------------------------------------------------------------
+   插入图片
+
+   工具栏上那个 🖼 走的是一步到位的路径：开系统文件选择器 → 上传 →
+   直接把 Markdown 插到光标处。以前要先弹出弹窗、再点「选择图片…」、
+   传完还得点一下「插入」，三步才完事。网址方式留在「网址」按钮里。
+   --------------------------------------------------------------- */
+
+function pickLocalImage() {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = 'image/png,image/jpeg,image/gif,image/webp,image/svg+xml';
+  input.addEventListener('change', async () => {
+    const file = input.files && input.files[0];
+    if (!file) return;
+    await insertImageFile(file);
+  });
+  input.click();
+}
+
+/** 上传一张图并把它插到光标处。拖拽和粘贴也走这里。 */
+async function insertImageFile(file, fallbackName) {
+  toast('正在上传图片……');
+  try {
+    const p = await uploadImage(file);
+    const name = file.name || fallbackName || '图片';
+    const alt = name.replace(/\.[^.]+$/, '');
+    blockInsert(`![${alt}](${p})`);
+    toast('已插入图片');
+    return true;
+  } catch (err) {
+    toast(`上传失败：${err.message}`, true);
+    return false;
+  }
+}
+
+/**
+ * 从系统剪贴板粘贴的图片没有像样的文件名（都叫 image.png），
+ * 按时间戳重新起一个，免得上传目录里一堆同名文件。
+ */
+function renamePasted(file) {
+  const d = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  const stamp = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}`
+    + `-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
+  const ext = (file.type.split('/')[1] || 'png').replace('jpeg', 'jpg');
+  try {
+    return new File([file], `粘贴-${stamp}.${ext}`, { type: file.type });
+  } catch {
+    return file;   // 极老的浏览器没有 File 构造函数
+  }
+}
+
+function bindImageDropAndPaste() {
+  const ta = els.body;
+
+  ta.addEventListener('dragover', (ev) => {
+    if (ev.dataTransfer && Array.from(ev.dataTransfer.types).includes('Files')) {
+      ev.preventDefault();
+      ta.classList.add('editor__area--dragover');
+    }
+  });
+  ta.addEventListener('dragleave', () => ta.classList.remove('editor__area--dragover'));
+  ta.addEventListener('drop', async (ev) => {
+    const files = Array.from((ev.dataTransfer && ev.dataTransfer.files) || []);
+    const images = files.filter((f) => f.type.startsWith('image/'));
+    if (!images.length) return;          // 普通文件拖进来交给浏览器默认行为
+    ev.preventDefault();
+    ta.classList.remove('editor__area--dragover');
+    for (const f of images) {
+      if (!(await insertImageFile(f))) break;
+    }
+  });
+
+  ta.addEventListener('paste', async (ev) => {
+    const items = Array.from((ev.clipboardData && ev.clipboardData.items) || []);
+    const hit = items.find((i) => i.kind === 'file' && i.type.startsWith('image/'));
+    if (!hit) return;                    // 粘的是文字，走正常粘贴
+    ev.preventDefault();
+    const blob = hit.getAsFile();
+    if (blob) await insertImageFile(renamePasted(blob), '粘贴的图片');
+  });
+}
 
 function openImageModal() {
   els.modalUrl.value = '';
@@ -1112,6 +1199,9 @@ function bindEvents() {
     }
     if (state.previewOn) renderPreview();
   });
+
+  // 拖拽 / 粘贴插图
+  bindImageDropAndPaste();
 
   // 图片弹窗
   els.modalPick.addEventListener('click', () => els.modalFile.click());

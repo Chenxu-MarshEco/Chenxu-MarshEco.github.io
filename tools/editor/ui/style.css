@@ -837,6 +837,12 @@ body[data-preview="off"] .col--preview {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
+/* 把图片拖到编辑区时给出明确反馈，否则用户不知道能不能放 */
+.editor__area--dragover {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+  background: var(--accent-soft);
+}
 
 /* ---------- 右栏预览 ---------- */
 .col__head--preview {

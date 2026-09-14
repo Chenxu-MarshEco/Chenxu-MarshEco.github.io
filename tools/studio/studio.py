@@ -1,0 +1,797 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+花娅陌质流 —— 写作台
+
+一个蒸汽波风格的控制窗口，替代原来那个黑底白字的菜单。
+所有东西都在画布上手绘：渐变天空、CRT 扫描线、塔吊剪影、霓虹辉光。
+不依赖任何第三方库，只用 Python 自带的 tkinter。
+
+配色取自用户提供的参考图，逐带采样得到：
+    顶部 #4a0f61 → 中段最亮 #d4007b → 压暗 #8f0050 → 剪影 #050004
+扫描线把整体平均值压到 #8c0055 一带，所以背景要画得比"看起来"更亮一点。
+"""
+
+import ctypes
+import os
+import queue
+import shutil
+import subprocess
+import sys
+import threading
+import time
+import tkinter as tk
+import tkinter.font as tkfont
+from pathlib import Path
+
+# ---------------------------------------------------------------- 路径
+
+ROOT = Path(__file__).resolve().parents[2]      # 项目根目录
+IS_WIN = sys.platform == 'win32'
+
+# ---------------------------------------------------------------- 配色
+
+CJK_FONT = 'Microsoft YaHei UI'
+MONO_FONT = 'Consolas'
+
+# 天空渐变，取自参考图
+SKY_STOPS = [
+    (0.00, (74, 15, 97)),
+    (0.10, (110, 12, 115)),
+    (0.22, (165, 0, 126)),
+    (0.38, (200, 5, 125)),
+    (0.48, (212, 0, 123)),
+    (0.60, (184, 0, 106)),
+    (0.72, (143, 0, 80)),
+    (0.84, (90, 0, 56)),
+    (1.00, (26, 0, 19)),
+]
+
+SILHOUETTE = (5, 0, 4)
+SCANLINE_FACTOR = 0.78          # 扫描线压暗程度
+NEON = '#ff3ea5'                # 霓虹粉
+NEON_RGB = (255, 62, 165)       # 同上的 RGB 形式，画辉光时要拿来做混合
+NEON_SOFT = '#ff8fd0'
+CYAN = '#5ff0ff'                # 点缀青（蒸汽波经典配色）
+DIM = '#c9a3c9'
+
+W, H = 940, 660
+
+
+def hexof(rgb):
+    return '#%02x%02x%02x' % rgb
+
+
+def to_rgb(c):
+    """颜色可能是 (r,g,b) 元组，也可能是 '#rrggbb' 字符串。
+
+    画辉光的时候这两种会混着传进来，统一在这里转换，
+    免得每个调用点都要记住该传哪种。
+    """
+    if isinstance(c, str):
+        c = c.lstrip('#')
+        return (int(c[0:2], 16), int(c[2:4], 16), int(c[4:6], 16))
+    return tuple(c)
+
+
+def blend(c1, c2, t):
+    """在两个颜色之间插值，t=0 取 c1，t=1 取 c2。"""
+    a = to_rgb(c1)
+    b = to_rgb(c2)
+    return tuple(int(round(x + (y - x) * t)) for x, y in zip(a, b))
+
+
+def sky_at(t):
+    """按纵向比例取天空颜色。"""
+    t = max(0.0, min(1.0, t))
+    for i in range(len(SKY_STOPS) - 1):
+        p0, c0 = SKY_STOPS[i]
+        p1, c1 = SKY_STOPS[i + 1]
+        if p0 <= t <= p1:
+            local = 0.0 if p1 == p0 else (t - p0) / (p1 - p0)
+            return blend(c0, c1, local)
+    return SKY_STOPS[-1][1]
+
+
+def rounded_points(x1, y1, x2, y2, r, steps=10):
+    """生成圆角矩形的多边形顶点。tkinter 没有圆角矩形，只能自己算。"""
+    r = min(r, (x2 - x1) / 2, (y2 - y1) / 2)
+    pts = []
+    corners = [
+        (x2 - r, y1 + r, -90, 0),      # 右上
+        (x2 - r, y2 - r, 0, 90),       # 右下
+        (x1 + r, y2 - r, 90, 180),     # 左下
+        (x1 + r, y1 + r, 180, 270),    # 左上
+    ]
+    import math
+    for cx, cy, a0, a1 in corners:
+        for i in range(steps + 1):
+            a = math.radians(a0 + (a1 - a0) * i / steps)
+            pts.extend([cx + r * math.cos(a), cy + r * math.sin(a)])
+    return pts
+
+
+# ---------------------------------------------------------------- 主程序
+
+class Studio:
+
+    def __init__(self, root):
+        self.root = root
+        self.bg_rows = []          # 背景逐行颜色，重绘时复用
+        self.mode = 'menu'
+        self.proc = None
+        self.outq = queue.Queue()
+        self.busy = False
+        self.buttons = {}
+        self.hover = None
+
+        root.title('花娅陌质流')
+        root.configure(bg=hexof(sky_at(0.5)))
+        root.geometry(f'{W}x{H}')
+        root.resizable(False, False)
+
+        self._dark_titlebar()
+
+        self.canvas = tk.Canvas(root, width=W, height=H, highlightthickness=0,
+                                bg=hexof(sky_at(0.5)))
+        self.canvas.pack(fill='both', expand=True)
+
+        self.f_title = tkfont.Font(family=CJK_FONT, size=34, weight='bold')
+        self.f_sub = tkfont.Font(family=CJK_FONT, size=12)
+        self.f_btn = tkfont.Font(family=CJK_FONT, size=15, weight='bold')
+        self.f_hint = tkfont.Font(family=CJK_FONT, size=10)
+        self.f_log = tkfont.Font(family=MONO_FONT, size=10)
+        self.f_tag = tkfont.Font(family=CJK_FONT, size=9, weight='bold')
+
+        root.bind('<Escape>', lambda e: self.on_escape())
+
+        self.draw_menu()
+        self.root.after(120, self.poll_queue)
+        self.root.after(150, self.refresh_status)
+
+    # ------------------------------------------------------------ 外观
+
+    def _dark_titlebar(self):
+        """把 Windows 的标题栏改成深色，跟窗口内部协调。"""
+        if not IS_WIN:
+            return
+        try:
+            self.root.update_idletasks()
+            hwnd = ctypes.windll.user32.GetParent(self.root.winfo_id())
+            for attr in (20, 19):      # 20 = Win10 1903+，19 = 更早版本
+                val = ctypes.c_int(1)
+                ctypes.windll.dwmapi.DwmSetWindowAttribute(
+                    hwnd, attr, ctypes.byref(val), ctypes.sizeof(val))
+        except Exception:
+            pass
+
+    def paint_sky(self):
+        """画渐变天空，并把扫描线直接揉进逐行颜色里（省掉一层图元）。"""
+        self.bg_rows = []
+        for y in range(H):
+            t = y / (H - 1)
+            c = sky_at(t)
+            if (y % 3) == 0:
+                c = tuple(int(v * SCANLINE_FACTOR) for v in c)
+            self.bg_rows.append(c)
+            self.canvas.create_line(0, y, W, y, fill=hexof(c), tags='bg')
+
+        self.draw_ground()
+        self.draw_cranes()
+
+    def draw_ground(self):
+        """底部的地面剪影：树丛、楼顶、起重机的底座轮廓。"""
+        base = H - 44
+        pts = [0, H, 0, base + 18]
+        # 几组树冠，用折线堆出高低起伏
+        bumps = [
+            (30, 16), (70, 30), (105, 12), (150, 26), (196, 34),
+            (240, 14), (285, 22), (330, 30), (372, 16), (420, 26),
+            (470, 34), (520, 18), (566, 12), (610, 28), (660, 20),
+            (705, 32), (750, 16), (800, 26), (850, 14), (900, 22),
+        ]
+        for x, hgt in bumps:
+            pts.extend([x, base - hgt])
+        pts.extend([W, base + 18, W, H])
+        self.canvas.create_polygon(pts, fill=hexof(SILHOUETTE), outline='',
+                                   tags='bg')
+
+    def draw_crane(self, x, base_y, height, jib, counter, flip=False, tags='bg'):
+        """画一台塔吊剪影。参考图里右侧那台是主体，左侧几台更远更小。"""
+        s = -1 if flip else 1
+        top = base_y - height
+        col = hexof(SILHOUETTE)
+
+        # 塔身：两根竖线 + 交叉支撑
+        half = 7
+        self.canvas.create_line(x - half, base_y, x - half, top, fill=col,
+                                width=2, tags=tags)
+        self.canvas.create_line(x + half, base_y, x + half, top, fill=col,
+                                width=2, tags=tags)
+        steps = max(3, int(height / 16))
+        for i in range(steps):
+            y0 = base_y - height * i / steps
+            y1 = base_y - height * (i + 1) / steps
+            self.canvas.create_line(x - half, y0, x + half, y1, fill=col,
+                                    width=1, tags=tags)
+
+        # 顶部的塔尖
+        apex = top - height * 0.16
+        self.canvas.create_line(x, apex, x - half, top, fill=col, width=2, tags=tags)
+        self.canvas.create_line(x, apex, x + half, top, fill=col, width=2, tags=tags)
+
+        # 起重臂与平衡臂
+        jib_end = x + s * jib
+        cw_end = x - s * counter
+        self.canvas.create_line(x, top, jib_end, top, fill=col, width=3, tags=tags)
+        self.canvas.create_line(x, top, cw_end, top, fill=col, width=3, tags=tags)
+
+        # 拉索
+        self.canvas.create_line(apex, apex + 2, jib_end, top, fill=col,
+                                width=1, tags=tags)
+        self.canvas.create_line(apex, apex + 2, cw_end, top, fill=col,
+                                width=1, tags=tags)
+
+        # 平衡重
+        cw_w = max(6, int(counter * 0.22))
+        self.canvas.create_rectangle(cw_end - cw_w, top, cw_end + 4, top + 14,
+                                     fill=col, outline='', tags=tags)
+
+        # 小车与吊钩
+        trolley = x + s * jib * 0.62
+        hook_bottom = top + height * 0.30
+        self.canvas.create_line(trolley, top, trolley, hook_bottom, fill=col,
+                                width=1, tags=tags)
+        self.canvas.create_rectangle(trolley - 3, hook_bottom,
+                                     trolley + 3, hook_bottom + 7,
+                                     fill=col, outline='', tags=tags)
+
+    def draw_cranes(self):
+        ground = H - 40
+        # 右侧那台大的，跟参考图一样伸进画面中央
+        self.draw_crane(760, ground, 300, 300, 70)
+        # 远处两台小的
+        self.draw_crane(120, ground - 8, 165, 130, 42)
+        self.draw_crane(255, ground - 4, 120, 95, 30, flip=True)
+
+    def glow_text(self, x, y, text, font, color, glow, layers=7, spread=1.6):
+        """霓虹辉光：由外向内叠若干层，越外层越接近背景色。
+
+        tkinter 画布没有透明度，所以只能把辉光色跟背景色混合后画实色，
+        再往上叠本体。层数多了会糊，7 层左右刚好。
+        """
+        bg = sky_at(y / H)
+        for i in range(layers, 0, -1):
+            t = (i / layers) ** 1.5
+            c = blend(glow, bg, t * 0.72)
+            for dx, dy in ((0, 0), (spread * i * 0.5, 0),
+                           (-spread * i * 0.5, 0), (0, spread * i * 0.5),
+                           (0, -spread * i * 0.5)):
+                self.canvas.create_text(x + dx, y + dy, text=text, font=font,
+                                        fill=hexof(c), tags='ui')
+        self.canvas.create_text(x, y, text=text, font=font, fill=color, tags='ui')
+
+    # ------------------------------------------------------------ 菜单
+
+    def clear(self):
+        # Text 控件不是画布图元，canvas.delete('all') 删不掉它。
+        # 不显式销毁的话，切回菜单后那个日志框会浮在窗口上。
+        if getattr(self, 'log', None) is not None:
+            try:
+                self.log.destroy()
+            except Exception:
+                pass
+            self.log = None
+        self.canvas.delete('all')
+
+    def draw_menu(self):
+        self.mode = 'menu'
+        self.clear()
+        self.buttons = {}
+
+        self.canvas.create_rectangle(0, 0, W, H, fill=hexof(sky_at(0.5)),
+                                     outline='', tags='bg')
+        self.paint_sky()
+
+        # 标题
+        self.glow_text(W / 2, 118, '花 娅 陌 质 流', self.f_title, '#ffffff', NEON)
+        self.canvas.create_text(W / 2, 162, text='把零碎的想法接上总线，慢慢发出去',
+                                font=self.f_sub, fill=NEON_SOFT, tags='ui')
+
+        # 四个按钮
+        self.make_button('write', '写 文 章', '打开编辑器，在浏览器里写', 0)
+        self.make_button('preview', '看 效 果', '在浏览器里预览站点', 1)
+        self.make_button('publish', '发布上线', '提交并推送到 GitHub', 2)
+        self.make_button('setup', '首次设置', '检查环境、安装依赖', 3)
+
+        # 状态栏
+        self.status_y = H - 22
+        self.canvas.create_text(30, self.status_y, text='', anchor='w',
+                                font=self.f_hint, fill=DIM, tags='status')
+        self.canvas.create_text(W - 30, self.status_y, text='Esc 退出',
+                                anchor='e', font=self.f_hint, fill=DIM, tags='ui')
+        self.refresh_status()
+
+    def make_button(self, key, label, hint, index):
+        col = index % 2
+        row = index // 2
+        bw, bh = 300, 92
+        gap_x, gap_y = 40, 26
+        start_x = (W - (bw * 2 + gap_x)) / 2
+        start_y = 218
+
+        x1 = start_x + col * (bw + gap_x)
+        y1 = start_y + row * (bh + gap_y)
+        x2, y2 = x1 + bw, y1 + bh
+
+        tag = f'btn_{key}'
+        self.buttons[key] = dict(x1=x1, y1=y1, x2=x2, y2=y2, tag=tag,
+                                 label=label, hint=hint)
+        self.paint_button(key, hover=False)
+
+        self.canvas.tag_bind(tag, '<Enter>', lambda e, k=key: self.set_hover(k, True))
+        self.canvas.tag_bind(tag, '<Leave>', lambda e, k=key: self.set_hover(k, False))
+        self.canvas.tag_bind(tag, '<Button-1>', lambda e, k=key: self.launch(k))
+
+    def paint_button(self, key, hover=False):
+        b = self.buttons[key]
+        tag = b['tag']
+        self.canvas.delete(tag)
+
+        if hover:
+            face = (58, 8, 48)
+            edge = NEON
+            text_col = '#ffffff'
+            hint_col = NEON_SOFT
+        else:
+            face = (36, 4, 42)
+            edge = '#8a2b6b'
+            text_col = '#ffd9ef'
+            hint_col = '#b98aa8'
+
+        cx = (b['x1'] + b['x2']) / 2
+        cy = (b['y1'] + b['y2']) / 2
+
+        # 悬停时先铺一层外发光
+        if hover:
+            for i in range(5, 0, -1):
+                g = blend(NEON_RGB, sky_at(cy / H), 0.55 + i * 0.07)
+                pts = rounded_points(b['x1'] - i * 1.6, b['y1'] - i * 1.6,
+                                     b['x2'] + i * 1.6, b['y2'] + i * 1.6,
+                                     12 + i, steps=6)
+                self.canvas.create_polygon(pts, fill=hexof(g), outline='',
+                                           tags=tag)
+
+        pts = rounded_points(b['x1'], b['y1'], b['x2'], b['y2'], 12)
+        self.canvas.create_polygon(pts, fill=hexof(face), outline=edge,
+                                   width=2, tags=tag)
+
+        # 左边缘一道青色高光，蒸汽波常见的霓虹描边
+        self.canvas.create_line(b['x1'] + 6, b['y1'] + 16,
+                                b['x1'] + 6, b['y2'] - 16,
+                                fill=CYAN if hover else '#3f7f8a',
+                                width=3, tags=tag)
+
+        self.canvas.create_text(cx, cy - 12, text=b['label'], font=self.f_btn,
+                                fill=text_col, tags=tag)
+        self.canvas.create_text(cx, cy + 20, text=b['hint'], font=self.f_hint,
+                                fill=hint_col, tags=tag)
+
+    def set_hover(self, key, on):
+        if self.mode != 'menu' or self.busy:
+            return
+        if self.hover == key and on:
+            return
+        if not on and self.hover != key:
+            return
+        if self.hover and self.hover != key:
+            self.paint_button(self.hover, hover=False)
+        self.hover = key if on else None
+        self.paint_button(key, hover=on)
+
+    # ------------------------------------------------------------ 状态
+
+    def refresh_status(self):
+        if self.mode != 'menu':
+            return
+        deps = (ROOT / 'node_modules').exists()
+        git = shutil.which('git')
+        remote = None
+        if git:
+            try:
+                r = subprocess.run([git, 'remote', 'get-url', 'origin'],
+                                   cwd=ROOT, capture_output=True, text=True,
+                                   timeout=8)
+                if r.returncode == 0:
+                    remote = r.stdout.strip()
+            except Exception:
+                pass
+
+        parts = []
+        parts.append((('依赖 已就绪' if deps else '依赖 未安装'), deps))
+        parts.append((('备份 已连接' if remote else '备份 未连接'), bool(remote)))
+
+        self.canvas.delete('status')
+        x = 30
+        for text, good in parts:
+            col = '#7dffb0' if good else '#ffb36b'
+            self.canvas.create_oval(x, self.status_y - 4, x + 8, self.status_y + 4,
+                                    fill=col, outline='', tags='status')
+            item = self.canvas.create_text(x + 15, self.status_y, text=text,
+                                           anchor='w', font=self.f_hint,
+                                           fill=DIM, tags='status')
+            bbox = self.canvas.bbox(item)
+            x = bbox[2] + 26
+        self.root.after(4000, self.refresh_status)
+
+    # ------------------------------------------------------------ 运行界面
+
+    def show_running(self, title):
+        self.mode = 'running'
+        self.hover = None
+        self.clear()
+        self.canvas.create_rectangle(0, 0, W, H, fill=hexof(sky_at(0.5)),
+                                     outline='', tags='bg')
+        self.paint_sky()
+
+        self.glow_text(W / 2, 62, title, self.f_btn, '#ffffff', NEON, layers=5)
+        self.canvas.create_text(W / 2, 96, text='输出实时显示在下面',
+                                font=self.f_hint, fill=NEON_SOFT, tags='ui')
+
+        # 日志区用真正的 Text 控件叠在画布上，方便滚动和选中
+        self.log = tk.Text(self.root, bg='#12000f', fg='#e8d0e0',
+                           insertbackground=NEON, font=self.f_log,
+                           relief='flat', bd=0, wrap='word',
+                           highlightthickness=1, highlightbackground='#8a2b6b')
+        self.canvas.create_window(W / 2, 356, window=self.log,
+                                  width=W - 96, height=380)
+
+        self.make_small_button('back', '返 回', 90, H - 46, self.back_to_menu)
+        self.stop_btn = self.make_small_button('stop', '停 止', W - 190, H - 46,
+                                               self.stop_proc)
+        self.canvas.itemconfigure(self.stop_btn, state='hidden')
+
+    def make_small_button(self, key, label, x, y, cmd):
+        tag = f'small_{key}'
+        w, h = 100, 36
+        pts = rounded_points(x, y - h / 2, x + w, y + h / 2, 9)
+        self.canvas.create_polygon(pts, fill='#2a0430', outline='#8a2b6b',
+                                   width=2, tags=(tag, 'ui'))
+        self.canvas.create_text(x + w / 2, y, text=label, font=self.f_hint,
+                                fill='#ffd9ef', tags=(tag, 'ui'))
+        self.canvas.tag_bind(tag, '<Button-1>', lambda e: cmd())
+        self.canvas.tag_bind(tag, '<Enter>', lambda e: self.canvas.itemconfigure(
+            self.canvas.find_withtag(tag)[0], fill='#4a0850'))
+        self.canvas.tag_bind(tag, '<Leave>', lambda e: self.canvas.itemconfigure(
+            self.canvas.find_withtag(tag)[0], fill='#2a0430'))
+        return tag
+
+    def back_to_menu(self):
+        if self.proc:
+            return
+        self.draw_menu()
+
+    def log_write(self, text):
+        if getattr(self, 'log', None) and self.log.winfo_exists():
+            self.log.insert('end', text)
+            self.log.see('end')
+
+    def poll_queue(self):
+        try:
+            while True:
+                kind, payload = self.outq.get_nowait()
+                if kind == 'out':
+                    self.log_write(payload)
+                elif kind == 'done':
+                    self.on_proc_done(payload)
+        except queue.Empty:
+            pass
+        self.root.after(100, self.poll_queue)
+
+    def on_proc_done(self, code):
+        self.proc = None
+        self.busy = False
+        self.canvas.itemconfigure(self.stop_btn, state='hidden')
+        if code == 0:
+            self.log_write('\n─── 完成 ───\n')
+        else:
+            self.log_write(f'\n─── 结束，退出码 {code} ───\n')
+
+    # ------------------------------------------------------------ 执行
+
+    def resolve(self, name):
+        """Windows 上 pnpm / npm 是 .cmd，要用 which 找出真实路径。"""
+        return shutil.which(name) or name
+
+    def spawn(self, args, title):
+        if self.busy:
+            return
+        self.busy = True
+        self.show_running(title)
+        self.canvas.itemconfigure(self.stop_btn, state='normal')
+
+        env = dict(os.environ)
+        env['PYTHONIOENCODING'] = 'utf-8'
+        env['FORCE_COLOR'] = '0'
+
+        def worker():
+            try:
+                self.proc = subprocess.Popen(
+                    args, cwd=str(ROOT), stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
+                    env=env, bufsize=1, universal_newlines=True,
+                    encoding='utf-8', errors='replace',
+                    creationflags=subprocess.CREATE_NO_WINDOW if IS_WIN else 0)
+                for line in self.proc.stdout:
+                    self.outq.put(('out', line))
+                code = self.proc.wait()
+                self.outq.put(('done', code))
+            except Exception as exc:
+                self.outq.put(('out', f'启动失败：{exc}\n'))
+                self.outq.put(('done', 1))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def stop_proc(self):
+        if not self.proc:
+            return
+        pid = self.proc.pid
+        self.log_write('\n正在停止…\n')
+        try:
+            if IS_WIN:
+                subprocess.run(['taskkill', '/F', '/T', '/PID', str(pid)],
+                               capture_output=True)
+            else:
+                self.proc.terminate()
+        except Exception:
+            pass
+
+    # ------------------------------------------------------------ 四个动作
+
+    def need_deps(self):
+        if (ROOT / 'node_modules').exists():
+            return True
+        self.show_running('还没装依赖')
+        self.log_write('项目依赖还没有安装。\n\n请先返回，选「首次设置」。\n')
+        self.busy = False
+        self.proc = None
+        self.canvas.itemconfigure(self.stop_btn, state='hidden')
+        return False
+
+    def launch(self, key):
+        if self.busy:
+            return
+        if key == 'write':
+            if self.need_deps():
+                self.spawn([self.resolve('pnpm'), 'editor', '--open'], '写文章')
+        elif key == 'preview':
+            if self.need_deps():
+                self.spawn([self.resolve('pnpm'), 'dev'], '看效果')
+                self.root.after(5000, self.open_browser)
+        elif key == 'publish':
+            if self.need_deps():
+                self.start_publish()
+        elif key == 'setup':
+            self.spawn([self.resolve('pnpm'), 'install'], '首次设置')
+
+    def open_browser(self):
+        try:
+            os.startfile('http://localhost:4321')
+        except Exception:
+            pass
+
+    def start_publish(self):
+        """发布前先确认能连上 GitHub，再让用户填一句说明。"""
+        self.show_running('发布上线')
+        self.log_write('正在检查能否连上 GitHub…\n')
+        self.busy = True
+
+        def probe():
+            git = shutil.which('git')
+            ok = False
+            detail = ''
+            if not git:
+                detail = '没有找到 git，请先做「首次设置」。'
+            else:
+                try:
+                    r = subprocess.run([git, 'ls-remote', '--heads', 'origin'],
+                                       cwd=str(ROOT), capture_output=True,
+                                       text=True, timeout=40)
+                    ok = r.returncode == 0
+                    detail = (r.stderr or '').strip()
+                except Exception as exc:
+                    detail = str(exc)
+            self.root.after(0, lambda: self.after_probe(ok, detail))
+
+        threading.Thread(target=probe, daemon=True).start()
+
+    def after_probe(self, ok, detail):
+        if not ok:
+            self.busy = False
+            self.log_write(
+                '连不上 GitHub。\n\n'
+                '最常见的原因是代理没开：\n'
+                '  1. 打开 Clash Verge\n'
+                '  2. 确认「订阅」里已经导入了节点\n'
+                '  3. 打开「系统代理」开关\n\n'
+                '然后返回重试。\n')
+            if detail:
+                self.log_write(f'\n（细节：{detail[:300]}）\n')
+            return
+
+        self.log_write('连接正常。\n')
+        self.ask_message()
+
+    def ask_message(self):
+        """弹一个自绘的小面板问提交说明，避免用灰扑扑的系统对话框。"""
+        self.busy = False
+        overlay = self.canvas.create_rectangle(0, 0, W, H, fill='#12000f',
+                                               outline='', stipple='gray50',
+                                               tags='modal')
+        w, h = 520, 210
+        x1, y1 = (W - w) / 2, (H - h) / 2
+        pts = rounded_points(x1, y1, x1 + w, y1 + h, 14)
+        self.canvas.create_polygon(pts, fill='#22032a', outline=NEON, width=2,
+                                   tags='modal')
+        self.canvas.create_text(W / 2, y1 + 40, text='这次改了什么？',
+                                font=self.f_btn, fill='#ffffff', tags='modal')
+        self.canvas.create_text(W / 2, y1 + 70,
+                                text='直接回车用「更新内容」',
+                                font=self.f_hint, fill=NEON_SOFT, tags='modal')
+
+        entry = tk.Entry(self.root, bg='#12000f', fg='#ffffff',
+                         insertbackground=NEON, font=self.f_sub, relief='flat',
+                         highlightthickness=1, highlightbackground='#8a2b6b')
+        self.canvas.create_window(W / 2, y1 + 112, window=entry, width=w - 80,
+                                  height=34)
+        entry.focus_set()
+
+        def submit(_event=None):
+            text = entry.get().strip() or '更新内容'
+            entry.destroy()
+            self.canvas.delete('modal')
+            self.do_publish(text)
+
+        entry.bind('<Return>', submit)
+        self._modal_entry = entry
+        self._modal_submit = submit
+
+        self.canvas.create_text(W / 2, y1 + 165,
+                                text='回车确认　·　内容不为空',
+                                font=self.f_hint, fill=DIM, tags='modal')
+
+    def do_publish(self, message):
+        self.show_running('发布上线')
+        self.busy = True
+        self.canvas.itemconfigure(self.stop_btn, state='normal')
+        git = shutil.which('git') or 'git'
+
+        def worker():
+            def run(args, timeout=None):
+                self.outq.put(('out', f'$ git {" ".join(args)}\n'))
+                r = subprocess.run([git] + args, cwd=str(ROOT),
+                                   capture_output=True, text=True,
+                                   encoding='utf-8', errors='replace',
+                                   timeout=timeout)
+                if r.stdout:
+                    self.outq.put(('out', r.stdout))
+                if r.stderr:
+                    self.outq.put(('out', r.stderr))
+                return r.returncode
+
+            run(['add', '-A'])
+            changed = subprocess.run([git, 'status', '--short'], cwd=str(ROOT),
+                                     capture_output=True, text=True,
+                                     encoding='utf-8', errors='replace')
+            if not changed.stdout.strip():
+                self.outq.put(('out', '\n没有任何改动，不用发布。\n'))
+                self.outq.put(('done', 0))
+                return
+
+            self.outq.put(('out', '\n这次要提交的文件：\n'))
+            self.outq.put(('out', changed.stdout + '\n'))
+
+            if run(['commit', '-m', message]) != 0:
+                self.outq.put(('out', '\n提交失败，把上面的报错发给我看看。\n'))
+                self.outq.put(('done', 1))
+                return
+
+            self.outq.put(('out', '\n正在推送到 GitHub…\n'))
+            code = run(['push'], timeout=180)
+            if code == 0:
+                self.outq.put(('out', '\n推送成功！等一两分钟刷新网址就能看到更新。\n'))
+            else:
+                self.outq.put(('out',
+                               '\n推送失败。常见原因：\n'
+                               '  - 代理掉了，重开 Clash Verge 再试\n'
+                               '  - 还没登录 GitHub：gh auth login\n'
+                               '  - 缺 workflow 权限：gh auth refresh -s workflow\n'))
+            self.outq.put(('done', code))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    # ------------------------------------------------------------ 交互
+
+    def on_escape(self):
+        if self.mode == 'running' and self.proc:
+            self.stop_proc()
+        elif self.mode == 'running':
+            self.back_to_menu()
+        else:
+            self.root.destroy()
+
+
+def work_area():
+    """屏幕可用区域（扣掉任务栏）。"""
+    if IS_WIN:
+        import ctypes.wintypes as wt
+
+        class RECT(ctypes.Structure):
+            _fields_ = [('l', wt.LONG), ('t', wt.LONG),
+                        ('r', wt.LONG), ('b', wt.LONG)]
+
+        rc = RECT()
+        # SPI_GETWORKAREA = 48
+        ctypes.windll.user32.SystemParametersInfoW(48, 0, ctypes.byref(rc), 0)
+        if rc.r > rc.l and rc.b > rc.t:
+            return rc.r - rc.l, rc.b - rc.t
+    return 1920, 1080
+
+
+def center_window(win, w, h):
+    """把窗口摆到工作区正中央。
+
+    Windows 给新窗口的默认位置是层叠下来的，可能把窗口底部推到屏幕外面，
+    底下那排状态栏就看不见了。所以自己算一次位置，顺便保证不越界。
+    """
+    win.update_idletasks()
+    aw, ah = work_area()
+    title_bar = 40                      # 标题栏大约占这么多
+    x = max(0, (aw - w) // 2)
+    y = max(0, (ah - (h + title_bar)) // 2)
+    win.geometry(f'{w}x{h}+{x}+{y}')
+
+
+def crash_box(message):
+    """无控制台启动（pythonw）时，崩溃会静默消失。
+
+    所以兜一个系统级消息框，把真实错误摆到用户面前，
+    顺便写一份日志方便事后查。
+    """
+    try:
+        log = Path(os.environ.get('TEMP', '.')) / 'huayamozhiliu-crash.log'
+        log.write_text(message, encoding='utf-8')
+    except Exception:
+        pass
+    try:
+        ctypes.windll.user32.MessageBoxW(
+            0, message[:1500], '花娅陌质流 启动失败', 0x10)
+    except Exception:
+        print(message)
+
+
+def main():
+    if not IS_WIN:
+        print('这个窗口目前只针对 Windows 写。')
+    try:
+        root = tk.Tk()
+        Studio(root)
+        center_window(root, W, H)
+        # 窗口真正映射到屏幕之后，系统可能又把它摆到别处（层叠位置之类），
+        # 所以等它显示出来再摆一次，确保稳稳落在屏幕中央。
+        root.after(80, lambda: center_window(root, W, H))
+        root.after(600, lambda: center_window(root, W, H))
+        # 启动器应该自己冒到前面来，否则双击后可能藏在别的窗口后面
+        root.lift()
+        root.attributes('-topmost', True)
+        root.after(1200, lambda: root.attributes('-topmost', False))
+        root.focus_force()
+        root.mainloop()
+    except Exception:
+        import traceback
+        crash_box(traceback.format_exc())
+        raise
+
+
+if __name__ == '__main__':
+    main()
