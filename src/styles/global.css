@@ -721,15 +721,13 @@ body.is-board .site-footer a {
   color: inherit;
 }
 
-/* 代码高亮的双主题取色。
-   shiki 把亮色和暗色两套颜色分别写进每个 token 的 CSS 变量
-   （--shiki-light / --shiki-dark），这里按 <html data-theme> 选一套用。
+/* 代码高亮取色。
+   shiki 会把亮色和暗色两套颜色分别写进每个 token 的 CSS 变量
+   （--shiki-light / --shiki-dark）。站点现在固定亮色主题，所以只用
+   light 那一套；暗色那条规则随主题切换功能一起去掉了。
    变量缺失时回落到继承，保证纯文本部分不会没颜色。 */
 .astro-code span {
   color: var(--shiki-light, inherit);
-}
-:root[data-theme='dark'] .astro-code span {
-  color: var(--shiki-dark, inherit);
 }
 
 /* 亮色主题的注释色（#6e7781）在本站代码块底色上只有 4.1:1，
