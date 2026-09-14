@@ -12,42 +12,51 @@
    * 1. 颜色 —— 亮色主题
    * ------------------------------------------------------------------ */
 
-  /* 页面底色。想要纸张感可以用 #faf8f4 这类偏暖的白 */
-  --c-bg: #fbfaf8;
+  /* 页面底色。取自用户参考图（那座粉色宫殿）的天空：
+     最亮处 #faedef、天空主体 #e3c8d6，这里取两者之间偏亮的值。 */
+  --c-bg: #e8d0dd;
   /* 卡片/代码块等"浮起来一层"的背景 */
-  --c-bg-raised: #ffffff;
+  --c-bg-raised: #fdf7fb;
   /* 比底色再深一点点的区域，用于侧栏、页脚 */
-  --c-bg-sunken: #f4f2ef;
+  --c-bg-sunken: #dcc0d0;
 
-  /* 正文颜色 */
-  --c-text: #1f1d1a;
-  /* 次级文字：日期、摘要、说明 */
-  --c-text-muted: #6b6660;
-  /* 最弱的文字：版权、日期、栏目标题
-     注意：这个值不能随便调亮。它要同时满足在 --c-bg 和 --c-bg-sunken
-     上的 WCAG AA 对比度（4.5:1），当前值在两种底色上都是 4.6:1。 */
-  --c-text-faint: #736c64;
+  /* 正文颜色。整站文字统一走"落日色系"——从深琥珀到暖橙。
+     不能直接用 #ff9d2e 那种亮橘：它亮度约 0.4，压在这层淡粉底上
+     只有 1.5:1，等于看不见。所以要取落日色系里偏深的那一段
+     （像夕阳压在建筑上的那种琥珀色），才既同色系又读得清。 */
+  --c-text: #46280f;
+  /* 次级文字：日期、摘要、说明。
+     注意它会被用在 --c-bg-sunken（页脚、侧栏）上，那里的底更深，
+     所以这个值要按 sunken 而不是按 --c-bg 来定。 */
+  --c-text-muted: #6f3f10;
+  /* 最弱的文字：版权、日期、栏目标题。
+     比 muted 浅一档，但同样要满足在 --c-bg-sunken 上的 4.5:1。 */
+  --c-text-faint: #7a4613;
 
   /* 分割线、边框 */
-  --c-border: #e5e1db;
-  --c-border-strong: #d3cec6;
+  --c-border: #d3aec3;
+  --c-border-strong: #c19bb0;
 
-  /* 强调色 —— 整站唯一的彩色，换成你喜欢的就行 */
-  --c-accent: #b4532a;
-  --c-accent-hover: #8f3f1e;
+  /* 强调色／链接：落日色系里最靠近橘黄的一档，
+     再亮就掉到 4.5:1 以下了。 */
+  --c-accent: #8f4a10;
+  --c-accent-hover: #6f390b;
   /* 强调色的浅色底，用于标签、引用块背景 */
-  --c-accent-soft: #f6ece6;
+  --c-accent-soft: #f3d9e8;
 
   /* 链接 */
   --c-link: var(--c-accent);
   --c-link-hover: var(--c-accent-hover);
 
   /* 选中文字的背景 */
-  --c-selection: #f0d9cd;
+  --c-selection: #edc6db;
 
-  /* 代码块 */
-  --c-code-bg: #f5f3ef;
-  --c-code-text: #3a3530;
+  /* 代码块。
+     底色比页面底色浅得多：shiki 的那套语法配色（比如 #8250df 那个紫）
+     是按浅底调的，底色一深就有几个 token 掉到 4.5:1 以下。
+     与其逐个 token 去改，不如把底留亮。 */
+  --c-code-bg: #fcf5f9;
+  --c-code-text: #4a2c12;
   --c-code-border: var(--c-border);
 
   /* 阴影（想要完全扁平就把这里设成 none） */
@@ -122,39 +131,12 @@
 }
 
 /* ---------------------------------------------------------------------------
- * 3.5 暗色主题
+ * 3.5 暗色主题 —— 已停用
  * ------------------------------------------------------------------------
- *  <html> 上的 data-theme="dark" 由 BaseLayout 里的一小段脚本设置：
- *  默认跟随系统设置，右上角的切换按钮可以手动覆盖，选择记在浏览器本地。
+ *  日夜模式切换（按钮 + localStorage 偏好 + 防白闪脚本）已按用户要求整体移除，
+ *  站点现在固定亮色，所以这里原来的 :root[data-theme='dark'] 令牌块也删掉了。
  *
- *  - 想彻底不要暗色：把这一段删掉，再去掉 SiteHeader 里的 <ThemeToggle />
- *  - 想默认就是暗色：直接改 :root 里的值
+ *  留意：首页与各大板块页本来就是固定深色（它们靠 body.is-home / body.is-board
+ *  上的独立样式，不走这套令牌），所以去掉暗色主题不影响那几页。
  * ------------------------------------------------------------------------ */
-:root[data-theme='dark'] {
-  --c-bg: #16151a;
-  --c-bg-raised: #1e1d23;
-  --c-bg-sunken: #121116;
 
-  --c-text: #e8e5e1;
-  --c-text-muted: #a29c96;
-  --c-text-faint: #877f78;
-
-  --c-border: #2e2c34;
-  --c-border-strong: #403d47;
-
-  --c-accent: #e08a5f;
-  --c-accent-hover: #f0a37c;
-  --c-accent-soft: #2a2119;
-
-  --c-link: var(--c-accent);
-  --c-link-hover: var(--c-accent-hover);
-
-  --c-selection: #4a3324;
-
-  --c-code-bg: #1b1a20;
-  --c-code-text: #d8d4cf;
-  --c-code-border: var(--c-border);
-
-  --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.3);
-  --shadow-md: 0 4px 16px -4px rgb(0 0 0 / 0.5);
-}

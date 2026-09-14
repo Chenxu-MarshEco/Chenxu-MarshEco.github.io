@@ -2,15 +2,10 @@
 /**
  * 全站页头。
  *
- * 导航链接已经全部去掉，只留左上角的站点名（点它回首页）。
- * 栏目入口统一挪到了首页「花娅陌域 → 花娅陌质流」那个子页面里，
- * 所以 site.nav 现在只被那一页用到。
- *
- * 主题切换按钮保留：它是外观开关、不是栏目导航，
- * 去掉的话访客就没法切明暗了。
+ * 导航链接和日夜模式切换都已按用户要求移除，只留左上角的站点名
+ * （点它回首页）。栏目入口统一在首页「花娅陌域 → 花娅陌质流」里。
  */
 import site from '../site.config';
-import ThemeToggle from './ThemeToggle.astro';
 import { withBase } from '../utils/url';
 
 const base = withBase('/');
@@ -19,6 +14,5 @@ const base = withBase('/');
 <header class="site-header">
   <div class="container site-header__inner">
     <a class="site-title" href={base}>{site.title}</a>
-    <ThemeToggle />
   </div>
 </header>

@@ -81,28 +81,12 @@ const ogImage = absoluteUrl('/og-default.svg', Astro.site);
     )}
     {updatedTime && <meta property="article:modified_time" content={updatedTime.toISOString()} />}
 
-    <!-- 主题色：影响手机浏览器地址栏颜色，改 tokens.css 时记得同步这两个值 -->
-    <meta name="theme-color" content="#fbfaf8" media="(prefers-color-scheme: light)" />
-    <meta name="theme-color" content="#16151a" media="(prefers-color-scheme: dark)" />
+    <!-- 主题色：影响手机浏览器地址栏颜色，改 tokens.css 时记得同步 -->
+    <meta name="theme-color" content="#e8d0dd" />
 
-    <!--
-      在页面绘制之前就把主题定下来，避免"先白闪一下再变黑"。
-      这段必须留在 head 里并且是 is:inline，不要改成外部脚本。
-    -->
+    <!-- 站点固定亮色主题，data-theme 供 tokens.css 的选择器使用 -->
     <script is:inline>
-      (() => {
-        try {
-          const saved = localStorage.getItem('theme');
-          const mode = saved === 'light' || saved === 'dark' ? saved : 'auto';
-          const dark =
-            mode === 'dark' ||
-            (mode === 'auto' && matchMedia('(prefers-color-scheme: dark)').matches);
-          document.documentElement.dataset.theme = dark ? 'dark' : 'light';
-          document.documentElement.dataset.themeMode = mode;
-        } catch {
-          document.documentElement.dataset.theme = 'light';
-        }
-      })();
+      document.documentElement.dataset.theme = 'light';
     </script>
   </head>
 
