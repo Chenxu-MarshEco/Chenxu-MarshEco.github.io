@@ -2,22 +2,69 @@
 import BaseLayout from '../layouts/BaseLayout.astro';
 import site from '../site.config';
 import { withBase } from '../utils/url';
+
+const skyline = withBase('/img/home/skyline.png');
 ---
 
 <BaseLayout description={site.description} bodyClass="is-home">
   {/*
-    整屏背景是一张合成好的图片（2400x1350，228 KB）：
-    天空渐变、带横格栅的落日、宁波天际线、水面倒影、扫描线全在里面。
+    蒸汽波背景，分四层叠（而不是烘焙成一张图）。
 
-    早先这里是四层实时叠加（渐变背景 + 带 drop-shadow 的落日 SVG +
-    整屏 mix-blend-mode 的扫描线 + 两张定位背景图）。实测那种做法
-    首屏要做混合与阴影计算，观感上"背景加载很慢"，而其实天际线图片
-    只有 29 KB。合成成一张平铺图片后渲染是瞬时的。
+    选分层是刻意的：后面要加动效，分层能让每层独立动 ——
+      扫描线层  滚动 background-position  → CRT 扫描
+      落日层    呼吸式辉光 / 缓缓下沉
+      天际线层  视差位移
+      天空层    色相缓慢漂移
+    烘焙成一张图就只能整体缩放平移，做不了这些。
 
-    图片里的天际线取自用户提供的宁波照片，最高那栋（宁波中心大厦）
-    顶部的 V 形分叉是特意保留下来的 —— 那栋楼最有辨识度的就是这个轮廓。
+    层次（由后到前）：天空渐变 → 落日 → 扫描线 → 天际线（挡住落日下半部）
+
+    剪影里宁波中心大厦（最高那栋）被裁到画面正中，这样无论屏幕多宽，
+    它都会落在两个板块之间的缝隙上，不会被挡住。顶部那个 V 形分叉是
+    那栋楼的标志，提取时特意保住了。
   */}
-  <div class="vapor" aria-hidden="true"></div>
+  <div class="vapor" aria-hidden="true">
+    <div class="vapor__sky"></div>
+
+    <div class="vapor__sun">
+      <svg viewBox="0 0 200 200" role="presentation">
+        <defs>
+          <linearGradient id="sunGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#fff6b0"></stop>
+            <stop offset="28%" stop-color="#ffd23f"></stop>
+            <stop offset="60%" stop-color="#ff9d2e"></stop>
+            <stop offset="100%" stop-color="#ff5200"></stop>
+          </linearGradient>
+          {/*
+            蒸汽波落日的关键：下半部分被横条切开，越往下条纹越粗。
+            用 mask 挖空，露出的是背后天空本身，而不是画上去的颜色。
+          */}
+          <mask id="sunMask">
+            <rect width="200" height="200" fill="#fff"></rect>
+            <g fill="#000">
+              <rect y="102" width="200" height="3"></rect>
+              <rect y="112" width="200" height="4"></rect>
+              <rect y="123" width="200" height="5"></rect>
+              <rect y="135" width="200" height="7"></rect>
+              <rect y="148" width="200" height="9"></rect>
+              <rect y="162" width="200" height="11"></rect>
+              <rect y="177" width="200" height="14"></rect>
+            </g>
+          </mask>
+        </defs>
+        <circle cx="100" cy="100" r="100" fill="url(#sunGrad)" mask="url(#sunMask)"></circle>
+      </svg>
+    </div>
+
+    <div class="vapor__scan"></div>
+
+    <div class="vapor__sea">
+      <div class="vapor__skyline" style={`background-image:url(${skyline})`}></div>
+      <div class="vapor__reflectWrap">
+        <div class="vapor__reflect" style={`background-image:url(${skyline})`}></div>
+      </div>
+    </div>
+  </div>
 
   <div class="home">
     <header class="brand">
@@ -57,19 +104,107 @@ import { withBase } from '../utils/url';
 
 <style>
   /* ============================================================
-     蒸汽波背景 —— 一张合成图，不再分层实时叠加
+     蒸汽波背景
+     每一层都是独立的元素 / 独立的重绘属性，方便以后各自加动效
      ============================================================ */
 
   .vapor {
     position: fixed;
     inset: 0;
     z-index: -1;
+    overflow: hidden;
     pointer-events: none;
-    background-image: url('/img/home/home-bg.jpg');
+  }
+
+  /* 【可动效】天空：慢速色相漂移 */
+  .vapor__sky {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      180deg,
+      #1b0733 0%,
+      #3a0c56 12%,
+      #6a0f75 26%,
+      #a8007e 40%,
+      #d4007b 52%,
+      #f4557f 62%,
+      #ff9a5c 72%,
+      #ffc06a 78%,
+      #c23a6a 86%,
+      #5e1147 94%,
+      #2a0a35 100%
+    );
+  }
+
+  /*
+    【可动效】落日：呼吸式辉光、缓慢下沉。
+    位置要避开两样东西：右边的宁波中心大厦（53.8% 处），
+    以及左边标题所在的板块 —— 板块下移后落日只在它上方那一带露得出来，
+    所以整体抬高、贴左。
+  */
+  .vapor__sun {
+    position: absolute;
+    left: 2%;
+    width: 24vw;
+    bottom: 38vh;
+  }
+  .vapor__sun svg {
+    display: block;
+    width: 100%;
+    height: auto;
+    filter: drop-shadow(0 0 3vw rgba(255, 160, 60, 0.55));
+  }
+
+  /* 【可动效】CRT 扫描线：滚动 background-position 即可做成扫描动画 */
+  .vapor__scan {
+    position: absolute;
+    inset: 0;
+    background: repeating-linear-gradient(
+      180deg,
+      rgba(0, 0, 0, 0.22) 0 1px,
+      rgba(0, 0, 0, 0) 1px 3px
+    );
+    mix-blend-mode: multiply;
+  }
+
+  .vapor__sea {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+  }
+
+  /*
+    【可动效】天际线：视差位移。
+    剪影宽高比 1773:526，宁波中心大厦在宽度 53.8% 处（比正中略偏右，
+    和用户那张照片的取景一致）。板块之间留了很宽的缝，位置正好对上它，
+    楼的下半部分就从缝隙里露出来。
+  */
+  .vapor__skyline {
+    width: 100%;
+    aspect-ratio: 1773 / 526;
     background-repeat: no-repeat;
-    /* 底边对齐：天际线和水面始终贴着视口底部，上方天空随屏幕高度伸缩 */
     background-position: center bottom;
-    background-size: cover;
+    background-size: 100% 100%;
+    /* 屏幕很宽时别让楼群高得离谱 */
+    max-height: 62vh;
+  }
+
+  /* 水面倒影：整体上下翻转，容器裁短并向下淡出 */
+  .vapor__reflectWrap {
+    height: clamp(56px, 10vh, 120px);
+    overflow: hidden;
+    mask-image: linear-gradient(180deg, #000 0%, transparent 85%);
+    -webkit-mask-image: linear-gradient(180deg, #000 0%, transparent 85%);
+  }
+  .vapor__reflect {
+    width: 100%;
+    aspect-ratio: 1773 / 526;
+    background-repeat: no-repeat;
+    background-position: center bottom;
+    background-size: 100% 100%;
+    transform: scaleY(-1);
+    opacity: 0.3;
   }
 
   /* ============================================================
@@ -83,13 +218,19 @@ import { withBase } from '../utils/url';
     min-height: 78vh;
   }
 
+  /*
+    标题与 LOGO 靠左放，把画面中轴让给宁波中心大厦。
+    居中摆放时标题正好压在那栋楼上，把它整个盖住了。
+  */
   .brand {
     display: flex;
     align-items: center;
-    justify-content: center;
-    gap: clamp(1rem, 3vw, 2.4rem);
+    justify-content: flex-start;
+    gap: clamp(1rem, 2.4vw, 2.2rem);
     flex-wrap: wrap;
-    margin-bottom: clamp(2.5rem, 7vh, 5rem);
+    margin-bottom: clamp(2rem, 5vh, 3.6rem);
+    /* 左侧留出容器内边距，别贴着屏幕边 */
+    padding-left: clamp(0px, 2vw, 2.5rem);
   }
 
   .brand__logo {
@@ -143,10 +284,16 @@ import { withBase } from '../utils/url';
 
   /* ---------- 两个大板块 ---------- */
 
+  /*
+    两个大板块之间刻意留出很宽的缝。
+    宁波中心大厦在画面 53.8% 处（略偏右），这条缝正好对上它，
+    让楼的下半部分能从中间露出来。缝隙宽度按容器宽度取百分比，
+    这样不同屏宽下都稳定对准同一个位置。
+  */
   .boards {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: clamp(1rem, 2.5vw, 2rem);
+    gap: 13%;
   }
 
   .board {
@@ -230,6 +377,8 @@ import { withBase } from '../utils/url';
   @media (max-width: 760px) {
     .boards {
       grid-template-columns: minmax(0, 1fr);
+      /* 变成单列后 13% 会变成巨大的行间距，改回正常值 */
+      gap: 1.2rem;
     }
     .brand {
       flex-direction: column;
