@@ -15,6 +15,10 @@ dist/
 # 编辑器本地的草稿暂存
 .tmp/
 
+# Python 字节码缓存（控制窗口跑一次就会生成，不该进仓库）
+__pycache__/
+*.py[cod]
+
 # 系统垃圾
 .DS_Store
 Thumbs.db
