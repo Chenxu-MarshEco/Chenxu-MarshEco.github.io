@@ -1,11 +1,59 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="站点图标">
-  <rect width="64" height="64" rx="14" fill="#b4532a" />
-  <g stroke="#fbfaf8" stroke-width="4" stroke-linecap="round" fill="none">
-    <path d="M14 32h36" />
-  </g>
-  <g fill="#fbfaf8">
-    <circle cx="18" cy="32" r="5" />
-    <circle cx="32" cy="32" r="5" />
-    <circle cx="46" cy="32" r="5" />
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="花涧堂">
+  <!--
+    蒸汽波日落 + 塔吊剪影。
+    配色逐带采样自参考图：顶部 #4a0f61 → 中段最亮 #d4007b → 压暗 #8f0050 → 剪影 #050004。
+
+    两个针对小尺寸的决定：
+
+    1. 塔吊整体下移，让起重臂落在 y≈25 的亮品红带上。
+       第一版画在 y≈9.5，那里是顶部深紫色，深色剪影压深色背景，
+       缩到 16px 就糊没了。参考图里塔吊也是压在亮色段的。
+
+    2. 塔吊画得比参考图粗：起重臂 3.5 单位、塔身 4.2 单位。
+       缩到 16px 各剩约 0.9 和 1.1 像素，再细就断了。
+
+    扫描线只留 5 条、18% 不透明度；多了会在小尺寸糊成一团。
+  -->
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#4a0f61" />
+      <stop offset="0.16" stop-color="#8a0f75" />
+      <stop offset="0.40" stop-color="#c4007e" />
+      <stop offset="0.52" stop-color="#d4007b" />
+      <stop offset="0.68" stop-color="#a80062" />
+      <stop offset="0.85" stop-color="#6d0042" />
+      <stop offset="1" stop-color="#1a0013" />
+    </linearGradient>
+    <clipPath id="round">
+      <rect width="64" height="64" rx="14" />
+    </clipPath>
+  </defs>
+
+  <g clip-path="url(#round)">
+    <rect width="64" height="64" fill="url(#sky)" />
+
+    <g fill="#000000" opacity="0.18">
+      <rect y="8" width="64" height="1.6" />
+      <rect y="17" width="64" height="1.6" />
+      <rect y="35" width="64" height="1.6" />
+      <rect y="44" width="64" height="1.6" />
+      <rect y="52" width="64" height="1.6" />
+    </g>
+
+    <g fill="#050004">
+      <polygon points="40,16 36.2,24.5 43.8,24.5" />
+      <rect x="37.9" y="24" width="4.2" height="34" />
+      <rect x="7.5" y="24.5" width="50" height="3.6" />
+      <rect x="50" y="26.5" width="8" height="8" />
+    </g>
+    <g stroke="#050004" stroke-width="1.3" fill="none">
+      <path d="M40 17.5 L9 24.5" />
+      <path d="M40 17.5 L57 24.5" />
+      <path d="M25 28.5 V37" />
+    </g>
+    <rect x="22.4" y="37" width="5.4" height="4" fill="#050004" />
+
+    <path d="M0 64 V55.5 L6 51 L13 56.5 L20 50 L28 55.5 L35 52.5 L43 57 L51 51.5 L58 56 L64 54 V64 Z"
+          fill="#050004" />
   </g>
 </svg>
