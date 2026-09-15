@@ -1,5 +1,6 @@
 ---
 import BaseLayout from '../layouts/BaseLayout.astro';
+import HomeCranes from '../components/HomeCranes.astro';
 import site from '../site.config';
 import { withBase } from '../utils/url';
 import { flattenBoards, type BoardNode } from '../utils/boards';
@@ -21,25 +22,67 @@ const styleOf = (key: string) => editVars('home', key) ?? undefined;
 
 <BaseLayout description={site.description} bodyClass="is-home" layoutPage="home">
   {/*
-    蒸汽波背景，分四层叠（而不是烘焙成一张图）。
+    蒸汽波背景，分五层叠（而不是烘焙成一张图）。
 
-    选分层是刻意的：后面要加动效，分层能让每层独立动 ——
-      扫描线层  滚动 background-position  → CRT 扫描
-      落日层    呼吸式辉光 / 缓缓下沉
-      天际线层  视差位移
-      天空层    色相缓慢漂移
-    烘焙成一张图就只能整体缩放平移，做不了这些。
+    选分层是刻意的：每一层各自动，互不牵制 ——
+      天空层    色带缓慢上下流动 + 色相缓慢漂移
+      落日层    条纹微颤、辉光呼吸、整体缓缓浮动
+      扫描线层  按一个条纹周期滚动 → CRT 扫描
+      天际线层  三台塔吊的横臂各自缓慢回转
+      水面层    倒影被切成横向条带左右错动 + 日光柱碎金闪烁
+    烘焙成一张图就只能整体缩放平移，这些全做不了。
 
-    层次（由后到前）：天空渐变 → 落日 → 扫描线 → 天际线（挡住落日下半部）
+    层次（由后到前）：天空渐变 → 天空染色 → 落日 → 扫描线
+                      → 天际线（含塔吊）→ 水面倒影
 
     剪影里宁波中心大厦（最高那栋）被裁到画面正中，这样无论屏幕多宽，
     它都会落在两个板块之间的缝隙上，不会被挡住。顶部那个 V 形分叉是
     那栋楼的标志，提取时特意保住了。
   */}
+  {/*
+    天际线的滚动视差：页面滚动时整片天际线（连塔吊一起）轻微上移，
+    用 CSS 滚动驱动动画做，不需要 JS。浏览器不支持时整块不生效，
+    天际线就还是钉在底部 —— 页面本身完全不受影响。
+
+    ⚠ 这段必须写在 is:inline 里，不能并进下面的 <style>。
+    构建时 Lightning CSS 会把 animation-timeline 合并进 animation 简写
+    （animation: linear both horizon-parallax scroll(root)），
+    而 Chrome 到现在还不接受简写里的时间线 —— 那条声明会被整条判为无效，
+    动画静默失效：不报错、也不动，事后极难查。
+    is:inline 的样式不经过压缩器，长写形式能原样送到浏览器。
+  */}
+  <style is:inline>
+    @supports (animation-timeline: scroll()) {
+      @media (prefers-reduced-motion: no-preference) {
+        .vapor__horizon {
+          animation-name: horizon-parallax;
+          animation-timing-function: linear;
+          animation-fill-mode: both;
+          animation-timeline: scroll(root block);
+        }
+        @keyframes horizon-parallax {
+          from {
+            transform: translateY(0);
+          }
+          to {
+            transform: translateY(2.4%);
+          }
+        }
+      }
+    }
+  </style>
+
   <div class="vapor" aria-hidden="true">
-    <div class="vapor__sky"></div>
+    {/* 渐变画在比容器高一截的层上，平移这一层就等于让色带慢慢流动 */}
+    <div class="vapor__sky">
+      <div class="vapor__skyBands"></div>
+    </div>
+    <div class="vapor__skyTint"></div>
 
     <div class="vapor__sun" data-edit="sun" style={styleOf('sun')}>
+      {/* 呼吸的辉光。用单独一层来做，而不是动画 filter：
+          滤镜每帧都要重算，径向渐变只改透明度，便宜得多 */}
+      <div class="vapor__sunHalo"></div>
       <svg viewBox="0 0 200 200" role="presentation">
         <defs>
           <linearGradient id="sunGrad" x1="0" y1="0" x2="0" y2="1">
@@ -51,17 +94,30 @@ const styleOf = (key: string) => editVars('home', key) ?? undefined;
           {/*
             蒸汽波落日的关键：下半部分被横条切开，越往下条纹越粗。
             用 mask 挖空，露出的是背后天空本身，而不是画上去的颜色。
+
+            这些横条会各自缓慢上下游移几个单位（见样式里的 sun-stripes），
+            模拟热气把落日切碎时那种抖动。每条给一点相位差，
+            整片条纹就是流动的，而不是一块板在平移。
           */}
           <mask id="sunMask">
             <rect width="200" height="200" fill="#fff"></rect>
-            <g fill="#000">
-              <rect y="102" width="200" height="3"></rect>
-              <rect y="112" width="200" height="4"></rect>
-              <rect y="123" width="200" height="5"></rect>
-              <rect y="135" width="200" height="7"></rect>
-              <rect y="148" width="200" height="9"></rect>
-              <rect y="162" width="200" height="11"></rect>
-              <rect y="177" width="200" height="14"></rect>
+            <g class="sunStripes" fill="#000">
+              {[
+                { y: 102, h: 3 },
+                { y: 112, h: 4 },
+                { y: 123, h: 5 },
+                { y: 135, h: 7 },
+                { y: 148, h: 9 },
+                { y: 162, h: 11 },
+                { y: 177, h: 14 },
+              ].map((s, i) => (
+                <rect
+                  y={s.y}
+                  width="200"
+                  height={s.h}
+                  style={`animation-delay:${(-i * 0.9).toFixed(1)}s`}
+                />
+              ))}
             </g>
           </mask>
         </defs>
@@ -72,11 +128,29 @@ const styleOf = (key: string) => editVars('home', key) ?? undefined;
     <div class="vapor__scan"></div>
 
     <div class="vapor__sea">
-      <div class="vapor__skyline" style={`background-image:url(${skyline})`}></div>
+      {/*
+        天际线和塔吊共用一个容器，塔吊写在前面 ——
+        楼群因此会自然地挡住塔吊的下半截（这正是想要的效果）
+      */}
+      <div class="vapor__horizon">
+        <HomeCranes />
+        <div class="vapor__skyline" style={`background-image:url(${skyline})`}></div>
+      </div>
+
       <div class="vapor__reflectWrap">
         <div class="vapor__reflect" style={`background-image:url(${skyline})`}></div>
+        {/* 水面上的横向微光 */}
+        <div class="vapor__shimmer"></div>
+        {/* 落日正下方的碎金 */}
+        <div class="vapor__glitter"></div>
       </div>
+
+      {/* 水天交界那一道暖光 */}
+      <div class="vapor__shore"></div>
     </div>
+
+    {/* 像老录像带那样偶尔扫过一道很淡的亮带 */}
+    <div class="vapor__sweep"></div>
   </div>
 
   <div class="home">
@@ -122,7 +196,11 @@ const styleOf = (key: string) => editVars('home', key) ?? undefined;
 <style>
   /* ============================================================
      蒸汽波背景
-     每一层都是独立的元素 / 独立的重绘属性，方便以后各自加动效
+     每一层都是独立的元素 / 独立的重绘属性，各自加自己的动效
+
+     动效都只碰 transform / opacity —— 这两个属性走合成层，
+     不会每帧重算整屏渐变或重新布局。唯一的例外是扫描线的
+     multiply 混合，那是这层本来就要的。
      ============================================================ */
 
   .vapor {
@@ -131,12 +209,42 @@ const styleOf = (key: string) => editVars('home', key) ?? undefined;
     z-index: -1;
     overflow: hidden;
     pointer-events: none;
+
+    /* 落日中心（横向）和水面上那道日光柱共用这一个值：
+       改这里，两边一起跟着动，不会各走各的。 */
+    --sun-cx: 14vw;
+    --sun-w: 24vw;
+    /* 水面那一带的高度。倒影带和岸线的位置都以它为准 */
+    --water-h: clamp(56px, 10vh, 120px);
+    /* 剪影的墨色，取自 skyline.png 的实测像素（见 _setup/skyline-survey.ps1）。
+       塔吊用同一个值，才会和楼群糊成同一片剪影，而不是浮在上面的一层黑 */
+    --ink: #08020c;
   }
 
-  /* 【可动效】天空：慢速色相漂移 */
+  /* ------------------------------------------------------------
+     天空
+     ------------------------------------------------------------ */
+
   .vapor__sky {
     position: absolute;
     inset: 0;
+    overflow: hidden;
+    /* 渐变层没铺满时的兜底色 */
+    background: #2a0a35;
+  }
+
+  /*
+    【动效】色带缓慢上下流动。
+    渐变画在比容器高一截的层上再平移它 —— 直接动 background-position
+    会让整屏渐变每帧重绘，平移合成层则几乎不花代价。
+    起点 -15%、终点 +7% 都还在容器外面，所以永远不会露边。
+  */
+  .vapor__skyBands {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: -15%;
+    height: 130%;
     background: linear-gradient(
       180deg,
       #1b0733 0%,
@@ -151,38 +259,161 @@ const styleOf = (key: string) => editVars('home', key) ?? undefined;
       #5e1147 94%,
       #2a0a35 100%
     );
+    animation: sky-flow 78s ease-in-out infinite alternate;
   }
 
+  @keyframes sky-flow {
+    from {
+      transform: translateY(0);
+    }
+    to {
+      transform: translateY(7%);
+    }
+  }
+
+  /* 【动效】天空染色：一层很淡的品红→青紫，慢慢明灭，天色就有了呼吸 */
+  .vapor__skyTint {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      180deg,
+      rgba(96, 52, 214, 0.2) 0%,
+      rgba(255, 64, 164, 0.16) 58%,
+      rgba(255, 168, 88, 0.14) 100%
+    );
+    mix-blend-mode: screen;
+    animation: sky-tint 34s ease-in-out infinite alternate;
+  }
+
+  @keyframes sky-tint {
+    from {
+      opacity: 0.35;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  /* ------------------------------------------------------------
+     落日
+     ------------------------------------------------------------ */
+
   /*
-    【可动效】落日：呼吸式辉光、缓慢下沉。
     位置要避开两样东西：右边的宁波中心大厦（53.8% 处），
     以及左边标题所在的板块 —— 板块下移后落日只在它上方那一带露得出来，
     所以整体抬高、贴左。
   */
   .vapor__sun {
     position: absolute;
-    left: 2%;
-    width: 24vw;
+    left: calc(var(--sun-cx) - var(--sun-w) / 2);
+    width: var(--sun-w);
     bottom: 38vh;
+    /* 【动效】整体极缓慢地上下浮动（1.1vh ≈ 10px），
+       像地平线上那口气。幅度再大就变成「太阳在跳」了 */
+    animation: sun-float 21s ease-in-out infinite alternate;
   }
+
+  @keyframes sun-float {
+    from {
+      transform: translateY(0);
+    }
+    to {
+      transform: translateY(-1.1vh);
+    }
+  }
+
+  /* 注意：这里用 transform 平移，不会碰到 [data-edit] 写下的
+     translate / scale —— 它们是不同的属性，会叠加而不是互相覆盖 */
+
   .vapor__sun svg {
+    position: relative;
     display: block;
     width: 100%;
     height: auto;
     filter: drop-shadow(0 0 3vw rgba(255, 160, 60, 0.55));
   }
 
-  /* 【可动效】CRT 扫描线：滚动 background-position 即可做成扫描动画 */
+  /* 【动效】辉光呼吸。单独一层径向渐变，只改透明度和缩放 */
+  .vapor__sunHalo {
+    position: absolute;
+    inset: -22%;
+    border-radius: 50%;
+    background: radial-gradient(
+      circle,
+      rgba(255, 150, 64, 0.5) 0%,
+      rgba(255, 90, 60, 0.18) 45%,
+      transparent 72%
+    );
+    mix-blend-mode: screen;
+    animation: sun-halo 8.5s ease-in-out infinite alternate;
+  }
+
+  @keyframes sun-halo {
+    from {
+      opacity: 0.55;
+      transform: scale(0.97);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1.04);
+    }
+  }
+
+  /*
+    【动效】落日条纹上下游移。
+    幅度只有 4.5 个用户单位（≈ 落日渐变高度的 2%）：
+    快了像故障，慢了才像地平面上的热气。
+    每条的相位差在标签上给（见 index.astro 里的 animation-delay）。
+  */
+  .sunStripes rect {
+    animation: sun-stripes 9.5s ease-in-out infinite alternate;
+  }
+
+  @keyframes sun-stripes {
+    from {
+      transform: translateY(0);
+    }
+    to {
+      transform: translateY(4.5px);
+    }
+  }
+
+  /* ------------------------------------------------------------
+     扫描线
+     ------------------------------------------------------------ */
+
+  /*
+    【动效】CRT 扫描。
+    多留一个条纹周期的余量，向下平移正好一个周期（3px），
+    首尾接得上，看不出接缝。
+  */
   .vapor__scan {
     position: absolute;
-    inset: 0;
+    left: 0;
+    right: 0;
+    top: 0;
+    height: calc(100% + 6px);
     background: repeating-linear-gradient(
       180deg,
       rgba(0, 0, 0, 0.22) 0 1px,
       rgba(0, 0, 0, 0) 1px 3px
     );
     mix-blend-mode: multiply;
+    animation: scan-roll 1.15s linear infinite;
   }
+
+  @keyframes scan-roll {
+    from {
+      transform: translateY(0);
+    }
+    to {
+      transform: translateY(3px);
+    }
+  }
+
+  /* ------------------------------------------------------------
+     天际线（含塔吊）
+     ------------------------------------------------------------ */
 
   .vapor__sea {
     position: absolute;
@@ -192,7 +423,14 @@ const styleOf = (key: string) => editVars('home', key) ?? undefined;
   }
 
   /*
-    【可动效】天际线：视差位移。
+    天际线和塔吊的共同容器。塔吊写在前面、天际线写在后面，
+    楼群于是挡住塔吊的下半截。
+  */
+  .vapor__horizon {
+    position: relative;
+  }
+
+  /*
     剪影宽高比 1773:526，宁波中心大厦在宽度 53.8% 处（比正中略偏右，
     和用户那张照片的取景一致）。板块之间留了很宽的缝，位置正好对上它，
     楼的下半部分就从缝隙里露出来。
@@ -207,14 +445,22 @@ const styleOf = (key: string) => editVars('home', key) ?? undefined;
     max-height: 62vh;
   }
 
-  /* 水面倒影：整体上下翻转，容器裁短并向下淡出 */
+  /* ------------------------------------------------------------
+     水面
+     ------------------------------------------------------------ */
+
+  /* 倒影：整体上下翻转，容器裁短并向下淡出。
+     淡出遮罩必须留在容器上（不能挪到倒影自己身上）——
+     遮罩是在 transform 之后才应用的，跟着翻转的话就该从下往上亮了。 */
   .vapor__reflectWrap {
-    height: clamp(56px, 10vh, 120px);
+    position: relative;
+    height: var(--water-h);
     overflow: hidden;
     mask-image: linear-gradient(180deg, #000 0%, transparent 85%);
     -webkit-mask-image: linear-gradient(180deg, #000 0%, transparent 85%);
   }
   .vapor__reflect {
+    position: relative;
     width: 100%;
     aspect-ratio: 1773 / 526;
     background-repeat: no-repeat;
@@ -222,6 +468,175 @@ const styleOf = (key: string) => editVars('home', key) ?? undefined;
     background-size: 100% 100%;
     transform: scaleY(-1);
     opacity: 0.3;
+  }
+
+  /*
+    【动效】倒影被水切成横向条带，条带整体左右错动。
+    做法：在倒影上再叠一份同样的图，用重复渐变当遮罩只留条带，
+    再让这一份缓慢左右平移。这是水面倒影最标志性的那种「碎」。
+  */
+  .vapor__reflect::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: inherit;
+    mask-image: repeating-linear-gradient(180deg, #000 0 3px, transparent 3px 9px);
+    -webkit-mask-image: repeating-linear-gradient(180deg, #000 0 3px, transparent 3px 9px);
+    opacity: 0.5;
+    animation: reflect-chop 11s ease-in-out infinite alternate;
+  }
+
+  @keyframes reflect-chop {
+    from {
+      transform: translateX(-1.6%);
+    }
+    to {
+      transform: translateX(1.6%);
+    }
+  }
+
+  /* 【动效】水面横向微光：一条条极淡的亮线慢慢上下浮动 */
+  .vapor__shimmer {
+    position: absolute;
+    inset: 0;
+    background: repeating-linear-gradient(
+      180deg,
+      rgba(255, 186, 140, 0) 0 7px,
+      rgba(255, 186, 140, 0.1) 7px 8px,
+      rgba(255, 186, 140, 0) 8px 15px
+    );
+    animation: water-shift 7.5s ease-in-out infinite alternate;
+  }
+
+  @keyframes water-shift {
+    from {
+      transform: translateY(-3px);
+    }
+    to {
+      transform: translateY(3px);
+    }
+  }
+
+  /*
+    【动效】日光柱：落日正下方那一道碎金。
+    两层条纹周期不同、反向移动，叠起来才像水面在闪；
+    只做一层的话就是一块规规矩矩的百叶窗。
+    横向位置跟着 --sun-cx 走，和落日是同一套坐标。
+  */
+  .vapor__glitter {
+    position: absolute;
+    bottom: 0;
+    left: calc(var(--sun-cx) - 5vw);
+    width: 10vw;
+    height: 100%;
+    mix-blend-mode: screen;
+    mask-image: radial-gradient(70% 100% at 50% 0%, #000 0%, transparent 80%);
+    -webkit-mask-image: radial-gradient(70% 100% at 50% 0%, #000 0%, transparent 80%);
+  }
+  .vapor__glitter::before,
+  .vapor__glitter::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: repeating-linear-gradient(
+      180deg,
+      rgba(255, 214, 150, 0.85) 0 2px,
+      rgba(255, 214, 150, 0) 2px 7px
+    );
+  }
+  .vapor__glitter::before {
+    animation: glitter-a 4.6s ease-in-out infinite alternate;
+  }
+  .vapor__glitter::after {
+    background: repeating-linear-gradient(
+      180deg,
+      rgba(255, 236, 200, 0.7) 0 1px,
+      rgba(255, 236, 200, 0) 1px 11px
+    );
+    animation: glitter-b 6.9s ease-in-out infinite alternate;
+  }
+
+  @keyframes glitter-a {
+    from {
+      transform: translateY(-4px) scaleY(0.96);
+      opacity: 0.75;
+    }
+    to {
+      transform: translateY(4px) scaleY(1.05);
+      opacity: 1;
+    }
+  }
+
+  @keyframes glitter-b {
+    from {
+      transform: translateY(5px);
+      opacity: 0.5;
+    }
+    to {
+      transform: translateY(-5px);
+      opacity: 0.95;
+    }
+  }
+
+  /*
+    【动效】水天交界那一道暖光，慢慢明灭。
+    蒸汽波里水面总是先亮起这一条线，倒影的层次才有落点。
+  */
+  .vapor__shore {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: var(--water-h);
+    height: 2px;
+    background: linear-gradient(
+      90deg,
+      rgba(255, 200, 130, 0) 0%,
+      rgba(255, 214, 150, 0.55) 16%,
+      rgba(255, 236, 196, 0.85) 50%,
+      rgba(255, 150, 200, 0.5) 84%,
+      rgba(255, 150, 200, 0) 100%
+    );
+    filter: blur(0.6px);
+    animation: shore-glow 6.2s ease-in-out infinite alternate;
+  }
+
+  @keyframes shore-glow {
+    from {
+      opacity: 0.55;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  /* 【动效】老录像带那样，隔一阵从上往下扫过一道很淡的亮带。
+     走到画面外之后停一会儿再来，才像「偶发」而不是节拍器。 */
+  .vapor__sweep {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    height: 26vh;
+    background: linear-gradient(
+      180deg,
+      transparent 0%,
+      rgba(255, 226, 255, 0.05) 45%,
+      transparent 100%
+    );
+    mix-blend-mode: screen;
+    animation: vhs-sweep 19s linear infinite;
+  }
+
+  @keyframes vhs-sweep {
+    0% {
+      transform: translateY(-32vh);
+    }
+    55% {
+      transform: translateY(104vh);
+    }
+    100% {
+      transform: translateY(104vh);
+    }
   }
 
   /* ============================================================
@@ -418,6 +833,22 @@ const styleOf = (key: string) => editVars('home', key) ?? undefined;
     }
     .board:hover .board__bg {
       transform: none;
+    }
+    /*
+      整层背景一律停住。
+      global.css 里那条全局规则已经把时长压到 0.01ms，
+      但那些是 infinite 的动画，压到 0.01ms 之后反而会每帧在关键帧之间跳，
+      看起来像闪。所以这里直接停掉，元素回到各自的静止状态 ——
+      也就是「没有动效时本来的样子」。
+
+      注意：塔吊在 HomeCranes 组件里，Astro 的作用域选择器管不到它的内部
+      元素，所以组件里自带了一条同样的规则。
+    */
+    .vapor,
+    .vapor *,
+    .vapor *::before,
+    .vapor *::after {
+      animation: none !important;
     }
   }
 

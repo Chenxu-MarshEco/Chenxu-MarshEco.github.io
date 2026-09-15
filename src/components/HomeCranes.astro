@@ -1,0 +1,280 @@
+---
+/**
+ * 首页天际线里的三台塔吊剪影（纯 SVG，没有位图）。
+ *
+ * ## 为什么排在天际线图片「后面」
+ *
+ * 塔吊和楼群用的是同一个墨色，一旦重叠就糊成一片、什么也看不见。
+ * 剪影只有在天空前面才读得出来，所以三台都挑了「楼顶之上还有空」的位置，
+ * 并且允许楼群挡住它们的下半截 —— 真实照片里的塔吊也常是这样，
+ * 只露出上半截和横臂。
+ *
+ * ## 位置是量出来的，不是估的
+ *
+ * 首页那两张板块卡片是不透明的，正好压在画面中段；天际线只有三处
+ * 横向空档能露出来：左侧留白、两张卡片之间的缝、右侧留白。
+ * 三台塔吊就分别落在这三处（量测脚本见 _setup/crane-fit.mjs）。
+ *
+ * 两张卡片之间的缝是固定的 135px 宽（首页网格被排版数据右移了 13.5px），
+ * 它不会随屏幕变宽而变宽 —— 所以最壮的那台高度用 min(70%, 290px) 封顶，
+ * 免得在 1920 以上的屏上横臂捅出缝外。
+ *
+ * ⚠ 耦合提醒：那道缝的位置取决于 src/data/layout.json 里 home.boards 的
+ *   dx 微调值（现在是 1.3%）。如果在编辑器「排版」里把板块左右挪了，
+ *   缝会跟着移，塔吊的 left 就要重新量（跑 _setup/home-motion-check.mjs，
+ *   它会打印每台塔吊的可见高度和朝向）。
+ *
+ * ## 横臂怎么「转」
+ *
+ * 真实的塔吊是绕竖直轴回转（俯视看是扫过去），侧视剪影里没法真做三维。
+ * 这里用「绕塔身顶点小幅旋转 + 同时横向压缩」近似：
+ *   横向压缩 表现横臂转开时的透视缩短 —— 前后臂一起缩短，这点和真的一样。
+ *            横臂末端的水平位移主要靠它，所以量给得比较足（最多缩 9%）。
+ *   旋转     只给 ±2.4°，表现回转时的轻微摆动。
+ *            给大了就不像回转、像横臂翘起来了，所以刻意压住。
+ */
+
+/** 塔身桁架：两条竖主弦，中间是来回折的斜腹杆 */
+function mast(x0, x1, yTop, yBot, step) {
+  const chords = `M${x0} ${yBot}V${yTop}M${x1} ${yBot}V${yTop}`;
+  let webs = '';
+  let toRight = true;
+  let first = true;
+  for (let y = yBot - step; y > yTop; y -= step) {
+    webs += `${first ? 'M' : 'L'}${toRight ? x1 : x0} ${y}`;
+    first = false;
+    toRight = !toRight;
+  }
+  webs += `L${toRight ? x1 : x0} ${yTop}`;
+  return { chords, webs };
+}
+
+/** 横臂（前后臂通用）：两条水平主弦，中间是斜腹杆 */
+function arm(yTop, yBot, xFrom, xTo, step) {
+  const chords = `M${xFrom} ${yTop}H${xTo}M${xFrom} ${yBot}H${xTo}`;
+  let webs = '';
+  let down = true;
+  let first = true;
+  for (let x = xFrom + step; x < xTo; x += step) {
+    webs += `${first ? 'M' : 'L'}${x} ${down ? yBot : yTop}`;
+    first = false;
+    down = !down;
+  }
+  webs += `L${xTo} ${down ? yBot : yTop}`;
+  return { chords, webs };
+}
+
+/*
+  三台塔吊的全部几何。约定一件重要的事：
+  **塔身中轴永远放在 viewBox 的正中**（axis === viewBox 宽度的一半）。
+  这样外面只要 left: X% 就是塔身的位置，不用再补偏移量。
+*/
+const CRANES = [
+  {
+    /* 两张卡片之间的缝里那台：最高、最壮，是主角 */
+    key: 'gap',
+    viewBox: '0 0 236 348',
+    mast: mast(111, 125, 72, 348, 22),
+    jib: arm(52, 64, 118, 230, 15),
+    cjib: arm(50, 62, 62, 118, 14),
+    counterweight: { x: 48, y: 44, width: 22, height: 30 },
+    apex: 'M113 62L118 8L123 62Z',
+    ties: 'M118 10L226 54M118 10L66 50',
+    cab: { x: 124, y: 60, width: 15, height: 16 },
+    trolley: { x: 172, y: 60, width: 12, height: 7 },
+    cable: 'M178 67V122',
+    hook: { x: 172, y: 122, width: 12, height: 9 },
+    base: { x: 100, y: 338, width: 36, height: 10 },
+  },
+  {
+    /* 左侧留白那台：横臂朝画面外，免得被左边那张卡片切掉 */
+    key: 'left',
+    viewBox: '0 0 192 300',
+    mast: mast(90, 102, 64, 300, 20),
+    jib: arm(42, 54, 96, 188, 14),
+    cjib: arm(40, 52, 52, 96, 13),
+    counterweight: { x: 38, y: 34, width: 20, height: 28 },
+    apex: 'M92 52L96 8L100 52Z',
+    ties: 'M96 10L184 44M96 10L56 42',
+    cab: { x: 100, y: 52, width: 14, height: 14 },
+    trolley: { x: 142, y: 50, width: 11, height: 6 },
+    cable: 'M147 56V104',
+    hook: { x: 142, y: 104, width: 11, height: 8 },
+    base: { x: 80, y: 292, width: 32, height: 9 },
+  },
+  {
+    /* 右侧留白那台：最小、最远，把画面右端收住 */
+    key: 'right',
+    viewBox: '0 0 168 252',
+    mast: mast(78, 90, 56, 252, 18),
+    jib: arm(34, 46, 84, 162, 13),
+    cjib: arm(32, 44, 44, 84, 12),
+    counterweight: { x: 32, y: 26, width: 18, height: 26 },
+    apex: 'M80 44L84 6L88 44Z',
+    ties: 'M84 8L158 36M84 8L48 34',
+    cab: { x: 88, y: 44, width: 12, height: 12 },
+    trolley: { x: 122, y: 42, width: 10, height: 6 },
+    cable: 'M127 48V88',
+    hook: { x: 122, y: 88, width: 10, height: 7 },
+    base: { x: 70, y: 245, width: 28, height: 7 },
+  },
+];
+---
+
+{/*
+  data-edit 挂在整层上：编辑器的「排版」模式可以整片挪塔吊，
+  但不会去动单台 —— 单台的位置和楼群的对位是量过的，挪了就穿帮。
+  aria-hidden：纯装饰，读屏软件不用念它。
+*/}
+<div class="cranes" data-edit="cranes" aria-hidden="true">
+  {
+    CRANES.map((c) => (
+      <div class={`crane crane--${c.key}`}>
+        <svg class="crane__art" viewBox={c.viewBox} role="presentation">
+          {/* 塔身：不跟着横臂转 */}
+          <rect {...c.base} fill="currentColor" />
+          <path d={c.mast.chords} fill="none" stroke="currentColor" stroke-width="2.6" />
+          <path d={c.mast.webs} fill="none" stroke="currentColor" stroke-width="1.4" />
+
+          {/* 回转部分：塔顶、前后臂、配重、司机室、小车吊钩，一起转 */}
+          <g class="crane__slew">
+            <path d={c.apex} fill="currentColor" />
+            <path d={c.ties} fill="none" stroke="currentColor" stroke-width="1.5" />
+            <path d={c.jib.chords} fill="none" stroke="currentColor" stroke-width="2.2" />
+            <path d={c.jib.webs} fill="none" stroke="currentColor" stroke-width="1.3" />
+            <path d={c.cjib.chords} fill="none" stroke="currentColor" stroke-width="2.2" />
+            <path d={c.cjib.webs} fill="none" stroke="currentColor" stroke-width="1.3" />
+            <rect {...c.counterweight} fill="currentColor" />
+            <path d={c.cable} fill="none" stroke="currentColor" stroke-width="1.2" />
+            <rect {...c.hook} fill="currentColor" />
+            <rect {...c.trolley} fill="currentColor" />
+            <rect {...c.cab} fill="currentColor" />
+          </g>
+        </svg>
+      </div>
+    ))
+  }
+</div>
+
+<style>
+  /* 整层：铺满天际线那一块，塔吊各自绝对定位在里面 */
+  .cranes {
+    position: absolute;
+    inset: 0;
+    /* 墨色和 skyline.png 的实测像素一致（见 _setup/skyline-survey.ps1），
+       这样塔吊和楼群才是同一片剪影，而不是两层黑 */
+    color: var(--ink, #08020c);
+  }
+
+  .crane {
+    position: absolute;
+    bottom: 0;
+    /* 塔身中轴在 viewBox 正中，所以左移半个自身宽度就等于把 left 对准中轴 */
+    transform: translateX(-50%);
+  }
+
+  .crane__art {
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+
+  /* 左岸那台镜像过来，横臂指向画面外 */
+  .crane--left .crane__art {
+    transform: scaleX(-1);
+  }
+
+  /*
+    三台的站位与尺度。
+    left 是**塔身中轴**的位置，不是元素左边缘。
+    height 用 min(百分比, 像素)：百分比跟着天际线缩放，
+    像素上限保证宽屏上不会胀出卡片之间那道固定的缝。
+  */
+  .crane--gap {
+    left: 48.2%;
+    height: min(70%, 290px);
+    aspect-ratio: 236 / 348;
+    --dur: 36s;
+    --delay: -9s;
+  }
+  .crane--left {
+    left: 8.2%;
+    height: min(64%, 330px);
+    aspect-ratio: 192 / 300;
+    --dur: 50s;
+    --delay: -31s;
+  }
+  .crane--right {
+    left: 92.2%;
+    height: min(48%, 260px);
+    aspect-ratio: 168 / 252;
+    --dur: 30s;
+    --delay: -16s;
+  }
+
+  /*
+    回转动画。
+    transform-box: view-box 让 transform-origin 用 SVG 用户单位来写，
+    也就是「塔身中轴 × 塔顶回转中心」这个点，缩放多少都不会跑偏。
+    三台的周期和起始相位都不同（负延迟 = 从动画中段开始），
+    否则三台会像同一个提线木偶一样整齐划一地动。
+  */
+  .crane__slew {
+    transform-box: view-box;
+    animation: crane-slew var(--dur, 74s) ease-in-out var(--delay, 0s) infinite;
+  }
+  .crane--gap .crane__slew {
+    transform-origin: 118px 58px;
+  }
+  .crane--left .crane__slew {
+    transform-origin: 96px 48px;
+  }
+  .crane--right .crane__slew {
+    transform-origin: 84px 40px;
+  }
+
+  /*
+    回转的节奏。
+    横臂「转过去」主要靠 scaleX 缩短来表达 —— 侧视看回转，横臂本来就是
+    越转越短（前后臂一起缩），这个量给足一点（最多缩到 0.906，约 9%），
+    横臂末端的水平位移才看得出来。
+    旋转只给 ±2.4°：它表现的是回转时的轻微摆动，给大了就成了横臂在翘，
+    反而不像塔吊。两者叠加，看起来才像「缓慢回转 + 一点晃」。
+    整条曲线是连续变化的，中间不停顿 —— 真司机会停，但网页上一停
+    就像动画坏了，宁可让它一直慢慢地动。
+  */
+  @keyframes crane-slew {
+    0% {
+      transform: rotate(-2.4deg) scaleX(1);
+    }
+    16% {
+      transform: rotate(1.8deg) scaleX(0.918);
+    }
+    31% {
+      transform: rotate(2.2deg) scaleX(0.906);
+    }
+    48% {
+      transform: rotate(-0.6deg) scaleX(0.972);
+    }
+    63% {
+      transform: rotate(-2deg) scaleX(0.988);
+    }
+    81% {
+      transform: rotate(0.9deg) scaleX(0.94);
+    }
+    100% {
+      transform: rotate(-2.4deg) scaleX(1);
+    }
+  }
+
+  /*
+    关掉动效偏好。
+    组件内的元素带的是组件自己的作用域标记，页面那条 .vapor * 管不到，
+    所以这里必须再写一遍。
+  */
+  @media (prefers-reduced-motion: reduce) {
+    .crane__slew {
+      animation: none !important;
+    }
+  }
+</style>

@@ -152,6 +152,33 @@ shiki 输出的 `--shiki-light` / `--shiki-dark` 变量。如果换了主题名�
 
 想放自己的字体：把字体文件丢进 `public/fonts/`，然后在 `global.css` 顶上加一段 `@font-face`。
 
+### 首页背景的动效在哪改
+
+首页那片蒸汽波背景是**分层**的，每层各自动。样式都在 `src/pages/index.astro`
+的 `<style>` 里，塔吊单独在 `src/components/HomeCranes.astro`：
+
+| 层 | 在动什么 | 想调就找 |
+| --- | --- | --- |
+| 天空 | 色带缓慢上下流动、染色慢慢明灭 | `@keyframes sky-flow` / `sky-tint` |
+| 落日 | 条纹微微上下游移、辉光呼吸、整体缓缓浮动 | `sun-stripes` / `sun-halo` / `sun-float` |
+| 扫描线 | 按一个条纹周期往下滚（CRT） | `scan-roll` |
+| 塔吊 | 三台各自缓慢回转横臂 | `crane-slew`；快慢改每台的 `--dur` |
+| 水面 | 倒影被切成横向条带左右错动、碎金闪、岸线明灭 | `reflect-chop` / `glitter-a` `glitter-b` / `shore-glow` |
+| 天际线 | 页面滚动时整片轻微上移（CSS 滚动驱动，无 JS） | `.vapor__horizon` 那段 `is:inline` 样式 |
+
+改的时候有两条约定，破了会很难受：
+
+1. **动效只碰 `transform` 和 `opacity`。** 这两个属性走合成层，不重绘画面。
+   换成动 `background-position`、`filter`、`width` 这类，整屏就会每帧重画。
+2. **「减少动效」偏好下所有背景动画会整体停掉**（`prefers-reduced-motion`）。
+   新加的动画请一并放进 `index.astro` 末尾那段 `@media (prefers-reduced-motion: reduce)`，
+   组件里的放在组件自己的 `<style>` 里 —— Astro 的作用域选择器跨不进组件内部。
+
+塔吊的站位不是随手摆的：它按「两张板块卡片之间那道缝」量出来，
+而缝的位置取决于 `src/data/layout.json` 里 `home.boards` 的偏移。
+在编辑器里挪过板块之后，跑一次本机的核对脚本
+（`_setup/home-motion-check.mjs`，不在仓库里）会打印每台塔吊的可见高度和横臂朝向。
+
 ---
 
 ## 四、改站点信息

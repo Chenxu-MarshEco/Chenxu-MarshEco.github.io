@@ -35,6 +35,12 @@ html {
   *::after {
     animation-duration: 0.01ms !important;
     transition-duration: 0.01ms !important;
+    /*
+      这一条不能省。无限循环的动画把时长压到 0.01ms 之后并不会「停下来」，
+      而是每帧都在关键帧之间循环跳 —— 看起来就是闪烁，比原来的动效更糟。
+      让它们只跑一次，动画结束后元素回到自己的静止状态。
+    */
+    animation-iteration-count: 1 !important;
   }
 }
 
