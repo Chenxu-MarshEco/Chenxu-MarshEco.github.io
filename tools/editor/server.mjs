@@ -977,7 +977,7 @@ async function readBoards() {
 /**
  * 页面内容块的清洗。
  *
- * 只认这四种块，每种按字段白名单收 —— 编辑器传上来的东西不一定干净，
+ * 只认这几种块，每种按字段白名单收 —— 编辑器传上来的东西不一定干净，
  * 而这个数组会被渲染到页面上（文字还会走 Markdown 渲染），
  * 与其相信前端，不如在这里收一遍。
  *
@@ -987,6 +987,14 @@ async function readBoards() {
 const BLOCK_WIDTHS = new Set(['full', 'wide', 'half', 'third']);
 const CARD_SHAPES = new Set(['wide', 'square', 'tall']);
 const CARD_SIZES = new Set(['l', 'm', 's']);
+
+/** 卡片比例/大小：不认识的值一律不要，留空表示「跟整块默认」 */
+function cleanCardShape(v) {
+  return CARD_SHAPES.has(v) ? v : undefined;
+}
+function cleanCardSize(v) {
+  return CARD_SIZES.has(v) ? v : undefined;
+}
 
 function cleanBlocks(raw, ownerId) {
   if (!Array.isArray(raw)) return [];
@@ -1031,6 +1039,42 @@ function cleanBlocks(raw, ownerId) {
       return;
     }
 
+    if (type === 'divider') {
+      // 分隔线本身没内容，中间那句话可选
+      const block = { id, type };
+      const text = String(b.text || '').trim();
+      if (text) block.text = text;
+      out.push(block);
+      return;
+    }
+
+    if (type === 'columns') {
+      const left = String(b.left ?? '');
+      const right = String(b.right ?? '');
+      // 两边都空就没有存在的意义
+      if (!left.trim() && !right.trim()) return;
+      out.push({ id, type, left, right });
+      return;
+    }
+
+    if (type === 'video') {
+      const src = String(b.src || '').trim();
+      if (!src) return;
+      const block = { id, type, src };
+      const caption = String(b.caption || '').trim();
+      if (caption) block.caption = caption;
+      out.push(block);
+      return;
+    }
+
+    if (type === 'posts') {
+      const block = { id, type };
+      const text = String(b.text || '').trim();
+      if (text) block.text = text;
+      out.push(block);
+      return;
+    }
+
     if (type === 'children') {
       out.push({
         id,
@@ -1066,9 +1110,15 @@ function cleanNode(raw, parentId, used) {
   // 但必须原样带过去 —— 不认识的字段会被这里丢掉，用户一保存版式就没了。
   const layout = String(raw.layout || '').trim();
   if (layout) out.layout = layout;
-  // 页面内容（介绍文字 / 图片 / 链接 / 子页面块）
+  // 页面内容（介绍文字 / 图片 / 链接 / 分隔线 / 两栏 / 视频 / 文章 / 子页面块）
   const page = cleanBlocks(raw.page, id);
   if (page.length) out.page = page;
+
+  // 这一项作为「子页面卡」出现时的比例和大小（空 = 跟「子页面」块的默认值）
+  const cardShape = cleanCardShape(raw.cardShape);
+  if (cardShape) out.cardShape = cardShape;
+  const cardSize = cleanCardSize(raw.cardSize);
+  if (cardSize) out.cardSize = cardSize;
 
   const kids = Array.isArray(raw.children) ? raw.children : [];
   const children = kids.map((k) => cleanNode(k, id, used)).filter(Boolean);

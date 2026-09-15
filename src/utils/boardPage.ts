@@ -29,6 +29,9 @@ export interface BlockItem {
   subtitle?: string;
   /** 自己的封面图；没设就交给样式用渐变兜底（不要回落到大板块的图，会和 hero 重复） */
   image?: string;
+  /** 这一项作为卡片出现时的横竖比例 / 大小（设了才盖过「子页面」块的默认值） */
+  cardShape?: 'wide' | 'square' | 'tall';
+  cardSize?: 'l' | 'm' | 's';
   /** 它下面的子版块，用来在框里铺卡片 */
   kids: { title: string; url: string; subtitle?: string; image?: string }[];
 }
@@ -98,6 +101,8 @@ export async function nodePageData(url: string): Promise<NodePageData | null> {
       title: c.title,
       subtitle: c.subtitle,
       image: c.image,
+      cardShape: c.cardShape,
+      cardSize: c.cardSize,
       url: all.find((x) => x.node === c)?.url ?? '/',
       kids: (c.children ?? []).map((g) => ({
         title: g.title,

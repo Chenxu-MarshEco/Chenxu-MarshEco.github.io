@@ -1109,11 +1109,26 @@ function boardInput(value, placeholder, onInput) {
    「节点 id + 序号」的 id —— 全站唯一，换页面也不会撞。
    --------------------------------------------------------------- */
 
-const BLOCK_LABEL = { text: '文字', image: '图片', link: '链接', children: '子页面' };
+const BLOCK_LABEL = {
+  text: '文字',
+  image: '图片',
+  link: '链接',
+  divider: '分隔线',
+  columns: '两栏',
+  video: '视频',
+  posts: '文章',
+  children: '子页面',
+};
 const TEXT_HINT = '支持 Markdown：**粗体**、[链接](地址)、- 列表、![图](/img/uploads/x.png)、## 小标题';
 const IMG_WIDTHS = [['full', '全宽'], ['wide', '宽'], ['half', '半宽'], ['third', '窄']];
 const CARD_SHAPES = [['wide', '横（16:3）'], ['square', '方（1:1）'], ['tall', '竖（3:4）']];
 const CARD_SIZES = [['l', '大'], ['m', '中'], ['s', '小']];
+/** 「子页面」块的默认值下拉里多一项「默认」，表示不覆盖整块的设置 */
+const CARD_SHAPES_OR = [['', '默认比例'], ...CARD_SHAPES];
+const CARD_SIZES_OR = [['', '默认大小'], ...CARD_SIZES];
+/** 版式：不写 = 竖排（子页面一条条占满整行） */
+const LAYOUTS = [['', '竖排（子页面一条条整行）'], ['region', '三列分区（左大块 + 中右两栏）']];
+const LAYOUT_HINT = '三列分区要有 4 个以上子版块才生效；这一页写了「页面内容」时以内容为准，版式不参与';
 
 /** 当前正在编辑哪个节点、它下面那份块的草稿 */
 let pageNode = null;
@@ -1243,6 +1258,76 @@ function blockFields(block) {
     return wrap;
   }
 
+  if (block.type === 'divider') {
+    const row = document.createElement('div');
+    row.className = 'pblock-edit__row';
+    row.append(
+      boardInput(block.text ?? '', '中间那句话（可留空，就是一条线）', (v) => {
+        block.text = v;
+      })
+    );
+    wrap.appendChild(row);
+    return wrap;
+  }
+
+  if (block.type === 'columns') {
+    const row = document.createElement('div');
+    row.className = 'pblock-edit__row pblock-edit__row--cols';
+    const cell = (key, label) => {
+      const box = document.createElement('label');
+      box.className = 'pblock-edit__cell';
+      const cap = document.createElement('span');
+      cap.className = 'pblock-edit__hint';
+      cap.textContent = label;
+      const ta = document.createElement('textarea');
+      ta.className = 'input pblock-edit__text';
+      ta.rows = 4;
+      ta.placeholder = TEXT_HINT;
+      ta.value = block[key] ?? '';
+      ta.addEventListener('input', () => {
+        block[key] = ta.value;
+      });
+      box.append(cap, ta);
+      return box;
+    };
+    row.append(cell('left', '左栏'), cell('right', '右栏'));
+    wrap.appendChild(row);
+    return wrap;
+  }
+
+  if (block.type === 'video') {
+    const row = document.createElement('div');
+    row.className = 'pblock-edit__row';
+    row.append(
+      boardInput(block.src ?? '', '视频地址：/video/x.mp4 或 B 站 / YouTube 链接', (v) => {
+        block.src = v.trim();
+      }),
+      boardInput(block.caption ?? '', '说明文字（可留空）', (v) => {
+        block.caption = v;
+      })
+    );
+    const hint = document.createElement('p');
+    hint.className = 'pblock-edit__hint';
+    hint.textContent = '视频文件（mp4 / webm）直接播；B 站和 YouTube 链接会自动换成播放器。';
+    wrap.append(row, hint);
+    return wrap;
+  }
+
+  if (block.type === 'posts') {
+    const row = document.createElement('div');
+    row.className = 'pblock-edit__row';
+    row.append(
+      boardInput(block.text ?? '', '小标题（可留空，就只有列表）', (v) => {
+        block.text = v;
+      })
+    );
+    const hint = document.createElement('p');
+    hint.className = 'pblock-edit__hint';
+    hint.textContent = '列的是一直归在这一页名下的文章 / 手记。插了这一块，页面底部就不再自动列一遍。';
+    wrap.append(row, hint);
+    return wrap;
+  }
+
   // children：把这一层的子页面铺在这里
   const row = document.createElement('div');
   row.className = 'pblock-edit__row';
@@ -1254,9 +1339,54 @@ function blockFields(block) {
   });
   const hint = document.createElement('span');
   hint.className = 'pblock-edit__hint pblock-edit__hint--inline';
-  hint.textContent = '子版块会按这里选的比例和大小铺开';
+  hint.textContent = '下面这些卡按这里的比例和大小铺开';
   row.append(shape, size, hint);
   wrap.appendChild(row);
+
+  /*
+    一张一个样：每个子版块可以单独改比例和大小。
+    这些值写在**子版块自己身上**（cardShape / cardSize），不是写在块里 ——
+    块里按 id 对的话，新加的版块还没 id，一对就错位；写在节点上，
+    换顺序、移动到别的块、移到别的页面都还跟着走。
+  */
+  const kids = Array.isArray(pageNode?.children) ? pageNode.children : [];
+  if (!kids.length) {
+    const none = document.createElement('p');
+    none.className = 'pblock-edit__hint';
+    none.textContent = '这一层还没有子页面 —— 先在上面「板块」里用 ＋下级 加几个，再回来把它们铺进来。';
+    wrap.appendChild(none);
+    return wrap;
+  }
+
+  const list = document.createElement('div');
+  list.className = 'pcard-row-list';
+  const cap = document.createElement('p');
+  cap.className = 'pblock-edit__hint';
+  cap.textContent = '单张卡想不一样就单独调（空着 = 跟上面的默认值）：';
+  list.appendChild(cap);
+
+  for (const kid of kids) {
+    const line = document.createElement('div');
+    line.className = 'pcard-row';
+
+    const name = document.createElement('span');
+    name.className = 'pcard-row__name';
+    name.textContent = kid.title || '(未命名)';
+    name.title = kid.id ? `id: ${kid.id}` : '还没保存过，保存后就有 id 了';
+
+    const kShape = pageSelect(CARD_SHAPES_OR, kid.cardShape ?? '', (v) => {
+      if (v) kid.cardShape = v;
+      else delete kid.cardShape;
+    });
+    const kSize = pageSelect(CARD_SIZES_OR, kid.cardSize ?? '', (v) => {
+      if (v) kid.cardSize = v;
+      else delete kid.cardSize;
+    });
+
+    line.append(name, kShape, kSize);
+    list.appendChild(line);
+  }
+  wrap.appendChild(list);
   return wrap;
 }
 
@@ -1344,6 +1474,10 @@ function renderPageEditor() {
     ['image', '图片', () => ({ id: newBlockId(pageNode.id), type: 'image', src: '', width: 'wide' })],
     ['link', '链接', () => ({ id: newBlockId(pageNode.id), type: 'link', text: '', href: '' })],
     ['children', '子页面', () => ({ id: newBlockId(pageNode.id), type: 'children', shape: 'wide', size: 'l' })],
+    ['divider', '分隔线', () => ({ id: newBlockId(pageNode.id), type: 'divider', text: '' })],
+    ['columns', '两栏', () => ({ id: newBlockId(pageNode.id), type: 'columns', left: '', right: '' })],
+    ['video', '视频', () => ({ id: newBlockId(pageNode.id), type: 'video', src: '', caption: '' })],
+    ['posts', '文章', () => ({ id: newBlockId(pageNode.id), type: 'posts', text: '' })],
   ];
   for (const [, label, make] of adders) {
     const btn = document.createElement('button');
@@ -1367,6 +1501,10 @@ async function savePageContent() {
     if (b.type === 'text') return String(b.text ?? '').trim();
     if (b.type === 'image') return String(b.src ?? '').trim();
     if (b.type === 'link') return String(b.text ?? '').trim() && String(b.href ?? '').trim();
+    // 分隔线和「文章」块本身就有意义（一个只要一条线，一个列这一页的文章）
+    if (b.type === 'divider' || b.type === 'posts') return true;
+    if (b.type === 'columns') return String(b.left ?? '').trim() || String(b.right ?? '').trim();
+    if (b.type === 'video') return String(b.src ?? '').trim();
     return true;
   });
   pageNode.page = kept;
@@ -1491,6 +1629,24 @@ function renderBoardsEditor() {
     return sel;
   };
 
+  /**
+   * 版式下拉：竖排（默认）/ 三列分区。
+   *
+   * 以前这个字段编辑器里没有开关，只能在 JSON 里手改 ——
+   * 用户想给哪个页面试三列分区都做不到，而 cleanNode 又必须原样保留它，
+   * 不然一保存就静默退回竖排。
+   */
+  const layoutSelect = (node) => {
+    const sel = pageSelect(LAYOUTS, node.layout ?? '', (v) => {
+      if (v) node.layout = v;
+      else delete node.layout;
+      toast('版式改好了，记得保存');
+    });
+    sel.title = LAYOUT_HINT;
+    sel.classList.add('boardedit__layout');
+    return sel;
+  };
+
   // 递归渲染一层
   const renderLevel = (list, container, depth) => {
     for (let i = 0; i < list.length; i += 1) {
@@ -1552,6 +1708,7 @@ function renderBoardsEditor() {
         meta.appendChild(idLine);
       }
       meta.appendChild(moveSelect(node));
+      meta.appendChild(layoutSelect(node));
       meta.appendChild(boardCoverControl(node));
 
       // 页面内容：这一页自己的介绍 / 图片 / 链接 / 子页面
@@ -1607,6 +1764,7 @@ function renderBoardsEditor() {
     const topCover = document.createElement('div');
     topCover.className = 'boardedit__row2';
     topCover.appendChild(boardCoverControl(board));
+    topCover.appendChild(layoutSelect(board));
 
     const topContent = document.createElement('button');
     topContent.type = 'button';

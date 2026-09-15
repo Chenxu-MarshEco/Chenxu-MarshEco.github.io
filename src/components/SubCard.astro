@@ -128,15 +128,22 @@ const { title, url, image, shape = 'row', size = 'l' } = Astro.props;
     letter-spacing: 0.12em;
   }
 
-  /* 大小 = 最大宽度。窄的自动靠左，一列里就有了节奏 */
+  /*
+    大小 = 在「子页面」块那个六列栅格里占几列（见 PageContent 的 .pcards）。
+    大 6 列一个人占一行、中 3 列两张一行、小 2 列三张一行 ——
+    这样「大中小」在版面上真的看得出区别，而不是只有一条宽窄不同的条。
+
+    不在栅格里的地方（面板清单、竖排页面）这两条 grid-column 是空转的，
+    那里的卡片按自己的规则占满一行 —— 竖排本来就是「一律整行」。
+  */
   .card--sz-l {
-    max-width: 100%;
+    grid-column: span 6;
   }
   .card--sz-m {
-    max-width: 72%;
+    grid-column: span 3;
   }
   .card--sz-s {
-    max-width: 46%;
+    grid-column: span 2;
   }
 
   .card__label {
@@ -172,9 +179,16 @@ const { title, url, image, shape = 'row', size = 'l' } = Astro.props;
   }
 
   @media (max-width: 46rem) {
-    /* 窄屏上「小卡」占半屏就没法看了，一律铺满 */
+    /*
+      窄屏：栅格塌成一列，卡片一律铺满。
+      三个档都要清 grid-column —— 只清中/小的话，大卡的 span 6
+      会凭空造出 5 条隐式列，整行排成五六张一丁点宽的卡（实测
+      430px 下「竖+小」那张只剩 40px）。
+    */
+    .card--sz-l,
     .card--sz-m,
     .card--sz-s {
+      grid-column: auto;
       max-width: 100%;
     }
   }

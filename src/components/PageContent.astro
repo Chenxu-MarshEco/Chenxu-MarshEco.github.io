@@ -2,10 +2,14 @@
 /**
  * 版块页里「自己写的那段内容」。
  *
- * 数据是节点上的 page 数组，四种块：
+ * 数据是节点上的 page 数组，八种块：
  *   text      介绍文字（Markdown：段落、粗体、列表、行内链接、行内图片都能写）
  *   image     一张图，宽度可分档
  *   link      一个链接
+ *   divider   一条横线，中间可以带一句话
+ *   columns   左右两栏（各写一段 Markdown，窄屏自动叠起来）
+ *   video     视频：视频文件直链，或 B 站 / YouTube 链接（自动变成播放器）
+ *   posts     把归到这一页的文章列出来
  *   children  把这一层的子页面铺在这里，卡片的横竖比例和大小可分档
  *
  * 每个块外面都包了一层 [data-edit="pg-<id>"]：
@@ -16,16 +20,18 @@
 import { marked } from 'marked';
 import SubCard from './SubCard.astro';
 import { withBase } from '../utils/url';
-import type { BlockItem } from '../utils/boardPage';
+import type { BlockItem, SubPost } from '../utils/boardPage';
 import type { PageBlock } from '../utils/boards';
 
 interface Props {
   blocks: PageBlock[];
   /** 这一层的子页面，供 children 块使用 */
   children: BlockItem[];
+  /** 归到本节点的文章，供 posts 块使用 */
+  posts: SubPost[];
 }
 
-const { blocks, children } = Astro.props;
+const { blocks, children, posts } = Astro.props;
 
 /*
   Markdown 用 marked 渲染。
@@ -34,9 +40,44 @@ const { blocks, children } = Astro.props;
   所以这里不用把它挪进 dependencies —— 挪了就得同步改 lockfile，
   而 CI 用的是 --frozen-lockfile，改不干净会直接把部署卡死。
 */
-const renderText = (text: string) => marked.parse(text, { async: false }) as string;
+const renderText = (text: string) => marked.parse(text ?? '', { async: false }) as string;
 
-/** 子页面块里的卡片怎么排 */
+/**
+ * 视频地址 -> 怎么播。
+ *
+ * 三种情况：
+ *   视频文件（mp4 / webm / mov…）→ 直接用浏览器自带的 <video>
+ *   B 站 / YouTube 页面地址      → 换成它们各自的播放器 iframe
+ *   其它（认不出来）             → 退回一个普通链接，别硬塞个播不了的框
+ *
+ * B 站的 iframe 播放器只要 bvid/aid，不需要登录；页面上也不会因此多出
+ * 什么脚本，就是浏览器原生支持的一个框。
+ */
+type VideoPlan =
+  | { kind: 'file'; src: string }
+  | { kind: 'iframe'; src: string }
+  | { kind: 'link'; src: string };
+
+const videoOf = (raw: string): VideoPlan => {
+  const url = (raw ?? '').trim();
+  const bili = /bilibili\.com\/video\/(BV[0-9A-Za-z]+|av\d+)/.exec(url);
+  if (bili) {
+    const isBv = bili[1].startsWith('BV');
+    const q = isBv ? `bvid=${bili[1]}` : `aid=${bili[1].slice(2)}`;
+    // 关掉自动播放：静音自动播很烦，用户自己点
+    return { kind: 'iframe', src: `https://player.bilibili.com/player.html?${q}&autoplay=0` };
+  }
+  const yt = /(?:youtube\.com\/watch\?v=|youtu\.be\/)([A-Za-z0-9_-]{6,})/.exec(url);
+  if (yt) {
+    return { kind: 'iframe', src: `https://www.youtube-nocookie.com/embed/${yt[1]}` };
+  }
+  if (/\.(mp4|webm|ogv|ogg|mov|m4v)(\?.*)?$/i.test(url)) {
+    return { kind: 'file', src: url.startsWith('http') ? url : withBase(url) };
+  }
+  return { kind: 'link', src: url };
+};
+
+/** 子页面块里的卡片怎么排（整块的默认值） */
 const cardsOf = (b: Extract<PageBlock, { type: 'children' }>) => ({
   shape: (b.shape ?? 'wide') as 'wide' | 'square' | 'tall',
   size: (b.size ?? 'l') as 'l' | 'm' | 's',
@@ -45,47 +86,106 @@ const cardsOf = (b: Extract<PageBlock, { type: 'children' }>) => ({
 
 <div class="page">
   {
-    blocks.map((b) => (
-      <div class="pblock" data-edit={`pg-${b.id}`}>
-        {b.type === 'text' && <div class="ptext" set:html={renderText(b.text)} />}
+    blocks.map((b) => {
+      /* 单张卡自己的设置优先：子版块上设了 cardShape/cardSize 就用它，
+         没设才用「子页面」块上的默认值 */
+      const video = b.type === 'video' ? videoOf(b.src) : null;
 
-        {b.type === 'image' && (
-          <figure class:list={['pfigure', `pfigure--${b.width ?? 'wide'}`]}>
-            <img src={withBase(b.src)} alt={b.alt ?? ''} loading="lazy" decoding="async" />
-            {b.alt && <figcaption>{b.alt}</figcaption>}
-          </figure>
-        )}
+      return (
+        <div class="pblock" data-edit={`pg-${b.id}`} data-block-type={b.type}>
+          {b.type === 'text' && <div class="ptext" set:html={renderText(b.text)} />}
 
-        {b.type === 'link' && (
-          <a
-            class="plink"
-            href={b.href.startsWith('http') || b.href.startsWith('#') ? b.href : withBase(b.href)}
-            {...b.href.startsWith('http') ? { target: '_blank', rel: 'noopener' } : {}}
-          >
-            <span class="plink__text">{b.text}</span>
-          </a>
-        )}
+          {b.type === 'image' && (
+            <figure class:list={['pfigure', `pfigure--${b.width ?? 'wide'}`]}>
+              <img src={withBase(b.src)} alt={b.alt ?? ''} loading="lazy" decoding="async" />
+              {b.alt && <figcaption>{b.alt}</figcaption>}
+            </figure>
+          )}
 
-        {b.type === 'children' && (
-          <div
-            class="pcards"
-            data-shape={cardsOf(b).shape}
-            data-size={cardsOf(b).size}
-          >
-            {children.length === 0 && <p class="pcards__empty">这一层还没有子页面。</p>}
-            {children.map((c) => (
-              <SubCard
-                title={c.title}
-                url={c.url}
-                image={c.image}
-                shape={cardsOf(b).shape}
-                size={cardsOf(b).size}
-              />
-            ))}
-          </div>
-        )}
-      </div>
-    ))
+          {b.type === 'link' && (
+            <a
+              class="plink"
+              href={b.href.startsWith('http') || b.href.startsWith('#') ? b.href : withBase(b.href)}
+              {...b.href.startsWith('http') ? { target: '_blank', rel: 'noopener' } : {}}
+            >
+              <span class="plink__text">{b.text}</span>
+            </a>
+          )}
+
+          {b.type === 'divider' && (
+            <div class="pdivider" role="separator">
+              {b.text ? <span class="pdivider__text">{b.text}</span> : null}
+            </div>
+          )}
+
+          {b.type === 'columns' && (
+            <div class="pcols">
+              <div class="pcols__col" set:html={renderText(b.left)} />
+              <div class="pcols__col" set:html={renderText(b.right)} />
+            </div>
+          )}
+
+          {b.type === 'video' && video && (
+            <figure class="pvideo">
+              {video.kind === 'file' && (
+                <video class="pvideo__el" src={video.src} controls preload="metadata" playsinline>
+                  你的浏览器不支持直接播放这个视频。
+                </video>
+              )}
+              {video.kind === 'iframe' && (
+                <iframe
+                  class="pvideo__frame"
+                  src={video.src}
+                  title={b.caption || '视频'}
+                  loading="lazy"
+                  allowfullscreen
+                  allow="accelerometer; clipboard-write; encrypted-media; picture-in-picture"
+                />
+              )}
+              {video.kind === 'link' && (
+                <a class="plink" href={video.src} target="_blank" rel="noopener">
+                  <span class="plink__text">{b.caption || b.src}</span>
+                </a>
+              )}
+              {b.caption && video.kind !== 'link' && <figcaption>{b.caption}</figcaption>}
+            </figure>
+          )}
+
+          {b.type === 'posts' && (
+            <section class="pposts">
+              {b.text ? <h2 class="pposts__title">{b.text}</h2> : null}
+              {posts.length === 0 ? (
+                <p class="pposts__empty">这一页还没有文章。</p>
+              ) : (
+                <ul class="pposts__list">
+                  {posts.map((p) => (
+                    <li>
+                      <a href={withBase(p.href)}>{p.title}</a>
+                      <em>{p.date}</em>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+          )}
+
+          {b.type === 'children' && (
+            <div class="pcards" data-shape={cardsOf(b).shape} data-size={cardsOf(b).size}>
+              {children.length === 0 && <p class="pcards__empty">这一层还没有子页面。</p>}
+              {children.map((c) => (
+                <SubCard
+                  title={c.title}
+                  url={c.url}
+                  image={c.image}
+                  shape={c.cardShape ?? cardsOf(b).shape}
+                  size={c.cardSize ?? cardsOf(b).size}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      );
+    })
   }
 </div>
 
@@ -238,17 +338,161 @@ const cardsOf = (b: Extract<PageBlock, { type: 'children' }>) => ({
     transform: translateY(-1px);
   }
 
-  /* ---------- 子页面 ---------- */
-  .pcards {
+  /* ---------- 分隔线 ---------- */
+  .pdivider {
     display: flex;
-    flex-direction: column;
+    align-items: center;
+    gap: 0.9rem;
+    margin: 0.4rem 0;
+  }
+  /* 两边各一条线中间夹字；没写字时就是单独一条线 */
+  .pdivider::before,
+  .pdivider::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(255, 120, 190, 0.55), transparent);
+  }
+  .pdivider__text {
+    font-size: 0.82rem;
+    letter-spacing: 0.18em;
+    color: rgba(255, 226, 244, 0.7);
+    white-space: nowrap;
+  }
+
+  /* ---------- 两栏 ---------- */
+  .pcols {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: clamp(0.9rem, 2vw, 1.8rem);
+  }
+  .pcols__col {
+    min-width: 0;
+    font-size: 0.98rem;
+    line-height: 1.9;
+    color: rgba(255, 236, 248, 0.9);
+  }
+  .pcols__col :global(p) {
+    margin: 0 0 0.9em;
+  }
+  .pcols__col :global(p:last-child) {
+    margin-bottom: 0;
+  }
+  .pcols__col :global(h2),
+  .pcols__col :global(h3) {
+    margin: 1.2em 0 0.4em;
+    font-family: var(--font-display);
+    color: #fff;
+    letter-spacing: 0.08em;
+  }
+  .pcols__col :global(a) {
+    color: #ffb3dd;
+  }
+  .pcols__col :global(img) {
+    max-width: 100%;
+    height: auto;
+    border-radius: 10px;
+  }
+  .pcols__col :global(ul),
+  .pcols__col :global(ol) {
+    margin: 0 0 0.9em;
+    padding-left: 1.3em;
+  }
+
+  /* ---------- 视频 ---------- */
+  .pvideo {
+    margin: 0;
+  }
+  .pvideo__el,
+  .pvideo__frame {
+    display: block;
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    border: 1px solid rgba(255, 120, 190, 0.35);
+    border-radius: 12px;
+    background: rgba(10, 0, 18, 0.6);
+    box-shadow: 0 14px 40px rgba(10, 0, 20, 0.45);
+  }
+  .pvideo figcaption {
+    margin-top: 0.5rem;
+    font-size: 0.8rem;
+    letter-spacing: 0.06em;
+    color: rgba(255, 226, 244, 0.6);
+  }
+
+  /* ---------- 文章列表 ---------- */
+  .pposts {
+    padding: 0.9rem 1.1rem;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 120, 190, 0.3);
+    background: rgba(38, 4, 52, 0.4);
+  }
+  .pposts__title {
+    margin: 0 0 0.6rem;
+    font-size: 0.98rem;
+    letter-spacing: 0.14em;
+    color: rgba(255, 236, 248, 0.85);
+  }
+  .pposts__empty {
+    margin: 0;
+    font-size: 0.9rem;
+    color: rgba(255, 226, 244, 0.6);
+  }
+  .pposts__list {
+    list-style: none;
+    margin: 0;
+    padding: 0 0 0 0.9rem;
+    border-left: 2px solid rgba(255, 120, 190, 0.35);
+  }
+  .pposts__list li {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.6rem;
+    padding: 0.24rem 0;
+  }
+  .pposts__list a {
+    color: #ffd9ef;
+    text-decoration: none;
+    font-size: 0.92rem;
+  }
+  .pposts__list a:hover {
+    color: #fff;
+    text-shadow: 0 0 10px rgba(255, 79, 163, 0.9);
+  }
+  .pposts__list em {
+    font-style: normal;
+    font-size: 0.72rem;
+    color: rgba(255, 226, 244, 0.55);
+    white-space: nowrap;
+  }
+
+  /* ---------- 子页面 ---------- */
+  /*
+    六列栅格：卡片的「大小」档就是占几列（见 SubCard 的 .card--sz-*）。
+    l 一列一行、m 两张一行、s 三张一行；窄屏塌成一列。
+  */
+  .pcards {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    align-items: start;
     gap: clamp(0.7rem, 1.4vw, 1.1rem);
-    align-items: flex-start;
   }
   .pcards__empty {
+    grid-column: 1 / -1;
     margin: 0;
     color: rgba(255, 226, 244, 0.6);
     font-size: 0.9rem;
+  }
+
+  /* 窄屏：两栏叠起来、卡片一律占满 */
+  @media (max-width: 46rem) {
+    .pcols {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .pcards {
+      grid-template-columns: minmax(0, 1fr);
+    }
   }
 
   @media (prefers-reduced-motion: reduce) {

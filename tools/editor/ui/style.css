@@ -1401,6 +1401,57 @@ body[data-type="notes"] .field--posts-only {
   color: var(--text-muted);
 }
 
+/* 两栏块：左右各一个输入框，各自有标题、并排站 */
+.pblock-edit__row--cols {
+  align-items: stretch;
+}
+.pblock-edit__cell {
+  flex: 1 1 200px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.pblock-edit__cell .pblock-edit__text {
+  min-height: 78px;
+}
+
+/* 「子页面」块里的逐张设置：一行一个子版块 */
+.pcard-row-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px;
+  border-radius: var(--r-sm);
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border);
+}
+.pcard-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.pcard-row__name {
+  flex: 1 1 140px;
+  min-width: 0;
+  font-size: 12px;
+  /* 名字很长时截断，别把两个下拉挤走 */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pcard-row .input {
+  width: auto;
+  flex: 0 0 auto;
+}
+
+/* 版式下拉：和「移动到…」并排 */
+.boardedit__layout {
+  width: auto;
+  max-width: 15rem;
+}
+
 @media (max-width: 640px) {
   .boardedit__row {
     grid-template-columns: minmax(0, 1fr);

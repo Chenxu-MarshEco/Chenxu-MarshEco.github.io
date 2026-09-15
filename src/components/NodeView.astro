@@ -56,6 +56,12 @@ interface Props {
 const { trail, children, posts, layout: wantLayout, page: blocks = [] } = Astro.props;
 
 /*
+  这一页自己写了「文章」块吗？
+  写了就由那个块负责列文章，页面底部不再自动重复列一遍。
+*/
+const hasPostsBlock = blocks.some((b) => b.type === 'posts');
+
+/*
   版面分两种，由数据里的 layout 字段决定：
 
     region（花娅陌域）→ 设计稿那套三列分区：左列上下两块、中右各跨两行。
@@ -94,7 +100,7 @@ const layout = wantLayout === 'region' && children.length >= 4 ? 'region' : 'sta
 )}
 
 {
-  blocks.length > 0 && <PageContent blocks={blocks} children={children} />
+  blocks.length > 0 && <PageContent blocks={blocks} children={children} posts={posts} />
 }
 
 {
@@ -102,12 +108,15 @@ const layout = wantLayout === 'region' && children.length >= 4 ? 'region' : 'sta
     <div class="blocks" data-layout={layout} data-edit="children">
       {children.map((c) =>
         c.kids.length > 0 ? (
-          <section class="block" data-edit={`block-${c.id}`}>
+          <section class="block" data-edit={`block-${c.id}`} data-href={withBase(c.url)}>
             <header class="block__head">
               <a class="block__name" href={withBase(c.url)}>
                 {c.title}
               </a>
               {c.subtitle && <span class="block__sub">{c.subtitle}</span>}
+              <span class="block__enter" aria-hidden="true">
+                进入 ›
+              </span>
             </header>
             {/* 这一层单独滚动：里面会放很多条子版块，不能把整页撑长 */}
             <div class="block__scroll">
@@ -143,7 +152,7 @@ const layout = wantLayout === 'region' && children.length >= 4 ? 'region' : 'sta
 }
 
 {
-  posts.length > 0 && (
+  posts.length > 0 && !hasPostsBlock && (
     <>
       <h2 class="node__h2">这里的文章</h2>
       <ul class="subposts subposts--page">
@@ -246,12 +255,53 @@ const layout = wantLayout === 'region' && children.length >= 4 ? 'region' : 'sta
   }
 
   .block__head {
+    position: relative;
     display: flex;
     align-items: baseline;
     flex-wrap: wrap;
     gap: 0.2rem 0.55rem;
     padding: 0.85rem 1rem 0.65rem;
     border-bottom: 1px solid rgba(255, 120, 190, 0.22);
+  }
+
+  /*
+    标题那行整行都能点：把链接的 ::after 拉满表头。
+    表头里除了标题还有副标题和右边的「进入 ›」，以前只有标题那几个字
+    是热区，用户说的「点击冰室板块就进这一页」其实点空白是没反应的。
+  */
+  a.block__name::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+  }
+
+  /* 右边那行小提示，鼠标移到框上才亮起来 */
+  .block__enter {
+    margin-left: auto;
+    font-size: 0.72rem;
+    letter-spacing: 0.12em;
+    /*
+      别调得太淡：这个 0.72 是算出来的 —— 面板底色 rgb(34,5,50) 上
+      对比度 8.2:1（AA 要 4.5:1）。一开始用了 0.5，只有 3.6:1，
+      无障碍审计直接报出来。
+    */
+    color: rgba(255, 226, 244, 0.72);
+    transition:
+      color 0.16s ease,
+      transform 0.16s ease;
+  }
+  .block:hover .block__enter,
+  .block:focus-within .block__enter {
+    color: #ffd9ef;
+    transform: translateX(2px);
+  }
+
+  /*
+    框里除了卡片以外的空白也能点进去（脚本见文件末尾的 <script>）。
+    指针给个手型，让人知道这儿能点。
+  */
+  .block[data-href] {
+    cursor: pointer;
   }
 
   .block__name {
@@ -457,3 +507,37 @@ const layout = wantLayout === 'region' && children.length >= 4 ? 'region' : 'sta
     }
   }
 </style>
+
+<script is:inline>
+  /*
+    面板（有下级的那个框）整块可点：点空白处就进这一页自己的页面。
+    标题那行已经由 CSS 拉伸的链接管住了，这里补的是清单外面的空白 ——
+    框内边距、条目底下的空地。清单里的卡片自己是链接，点到就交给它。
+
+    三个「不算」的情形：
+      1. 点在卡片 / 按钮 / 输入框上（那是它们自己的事）
+      2. 点在滚动条上（点那儿是为了拖，不能把人带走）
+      3. 正在选文字，或者按了修饰键（那是想开新标签页 / 选内容）
+    另外排版模式下整体跳过 —— 编辑器在 iframe 里靠点击选元素，
+    跳转了就没法调版式了（__layoutApi 是编辑器注入的标记）。
+  */
+  document.addEventListener('click', (e) => {
+    if (window.__layoutApi) return;
+    if (e.defaultPrevented || e.button !== 0) return;
+    if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+
+    const panel = e.target.closest?.('.block[data-href]');
+    if (!panel) return;
+    if (e.target.closest('a, button, input, select, textarea')) return;
+
+    const scroller = e.target.closest('.block__scroll');
+    if (scroller) {
+      const r = scroller.getBoundingClientRect();
+      // 横向超出内容宽度 = 点在滚动条上
+      if (e.clientX - r.left >= scroller.clientWidth) return;
+    }
+
+    if (String(window.getSelection?.() ?? '').length) return;
+    location.href = panel.dataset.href;
+  });
+</script>

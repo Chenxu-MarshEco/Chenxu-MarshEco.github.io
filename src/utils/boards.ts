@@ -16,7 +16,7 @@
  * 页面内容块。
  *
  * 一个版块页除了「子版块自动铺开」，还可以自己写一段内容：
- * 介绍文字、图片、链接，以及把子页面插到任意位置。
+ * 介绍文字、图片、链接、分隔线、两栏、视频，以及把子页面插到任意位置。
  * 每种块都带一个 id —— 排版模式就是拿它当锚点（data-edit="pg-<id>"），
  * 所以 id 要**全站唯一**（同一块内容在不同页面之间不能撞），
  * 编辑器新建块时用「节点 id + 序号」来保证这点。
@@ -25,7 +25,19 @@ export type PageBlock =
   | { id: string; type: 'text'; text: string }
   | { id: string; type: 'image'; src: string; alt?: string; width?: ImageWidth }
   | { id: string; type: 'link'; text: string; href: string }
-  /** 把这一层的子页面铺在这里，横竖比例和大小可以调 */
+  /** 一条横线，可选中间一句话（用来分段） */
+  | { id: string; type: 'divider'; text?: string }
+  /** 左右两栏，各写一段 Markdown；窄屏自动上下叠起来 */
+  | { id: string; type: 'columns'; left: string; right: string }
+  /** 视频：本地/远程视频文件，或 B 站、YouTube 链接（自动转成播放器） */
+  | { id: string; type: 'video'; src: string; caption?: string }
+  /** 把归到这一页的文章列出来；不写这一块时，页面底部也会自动列一遍 */
+  | { id: string; type: 'posts'; text?: string }
+  /**
+   * 把这一层的子页面铺在这里。
+   * shape / size 是整块的默认值，单张卡想不一样就在那个子版块上设
+   * cardShape / cardSize（见 BoardNode），单个永远压过整块。
+   */
   | { id: string; type: 'children'; shape?: CardShape; size?: CardSize };
 
 /** 图片宽度档位 */
@@ -52,6 +64,15 @@ export interface BoardNode {
    * 不写就退回老样子：子版块自动铺开。
    */
   page?: PageBlock[];
+  /**
+   * 这一项作为「子页面卡」出现时的横竖比例和大小。
+   *
+   * 为什么放在子节点上而不是「子页面」块里：卡片是跟着**这个版块**走的，
+   * 放在块里就得按 id 去对，编辑器新加的版块还没有 id，一对就错位；
+   * 放在节点上，移到哪个块、哪一页都跟着走，也不会因为换了顺序就串。
+   */
+  cardShape?: CardShape;
+  cardSize?: CardSize;
   children?: BoardNode[];
 }
 
