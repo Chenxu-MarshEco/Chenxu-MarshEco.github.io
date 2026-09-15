@@ -50,6 +50,8 @@ export interface NodePageData {
   children: BlockItem[];
   /** 归到本节点的文章 */
   posts: SubPost[];
+  /** 这一页的版式（'region' 才会用三列分区，其它都是竖排） */
+  layout?: string;
 }
 
 /** 所有节点的 id -> 该节点下的文章。构建时算一次就够。 */
@@ -103,6 +105,7 @@ export async function nodePageData(url: string): Promise<NodePageData | null> {
       })),
     })),
     posts: posts[flat.node.id] ?? [],
+    layout: flat.node.layout,
   };
 }
 

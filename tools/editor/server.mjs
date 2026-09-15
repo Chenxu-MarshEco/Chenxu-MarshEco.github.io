@@ -992,6 +992,10 @@ function cleanNode(raw, parentId, used) {
   if (href) out.href = href;
   const image = String(raw.image || '').trim();
   if (image) out.image = image;
+  // 版式字段：目前只有 'region'（三列分区）。编辑器界面上没有开关，
+  // 但必须原样带过去 —— 不认识的字段会被这里丢掉，用户一保存版式就没了。
+  const layout = String(raw.layout || '').trim();
+  if (layout) out.layout = layout;
 
   const kids = Array.isArray(raw.children) ? raw.children : [];
   const children = kids.map((k) => cleanNode(k, id, used)).filter(Boolean);
@@ -1020,6 +1024,9 @@ async function writeBoards(payload) {
     // 顶层大板块也可以手写地址（甬城晴雨就是 /yongshen 而不是按 id 推的 /yongcheng）
     const href = String(b.href || '').trim();
     if (href) out.href = href;
+    // 版式字段同理：'region' = 三列分区（花娅陌域在用），编辑器不显示但要原样保留
+    const layout = String(b.layout || '').trim();
+    if (layout) out.layout = layout;
     if (children.length) out.children = children;
     return out;
   });

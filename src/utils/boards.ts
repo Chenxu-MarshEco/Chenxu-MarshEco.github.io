@@ -18,6 +18,12 @@ export interface BoardNode {
   subtitle?: string;
   image?: string;
   href?: string;
+  /**
+   * 版式。目前只认 'region'（设计稿那套三列分区，只有花娅陌域用）。
+   * 不写就是默认的竖排：子页面一条一条占满整行。
+   * 这个字段是给「这一页怎么排」用的，和树结构无关，所以随便哪一层都能挂。
+   */
+  layout?: string;
   children?: BoardNode[];
 }
 

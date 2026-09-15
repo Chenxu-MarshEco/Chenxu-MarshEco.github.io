@@ -30,5 +30,5 @@ const backLabel = data.parent ? `返回 ${data.parent.title}` : '返回首页';
 ---
 
 <BoardLayout title={data.title} image={data.image} backHref={data.parent?.url ?? '/'} backLabel={backLabel}>
-  <NodeView trail={data.trail} children={data.children} posts={data.posts} />
+  <NodeView trail={data.trail} children={data.children} posts={data.posts} layout={data.layout} />
 </BoardLayout>

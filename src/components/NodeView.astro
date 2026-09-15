@@ -44,12 +44,27 @@ interface Props {
   trail: Crumb[];
   children: BlockItem[];
   posts: SubPost[];
+  /** 版式：'region' = 设计稿那套三列分区（只有花娅陌域用），其它一律竖排 */
+  layout?: string;
 }
 
-const { trail, children, posts } = Astro.props;
+const { trail, children, posts, layout: wantLayout } = Astro.props;
 
-/** 够四块才用设计稿那套三列分区，否则走自适应网格 */
-const layout = children.length >= 4 ? 'region' : 'auto';
+/*
+  版面分两种，由数据里的 layout 字段决定：
+
+    region（花娅陌域）→ 设计稿那套三列分区：左列上下两块、中右各跨两行。
+                        每块是一个「框」，框里再竖着铺子版块。
+    其它（默认）      → **竖排**：子页面一条一条占满整行，就是宽幅大卡。
+                        子页面自己还有下级的，仍然给一个带清单的面板，
+                        免得在这一层就看不到它下面有什么。
+
+  默认必须是竖排：三列分区是给花娅陌域专门设计的，别的页面套上去
+  就会变成「前四块被塞进三列、后面的挤在下面」，很乱。
+  另外 region 只在子版块够 4 个时才启用 —— 只有两块的话，
+  三列里会有整整一列空着。
+*/
+const layout = wantLayout === 'region' && children.length >= 4 ? 'region' : 'stack';
 ---
 
 {trail.length > 1 && (
@@ -108,7 +123,8 @@ const layout = children.length >= 4 ? 'region' : 'auto';
               </ul>
             </div>
           </section>
-        ) : (
+        ) : layout === 'region' ? (
+          /* 分区版式里，没有下级的这一块是「一整张大封面」 */
           <a
             class="block block--leaf"
             data-edit={`block-${c.id}`}
@@ -117,6 +133,16 @@ const layout = children.length >= 4 ? 'region' : 'auto';
           >
             <span class="block__name">{c.title}</span>
             {c.subtitle && <span class="block__sub">{c.subtitle}</span>}
+          </a>
+        ) : (
+          /* 竖排版式里，子页面就是整整一条宽幅大卡（图铺满 / 没图就是扁平名字条） */
+          <a
+            class:list={['card', 'card--wide', c.image && 'card--cover']}
+            data-edit={`block-${c.id}`}
+            href={withBase(c.url)}
+            style={c.image ? `--cover:url(${withBase(c.image)})` : undefined}
+          >
+            <span class="card__label">{c.title}</span>
           </a>
         )
       )}
@@ -179,8 +205,11 @@ const layout = children.length >= 4 ? 'region' : 'auto';
   .blocks {
     display: grid;
     gap: clamp(0.9rem, 1.8vw, 1.5rem);
-    /* 默认：自适应网格，子版块少的时候就这样，别硬套三列 */
-    grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr));
+    /*
+      默认竖排：一条一条占满整行。
+      这是「带多个子页面的页面」的统一版面 —— 一条一张宽幅大卡。
+    */
+    grid-template-columns: minmax(0, 1fr);
   }
 
   /*
@@ -348,6 +377,24 @@ const layout = children.length >= 4 ? 'region' : 'auto';
     text-shadow:
       0 1px 6px rgba(10, 0, 18, 0.9),
       0 0 16px rgba(10, 0, 18, 0.7);
+  }
+
+  /*
+    竖排里的宽幅大卡：整行铺满，做成一条横向长条（设计稿里就是这种感觉）。
+    width:100% 必须写 —— 只给 aspect-ratio 的话，min-height 会反过来
+    按比例把宽度撑出去（实测 1040 的容器里卡片涨到 1120，溢出去了）。
+    宽度钉死之后，aspect-ratio 只负责算高度；窄屏再靠 min-height 兜住，
+    不然会被压成一条线。
+  */
+  .card--wide {
+    width: 100%;
+    aspect-ratio: 16 / 3;
+    min-height: clamp(120px, 18vw, 210px);
+    padding: 0.9rem 1.2rem;
+  }
+  .card--wide .card__label {
+    font-size: clamp(1.05rem, 1.8vw, 1.35rem);
+    letter-spacing: 0.12em;
   }
 
   .card:hover,

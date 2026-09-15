@@ -32,6 +32,7 @@
       "subtitle": "绮花阈限带",
       "image": "/img/home/block-huaya.jpg",
       "href": "/huaya",
+      "layout": "region",
       "children": [
         {
           "id": "huaya-hishitsu",
