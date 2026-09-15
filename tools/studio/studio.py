@@ -29,6 +29,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]      # 项目根目录
 IS_WIN = sys.platform == 'win32'
 
+# 所有子进程都带这个标记，不弹控制台黑框。
+# 早先只有启动 pnpm 那一处加了，结果每 4 秒一次的状态检查
+# 会闪一个黑窗口出来 —— 就是用户看到的"时不时弹窗然后立马关掉"。
+NO_WINDOW = subprocess.CREATE_NO_WINDOW if IS_WIN else 0
+
 # ---------------------------------------------------------------- 配色
 
 CJK_FONT = 'Microsoft YaHei UI'
@@ -391,21 +396,60 @@ class Studio:
 
     # ------------------------------------------------------------ 状态
 
-    def refresh_status(self):
+    def refresh_status(self, recheck=True):
+        """刷新状态栏。
+
+        这里以前是这样写的：每 4 秒同步跑一次 `git remote get-url origin`。
+        两个后果，都很难受：
+
+          1. 那个 subprocess 没带 CREATE_NO_WINDOW，于是每 4 秒
+             闪出一个控制台黑框又立刻关掉
+          2. 同步调用发生在 Tk 主线程上，界面每 4 秒被冻住一次，
+             鼠标基本点不动
+
+        现在改成：git 检查丢到后台线程，结果缓存起来；主线程只负责
+        照着缓存重绘。回到菜单时才重新探一次（draw_menu 会调这里）。
+        """
+        if self.mode != 'menu':
+            return
+        if recheck:
+            self._probe_remote_async()
+        self._paint_status()
+
+    def _probe_remote_async(self):
+        """后台线程里探一次 git 远端，探完回主线程重绘"""
+        if getattr(self, '_probing', False):
+            return
+        self._probing = True
+
+        def work():
+            remote = None
+            git = shutil.which('git')
+            if git:
+                try:
+                    r = subprocess.run(
+                        [git, 'remote', 'get-url', 'origin'],
+                        cwd=str(ROOT), capture_output=True, text=True,
+                        timeout=8, creationflags=NO_WINDOW)
+                    if r.returncode == 0:
+                        remote = r.stdout.strip()
+                except Exception:
+                    pass
+            self._remote = remote
+            self._probing = False
+            try:
+                self.root.after(0, self._paint_status)
+            except Exception:
+                pass
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def _paint_status(self):
+        """只重绘，不做任何阻塞操作"""
         if self.mode != 'menu':
             return
         deps = (ROOT / 'node_modules').exists()
-        git = shutil.which('git')
-        remote = None
-        if git:
-            try:
-                r = subprocess.run([git, 'remote', 'get-url', 'origin'],
-                                   cwd=ROOT, capture_output=True, text=True,
-                                   timeout=8)
-                if r.returncode == 0:
-                    remote = r.stdout.strip()
-            except Exception:
-                pass
+        remote = getattr(self, '_remote', None)
 
         parts = []
         parts.append((('依赖 已就绪' if deps else '依赖 未安装'), deps))
@@ -422,7 +466,6 @@ class Studio:
                                            fill=DIM, tags='status')
             bbox = self.canvas.bbox(item)
             x = bbox[2] + 26
-        self.root.after(4000, self.refresh_status)
 
     # ------------------------------------------------------------ 运行界面
 
@@ -521,7 +564,7 @@ class Studio:
                     stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
                     env=env, bufsize=1, universal_newlines=True,
                     encoding='utf-8', errors='replace',
-                    creationflags=subprocess.CREATE_NO_WINDOW if IS_WIN else 0)
+                    creationflags=NO_WINDOW)
                 for line in self.proc.stdout:
                     self.outq.put(('out', line))
                 code = self.proc.wait()
@@ -540,7 +583,7 @@ class Studio:
         try:
             if IS_WIN:
                 subprocess.run(['taskkill', '/F', '/T', '/PID', str(pid)],
-                               capture_output=True)
+                               capture_output=True, creationflags=NO_WINDOW)
             else:
                 self.proc.terminate()
         except Exception:
@@ -596,7 +639,8 @@ class Studio:
                 try:
                     r = subprocess.run([git, 'ls-remote', '--heads', 'origin'],
                                        cwd=str(ROOT), capture_output=True,
-                                       text=True, timeout=40)
+                                       text=True, timeout=40,
+                                       creationflags=NO_WINDOW)
                     ok = r.returncode == 0
                     detail = (r.stderr or '').strip()
                 except Exception as exc:
@@ -672,7 +716,7 @@ class Studio:
                 r = subprocess.run([git] + args, cwd=str(ROOT),
                                    capture_output=True, text=True,
                                    encoding='utf-8', errors='replace',
-                                   timeout=timeout)
+                                   timeout=timeout, creationflags=NO_WINDOW)
                 if r.stdout:
                     self.outq.put(('out', r.stdout))
                 if r.stderr:
@@ -682,7 +726,8 @@ class Studio:
             run(['add', '-A'])
             changed = subprocess.run([git, 'status', '--short'], cwd=str(ROOT),
                                      capture_output=True, text=True,
-                                     encoding='utf-8', errors='replace')
+                                     encoding='utf-8', errors='replace',
+                                     creationflags=NO_WINDOW)
             if not changed.stdout.strip():
                 self.outq.put(('out', '\n没有任何改动，不用发布。\n'))
                 self.outq.put(('done', 0))
