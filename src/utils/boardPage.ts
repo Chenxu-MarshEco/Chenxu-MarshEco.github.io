@@ -15,6 +15,24 @@ export interface SubPost {
   date: string;
 }
 
+/**
+ * 版块页上的一个「框」（子版块）。
+ *
+ * 两种形态都是它：
+ *   有 kids  → 一个面板，里面是子版块的卡片清单（可独立滚动）
+ *   没有 kids → 一张封面大卡，整块可点，直接进它自己的页面
+ */
+export interface BlockItem {
+  id: string;
+  title: string;
+  url: string;
+  subtitle?: string;
+  /** 自己的封面图；没设就交给样式用渐变兜底（不要回落到大板块的图，会和 hero 重复） */
+  image?: string;
+  /** 它下面的子版块，用来在框里铺卡片 */
+  kids: { title: string; url: string; subtitle?: string }[];
+}
+
 export interface NodePageData {
   /** 页面标题（页头大字） */
   title: string;
@@ -28,8 +46,8 @@ export interface NodePageData {
    * 路径推导只有一处（utils/boards.ts），这里也一样，别让调用方各自猜。
    */
   parent: { title: string; url: string } | null;
-  /** 下一层入口 */
-  children: { title: string; url: string }[];
+  /** 下一层入口（版块页会把它排成一块块的面板） */
+  children: BlockItem[];
   /** 归到本节点的文章 */
   posts: SubPost[];
 }
@@ -72,8 +90,16 @@ export async function nodePageData(url: string): Promise<NodePageData | null> {
       ? { title: parentNode.title, url: all.find((x) => x.node === parentNode)?.url ?? '/' }
       : null,
     children: (flat.node.children ?? []).map((c) => ({
+      id: c.id,
       title: c.title,
+      subtitle: c.subtitle,
+      image: c.image,
       url: all.find((x) => x.node === c)?.url ?? '/',
+      kids: (c.children ?? []).map((g) => ({
+        title: g.title,
+        subtitle: g.subtitle,
+        url: all.find((x) => x.node === g)?.url ?? '/',
+      })),
     })),
     posts: posts[flat.node.id] ?? [],
   };

@@ -235,10 +235,12 @@
     <!-- ============ 子版块编辑弹窗 ============ -->
     <div class="modal" id="boards-modal" hidden>
       <div class="modal__mask" data-close="1"></div>
-      <div class="modal__panel modal__panel--wide" role="dialog" aria-modal="true" aria-label="编辑子版块">
-        <h3 class="modal__title">首页两个大板块的子版块</h3>
+      <div class="modal__panel modal__panel--wide" role="dialog" aria-modal="true" aria-label="编辑版块">
+        <h3 class="modal__title">版块树</h3>
         <p class="hint">
-          子版块显示在大板块页面里。地址留空就是「待定」占位，不会被点。
+          这里管的是首页那两个大板块和它们下面的整棵树：大板块自己的名称、副标题、地址能改；
+          每个版块能改名、改地址、往下加子版块，也能用「移动到…」换到别的大板块／版块下面。
+          换父级**不会改 id**（文章归类靠 id），但地址会跟着树变，除非那一项自己写了地址。
           保存后写进 <code>src/data/home-boards.json</code>，重新构建即可生效。
         </p>
         <div id="boards-editor"></div>
@@ -268,6 +270,11 @@
               <option value="post">文章 / 手记</option>
               <option value="list">列表页（文章·手记·标签·归档·关于）</option>
             </select>
+          </label>
+          <!-- 选「大板块页」时才出现：板块有很多个，得挑一个具体的当样板 -->
+          <label class="layoutbar__pick" id="layout-sample-wrap" hidden>
+            哪个板块
+            <select id="layout-sample" class="input layoutbar__select"></select>
           </label>
           <span id="layout-pick" class="layoutbar__status">正在载入页面…</span>
           <button type="button" class="btn btn--ghost" id="layout-reset">重置选中</button>

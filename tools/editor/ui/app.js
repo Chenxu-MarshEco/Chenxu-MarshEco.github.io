@@ -71,6 +71,8 @@ const els = {
   layoutFrame: $('layout-frame'),
   layoutPick: $('layout-pick'),
   layoutPage: $('layout-page'),
+  layoutSample: $('layout-sample'),
+  layoutSampleWrap: $('layout-sample-wrap'),
   layoutReset: $('layout-reset'),
   layoutResetAll: $('layout-resetall'),
   layoutSave: $('layout-save'),
@@ -1043,11 +1045,115 @@ async function openBoardsModal() {
   }
 }
 
+/**
+ * 给草稿里每个节点临时发一个 key，用来在下拉里互相指认。
+ *
+ * 为什么不用 id：刚「＋下级」出来的节点还没有 id（id 要保存时才由服务端生成），
+ * 拿 id 当下拉的值会有一半指不到。__k 这种字段保存时会被服务端丢掉
+ * （writeBoards 只挑 id/title/href/image/children），不会写进 JSON。
+ */
+function indexBoardNodes() {
+  const byKey = new Map();
+  const home = new Map();
+  let seq = 0;
+
+  const walk = (list, parentKey, depth) => {
+    list.forEach((node, index) => {
+      if (!Array.isArray(node.children)) node.children = [];
+      node.__k = `k${(seq += 1)}`;
+      byKey.set(node.__k, node);
+      home.set(node.__k, { list, index, parentKey, depth });
+      walk(node.children, node.__k, depth + 1);
+    });
+  };
+
+  for (const board of boardsDraft.boards) {
+    if (!Array.isArray(board.children)) board.children = [];
+    board.__k = `b${(seq += 1)}`;
+    byKey.set(board.__k, board);
+    home.set(board.__k, { list: boardsDraft.boards, index: 0, parentKey: null, depth: -1 });
+    walk(board.children, board.__k, 0);
+  }
+
+  return { byKey, home };
+}
+
+/** target 是不是 node 自己或自己的后代 —— 版块不能塞进自己肚子里 */
+function isSelfOrDescendant(node, target) {
+  if (node === target) return true;
+  return (node.children ?? []).some((kid) => isSelfOrDescendant(kid, target));
+}
+
+/** 一个受控输入框 */
+function boardInput(value, placeholder, onInput) {
+  const el = document.createElement('input');
+  el.type = 'text';
+  el.className = 'input';
+  el.placeholder = placeholder;
+  el.value = value ?? '';
+  el.addEventListener('input', () => onInput(el.value));
+  return el;
+}
+
 function renderBoardsEditor() {
   els.boardsEditor.textContent = '';
+  const idx = indexBoardNodes();
+
+  /**
+   * 「移动到…」下拉：选一个大板块，或选一个别的版块，把这一项挂过去。
+   * 移动只改父子关系，**不改 id** —— 文章 frontmatter 里的 subs 存的是 id，
+   * 换 id 等于把归类关系全切断。
+   */
+  const moveSelect = (node) => {
+    const sel = document.createElement('select');
+    sel.className = 'input boardedit__move';
+    sel.title = '把这一项挂到别的地方去';
+
+    const head = document.createElement('option');
+    head.value = '';
+    head.textContent = '移动到…';
+    sel.appendChild(head);
+
+    const topGroup = document.createElement('optgroup');
+    topGroup.label = '大板块下';
+    for (const b of boardsDraft.boards) {
+      if (b === node || isSelfOrDescendant(node, b)) continue;
+      const o = document.createElement('option');
+      o.value = b.__k;
+      o.textContent = b.title || '(未命名大板块)';
+      topGroup.appendChild(o);
+    }
+    sel.appendChild(topGroup);
+
+    const subGroup = document.createElement('optgroup');
+    subGroup.label = '某个版块下';
+    for (const [key, other] of idx.byKey) {
+      if (!key.startsWith('k')) continue; // 顶层大板块上面已经列过
+      if (isSelfOrDescendant(node, other)) continue;
+      const info = idx.home.get(key);
+      const o = document.createElement('option');
+      o.value = key;
+      o.textContent = `${'　'.repeat(info.depth)}${other.title || '(未命名)'}`;
+      subGroup.appendChild(o);
+    }
+    if (subGroup.children.length) sel.appendChild(subGroup);
+
+    sel.addEventListener('change', () => {
+      const target = idx.byKey.get(sel.value);
+      if (!target || target === node) return;
+      const mine = idx.home.get(node.__k);
+      if (!mine) return;
+      mine.list.splice(mine.index, 1);
+      target.children.push(node);
+      renderBoardsEditor();
+      toast(`已把「${node.title || '未命名'}」移过去，记得保存`);
+    });
+
+    return sel;
+  };
 
   // 递归渲染一层
-  const renderLevel = (list, container, boardId, depth) => {
+  const renderLevel = (list, container, depth) => {
     for (let i = 0; i < list.length; i += 1) {
       const node = list[i];
       if (!node.children) node.children = [];
@@ -1059,22 +1165,12 @@ function renderBoardsEditor() {
       const row = document.createElement('div');
       row.className = 'boardedit__row';
 
-      const title = document.createElement('input');
-      title.type = 'text';
-      title.className = 'input';
-      title.placeholder = '名称';
-      title.value = node.title || node.label || '';
-      title.addEventListener('input', () => {
-        node.title = title.value;
+      const title = boardInput(node.title || node.label || '', '名称', (v) => {
+        node.title = v;
       });
 
-      const href = document.createElement('input');
-      href.type = 'text';
-      href.className = 'input';
-      href.placeholder = '地址（留空 = 自动生成页面）';
-      href.value = node.href || '';
-      href.addEventListener('input', () => {
-        node.href = href.value.trim();
+      const href = boardInput(node.href || '', '地址（留空 = 自动生成页面）', (v) => {
+        node.href = v.trim();
       });
 
       // 加下级：这是「一层里能再加更多层」的入口
@@ -1106,13 +1202,18 @@ function renderBoardsEditor() {
       row.append(title, href, addKid, del);
       box.appendChild(row);
 
+      // 第二行：id（只读，改了会切断文章归类）+ 移动到哪个版块下
+      const meta = document.createElement('div');
+      meta.className = 'boardedit__row2';
       if (node.id) {
-        const idLine = document.createElement('div');
+        const idLine = document.createElement('span');
         idLine.className = 'boardnode__id';
         idLine.textContent = node.id;
-        idLine.title = '文章归类用的标识，自动生成，不用管';
-        box.appendChild(idLine);
+        idLine.title = '文章归类用的标识，换父级也不会变，别手改';
+        meta.appendChild(idLine);
       }
+      meta.appendChild(moveSelect(node));
+      box.appendChild(meta);
 
       container.appendChild(box);
 
@@ -1120,7 +1221,7 @@ function renderBoardsEditor() {
         const kids = document.createElement('div');
         kids.className = 'boardnode__kids';
         container.appendChild(kids);
-        renderLevel(node.children, kids, boardId, depth + 1);
+        renderLevel(node.children, kids, depth + 1);
       }
     }
   };
@@ -1133,12 +1234,28 @@ function renderBoardsEditor() {
 
     const head = document.createElement('div');
     head.className = 'boardedit__head';
-    head.textContent = `${board.title}　${board.id}`;
+    head.textContent = `大板块　${board.id}`;
     box.appendChild(head);
+
+    // 大板块自己的三个字段。以前这里只显示一行只读文字，名字和地址都改不了。
+    const top = document.createElement('div');
+    top.className = 'boardedit__top';
+    top.append(
+      boardInput(board.title || '', '大板块名称', (v) => {
+        board.title = v;
+      }),
+      boardInput(board.subtitle || '', '副标题（首页卡片上那行小字）', (v) => {
+        board.subtitle = v;
+      }),
+      boardInput(board.href || '', '地址（留空 = 按 id 自动生成）', (v) => {
+        board.href = v.trim();
+      })
+    );
+    box.appendChild(top);
 
     const list = document.createElement('div');
     box.appendChild(list);
-    renderLevel(board.children, list, board.id, 0);
+    renderLevel(board.children, list, 0);
 
     const add = document.createElement('button');
     add.type = 'button';
@@ -1294,6 +1411,42 @@ const LAYOUT_SAMPLES = {
   list: '/posts/',
 };
 
+/**
+ * 把版块树摊平并算出每个节点的地址。
+ * 规则和 utils/boards.ts 一致：id 去掉父级前缀当路径段，写了 href 就以 href 为准。
+ */
+function flattenBoardTree(boards) {
+  const out = [];
+  const walk = (node, parentId, parentUrl, depth) => {
+    const seg = parentId && node.id.startsWith(`${parentId}-`)
+      ? node.id.slice(parentId.length + 1)
+      : node.id;
+    const url = node.href || (depth === 0 ? `/${seg}` : `${parentUrl}/${seg}`);
+    out.push({ id: node.id, title: node.title || '(未命名)', url, depth });
+    for (const kid of node.children ?? []) walk(kid, node.id, url, depth + 1);
+  };
+  for (const b of boards) walk(b, null, '', 0);
+  return out;
+}
+
+/** 板块页的样板页下拉：每个版块一页，得让用户自己挑要调哪一个 */
+async function fillBoardSampleSelect() {
+  if (!els.layoutSample) return;
+  if (els.layoutSample.options.length) return;
+  try {
+    const res = await fetch('/api/boards');
+    const data = await res.json();
+    for (const n of flattenBoardTree(data.boards || [])) {
+      const o = document.createElement('option');
+      o.value = n.url.endsWith('/') ? n.url : `${n.url}/`;
+      o.textContent = `${'　'.repeat(n.depth)}${n.title}`;
+      els.layoutSample.appendChild(o);
+    }
+  } catch {
+    /* 拿不到就退回「第一个大板块」 */
+  }
+}
+
 /** 第一个大板块的地址，取一次缓存起来 */
 let boardSampleUrl = null;
 
@@ -1303,6 +1456,9 @@ let boardSampleUrl = null;
  */
 async function resolveSample(page) {
   if (page !== 'board') return LAYOUT_SAMPLES[page] || '/';
+
+  // 用户在「哪个板块」里挑过就用他挑的
+  if (els.layoutSample && els.layoutSample.value) return els.layoutSample.value;
 
   if (!boardSampleUrl) {
     try {
@@ -1455,6 +1611,14 @@ async function loadLayoutPage(page) {
   els.layoutPage.value = page;
   els.layoutPick.textContent = '正在载入页面…';
   els.layoutPick.style.color = '';
+
+  // 大板块页有很多个（每层版块一页），让用户挑一个当样板；其它类型没得挑
+  if (page === 'board') {
+    await fillBoardSampleSelect();
+    if (els.layoutSampleWrap) els.layoutSampleWrap.hidden = false;
+  } else if (els.layoutSampleWrap) {
+    els.layoutSampleWrap.hidden = true;
+  }
 
   const sample = await resolveSample(page);
 
@@ -1817,6 +1981,11 @@ function bindEvents() {
   // 排版
   els.btnLayout.addEventListener('click', openLayoutModal);
   els.layoutPage.addEventListener('change', () => loadLayoutPage(els.layoutPage.value));
+  if (els.layoutSample) {
+    els.layoutSample.addEventListener('change', () => {
+      if (layoutPage === 'board') loadLayoutPage('board');
+    });
+  }
   els.layoutSave.addEventListener('click', saveLayout);
   els.layoutReset.addEventListener('click', () => {
     const win = els.layoutFrame.contentWindow;

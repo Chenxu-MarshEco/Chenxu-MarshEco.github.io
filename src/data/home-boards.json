@@ -33,26 +33,46 @@
       "image": "/img/home/block-huaya.jpg",
       "children": [
         {
-          "id": "huaya-a",
-          "title": "陌质流记忆库",
-          "href": "/huaya/mozhi",
+          "id": "huaya-hishitsu",
+          "title": "冰室"
+        },
+        {
+          "id": "huaya-r1",
+          "title": "区域一",
           "children": [
             {
-              "id": "huaya-a-1",
-              "title": "肥鱼手册",
-              "href": "/huaya/mozhi/dssay"
-            },
-            {
-              "id": "huaya-a-2",
-              "title": "测试性流质酶",
-              "href": "/huaya/mozhi/test"
+              "id": "huaya-a",
+              "title": "陌质流记忆库",
+              "href": "/huaya/mozhi",
+              "children": [
+                {
+                  "id": "huaya-a-1",
+                  "title": "肥鱼手册",
+                  "href": "/huaya/mozhi/dssay"
+                },
+                {
+                  "id": "huaya-a-2",
+                  "title": "测试性流质酶",
+                  "href": "/huaya/mozhi/test"
+                }
+              ]
             }
           ]
         },
         {
-          "id": "huaya-b",
-          "title": "花娅远位面",
-          "href": "/huaya/farland"
+          "id": "huaya-r2",
+          "title": "区域二",
+          "children": [
+            {
+              "id": "huaya-b",
+              "title": "花娅远位面",
+              "href": "/huaya/farland"
+            }
+          ]
+        },
+        {
+          "id": "huaya-r3",
+          "title": "区域三"
         }
       ]
     }

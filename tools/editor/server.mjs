@@ -1015,6 +1015,9 @@ async function writeBoards(payload) {
       subtitle: String(b.subtitle || '').trim(),
       image: String(b.image || '').trim(),
     };
+    // 顶层大板块也可以手写地址（甬城晴雨就是 /yongshen 而不是按 id 推的 /yongcheng）
+    const href = String(b.href || '').trim();
+    if (href) out.href = href;
     if (children.length) out.children = children;
     return out;
   });

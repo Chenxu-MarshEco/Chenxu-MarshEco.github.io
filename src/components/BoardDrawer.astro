@@ -5,11 +5,17 @@
  * 数据就是首页那两棵大板块树，所以它天然反映「当前在哪个板块」。
  * 常见文档站的目录树：点章节名跳转，点箭头展开/收起下一层。
  *
+ * 树是**递归**生成的，层数不设上限 —— 版块树本身能无限嵌套，
+ * 早先这里手写了三层，树再深一层下面的节点就整个露不出来。
+ * 递归出来的是字符串，用 set:html 塞进去，所以树那部分样式要写
+ * :global()（注入的元素不带本组件的作用域标记）。
+ *
  * 交互全在这个组件自己的一段小脚本里，不用任何框架 ——
  * 站里其他页面都是纯静态的，为这一个抽屉引入运行时依赖不划算。
  */
 import site from '../site.config';
 import { flattenBoards, type BoardNode } from '../utils/boards';
+import { withBase } from '../utils/url';
 
 interface Props {
   /** 当前页面路径，用来高亮位置并自动展开到它 */
@@ -30,8 +36,38 @@ const onPath = new Set(
 // 只把顶层大板块交给前端；子层在 HTML 里一次性铺好，用 hidden 控制显隐。
 const boards = site.homeBoards as BoardNode[];
 
-const nodeUrl = (id: string) => all.find((f) => f.node.id === id)?.url ?? '/';
-const nodeDepth = (id: string) => all.find((f) => f.node.id === id)?.depth ?? 0;
+const urlOf = (id: string) => all.find((f) => f.node.id === id)?.url ?? '/';
+
+/** 标题是用户数据，塞进 HTML 之前必须转义 */
+const esc = (s: string) =>
+  String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+
+/** 递归铺一层（返回 <li> 串） */
+function renderNodes(nodes: BoardNode[]): string {
+  return nodes
+    .map((node) => {
+      const url = urlOf(node.id);
+      const kids = node.children ?? [];
+      const open = onPath.has(node.id);
+      const caret = kids.length
+        ? `<button type="button" class="tree__caret${open ? ' is-open' : ''}" data-toggle="${esc(node.id)}" aria-label="展开 ${esc(node.title)}" aria-expanded="${open}">▸</button>`
+        : '<span class="tree__caret tree__caret--none" aria-hidden="true"></span>';
+      const link =
+        `<a class="tree__link" href="${withBase(url)}"` +
+        (current === url ? ' data-cur="1"' : '') +
+        (open ? ' data-onpath="1"' : '') +
+        `>${esc(node.title)}</a>`;
+      const sub = kids.length
+        ? `<ul class="tree__kids" data-kids="${esc(node.id)}"${open ? '' : ' hidden'}>${renderNodes(kids)}</ul>`
+        : '';
+      return `<li class="tree__item"><div class="tree__row">${caret}${link}</div>${sub}</li>`;
+    })
+    .join('');
+}
 ---
 
 <button
@@ -54,89 +90,9 @@ const nodeDepth = (id: string) => all.find((f) => f.node.id === id)?.depth ?? 0;
   </div>
 
   <nav class="drawer__body">
-    <ul class="tree" role="tree">
-      {
-        boards.map((board) => (
-          <li class="tree__item">
-            <div class="tree__row">
-              {board.children?.length ? (
-                <button
-                  type="button"
-                  class="tree__caret"
-                  data-toggle={board.id}
-                  aria-label={`展开 ${board.title}`}
-                  aria-expanded={onPath.has(board.id) ? 'true' : 'false'}
-                >
-                  ▸
-                </button>
-              ) : (
-                <span class="tree__caret tree__caret--none" aria-hidden="true" />
-              )}
-              <a
-                class="tree__link"
-                href={nodeUrl(board.id)}
-                data-cur={current === nodeUrl(board.id) ? '1' : undefined}
-                data-onpath={onPath.has(board.id) ? '1' : undefined}
-              >
-                {board.title}
-              </a>
-            </div>
-
-            {board.children?.length ? (
-              <ul class="tree__kids" data-kids={board.id} hidden={!onPath.has(board.id)}>
-                {board.children.map((c) => (
-                  <li class="tree__item">
-                    <div class="tree__row">
-                      {c.children?.length ? (
-                        <button
-                          type="button"
-                          class="tree__caret"
-                          data-toggle={c.id}
-                          aria-label={`展开 ${c.title}`}
-                          aria-expanded={onPath.has(c.id) ? 'true' : 'false'}
-                        >
-                          ▸
-                        </button>
-                      ) : (
-                        <span class="tree__caret tree__caret--none" aria-hidden="true" />
-                      )}
-                      <a
-                        class="tree__link"
-                        href={nodeUrl(c.id)}
-                        data-cur={current === nodeUrl(c.id) ? '1' : undefined}
-                        data-onpath={onPath.has(c.id) ? '1' : undefined}
-                      >
-                        {c.title}
-                      </a>
-                    </div>
-
-                    {c.children?.length ? (
-                      <ul class="tree__kids" data-kids={c.id} hidden={!onPath.has(c.id)}>
-                        {c.children.map((g) => (
-                          <li class="tree__item">
-                            <div class="tree__row">
-                              <span class="tree__caret tree__caret--none" aria-hidden="true" />
-                              <a
-                                class="tree__link"
-                                href={nodeUrl(g.id)}
-                                data-cur={current === nodeUrl(g.id) ? '1' : undefined}
-                                data-onpath={onPath.has(g.id) ? '1' : undefined}
-                              >
-                                {g.title}
-                              </a>
-                            </div>
-                          </li>
-                        ))}
-                      </ul>
-                    ) : null}
-                  </li>
-                ))}
-              </ul>
-            ) : null}
-          </li>
-        ))
-      }
-    </ul>
+    {/* 嵌套的 ul 就是列表结构本身，不再挂 role="tree" —— 声明了 tree 却没有
+        treeitem 子角色，读屏反而会念得乱七八糟 */}
+    <ul class="tree" set:html={renderNodes(boards)} />
   </nav>
 </aside>
 
@@ -332,24 +288,26 @@ const nodeDepth = (id: string) => all.find((f) => f.node.id === id)?.depth ?? 0;
     padding: 0.7rem 0.6rem;
   }
 
-  /* ---------- 树 ---------- */
-  .tree,
-  .tree__kids {
+  /* ---------- 树 ----------
+     这些元素是递归生成后用 set:html 注入的，拿不到本组件的作用域标记，
+     所以必须写 :global()。 */
+  :global(.tree),
+  :global(.tree__kids) {
     list-style: none;
     margin: 0;
     padding: 0;
   }
-  .tree__kids {
+  :global(.tree__kids) {
     padding-left: 1.05rem;
     border-left: 1px solid var(--c-border);
     margin-left: 0.75rem;
   }
-  .tree__row {
+  :global(.tree__row) {
     display: flex;
     align-items: center;
     gap: 0.15rem;
   }
-  .tree__caret {
+  :global(.tree__caret) {
     flex: 0 0 auto;
     width: 22px;
     height: 22px;
@@ -362,13 +320,13 @@ const nodeDepth = (id: string) => all.find((f) => f.node.id === id)?.depth ?? 0;
     font-size: 0.7rem;
     transition: transform 0.15s ease;
   }
-  .tree__caret.is-open {
+  :global(.tree__caret.is-open) {
     transform: rotate(90deg);
   }
-  .tree__caret--none {
+  :global(.tree__caret--none) {
     cursor: default;
   }
-  .tree__link {
+  :global(.tree__link) {
     flex: 1 1 auto;
     padding: 0.34rem 0.3rem;
     border-radius: 7px;
@@ -376,15 +334,15 @@ const nodeDepth = (id: string) => all.find((f) => f.node.id === id)?.depth ?? 0;
     color: var(--c-text);
     font-size: 0.92rem;
   }
-  .tree__link:hover {
+  :global(.tree__link:hover) {
     background: var(--c-accent-soft);
   }
   /* 路径上的祖先：稍微强调，让人看出自己在哪一支 */
-  .tree__link[data-onpath] {
+  :global(.tree__link[data-onpath]) {
     color: var(--c-accent);
   }
   /* 当前所在：加重并加一条竖标 */
-  .tree__link[data-cur] {
+  :global(.tree__link[data-cur]) {
     background: var(--c-accent-soft);
     color: var(--c-accent);
     font-weight: 600;
@@ -406,32 +364,32 @@ const nodeDepth = (id: string) => all.find((f) => f.node.id === id)?.depth ?? 0;
   :global(body.is-board) .drawer__site {
     color: #ffd9ef;
   }
-  :global(body.is-home) .tree__link,
-  :global(body.is-board) .tree__link {
+  :global(body.is-home) :global(.tree__link),
+  :global(body.is-board) :global(.tree__link) {
     color: #ffe6f6;
   }
-  :global(body.is-home) .tree__link:hover,
-  :global(body.is-board) .tree__link:hover {
+  :global(body.is-home) :global(.tree__link:hover),
+  :global(body.is-board) :global(.tree__link:hover) {
     background: rgba(212, 0, 123, 0.3);
   }
-  :global(body.is-home) .tree__link[data-onpath],
-  :global(body.is-board) .tree__link[data-onpath] {
+  :global(body.is-home) :global(.tree__link[data-onpath]),
+  :global(body.is-board) :global(.tree__link[data-onpath]) {
     color: #ffb3dd;
   }
-  :global(body.is-home) .tree__link[data-cur],
-  :global(body.is-board) .tree__link[data-cur] {
+  :global(body.is-home) :global(.tree__link[data-cur]),
+  :global(body.is-board) :global(.tree__link[data-cur]) {
     background: rgba(212, 0, 123, 0.42);
     color: #fff;
     box-shadow: inset 3px 0 0 #ff4fa3;
   }
-  :global(body.is-home) .tree__kids,
-  :global(body.is-board) .tree__kids {
+  :global(body.is-home) :global(.tree__kids),
+  :global(body.is-board) :global(.tree__kids) {
     border-left-color: rgba(255, 120, 190, 0.3);
   }
 
   @media (prefers-reduced-motion: reduce) {
     .drawer__bars i,
-    .tree__caret {
+    :global(.tree__caret) {
       transition: none;
     }
   }

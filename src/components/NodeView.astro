@@ -7,13 +7,26 @@
  *
  * 页面上有三块：
  *   1. 面包屑 —— 让人知道自己在树的哪一层
- *   2. 子节点网格 —— 下一层入口
+ *   2. 子版块框 —— 下一层入口（下面详述）
  *   3. 归到本节点的文章
+ *
+ * ## 子版块为什么是「框」而不是一排等大的卡片
+ *
+ * 设计稿（花娅陌域）要的是：左上一块大的，左下、中间、右边各一块，
+ * 每块里面竖着铺子版块的条目。所以子版块分两种形态：
+ *
+ *   有下级  → 一个面板：标题 + 里面可独立滚动的条目清单
+ *   没有下级 → 一整张封面大卡，整块可点，直接进它自己的页面
+ *
+ * 版面按「子版块个数」切换：够 4 个才排成设计稿那三列（左列上下两块、
+ * 中右各跨两行）；不到 4 个就用普通自适应网格 —— 甬城晴雨只有一个子版块，
+ * 硬套三列会留出一大片空白。
  *
  * URL 全部由调用方在服务端算好传进来 —— 组件里不要去推路径，
  * 推导逻辑只有一处（utils/boards.ts），放两处迟早对不上。
  */
 import { withBase } from '../utils/url';
+import type { BlockItem } from '../utils/boardPage';
 
 interface SubPost {
   title: string;
@@ -27,18 +40,16 @@ interface Crumb {
   url?: string;
 }
 
-interface ChildLink {
-  title: string;
-  url: string;
-}
-
 interface Props {
   trail: Crumb[];
-  children: ChildLink[];
+  children: BlockItem[];
   posts: SubPost[];
 }
 
 const { trail, children, posts } = Astro.props;
+
+/** 够四块才用设计稿那套三列分区，否则走自适应网格 */
+const layout = children.length >= 4 ? 'region' : 'auto';
 ---
 
 {trail.length > 1 && (
@@ -62,34 +73,68 @@ const { trail, children, posts } = Astro.props;
   </nav>
 )}
 
-{children.length > 0 && (
-  <ul class="subgrid" data-edit="children">
-    {children.map((c) => (
-      <li class="subcell">
-        <a class="subcard" href={withBase(c.url)}>
-          <span class="subcard__label">{c.title}</span>
-          <span class="subcard__arrow" aria-hidden="true">
-            →
-          </span>
-        </a>
-      </li>
-    ))}
-  </ul>
-)}
+{
+  children.length > 0 && (
+    <div class="blocks" data-layout={layout} data-edit="children">
+      {children.map((c) =>
+        c.kids.length > 0 ? (
+          <section class="block" data-edit={`block-${c.id}`}>
+            <header class="block__head">
+              <a class="block__name" href={withBase(c.url)}>
+                {c.title}
+              </a>
+              {c.subtitle && <span class="block__sub">{c.subtitle}</span>}
+            </header>
+            {/* 这一层单独滚动：里面会放很多条子版块，不能把整页撑长 */}
+            <div class="block__scroll">
+              <ul class="block__list">
+                {c.kids.map((k) => (
+                  <li>
+                    <a class="card" href={withBase(k.url)}>
+                      <span class="card__label">{k.title}</span>
+                      <span class="card__arrow" aria-hidden="true">
+                        →
+                      </span>
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </section>
+        ) : (
+          <a
+            class="block block--leaf"
+            data-edit={`block-${c.id}`}
+            href={withBase(c.url)}
+            style={c.image ? `--cover:url(${withBase(c.image)})` : undefined}
+          >
+            <span class="block__name">{c.title}</span>
+            {c.subtitle && <span class="block__sub">{c.subtitle}</span>}
+            <span class="block__go" aria-hidden="true">
+              →
+            </span>
+          </a>
+        )
+      )}
+    </div>
+  )
+}
 
-{posts.length > 0 && (
-  <>
-    <h2 class="node__h2">这里的文章</h2>
-    <ul class="subposts subposts--page">
-      {posts.map((p) => (
-        <li>
-          <a href={withBase(p.href)}>{p.title}</a>
-          <em>{p.date}</em>
-        </li>
-      ))}
-    </ul>
-  </>
-)}
+{
+  posts.length > 0 && (
+    <>
+      <h2 class="node__h2">这里的文章</h2>
+      <ul class="subposts subposts--page">
+        {posts.map((p) => (
+          <li>
+            <a href={withBase(p.href)}>{p.title}</a>
+            <em>{p.date}</em>
+          </li>
+        ))}
+      </ul>
+    </>
+  )
+}
 
 {
   children.length === 0 && posts.length === 0 && (
@@ -123,48 +168,218 @@ const { trail, children, posts } = Astro.props;
     color: rgba(255, 226, 244, 0.7);
   }
 
-  .subgrid {
+  /* ------------------------------------------------------------
+     子版块的「框」
+     ------------------------------------------------------------ */
+
+  .blocks {
+    display: grid;
+    gap: clamp(0.9rem, 1.8vw, 1.5rem);
+    /* 默认：自适应网格，子版块少的时候就这样，别硬套三列 */
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr));
+  }
+
+  /*
+    设计稿那套：左列上下两块（大块 + 宽块），中、右各一块跨两行。
+    列宽比取自设计稿（391 : 160 : 161 ≈ 2.44 : 1 : 1）。
+  */
+  .blocks[data-layout='region'] {
+    grid-template-columns: minmax(0, 2.44fr) minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-rows: auto auto;
+  }
+  .blocks[data-layout='region'] > :nth-child(1) {
+    grid-area: 1 / 1;
+  }
+  .blocks[data-layout='region'] > :nth-child(2) {
+    grid-area: 2 / 1;
+  }
+  .blocks[data-layout='region'] > :nth-child(3) {
+    grid-area: 1 / 2 / span 2 / span 1;
+  }
+  .blocks[data-layout='region'] > :nth-child(4) {
+    grid-area: 1 / 3 / span 2 / span 1;
+  }
+  /* 第五块起：整行铺开，别把格子挤坏 */
+  .blocks[data-layout='region'] > :nth-child(n + 5) {
+    grid-column: 1 / -1;
+  }
+
+  /* 面板式：标题 + 可滚动的条目清单 */
+  .block {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    overflow: hidden;
+    border-radius: 14px;
+    border: 1px solid rgba(255, 120, 190, 0.42);
+    background: rgba(38, 4, 52, 0.55);
+    box-shadow:
+      0 0 0 1px rgba(0, 0, 0, 0.3) inset,
+      0 14px 40px rgba(10, 0, 20, 0.45);
+    backdrop-filter: blur(3px);
+  }
+
+  .block__head {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 0.2rem 0.55rem;
+    padding: 0.85rem 1rem 0.65rem;
+    border-bottom: 1px solid rgba(255, 120, 190, 0.22);
+  }
+
+  .block__name {
+    font-size: 1.02rem;
+    letter-spacing: 0.1em;
+    color: #fff;
+    text-decoration: none;
+    text-shadow: 0 0 10px rgba(255, 79, 163, 0.85);
+  }
+  a.block__name:hover {
+    color: #fff;
+    text-shadow:
+      0 0 10px rgba(255, 79, 163, 1),
+      0 0 26px rgba(212, 0, 123, 0.9);
+  }
+
+  .block__sub {
+    font-size: 0.74rem;
+    letter-spacing: 0.08em;
+    color: rgba(255, 226, 244, 0.6);
+  }
+
+  /*
+    滚动区。
+    scrollbar-gutter: stable 让滚动条的位置一直留着，
+    条目多起来时里面的宽度不会突然跳一下。
+  */
+  .block__scroll {
+    overflow-y: auto;
+    max-height: clamp(180px, 34vh, 360px);
+    scrollbar-gutter: stable;
+    padding: 0.65rem;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 120, 190, 0.85) rgba(255, 255, 255, 0.07);
+  }
+
+  .block__list {
     list-style: none;
     margin: 0;
     padding: 0;
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
-    gap: 0.9rem;
-  }
-  .subcell {
     display: flex;
     flex-direction: column;
+    gap: 0.5rem;
   }
-  .subcard {
+
+  /* 框里的条目：整条可点的子版块入口 */
+  .card {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 0.8rem;
-    min-height: 64px;
-    padding: 0.9rem 1.1rem;
-    border-radius: 12px;
+    gap: 0.6rem;
+    min-height: 46px;
+    padding: 0.5rem 0.85rem;
+    border-radius: 10px;
+    border: 1px solid rgba(255, 120, 190, 0.4);
+    background: rgba(60, 8, 82, 0.5);
     text-decoration: none;
     color: #ffe6f6;
-    background: rgba(38, 4, 52, 0.62);
-    border: 1px solid rgba(255, 120, 190, 0.42);
-    backdrop-filter: blur(3px);
     transition:
-      background 0.18s ease,
-      border-color 0.18s ease,
-      transform 0.18s ease;
+      background 0.16s ease,
+      border-color 0.16s ease,
+      transform 0.16s ease;
   }
-  .subcard:hover,
-  .subcard:focus-visible {
+  .card:hover,
+  .card:focus-visible {
     background: rgba(212, 0, 123, 0.72);
     border-color: #ffb3dd;
     color: #fff;
-    transform: translateY(-2px);
+    transform: translateX(2px);
   }
-  .subcard__label {
+  .card__label {
+    font-size: 0.92rem;
+    letter-spacing: 0.06em;
+  }
+  .card__arrow {
+    color: #ffb3dd;
     font-size: 1rem;
-    letter-spacing: 0.08em;
   }
-  .subcard__arrow {
+
+  /*
+    右侧那根能拖着走的滚动条。
+    只对 WebKit 生效（Chrome / Edge / Safari）；Firefox 走上面的
+    scrollbar-width / scrollbar-color。做成实心渐变的粗条，
+    一眼能看出是可以抓的。
+  */
+  .block__scroll::-webkit-scrollbar {
+    width: 12px;
+  }
+  .block__scroll::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, 0.06);
+    border-radius: 999px;
+    margin: 2px;
+  }
+  .block__scroll::-webkit-scrollbar-thumb {
+    border-radius: 999px;
+    background: linear-gradient(180deg, #ff8ecb, #d4007b);
+    border: 2px solid transparent;
+    background-clip: padding-box;
+  }
+  .block__scroll::-webkit-scrollbar-thumb:hover {
+    background: linear-gradient(180deg, #ffb3dd, #ff2e8b);
+    background-clip: padding-box;
+  }
+
+  /* 没有下级：整块就是一张封面大卡 */
+  .block--leaf {
+    justify-content: flex-end;
+    min-height: clamp(170px, 26vh, 280px);
+    padding: 1.1rem 1.2rem;
+    text-decoration: none;
+    color: #fff;
+    background-image: var(
+      --cover,
+      linear-gradient(135deg, rgba(96, 12, 118, 0.8), rgba(30, 4, 48, 0.95))
+    );
+    background-size: cover;
+    background-position: center;
+    transition:
+      transform 0.2s ease,
+      box-shadow 0.2s ease,
+      border-color 0.2s ease;
+  }
+  /* 压一层暗底，保证标题在任何封面上都读得清 */
+  .block--leaf::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      180deg,
+      rgba(14, 2, 24, 0.2) 0%,
+      rgba(14, 2, 24, 0.5) 55%,
+      rgba(10, 0, 18, 0.86) 100%
+    );
+  }
+  .block--leaf > * {
+    position: relative;
+  }
+  .block--leaf .block__name {
+    font-size: clamp(1.2rem, 2.2vw, 1.7rem);
+    letter-spacing: 0.14em;
+  }
+  .block--leaf:hover,
+  .block--leaf:focus-visible {
+    transform: translateY(-3px);
+    border-color: #ffb3dd;
+    box-shadow:
+      0 0 34px rgba(255, 62, 165, 0.45),
+      0 20px 52px rgba(10, 0, 20, 0.55);
+  }
+  .block__go {
+    position: absolute;
+    right: 1.1rem;
+    bottom: 1.1rem;
     color: #ffb3dd;
     font-size: 1.1rem;
   }
@@ -213,11 +428,24 @@ const { trail, children, posts } = Astro.props;
     font-size: 0.9rem;
   }
 
+  /* 窄屏：三列分区塌成一列，顺序仍然是「大块 → 它的邻居 → 中 → 右」 */
+  @media (max-width: 46rem) {
+    .blocks[data-layout='region'] {
+      grid-template-columns: minmax(0, 1fr);
+      grid-template-rows: none;
+    }
+    .blocks[data-layout='region'] > :nth-child(n) {
+      grid-area: auto;
+    }
+  }
+
   @media (prefers-reduced-motion: reduce) {
-    .subcard {
+    .card,
+    .block--leaf {
       transition: none;
     }
-    .subcard:hover {
+    .card:hover,
+    .block--leaf:hover {
       transform: none;
     }
   }

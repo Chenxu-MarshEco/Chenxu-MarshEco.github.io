@@ -1202,6 +1202,20 @@ body[data-type="notes"] .field--posts-only {
   letter-spacing: 0.04em;
 }
 
+/* 大板块自己那三个字段：名称 / 副标题 / 地址 */
+.boardedit__top {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.2fr);
+  gap: 6px;
+  margin-bottom: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px dashed var(--border);
+}
+.boardedit__top .input {
+  width: 100%;
+  min-width: 0;
+}
+
 .boardedit__row {
   display: grid;
   /* 名称 / 地址 / 加下级 / 删除 */
@@ -1214,6 +1228,25 @@ body[data-type="notes"] .field--posts-only {
 .boardedit__row .input {
   width: 100%;
   min-width: 0;
+}
+
+/* 第二行：只读的 id + 「移动到…」 */
+.boardedit__row2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 2px 0 4px 2px;
+  flex-wrap: wrap;
+}
+.boardedit__row2 .boardnode__id {
+  padding: 0;
+}
+.boardedit__move {
+  width: auto;
+  max-width: 220px;
+  padding: 3px 6px;
+  font-size: 12px;
+  cursor: pointer;
 }
 
 .boardedit__mini {
