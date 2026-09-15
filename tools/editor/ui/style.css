@@ -1081,6 +1081,51 @@ body[data-type="notes"] .field--posts-only {
   }
 }
 
+/* ---------- 所属子版块勾选框 ---------- */
+
+.subpick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  min-height: 46px;
+  align-items: center;
+}
+
+.subpick__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  font-size: 13px;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+.subpick__item:hover {
+  background: var(--surface-hover, rgba(0, 0, 0, 0.04));
+}
+/* 勾中的那一项给个明显的强调色，一眼能看出这篇归到哪 */
+.subpick__item:has(input:checked) {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.subpick__item input {
+  margin: 0;
+  accent-color: var(--accent);
+}
+.subpick__item em {
+  font-style: normal;
+  font-size: 11px;
+  opacity: 0.6;
+}
+
 /* ---------- 子版块编辑弹窗 ---------- */
 
 /* 这个弹窗内容比插入图片那个多，需要更宽 */

@@ -28,6 +28,12 @@ const posts = defineCollection({
     draft: z.boolean().default(false),
     /** 置顶排序，数字越大越靠前 */
     pinned: z.number().default(0),
+    /**
+     * 所属子版块。填 src/data/home-boards.json 里各子版块的 id，
+     * 例如 ['huaya-a']。填了之后这篇文章会出现在对应大板块页面的
+     * 那个子版块下面。可以同时归到多个子版块。
+     */
+    subs: z.array(z.string()).default([]),
   }),
 });
 
@@ -43,6 +49,8 @@ const notes = defineCollection({
     mood: z.string().optional(),
     tags: z.array(z.string()).default([]),
     draft: z.boolean().default(false),
+    /** 同 posts.subs：所属子版块 */
+    subs: z.array(z.string()).default([]),
   }),
 });
 

@@ -20,7 +20,10 @@ export const GET: APIRoute = async ({ site: astroSite }) => {
     这里从 site.config 里取大板块，再补上花娅陌域下的两个固定子页面。
   */
   const boardPages = site.homeBoards.map((b) => b.href);
-  const huayaChildren = ['/huaya/mozhiliu', '/huaya/yuanweimian'];
+  // 花娅陌域下的两个固定子页面。地址必须和
+  // src/data/home-boards.json 里配置的 href 一致 —— 那边改了这里也要改，
+  // 否则 sitemap 会指到不存在的页面（feed-check 会报出来）。
+  const huayaChildren = ['/huaya/mozhi', '/huaya/farland'];
 
   const allStatic = [...staticPages, ...boardPages, ...huayaChildren];
 

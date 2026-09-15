@@ -63,6 +63,11 @@ const UPLOAD_MIME = new Map([
   ['image/svg+xml', '.svg'],
 ]);
 
+/** 反过来的查表：扩展名 -> Content-Type，用于把上传的图发回去 */
+const EXT_MIME = new Map(
+  [...UPLOAD_MIME].map(([mime, ext]) => [ext, mime]).concat([['.jpeg', 'image/jpeg']])
+);
+
 /** 静态资源白名单（只暴露这几个文件，不做目录遍历） */
 const STATIC_FILES = new Map([
   ['/', { file: 'index.html', type: 'text/html; charset=utf-8' }],
@@ -862,6 +867,33 @@ async function writeBoards(payload) {
   return { ok: true, boards };
 }
 
+/**
+ * 把 public/img/uploads 下的图片发给浏览器。
+ * 只接受纯文件名：挡掉 ../ 和子目录，避免路径穿越读到仓库里别的东西。
+ */
+async function serveUpload(res, pathname) {
+  const name = pathname.slice('/img/uploads/'.length);
+  if (!name || name.includes('/') || name.includes('\\') || name.includes('..')) {
+    return false;
+  }
+  const ext = path.extname(name).toLowerCase();
+  const type = EXT_MIME.get(ext);
+  if (!type) return false;
+
+  try {
+    const buf = await fs.readFile(path.join(UPLOAD_DIR, name));
+    res.writeHead(200, {
+      'Content-Type': type,
+      'Content-Length': buf.length,
+      'Cache-Control': 'no-store',
+    });
+    res.end(buf);
+  } catch {
+    return false; // 文件不存在就落到后面的 404
+  }
+  return true;
+}
+
 async function serveStatic(res, pathname) {
   const entry = STATIC_FILES.get(pathname);
   if (!entry) return false;
@@ -905,6 +937,16 @@ async function serveMarked(res) {
 async function handle(req, res) {
   const url = new URL(req.url || '/', `http://${HOST}`);
   const pathname = decodeURIComponent(url.pathname);
+
+  /*
+    把上传目录里的图片发回给浏览器。
+    之前只服务了前端那几个固定文件，上传目录压根没暴露，
+    于是封面和正文里引用的图在编辑器里全是 404 ——
+    文件明明在磁盘上，预览却显示不出来。
+  */
+  if (pathname.startsWith('/img/uploads/')) {
+    if (await serveUpload(res, pathname)) return;
+  }
 
   if (pathname.startsWith('/api/')) {
     await handleApi(req, res, url);

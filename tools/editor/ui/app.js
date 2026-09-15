@@ -35,6 +35,7 @@ const els = {
   mood: $('f-mood'),
   tagsBox: $('tags-box'),
   tagsInput: $('f-tags-input'),
+  subsBox: $('subs-box'),
   summary: $('f-summary'),
   cover: $('f-cover'),
   coverImg: $('cover-img'),
@@ -81,6 +82,10 @@ const state = {
   search: '',
   current: null, // { file, frontmatter, body }
   tags: [],
+  /** 这篇所属的子版块 id 列表，勾选框里选出来的 */
+  subs: [],
+  /** 可选子版块全集，从 /api/boards 拉一次缓存起来 */
+  allSubs: [],
   dirty: false,
   saving: false,
   marked: null,
@@ -508,6 +513,7 @@ function renderList() {
 function startNew({ focus = true } = {}) {
   state.current = { file: '', frontmatter: todayDraftFrontmatter(), body: '' };
   state.tags = [];
+  state.subs = [];
   fillForm(state.current.frontmatter, '');
   setDirty(false);
   renderList();
@@ -605,7 +611,10 @@ function fillForm(fm, body) {
   els.body.value = typeof body === 'string' ? body : '';
   els.tagsInput.value = '';
 
+  state.subs = Array.isArray(f.subs) ? f.subs.slice() : [];
+
   renderChips();
+  renderSubPicker();
   updateCoverPreview();
   updateBodyCount();
   renderFilename();
@@ -629,6 +638,9 @@ function collectForm() {
     fm.week = els.week.value.trim();
     fm.mood = els.mood.value.trim();
   }
+  // 所属子版块，两种栏目都支持。空数组不写进 frontmatter，
+  // 免得每篇都挂一个没用的 subs: []
+  if (state.subs.length) fm.subs = state.subs.slice();
   return fm;
 }
 
@@ -1107,6 +1119,73 @@ function closeBoardsModal() {
 }
 
 /* ---------------------------------------------------------------
+   所属子版块
+
+   子版块清单来自 /api/boards，拉一次缓存到 state.allSubs。
+   这里用勾选框而不是自由输入：子版块是固定那几个，
+   勾选比让人记 id 靠谱得多。
+   --------------------------------------------------------------- */
+
+async function loadSubs() {
+  if (state.allSubs.length) return state.allSubs;
+  try {
+    const res = await fetch('/api/boards');
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    const flat = [];
+    for (const board of data.boards || []) {
+      for (const item of board.items || []) {
+        if (item.id) flat.push({ id: item.id, label: item.label, board: board.title });
+      }
+    }
+    state.allSubs = flat;
+  } catch {
+    state.allSubs = [];
+  }
+  return state.allSubs;
+}
+
+function renderSubPicker() {
+  const box = els.subsBox;
+  box.textContent = '';
+
+  if (!state.allSubs.length) {
+    const s = document.createElement('span');
+    s.className = 'hint';
+    s.textContent = '还没有子版块。用工具栏的「子版块」按钮添加。';
+    box.appendChild(s);
+    return;
+  }
+
+  for (const sub of state.allSubs) {
+    const wrap = document.createElement('label');
+    wrap.className = 'subpick__item';
+
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.checked = state.subs.includes(sub.id);
+    cb.addEventListener('change', () => {
+      if (cb.checked) {
+        if (!state.subs.includes(sub.id)) state.subs.push(sub.id);
+      } else {
+        state.subs = state.subs.filter((x) => x !== sub.id);
+      }
+      setDirty(true);
+      scheduleDraftSave();
+    });
+
+    const text = document.createElement('span');
+    text.textContent = sub.label;
+
+    const meta = document.createElement('em');
+    meta.textContent = sub.board;
+
+    wrap.append(cb, text, meta);
+    box.appendChild(wrap);
+  }
+}
+
+/* ---------------------------------------------------------------
    保存 / 删除
    --------------------------------------------------------------- */
 
@@ -1461,6 +1540,9 @@ async function init() {
   await loadBootstrap();
   await refreshList('posts');
   await refreshList('notes');
+  // 子版块清单要先拉回来，勾选框才有内容可渲染
+  await loadSubs();
+  renderSubPicker();
 
   const params = new URLSearchParams(location.search);
   const startType = params.get('new');

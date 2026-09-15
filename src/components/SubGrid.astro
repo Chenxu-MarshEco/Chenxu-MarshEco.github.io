@@ -2,40 +2,65 @@
 /**
  * 子版块网格。大板块页面里用它列出各个子版块。
  * href 留空的显示成虚线「待定」占位，不是可点链接 —— 避免死链。
+ *
+ * postsBySub 是「子版块 id → 该子版块下的文章」的映射，由 board 页面
+ * 查好传进来。没传就只显示子版块本身，行为和以前一样。
  */
 import { withBase } from '../utils/url';
 
+interface SubPost {
+  title: string;
+  href: string;
+  date: string;
+}
+
 interface Item {
+  id?: string;
   label: string;
   href?: string;
 }
 
 interface Props {
   items: Item[];
+  postsBySub?: Record<string, SubPost[]>;
 }
 
-const { items } = Astro.props;
+const { items, postsBySub = {} } = Astro.props;
 ---
 
 <ul class="subgrid">
   {
-    items.map((item) => (
-      <li>
-        {item.href ? (
-          <a class="subcard" href={withBase(item.href)}>
-            <span class="subcard__label">{item.label}</span>
-            <span class="subcard__arrow" aria-hidden="true">
-              →
+    items.map((item) => {
+      const posts = (item.id && postsBySub[item.id]) || [];
+      return (
+        <li class="subcell">
+          {item.href ? (
+            <a class="subcard" href={withBase(item.href)}>
+              <span class="subcard__label">{item.label}</span>
+              <span class="subcard__arrow" aria-hidden="true">
+                →
+              </span>
+            </a>
+          ) : (
+            <span class="subcard subcard--todo">
+              <span class="subcard__label">{item.label}</span>
+              <span class="subcard__tag">待定</span>
             </span>
-          </a>
-        ) : (
-          <span class="subcard subcard--todo">
-            <span class="subcard__label">{item.label}</span>
-            <span class="subcard__tag">待定</span>
-          </span>
-        )}
-      </li>
-    ))
+          )}
+
+          {posts.length > 0 && (
+            <ul class="subposts">
+              {posts.map((p) => (
+                <li>
+                  <a href={withBase(p.href)}>{p.title}</a>
+                  <em>{p.date}</em>
+                </li>
+              ))}
+            </ul>
+          )}
+        </li>
+      );
+    })
   }
 </ul>
 
@@ -47,6 +72,42 @@ const { items } = Astro.props;
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
     gap: 0.9rem;
+  }
+
+  /* 格子里是「子版块 + 它下面的文章」，所以要能撑高 */
+  .subcell {
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* 归到这个子版块下的文章 */
+  .subposts {
+    list-style: none;
+    margin: 0.5rem 0 0;
+    padding: 0 0 0 0.9rem;
+    border-left: 2px solid rgba(255, 120, 190, 0.35);
+  }
+  .subposts li {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.6rem;
+    padding: 0.18rem 0;
+  }
+  .subposts a {
+    color: #ffd9ef;
+    text-decoration: none;
+    font-size: 0.88rem;
+  }
+  .subposts a:hover {
+    color: #fff;
+    text-shadow: 0 0 10px rgba(255, 79, 163, 0.9);
+  }
+  .subposts em {
+    font-style: normal;
+    font-size: 0.72rem;
+    color: rgba(255, 226, 244, 0.55);
+    white-space: nowrap;
   }
 
   .subcard {

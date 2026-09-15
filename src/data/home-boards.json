@@ -7,18 +7,10 @@
       "image": "/img/home/block-yongcheng.jpg",
       "href": "/yongcheng",
       "items": [
-        {
-          "label": "子版块一"
-        },
-        {
-          "label": "子版块二"
-        },
-        {
-          "label": "子版块三"
-        },
-        {
-          "label": "子版块四"
-        }
+        { "id": "yongcheng-a", "label": "子版块一" },
+        { "id": "yongcheng-b", "label": "子版块二" },
+        { "id": "yongcheng-c", "label": "子版块三" },
+        { "id": "yongcheng-d", "label": "子版块四" }
       ]
     },
     {
@@ -28,20 +20,10 @@
       "image": "/img/home/block-huaya.jpg",
       "href": "/huaya",
       "items": [
-        {
-          "label": "陌质流",
-          "href": "/huaya/mozhi"
-        },
-        {
-          "label": "花娅远位面",
-          "href": "/huaya/farland"
-        },
-        {
-          "label": "子版块三"
-        },
-        {
-          "label": "子版块四"
-        }
+        { "id": "huaya-a", "label": "陌质流", "href": "/huaya/mozhi" },
+        { "id": "huaya-b", "label": "花娅远位面", "href": "/huaya/farland" },
+        { "id": "huaya-c", "label": "子版块三" },
+        { "id": "huaya-d", "label": "子版块四" }
       ]
     }
   ]
