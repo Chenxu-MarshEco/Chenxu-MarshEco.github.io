@@ -934,8 +934,15 @@ async function readBoards() {
 
 /**
  * 写回大板块数据。
- * 这里会把内容重新规整一遍再落盘：只保留认识的字段、去掉空白项，
- * 免得前端传进来什么就原样写进仓库，把数据文件搞脏。
+ *
+ * 关键：必须保住每个子版块的 id。
+ * id 是「文章归类到子版块」的唯一依据（文章 frontmatter 里存 subs: [id]），
+ * 丢了 id 等于把归类关系全部切断。早先这里重建对象时只写了 label 和 href，
+ * 于是用户每次在编辑器里动一下子版块，所有 id 就被抹掉，
+ * 归类勾选框随之变成空的 —— 就是这么坏的。
+ *
+ * 新增的子版块没有 id，这里补一个。不用 label 当 id：
+ * 名字一改归类关系就断了。
  */
 async function writeBoards(payload) {
   if (!payload || !Array.isArray(payload.boards)) {
@@ -943,17 +950,29 @@ async function writeBoards(payload) {
   }
 
   const boards = payload.boards.map((b) => {
+    const boardId = String(b.id || '').trim();
+    const used = new Set();
+
     const items = (Array.isArray(b.items) ? b.items : [])
       .map((it) => {
         const label = String((it && it.label) || '').trim();
         if (!label) return null;
+
+        let id = String((it && it.id) || '').trim();
+        if (!id || used.has(id)) {
+          let n = 1;
+          while (used.has(`${boardId}-${n}`)) n += 1;
+          id = `${boardId}-${n}`;
+        }
+        used.add(id);
+
         const href = String((it && it.href) || '').trim();
-        return href ? { label, href } : { label };
+        return href ? { id, label, href } : { id, label };
       })
       .filter(Boolean);
 
     return {
-      id: String(b.id || '').trim(),
+      id: boardId,
       title: String(b.title || '').trim(),
       subtitle: String(b.subtitle || '').trim(),
       image: String(b.image || '').trim(),

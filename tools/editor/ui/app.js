@@ -1115,6 +1115,18 @@ async function saveBoards() {
     });
     const data = await res.json();
     if (!res.ok || !data.ok) throw new Error(data.error || `HTTP ${res.status}`);
+
+    // 子版块清单变了，勾选框的缓存必须作废重拉 ——
+    // 否则刚加的子版块在「所属子版块」里根本选不到。
+    state.allSubs = [];
+    await loadSubs();
+    // 已经被删掉的子版块，从当前文章的归类里剔掉，避免存下悬空 id
+    const valid = new Set(state.allSubs.map((s) => s.id));
+    const before = state.subs.length;
+    state.subs = state.subs.filter((s) => valid.has(s));
+    if (state.subs.length !== before) setDirty(true);
+    renderSubPicker();
+
     closeBoardsModal();
     toast('子版块已保存，重新构建后生效');
   } catch (err) {

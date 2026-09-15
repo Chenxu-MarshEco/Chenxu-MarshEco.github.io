@@ -8,16 +8,20 @@
       "href": "/yongcheng",
       "items": [
         {
+          "id": "yongcheng-a",
           "label": "小隰虫记",
           "href": "/yongshen/xiinsect"
         },
         {
+          "id": "yongcheng-b",
           "label": "子版块二"
         },
         {
+          "id": "yongcheng-c",
           "label": "子版块三"
         },
         {
+          "id": "yongcheng-d",
           "label": "子版块四"
         }
       ]
@@ -30,14 +34,17 @@
       "href": "/huaya",
       "items": [
         {
+          "id": "huaya-a",
           "label": "陌质流记忆库",
           "href": "/huaya/mozhi"
         },
         {
+          "id": "huaya-b",
           "label": "花娅远位面",
           "href": "/huaya/farland"
         },
         {
+          "id": "huaya-d",
           "label": "子版块四"
         }
       ]

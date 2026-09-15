@@ -13,6 +13,7 @@
 """
 
 import ctypes
+import json
 import os
 import queue
 import shutil
@@ -541,6 +542,37 @@ class Studio:
         state = 'normal' if (key and self.is_running(key)) else 'hidden'
         self.canvas.itemconfigure(self.stop_btn, state=state)
 
+        # 进度条：发布这类要等很久的操作，没进度条用户完全不知道要等多久
+        self.progress_y = 132
+        self.canvas.create_rectangle(
+            48, self.progress_y - 5, W - 48, self.progress_y + 5,
+            fill='#2a0430', outline='#8a2b6b', width=1, tags='progress')
+        self.progress_fill = self.canvas.create_rectangle(
+            48, self.progress_y - 5, 48, self.progress_y + 5,
+            fill=NEON, outline='', tags='progress')
+        self.progress_text = self.canvas.create_text(
+            W / 2, self.progress_y + 24, text='', anchor='center',
+            font=self.f_hint, fill='#ffd9ef', tags='progress')
+
+    def set_progress(self, frac, label=''):
+        """更新进度条。frac 是 0~1。"""
+        if not hasattr(self, 'progress_fill'):
+            return
+        try:
+            frac = max(0.0, min(1.0, float(frac)))
+        except (TypeError, ValueError):
+            frac = 0.0
+        x1 = 48
+        x2 = 48 + (W - 96) * frac
+        self.canvas.coords(self.progress_fill, x1, self.progress_y - 5,
+                           x2, self.progress_y + 5)
+        # 满格时换个颜色，一眼能看出「好了」
+        self.canvas.itemconfigure(self.progress_fill,
+                                  fill='#7dffb0' if frac >= 1.0 else NEON)
+        self.canvas.itemconfigure(
+            self.progress_text,
+            text=f'{int(frac * 100)}%　{label}'.strip())
+
     def make_small_button(self, key, label, x, y, cmd):
         tag = f'small_{key}'
         w, h = 100, 36
@@ -581,6 +613,9 @@ class Studio:
                     # 否则编辑器和预览的输出会混在一起
                     if self.active == key:
                         self.log_write(payload)
+                elif kind == 'progress':
+                    if self.active == key:
+                        self.set_progress(*payload)
                 elif kind == 'done':
                     self.on_proc_done(key, payload)
         except queue.Empty:
@@ -768,55 +803,125 @@ class Studio:
         self.do_publish(auto_message())
 
     def do_publish(self, message):
-        self.show_running('发布上线', 'publish')
+        K = 'publish'
+        self.show_running('发布上线', K)
         self.busy = True
         self.canvas.itemconfigure(self.stop_btn, state='normal')
         git = shutil.which('git') or 'git'
 
+        def say(text):
+            self.outq.put(('out', K, text))
+
+        def step(frac, label):
+            """推进进度条。以前发布全程没有任何反馈，用户不知道进行到哪了。"""
+            self.outq.put(('progress', K, (frac, label)))
+
         def worker():
             def run(args, timeout=None):
-                self.outq.put(('out', f'$ git {" ".join(args)}\n'))
+                say(f'$ git {" ".join(args)}\n')
                 r = subprocess.run([git] + args, cwd=str(ROOT),
                                    capture_output=True, text=True,
                                    encoding='utf-8', errors='replace',
                                    timeout=timeout, creationflags=NO_WINDOW)
                 if r.stdout:
-                    self.outq.put(('out', r.stdout))
+                    say(r.stdout)
                 if r.stderr:
-                    self.outq.put(('out', r.stderr))
+                    say(r.stderr)
                 return r.returncode
 
+            step(0.08, '正在检查有没有改动…')
             run(['add', '-A'])
             changed = subprocess.run([git, 'status', '--short'], cwd=str(ROOT),
                                      capture_output=True, text=True,
                                      encoding='utf-8', errors='replace',
                                      creationflags=NO_WINDOW)
             if not changed.stdout.strip():
-                self.outq.put(('out', '\n没有任何改动，不用发布。\n'))
-                self.outq.put(('done', 0))
+                say('\n没有任何改动，不用发布。\n')
+                step(1.0, '没有需要发布的内容')
+                self.outq.put(('done', K, 0))
                 return
 
-            self.outq.put(('out', '\n这次要提交的文件：\n'))
-            self.outq.put(('out', changed.stdout + '\n'))
+            step(0.3, '整理这次要提交的文件…')
+            say('\n这次要提交的文件：\n')
+            say(changed.stdout + '\n')
 
+            step(0.45, '正在提交…')
             if run(['commit', '-m', message]) != 0:
-                self.outq.put(('out', '\n提交失败，把上面的报错发给我看看。\n'))
-                self.outq.put(('done', 1))
+                say('\n提交失败，把上面的报错发给我看看。\n')
+                step(1.0, '提交失败')
+                self.outq.put(('done', K, 1))
                 return
 
-            self.outq.put(('out', '\n正在推送到 GitHub…\n'))
+            step(0.6, '正在推送到 GitHub…（可能要等一会儿）')
+            say('\n正在推送到 GitHub…\n')
             code = run(['push'], timeout=180)
-            if code == 0:
-                self.outq.put(('out', '\n推送成功！等一两分钟刷新网址就能看到更新。\n'))
-            else:
-                self.outq.put(('out',
-                               '\n推送失败。常见原因：\n'
-                               '  - 代理掉了，重开 Clash Verge 再试\n'
-                               '  - 还没登录 GitHub：gh auth login\n'
-                               '  - 缺 workflow 权限：gh auth refresh -s workflow\n'))
-            self.outq.put(('done', code))
+
+            if code != 0:
+                step(1.0, '推送失败')
+                say('\n推送失败。常见原因：\n'
+                    '  - 代理掉了，重开 Clash Verge 再试\n'
+                    '  - 还没登录 GitHub：gh auth login\n'
+                    '  - 缺 workflow 权限：gh auth refresh -s workflow\n')
+                self.outq.put(('done', K, code))
+                return
+
+            say('\n推送成功！\n')
+            step(0.85, '推送成功，正在等 GitHub 构建…')
+            self.wait_for_deploy(K, step, say)
+
+            self.outq.put(('done', K, 0))
 
         threading.Thread(target=worker, daemon=True).start()
+
+    def wait_for_deploy(self, key, step, say):
+        """推完之后盯一下 GitHub Actions，把「构建完成」明确告诉用户。
+
+        用户的原话是「完全不知道什么时候上传完成」—— 推送成功只是把代码
+        交上去了，真正能访问还要等 Pages 构建。这里轮询到有结果为止。
+        """
+        gh = shutil.which('gh')
+        if not gh:
+            step(1.0, '推送完成（没装 gh，无法自动确认线上构建）')
+            say('没找到 gh 命令，无法自动确认线上构建结果。\n'
+                '一般一两分钟后刷新网址就能看到。\n')
+            return
+
+        env = dict(os.environ)
+        env['HTTPS_PROXY'] = env.get('HTTPS_PROXY') or 'http://127.0.0.1:7890'
+        repo = 'Chenxu-MarshEco/Chenxu-MarshEco.github.io'
+
+        say('\n正在等 GitHub 构建完成…\n')
+        for i in range(40):
+            time.sleep(8)
+            try:
+                r = subprocess.run(
+                    [gh, 'run', 'list', '--repo', repo, '--limit', '1',
+                     '--json', 'status,conclusion'],
+                    capture_output=True, text=True, encoding='utf-8',
+                    errors='replace', timeout=30, env=env,
+                    creationflags=NO_WINDOW)
+                runs = json.loads(r.stdout or '[]')
+            except Exception:
+                continue
+            if not runs:
+                continue
+            run = runs[0]
+            if run.get('status') != 'completed':
+                # 0.85 -> 0.98 缓慢爬，让进度条看起来在动
+                step(min(0.98, 0.85 + i * 0.01), 'GitHub 正在构建…')
+                continue
+            if run.get('conclusion') == 'success':
+                step(1.0, '✓ 已上线，刷新网址即可看到')
+                say('\n─── 构建完成，已经上线了 ───\n'
+                    '打开 https://chenxu-marsheco.github.io/ 刷新即可。\n')
+            else:
+                step(1.0, f"构建结束：{run.get('conclusion')}")
+                say(f"\n构建结论：{run.get('conclusion')}\n"
+                    '去仓库的 Actions 页面能看到详细日志。\n')
+            return
+
+        step(1.0, '推送完成（构建状态没等到，稍后自己刷新看看）')
+        say('\n等构建结果超时了。一般一两分钟后刷新网址就能看到。\n')
 
     # ------------------------------------------------------------ 交互
 
