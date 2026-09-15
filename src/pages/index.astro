@@ -2,8 +2,25 @@
 import BaseLayout from '../layouts/BaseLayout.astro';
 import site from '../site.config';
 import { withBase } from '../utils/url';
+import layout from '../data/layout.json';
 
 const skyline = withBase('/img/home/skyline.png');
+
+/*
+  排版微调值来自 src/data/layout.json，由编辑器的「排版」模式写入。
+  全是默认值（0 / 1）时不输出 style，保持 HTML 干净。
+  dx / dy 是百分比（相对元素自身尺寸），s 是缩放倍数。
+  对应样式在 global.css 的 [data-edit] 规则里。
+*/
+const LHOME = (layout as { home?: Record<string, { dx?: number; dy?: number; s?: number }> }).home ?? {};
+const styleOf = (key: string) => {
+  const v = LHOME[key] ?? {};
+  const dx = v.dx ?? 0;
+  const dy = v.dy ?? 0;
+  const s = v.s ?? 1;
+  if (dx === 0 && dy === 0 && s === 1) return undefined;
+  return `--dx:${dx}%;--dy:${dy}%;--s:${s}`;
+};
 ---
 
 <BaseLayout description={site.description} bodyClass="is-home">
@@ -26,7 +43,7 @@ const skyline = withBase('/img/home/skyline.png');
   <div class="vapor" aria-hidden="true">
     <div class="vapor__sky"></div>
 
-    <div class="vapor__sun">
+    <div class="vapor__sun" data-edit="sun" style={styleOf('sun')}>
       <svg viewBox="0 0 200 200" role="presentation">
         <defs>
           <linearGradient id="sunGrad" x1="0" y1="0" x2="0" y2="1">
@@ -70,6 +87,8 @@ const skyline = withBase('/img/home/skyline.png');
     <header class="brand">
       <img
         class="brand__logo"
+        data-edit="logo"
+        style={styleOf('logo')}
         src={withBase('/img/home/logo.png')}
         alt="花涧堂徽记：龙环与塔吊艺术字"
         width="512"
@@ -77,12 +96,14 @@ const skyline = withBase('/img/home/skyline.png');
         decoding="async"
       />
       <div class="brand__text">
-        <h1 class="brand__title" data-text="花涧堂">花涧堂</h1>
+        <h1 class="brand__title" data-text="花涧堂" data-edit="title" style={styleOf('title')}>
+          花涧堂
+        </h1>
         <p class="brand__tagline">{site.tagline}</p>
       </div>
     </header>
 
-    <div class="boards">
+    <div class="boards" data-edit="boards" style={styleOf('boards')}>
       {
         site.homeBoards.map((board) => (
           <a class="board" href={withBase(board.href)} id={board.id}>

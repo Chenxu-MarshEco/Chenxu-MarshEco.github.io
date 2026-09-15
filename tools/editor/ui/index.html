@@ -23,6 +23,9 @@
       </div>
 
       <div class="topbar__actions">
+        <button type="button" class="btn btn--ghost" id="btn-layout" title="拖动 / 缩放首页上的元素">
+          排版
+        </button>
         <button type="button" class="btn btn--ghost" id="btn-boards" title="编辑首页大板块下的子版块">
           子版块
         </button>
@@ -242,6 +245,28 @@
         <div class="modal__actions">
           <button type="button" class="btn btn--ghost" data-close="1">取消</button>
           <button type="button" class="btn btn--primary" id="boards-save">保存</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ 排版微调弹窗 ============ -->
+    <div class="modal" id="layout-modal" hidden>
+      <div class="modal__mask" data-close="1"></div>
+      <div class="modal__panel modal__panel--full" role="dialog" aria-modal="true" aria-label="排版微调">
+        <h3 class="modal__title">排版微调</h3>
+        <p class="hint">
+          点一个元素选中它，<strong>拖动</strong>改位置，拖<strong>右下角的小方块</strong>缩放。
+          存下来的是<em>相对偏移和倍数</em>，不是绝对坐标 —— 所以手机上仍是正常布局，不会错位。
+          改完保存，重新构建才生效。
+        </p>
+        <div class="layoutbar">
+          <span id="layout-pick" class="layoutbar__pick">正在载入页面…</span>
+          <button type="button" class="btn btn--ghost" id="layout-reset">重置选中</button>
+          <button type="button" class="btn btn--ghost" id="layout-resetall">全部重置</button>
+          <button type="button" class="btn btn--primary" id="layout-save">保存</button>
+        </div>
+        <div class="layoutframe">
+          <iframe id="layout-frame" title="页面预览"></iframe>
         </div>
       </div>
     </div>

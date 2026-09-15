@@ -66,6 +66,14 @@ const els = {
   boardsEditor: $('boards-editor'),
   boardsSave: $('boards-save'),
 
+  btnLayout: $('btn-layout'),
+  layoutModal: $('layout-modal'),
+  layoutFrame: $('layout-frame'),
+  layoutPick: $('layout-pick'),
+  layoutReset: $('layout-reset'),
+  layoutResetAll: $('layout-resetall'),
+  layoutSave: $('layout-save'),
+
   toast: $('toast'),
 };
 
@@ -1186,6 +1194,217 @@ function renderSubPicker() {
 }
 
 /* ---------------------------------------------------------------
+   排版微调
+
+   思路：把预览站点（默认 127.0.0.1:4321）的首页 HTML 抓过来，
+   塞进一个 srcdoc iframe。srcdoc 里的文档和父页面同源，
+   所以父页面能直接操作 iframe 里的 DOM —— 跨域 iframe 就不行了。
+
+   存的是「相对偏移 + 缩放倍数」，用 CSS 的 translate/scale 施加，
+   它们是纯视觉变换、不参与布局，所以响应式断点照常生效。
+   --------------------------------------------------------------- */
+
+/** 预览站点地址。本地预览服务默认在 4321。 */
+const PREVIEW_URL = 'http://127.0.0.1:4321';
+
+/** 注入进 iframe 的编辑脚本。字符串拼接，避免和外层的模板字面量打架。 */
+const LAYOUT_SCRIPT = [
+  '(function () {',
+  '  var state = window.__layoutState = {};',
+  '  var sel = null;',
+  '  var nodes = [].slice.call(document.querySelectorAll("[data-edit]"));',
+  '',
+  '  function apply(el) {',
+  '    var v = state[el.dataset.edit];',
+  '    el.style.setProperty("--dx", v.dx + "%");',
+  '    el.style.setProperty("--dy", v.dy + "%");',
+  '    el.style.setProperty("--s", v.s);',
+  '  }',
+  '',
+  '  // 初始值：先读构建时写进内联样式的，没有就取默认',
+  '  nodes.forEach(function (el) {',
+  '    var cs = el.style;',
+  '    state[el.dataset.edit] = {',
+  '      dx: parseFloat(cs.getPropertyValue("--dx")) || 0,',
+  '      dy: parseFloat(cs.getPropertyValue("--dy")) || 0,',
+  '      s: parseFloat(cs.getPropertyValue("--s")) || 1',
+  '    };',
+  '    // 编辑期关掉过渡，不然拖动会拖泥带水',
+  '    el.style.transition = "none";',
+  '    el.style.outline = "1px dashed rgba(255,80,170,.75)";',
+  '    el.style.outlineOffset = "2px";',
+  '    el.style.cursor = "move";',
+  '  });',
+  '',
+  '  function select(el) {',
+  '    if (sel) sel.style.outlineColor = "rgba(255,80,170,.75)";',
+  '    sel = el;',
+  '    el.style.outlineColor = "#5ff0ff";',
+  '    window.parent.postMessage({ type: "layout-pick", key: el.dataset.edit }, "*");',
+  '  }',
+  '',
+  '  function handle(el) {',
+  '    var h = document.createElement("div");',
+  '    h.style.cssText = "position:fixed;width:16px;height:16px;right:0;bottom:0;"',
+  '      + "background:#5ff0ff;border:2px solid #06131a;border-radius:3px;"',
+  '      + "cursor:nwse-resize;z-index:2147483647;display:none";',
+  '    document.body.appendChild(h);',
+  '    return h;',
+  '  }',
+  '  var grip = handle();',
+  '',
+  '  function placeGrip() {',
+  '    if (!sel) { grip.style.display = "none"; return; }',
+  '    var r = sel.getBoundingClientRect();',
+  '    grip.style.display = "block";',
+  '    grip.style.left = (r.right - 10) + "px";',
+  '    grip.style.top = (r.bottom - 10) + "px";',
+  '    grip.style.right = "auto";',
+  '    grip.style.bottom = "auto";',
+  '  }',
+  '',
+  '  var drag = null;',
+  '',
+  '  document.addEventListener("mousedown", function (e) {',
+  '    if (e.target === grip) {',
+  '      drag = { mode: "scale", el: sel, x: e.clientX, y: e.clientY,',
+  '               s0: state[sel.dataset.edit].s, w: sel.getBoundingClientRect().width };',
+  '      e.preventDefault();',
+  '      return;',
+  '    }',
+  '    var el = e.target.closest ? e.target.closest("[data-edit]") : null;',
+  '    if (!el) return;',
+  '    select(el);',
+  '    var v = state[el.dataset.edit];',
+  '    drag = { mode: "move", el: el, x: e.clientX, y: e.clientY, dx0: v.dx, dy0: v.dy,',
+  '             w: el.getBoundingClientRect().width, h: el.getBoundingClientRect().height };',
+  '    e.preventDefault();',
+  '  });',
+  '',
+  '  document.addEventListener("mousemove", function (e) {',
+  '    if (!drag) return;',
+  '    var v = state[drag.el.dataset.edit];',
+  '    if (drag.mode === "move") {',
+  '      // 换算成「相对自身尺寸的百分比」，这样存下来的值和屏幕宽度无关',
+  '      v.dx = Math.round((drag.dx0 + (e.clientX - drag.x) / drag.w * 100) * 10) / 10;',
+  '      v.dy = Math.round((drag.dy0 + (e.clientY - drag.y) / drag.h * 100) * 10) / 10;',
+  '    } else {',
+  '      var next = drag.s0 * (1 + (e.clientX - drag.x) / Math.max(60, drag.w));',
+  '      v.s = Math.round(Math.min(5, Math.max(0.2, next)) * 100) / 100;',
+  '    }',
+  '    apply(drag.el);',
+  '    placeGrip();',
+  '    window.parent.postMessage({ type: "layout-change", state: state }, "*");',
+  '  });',
+  '',
+  '  document.addEventListener("mouseup", function () { drag = null; });',
+  '  window.addEventListener("resize", placeGrip);',
+  '',
+  '  window.__layoutApi = {',
+  '    state: state,',
+  '    applyKey: function (key, v) {',
+  '      state[key] = { dx: v.dx, dy: v.dy, s: v.s };',
+  '      var el = nodes.filter(function (n) { return n.dataset.edit === key; })[0];',
+  '      if (el) apply(el);',
+  '      placeGrip();',
+  '    },',
+  '    reset: function (key) {',
+  '      state[key] = { dx: 0, dy: 0, s: 1 };',
+  '      var el = nodes.filter(function (n) { return n.dataset.edit === key; })[0];',
+  '      if (el) apply(el);',
+  '      placeGrip();',
+  '    },',
+  '    resetAll: function () { nodes.forEach(function (n) { window.__layoutApi.reset(n.dataset.edit); }); },',
+  '    pick: function (key) {',
+  '      var el = nodes.filter(function (n) { return n.dataset.edit === key; })[0];',
+  '      if (el) { select(el); placeGrip(); }',
+  '    }',
+  '  };',
+  '  window.parent.postMessage({ type: "layout-ready" }, "*");',
+  '})();',
+].join('\n');
+
+let layoutState = null;
+/** iframe 里当前选中的元素 key，重置按钮要用 */
+let layoutPicked = null;
+
+async function openLayoutModal() {
+  els.layoutModal.hidden = false;
+  els.layoutPick.textContent = '正在载入页面…';
+
+  try {
+    const [pageRes, layRes] = await Promise.all([
+      // 走服务端代理，不直接 fetch 4321 —— 那是跨源，会被 CORS 挡掉
+      fetch('/api/preview?path=/', { cache: 'no-store' }),
+      fetch('/api/layout'),
+    ]);
+    if (!pageRes.ok) {
+      // 502 时把服务端那句人话提示带出来
+      const detail = await pageRes.text().catch(() => '');
+      let msg = `HTTP ${pageRes.status}`;
+      try {
+        msg = JSON.parse(detail).error || msg;
+      } catch {
+        /* 不是 JSON 就用状态码 */
+      }
+      throw new Error(msg);
+    }
+    if (!layRes.ok) throw new Error(`读取排版数据失败 HTTP ${layRes.status}`);
+
+    layoutState = await layRes.json();
+
+    let html = await pageRes.text();
+    // 让页面里的相对路径都指向预览服务（iframe 本身是 srcdoc，没有自己的地址）
+    html = html.replace(/<head([^>]*)>/i, `<head$1><base href="${PREVIEW_URL}/">`);
+    html = html.replace(/<\/body>/i, `<script>${LAYOUT_SCRIPT}<\/script></body>`);
+
+    els.layoutFrame.srcdoc = html;
+    els.layoutPick.textContent = '点一个元素选中它';
+  } catch (err) {
+    els.layoutPick.textContent = `载入失败：${err.message}`;
+    els.layoutPick.style.color = 'var(--danger, #b4443a)';
+  }
+}
+
+/** 把构建时写进页面里的初始值和编辑器里存的值合并 */
+function mergeLayout(iframeState) {
+  if (!layoutState || !layoutState.home) return iframeState;
+  const merged = {};
+  for (const [key, v] of Object.entries(iframeState)) {
+    const saved = layoutState.home[key];
+    merged[key] = saved ? { dx: saved.dx, dy: saved.dy, s: saved.s } : v;
+  }
+  return merged;
+}
+
+async function saveLayout() {
+  const win = els.layoutFrame.contentWindow;
+  if (!win || !win.__layoutApi) {
+    toast('页面还没载入好', true);
+    return;
+  }
+  try {
+    const res = await fetch('/api/layout', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ home: win.__layoutApi.state }),
+    });
+    const data = await res.json();
+    if (!res.ok || !data.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    layoutState = data;
+    closeLayoutModal();
+    toast('排版已保存，重新构建后生效');
+  } catch (err) {
+    toast(`保存失败：${err.message}`, true);
+  }
+}
+
+function closeLayoutModal() {
+  els.layoutModal.hidden = true;
+  els.layoutFrame.srcdoc = '';
+}
+
+/* ---------------------------------------------------------------
    保存 / 删除
    --------------------------------------------------------------- */
 
@@ -1466,6 +1685,50 @@ function bindEvents() {
   els.boardsSave.addEventListener('click', saveBoards);
   els.boardsModal.addEventListener('click', (ev) => {
     if (ev.target.dataset && ev.target.dataset.close) closeBoardsModal();
+  });
+
+  // 排版
+  els.btnLayout.addEventListener('click', openLayoutModal);
+  els.layoutSave.addEventListener('click', saveLayout);
+  els.layoutReset.addEventListener('click', () => {
+    const win = els.layoutFrame.contentWindow;
+    if (win && win.__layoutApi && layoutPicked) win.__layoutApi.reset(layoutPicked);
+  });
+  els.layoutResetAll.addEventListener('click', () => {
+    const win = els.layoutFrame.contentWindow;
+    if (win && win.__layoutApi) {
+      win.__layoutApi.resetAll();
+      els.layoutPick.textContent = '已全部重置（记得保存）';
+    }
+  });
+  els.layoutModal.addEventListener('click', (ev) => {
+    if (ev.target.dataset && ev.target.dataset.close) closeLayoutModal();
+  });
+
+  // iframe 里的编辑脚本通过 postMessage 回报状态
+  window.addEventListener('message', (ev) => {
+    const d = ev.data;
+    if (!d || typeof d !== 'object') return;
+
+    if (d.type === 'layout-pick') {
+      layoutPicked = d.key;
+      els.layoutPick.textContent = `已选中：${d.key}`;
+      return;
+    }
+    if (d.type === 'layout-change') {
+      els.layoutPick.textContent = `已选中：${layoutPicked || ''}（有改动，记得保存）`;
+      return;
+    }
+    if (d.type === 'layout-ready') {
+      // 以服务端存下来的值为准覆盖 iframe 里读到的初始值 ——
+      // 页面可能还没重新构建，内联样式是旧的。
+      const win = els.layoutFrame.contentWindow;
+      if (!win || !win.__layoutApi || !layoutState) return;
+      const saved = layoutState.home || {};
+      for (const [key, v] of Object.entries(saved)) {
+        win.__layoutApi.applyKey(key, v);
+      }
+    }
   });
   els.modalUrl.addEventListener('keydown', (ev) => {
     if (ev.key === 'Enter') {

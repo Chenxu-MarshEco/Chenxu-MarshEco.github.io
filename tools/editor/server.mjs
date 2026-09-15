@@ -811,7 +811,105 @@ async function handleApi(req, res, url) {
     return sendJson(res, 200, await writeBoards(payload));
   }
 
+  // ---- 排版微调（首页元素的相对偏移与缩放）----
+  if (route === '/api/layout' && req.method === 'GET') {
+    return sendJson(res, 200, await readLayout());
+  }
+  if (route === '/api/layout' && req.method === 'POST') {
+    const payload = await readBody(req);
+    return sendJson(res, 200, await writeLayout(payload));
+  }
+
+  // ---- 代理预览站点 ----
+  // 编辑器在 4322、站点预览在 4321，端口不同就是跨源。浏览器里
+  // 直接 fetch 会被 CORS 挡掉（报错只有一句 "Failed to fetch"，
+  // 很难查）。让服务端去取再原样吐回来，同源就没这个问题。
+  if (route === '/api/preview' && req.method === 'GET') {
+    const targetPath = url.searchParams.get('path') || '/';
+    if (!targetPath.startsWith('/') || targetPath.includes('..')) {
+      throw httpError(400, 'path 必须是不含 .. 的站内路径');
+    }
+    return sendPreview(res, targetPath);
+  }
+
   throw httpError(404, `未知接口 ${route}`);
+}
+
+/** 本地站点预览服务的地址 */
+const PREVIEW_ORIGIN = 'http://127.0.0.1:4321';
+
+async function sendPreview(res, targetPath) {
+  try {
+    const r = await fetch(PREVIEW_ORIGIN + targetPath, { redirect: 'follow' });
+    const text = await r.text();
+    res.writeHead(r.status, {
+      'Content-Type': r.headers.get('content-type') || 'text/html; charset=utf-8',
+      'Cache-Control': 'no-store',
+    });
+    res.end(text);
+  } catch {
+    throw httpError(
+      502,
+      `连不上本地预览服务（${PREVIEW_ORIGIN}）。先在启动器里点「看效果」把它起起来。`
+    );
+  }
+}
+
+/** 排版微调数据文件 */
+const LAYOUT_FILE = path.join(PROJECT_ROOT, 'src', 'data', 'layout.json');
+
+const LAYOUT_README =
+  '编辑器「排版」模式存下来的微调值。dx/dy 是相对自身尺寸的百分比，' +
+  's 是缩放倍数。全部为 0/1 时等于原始版式。可以手改，也可以让编辑器改。';
+
+async function readLayout() {
+  return JSON.parse(await fs.readFile(LAYOUT_FILE, 'utf8'));
+}
+
+/**
+ * 写回排版微调。
+ * 夹一下取值范围：偏移限制在 ±200%，缩放限制在 0.2~5 倍。
+ * 没有这道闸，一次误拖就能把元素甩到屏幕外面去，而且很难找回来。
+ */
+async function writeLayout(payload) {
+  if (!payload || typeof payload !== 'object' || !payload.home) {
+    throw httpError(400, '数据格式不对，需要 { home: { ... } }');
+  }
+
+  const clamp = (v, lo, hi, dflt) => {
+    const n = Number(v);
+    if (!Number.isFinite(n)) return dflt;
+    return Math.min(hi, Math.max(lo, n));
+  };
+
+  // 先读现有的，再合并。不能直接替换 —— 只提交部分元素的话，
+  // 没提交的那些会被抹掉（早先就是这么写的，测试时 logo/boards 直接消失了）。
+  let prev = {};
+  try {
+    prev = (await readLayout()).home || {};
+  } catch {
+    prev = {};
+  }
+
+  const home = { ...prev };
+  for (const [key, v] of Object.entries(payload.home)) {
+    const o = v && typeof v === 'object' ? v : {};
+    home[key] = {
+      dx: Math.round(clamp(o.dx, -200, 200, 0) * 10) / 10,
+      dy: Math.round(clamp(o.dy, -200, 200, 0) * 10) / 10,
+      s: Math.round(clamp(o.s, 0.2, 5, 1) * 100) / 100,
+    };
+  }
+
+  try {
+    await fs.copyFile(LAYOUT_FILE, `${LAYOUT_FILE}.bak`);
+  } catch {
+    /* 第一次写还没有原文件 */
+  }
+
+  const out = { _readme: LAYOUT_README, home };
+  await fs.writeFile(LAYOUT_FILE, `${JSON.stringify(out, null, 2)}\n`, 'utf8');
+  return { ok: true, ...out };
 }
 
 /** 首页大板块数据文件 */

@@ -1126,6 +1126,41 @@ body[data-type="notes"] .field--posts-only {
   opacity: 0.6;
 }
 
+/* ---------- 排版微调弹窗 ---------- */
+
+.modal__panel--full {
+  max-width: min(1180px, 94vw);
+  width: 94vw;
+}
+
+.layoutbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+.layoutbar__pick {
+  flex: 1;
+  min-width: 140px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.layoutframe {
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  overflow: hidden;
+  background: #12000f;
+  height: min(64vh, 620px);
+}
+.layoutframe iframe {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+
 /* ---------- 子版块编辑弹窗 ---------- */
 
 /* 这个弹窗内容比插入图片那个多，需要更宽 */
