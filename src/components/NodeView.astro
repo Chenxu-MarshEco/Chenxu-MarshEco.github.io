@@ -90,17 +90,18 @@ const layout = children.length >= 4 ? 'region' : 'auto';
               <ul class="block__list">
                 {c.kids.map((k) => (
                   <li>
-                    <a class="card" href={withBase(k.url)}>
-                      {/* 左图右名：图是封面（没设就用渐变兜底），名字长了省略号 */}
-                      <span
-                        class="card__thumb"
-                        aria-hidden="true"
-                        style={k.image ? `--cover:url(${withBase(k.image)})` : undefined}
-                      />
+                    {/*
+                      两种样式：
+                        传了封面图 → 图铺满整块（微微半透明），名字压在正中
+                        没传封面图 → 不摆空图位，就是一条扁平的名字条
+                      都不再放右箭头 —— 整块本来就是链接，箭头是多余的。
+                    */}
+                    <a
+                      class:list={['card', k.image && 'card--cover']}
+                      href={withBase(k.url)}
+                      style={k.image ? `--cover:url(${withBase(k.image)})` : undefined}
+                    >
                       <span class="card__label">{k.title}</span>
-                      <span class="card__arrow" aria-hidden="true">
-                        →
-                      </span>
                     </a>
                   </li>
                 ))}
@@ -116,9 +117,6 @@ const layout = children.length >= 4 ? 'region' : 'auto';
           >
             <span class="block__name">{c.title}</span>
             {c.subtitle && <span class="block__sub">{c.subtitle}</span>}
-            <span class="block__go" aria-hidden="true">
-              →
-            </span>
           </a>
         )
       )}
@@ -278,16 +276,26 @@ const layout = children.length >= 4 ? 'region' : 'auto';
     gap: 0.5rem;
   }
 
-  /* 框里的条目：左边封面图、右边名字，整条可点 */
+  /*
+    框里的条目：整块都是链接，名字居中。
+    没有右箭头 —— 整块可点这件事，靠悬停变色已经说清楚了。
+
+    两种形态：
+      .card--cover（传了封面图）→ 图铺满整块，微微半透明，名字压在上面
+      .card（没传图）         → 扁平的名字条，不摆空图位
+  */
   .card {
+    position: relative;
     display: flex;
     align-items: center;
-    gap: 0.75rem;
-    min-height: 64px;
-    padding: 0.35rem 0.8rem 0.35rem 0.35rem;
+    justify-content: center;
+    overflow: hidden;
+    min-height: 58px;
+    padding: 0.7rem 0.9rem;
     border-radius: 10px;
     border: 1px solid rgba(255, 120, 190, 0.4);
     background: rgba(60, 8, 82, 0.5);
+    text-align: center;
     text-decoration: none;
     color: #ffe6f6;
     transition:
@@ -295,49 +303,67 @@ const layout = children.length >= 4 ? 'region' : 'auto';
       border-color 0.16s ease,
       transform 0.16s ease;
   }
-  .card:hover,
-  .card:focus-visible {
-    background: rgba(212, 0, 123, 0.72);
-    border-color: #ffb3dd;
-    color: #fff;
-    transform: translateX(2px);
-  }
 
-  /*
-    封面缩略图。
-    宽度用 clamp 跟着框的宽度走：宽框（区域一那种）里给足，
-    窄框（中/右两列）里收窄，名字才不会被挤没。
-    没设封面时用渐变兜底，不会是块空白。
-  */
-  .card__thumb {
-    flex: 0 0 auto;
-    width: clamp(58px, 26%, 78px);
-    aspect-ratio: 4 / 3;
-    border-radius: 8px;
-    background-color: rgba(22, 2, 36, 0.7);
-    background-image: var(
-      --cover,
-      linear-gradient(135deg, rgba(126, 18, 152, 0.85), rgba(40, 6, 60, 0.95))
-    );
+  /* 有封面图：整块就是一张图，比纯名字条高一些才有得看 */
+  .card--cover {
+    min-height: 92px;
+    background-color: rgba(22, 2, 36, 0.9);
+  }
+  .card--cover::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image: var(--cover);
     background-size: cover;
     background-position: center;
-    box-shadow: inset 0 0 0 1px rgba(255, 120, 190, 0.28);
+    /* 微微半透明：底下的深色透上来一点，和整站的调子是一伙的 */
+    opacity: 0.82;
+    transition:
+      opacity 0.18s ease,
+      transform 0.4s ease;
+  }
+  /* 再压一层很淡的暗底：名字要压在任意一张图上都读得清 */
+  .card--cover::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(
+      130% 130% at 50% 50%,
+      rgba(12, 0, 20, 0.22) 0%,
+      rgba(12, 0, 20, 0.62) 100%
+    );
   }
 
   .card__label {
-    flex: 1 1 auto;
-    min-width: 0;
+    /* 压在图和暗底上面 */
+    position: relative;
+    z-index: 1;
+    max-width: 100%;
     font-size: 0.95rem;
-    letter-spacing: 0.06em;
-    /* 名字太长就省略，别把右边的箭头挤出去 */
+    letter-spacing: 0.08em;
+    /* 名字太长就省略，别撑破格子 */
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    text-shadow:
+      0 1px 6px rgba(10, 0, 18, 0.9),
+      0 0 16px rgba(10, 0, 18, 0.7);
   }
-  .card__arrow {
-    flex: 0 0 auto;
-    color: #ffb3dd;
-    font-size: 1rem;
+
+  .card:hover,
+  .card:focus-visible {
+    border-color: #ffb3dd;
+    color: #fff;
+    transform: translateY(-1px);
+  }
+  .card:not(.card--cover):hover,
+  .card:not(.card--cover):focus-visible {
+    background: rgba(212, 0, 123, 0.72);
+  }
+  .card--cover:hover::before,
+  .card--cover:focus-visible::before {
+    opacity: 0.96;
+    transform: scale(1.04);
   }
 
   /*
@@ -365,42 +391,55 @@ const layout = children.length >= 4 ? 'region' : 'auto';
     background-clip: padding-box;
   }
 
-  /* 没有下级：整块就是一张封面大卡 */
+  /* 没有下级：整块就是一张封面大卡，名字居中 */
   .block--leaf {
-    justify-content: flex-end;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
     min-height: clamp(170px, 26vh, 280px);
-    padding: 1.1rem 1.2rem;
+    padding: 1.2rem;
     text-decoration: none;
     color: #fff;
-    background-image: var(
-      --cover,
-      linear-gradient(135deg, rgba(96, 12, 118, 0.8), rgba(30, 4, 48, 0.95))
-    );
-    background-size: cover;
-    background-position: center;
+    /* 没传封面图时就是这层渐变 —— 它不是「缺图的占位」，是这块自己的底色 */
+    background-image: linear-gradient(135deg, rgba(96, 12, 118, 0.8), rgba(30, 4, 48, 0.95));
     transition:
       transform 0.2s ease,
       box-shadow 0.2s ease,
       border-color 0.2s ease;
   }
-  /* 压一层暗底，保证标题在任何封面上都读得清 */
+  /* 传了封面图：图铺满整块、微微半透明，和框里的卡片一个做法 */
   .block--leaf::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image: var(--cover, none);
+    background-size: cover;
+    background-position: center;
+    opacity: 0.82;
+  }
+  /* 压一层暗底，保证名字在任何封面/底色上都读得清 */
+  .block--leaf::after {
     content: '';
     position: absolute;
     inset: 0;
     background: linear-gradient(
       180deg,
-      rgba(14, 2, 24, 0.2) 0%,
+      rgba(14, 2, 24, 0.32) 0%,
       rgba(14, 2, 24, 0.5) 55%,
-      rgba(10, 0, 18, 0.86) 100%
+      rgba(10, 0, 18, 0.78) 100%
     );
   }
   .block--leaf > * {
     position: relative;
+    z-index: 1;
   }
   .block--leaf .block__name {
     font-size: clamp(1.2rem, 2.2vw, 1.7rem);
     letter-spacing: 0.14em;
+  }
+  .block--leaf .block__sub {
+    margin-top: 0.35rem;
+    color: rgba(255, 226, 244, 0.78);
   }
   .block--leaf:hover,
   .block--leaf:focus-visible {
@@ -409,13 +448,6 @@ const layout = children.length >= 4 ? 'region' : 'auto';
     box-shadow:
       0 0 34px rgba(255, 62, 165, 0.45),
       0 20px 52px rgba(10, 0, 20, 0.55);
-  }
-  .block__go {
-    position: absolute;
-    right: 1.1rem;
-    bottom: 1.1rem;
-    color: #ffb3dd;
-    font-size: 1.1rem;
   }
 
   .node__h2 {
