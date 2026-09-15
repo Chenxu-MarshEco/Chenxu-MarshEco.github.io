@@ -30,14 +30,22 @@
       "id": "huaya",
       "title": "花娅陌域",
       "subtitle": "绮花阈限带",
-      "image": "/img/home/block-huaya.jpg",
+      "image": "/img/uploads/20260915-1927-b6a4-2025-02-11_17.42.28.png",
       "href": "/huaya",
       "layout": "region",
       "children": [
         {
           "id": "huaya-hishitsu",
           "title": "冰室",
-          "href": "/huaya/bingshi"
+          "href": "/huaya/bingshi",
+          "image": "/img/uploads/20260915-1928-c3f0-粉色动漫风-方图.png",
+          "page": [
+            {
+              "id": "huaya-hishitsu-pmu2l5iyf1",
+              "type": "text",
+              "text": "花娅的混沌位面。花娅诞生于冰室，冰室也无法离开花娅。"
+            }
+          ]
         },
         {
           "id": "huaya-r1",
