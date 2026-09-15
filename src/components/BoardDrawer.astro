@@ -148,17 +148,60 @@ const nodeDepth = (id: string) => all.find((f) => f.node.id === id)?.depth ?? 0;
     const close = document.getElementById('drawer-close');
     if (!toggle || !panel || !scrim || !close) return;
 
-    const setOpen = (open) => {
+    /*
+      开合状态记在 sessionStorage 里，是为了让它扛得住跳转。
+      本站是多页站点：点一次目录链接就是一次整页加载，这个组件会整个重新初始化，
+      状态只放在内存里的话，翻一页就没了 —— 用户每跳一次都得重新点开。
+
+      为什么用 sessionStorage 而不是 localStorage：
+      这份状态属于「这一轮浏览」，标签页关掉就该忘掉，下次打开站点是干净的。
+      两种存储都可能被浏览器策略拒绝，所以读写一律包在 try 里：
+      拿不到就当没有记忆，功能照常，只是不记。
+    */
+    const KEY = 'drawer-open';
+    const remember = (open) => {
+      try {
+        if (open) sessionStorage.setItem(KEY, '1');
+        else sessionStorage.removeItem(KEY);
+      } catch {
+        /* 私密模式等场景下不可用，忽略 */
+      }
+    };
+    const recalled = () => {
+      try {
+        return sessionStorage.getItem(KEY) === '1';
+      } catch {
+        return false;
+      }
+    };
+
+    /** 只改状态和样式，不碰焦点 */
+    const paint = (open) => {
       panel.hidden = !open;
       scrim.hidden = !open;
       toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
       document.documentElement.classList.toggle('drawer-open', open);
+    };
+
+    const setOpen = (open, { focus = true } = {}) => {
+      paint(open);
+      remember(open);
+      if (!focus) return;
       if (open) close.focus();
       else toggle.focus();
     };
 
+    /*
+      上一页开着，这一页就接着开着。
+      这里刻意不抢焦点：页面刚加载完就把焦点丢到「关闭」按钮上，
+      读屏会先念一遍「关闭目录」，键盘用户也会莫名其妙从抽屉里开始 Tab。
+    */
+    if (recalled()) paint(true);
+
     toggle.addEventListener('click', () => setOpen(panel.hidden));
     close.addEventListener('click', () => setOpen(false));
+    // 点抽屉卡片以外的任何地方都关掉 —— 那块区域就是这层遮罩。
+    // 遮罩盖住整屏，所以在外面点一下既关掉抽屉，也不会误触到后面的链接。
     scrim.addEventListener('click', () => setOpen(false));
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape' && !panel.hidden) setOpen(false);
