@@ -58,52 +58,62 @@
             {
               "id": "huaya-r2-1",
               "title": "纷湖",
-              "href": "/huaya/years/fenhu"
+              "href": "/huaya/years/fenhu",
+              "image": "/img/uploads/20260915-1512-e633-QQ图片20260915151216.png.png"
             },
             {
               "id": "huaya-r2-2",
               "title": "花娅地",
-              "href": "/huaya/years/huayadi"
+              "href": "/huaya/years/huayadi",
+              "image": "/img/uploads/20260915-1513-6cb0-2024-02-02_23.19.27.png"
             },
             {
               "id": "huaya-r2-3",
               "title": "新花娅地",
-              "href": "/huaya/years/newhuaya"
+              "href": "/huaya/years/newhuaya",
+              "image": "/img/uploads/20260915-1513-4e11-2024-08-25_12.49.24.png"
             },
             {
               "id": "huaya-r2-4",
               "title": "绮花娅域",
-              "href": "/huaya/years/qihuaya"
+              "href": "/huaya/years/qihuaya",
+              "image": "/img/uploads/20260915-1514-e76e-2025-02-11_17.42.28.png"
             },
             {
               "id": "huaya-r2-5",
-              "title": "煌花娅市",
-              "href": "/huaya/years/huanghuaya"
+              "title": "眠鱼路",
+              "href": "/huaya/years/skybuger",
+              "image": "/img/uploads/20260915-1515-b96e-2025-06-12_22.45.09.png"
             },
             {
               "id": "huaya-r2-6",
-              "title": "眠鱼路",
-              "href": "/huaya/years/skybuger"
+              "title": "煌花娅市",
+              "href": "/huaya/years/huanghuaya",
+              "image": "/img/uploads/20260915-1516-e515-2025-09-15_22.00.05.png"
             },
             {
               "id": "huaya-r2-7",
               "title": "雏花娅冒险协会",
-              "href": "/huaya/years/chuhua"
+              "href": "/huaya/years/chuhua",
+              "image": "/img/uploads/20260915-1517-df93-2025-09-21_14.11.54.png"
             },
             {
               "id": "huaya-r2-8",
               "title": "徒花娅工业",
-              "href": "/huaya/years/gerg"
+              "href": "/huaya/years/gerg",
+              "image": "/img/uploads/20260915-1517-fbb9-2025-11-30_21.14.18.png"
             },
             {
               "id": "huaya-r2-9",
               "title": "新绮花娅域",
-              "href": "/huaya/years/newqihua"
+              "href": "/huaya/years/newqihua",
+              "image": "/img/uploads/20260915-1519-2863-2026-05-11_15.43.26.png"
             },
             {
               "id": "huaya-r2-10",
               "title": "遥花娅空域",
-              "href": "/huaya/years/yaohua"
+              "href": "/huaya/years/yaohua",
+              "image": "/img/uploads/20260915-1519-3aab-2026-07-28_19.01.26.png"
             }
           ]
         },
