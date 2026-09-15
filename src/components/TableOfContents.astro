@@ -52,6 +52,15 @@ const items = headings.filter((h) => h.depth >= 2 && h.depth <= 3);
       }
     };
 
+    /*
+      注意 rootMargin 的单位：IntersectionObserver 只认 px 和 %，
+      写 rem 会当场抛 SyntaxError（整段脚本挂掉，高亮永远不生效，
+      而且只在控制台留一行报错，页面上看不出异常）。
+      所以这里按根字号把 5rem 换算成 px —— 顺手也就跟着用户的字号设置走了。
+      5rem 是为了让「当前标题」压过顶部吸顶页头那一段。
+    */
+    const remPx = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+
     const observer = new IntersectionObserver(
       (entries) => {
         const visible = entries
@@ -59,7 +68,7 @@ const items = headings.filter((h) => h.depth >= 2 && h.depth <= 3);
           .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
         if (visible[0]) setActive(visible[0].target.id);
       },
-      { rootMargin: '-5rem 0px -70% 0px', threshold: 0 }
+      { rootMargin: `-${Math.round(remPx * 5)}px 0px -70% 0px`, threshold: 0 }
     );
 
     for (const target of targets) observer.observe(target);

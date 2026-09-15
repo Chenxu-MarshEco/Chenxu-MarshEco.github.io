@@ -85,6 +85,44 @@ export function topBoards(boards: BoardNode[]): BoardNode[] {
   return boards;
 }
 
+/** 面包屑的一项。最后一项不带 url，表示「当前所在」 */
+export interface Crumb {
+  title: string;
+  url?: string;
+}
+
+/**
+ * 文章 / 手记 frontmatter 里的 subs（节点 id 列表）→ 面包屑链。
+ *
+ * 每条链从大板块一路接到「这篇东西直接所属的那个节点」，每一项都带 url，
+ * 所以文章页能直接拿它拼出「花娅陌域 › 陌质流记忆库 › 测试性流质酶」，
+ * 点最末一项就回到了上一级。当前页自己（文章标题）由调用方接在末尾。
+ *
+ * 一篇文章可以同时归到多个节点，所以返回的是「链的数组」而不是一条链。
+ *
+ * 找不到的 id 直接丢掉：版块在 home-boards.json 里被删掉之后，
+ * 旧文章 frontmatter 里的 subs 就成了悬空引用 ——
+ * 那时候应该只是少一条面包屑，而不是整站构建报错。
+ */
+export function trailsOf(boards: BoardNode[], ids: readonly string[]): Crumb[][] {
+  const all = flattenBoards(boards);
+  const out: Crumb[][] = [];
+
+  for (const id of ids) {
+    const flat = all.find((f) => f.node.id === id);
+    if (!flat) continue;
+    out.push(
+      flat.trail.map((n) => ({
+        title: n.title,
+        // 同一个节点对象在展平结果里能按引用找回来（boardPage.ts 也是这么做的）
+        url: all.find((x) => x.node === n)?.url ?? '/',
+      }))
+    );
+  }
+
+  return out;
+}
+
 /** 文章归类用的「所有可选节点」，带上层级前缀方便在勾选框里看出从属关系 */
 export function selectableNodes(boards: BoardNode[]): {
   id: string;

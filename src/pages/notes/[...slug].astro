@@ -1,9 +1,12 @@
 ---
 import { render } from 'astro:content';
 import BaseLayout from '../../layouts/BaseLayout.astro';
+import PostTrail from '../../components/PostTrail.astro';
 import { entryUrl, getNotes, neighbors } from '../../utils/content';
 import { formatDateFull, toISODate } from '../../utils/date';
+import { trailsOf, type BoardNode } from '../../utils/boards';
 import { withBase } from '../../utils/url';
+import site from '../../site.config';
 
 export async function getStaticPaths() {
   const notes = await getNotes();
@@ -16,6 +19,9 @@ const { data } = entry;
 
 const all = await getNotes();
 const { prev, next } = neighbors(all, entry.id);
+
+/** 手记和文章一样靠 subs 归类，所以也要有来路 */
+const trails = trailsOf(site.homeBoards as BoardNode[], data.subs);
 ---
 
 <BaseLayout
@@ -28,6 +34,8 @@ const { prev, next } = neighbors(all, entry.id);
 >
   <article>
     <header class="post-header">
+      {/* 同文章页：先说来路，再说是什么 */}
+      <PostTrail trails={trails} here={data.title} />
       <h1 class="post-header__title" data-edit="title">{data.title}</h1>
       <div class="post-header__meta" data-edit="meta">
         <time datetime={toISODate(data.date)}>{formatDateFull(data.date)}</time>

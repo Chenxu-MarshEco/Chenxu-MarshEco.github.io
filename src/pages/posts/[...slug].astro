@@ -1,9 +1,11 @@
 ---
 import { render } from 'astro:content';
 import BaseLayout from '../../layouts/BaseLayout.astro';
+import PostTrail from '../../components/PostTrail.astro';
 import TableOfContents from '../../components/TableOfContents.astro';
 import { entryUrl, getPosts, neighbors, readingTime } from '../../utils/content';
 import { formatDateFull, toISODate } from '../../utils/date';
+import { trailsOf, type BoardNode } from '../../utils/boards';
 import { withBase } from '../../utils/url';
 import site from '../../site.config';
 
@@ -20,6 +22,9 @@ const all = await getPosts();
 const { prev, next } = neighbors(all, entry.id);
 const minutes = readingTime(entry.body);
 const hasToc = site.showToc && headings.filter((h) => h.depth >= 2 && h.depth <= 3).length > 2;
+
+/** 这篇文章归在哪条版块链上（subs 为空时就是空的，顶部不显示面包屑） */
+const trails = trailsOf(site.homeBoards as BoardNode[], data.subs);
 ---
 
 <BaseLayout
@@ -34,6 +39,8 @@ const hasToc = site.showToc && headings.filter((h) => h.depth >= 2 && h.depth <=
   <article class="post-layout" class:list={[hasToc && 'post-layout--with-toc']}>
     <div>
       <header class="post-header">
+        {/* 所属版块的来路。放在标题上方 —— 分类信息是「在哪儿」，不是「讲什么」 */}
+        <PostTrail trails={trails} here={data.title} />
         <h1 class="post-header__title" data-edit="title">{data.title}</h1>
         <div class="post-header__meta" data-edit="meta">
           <time datetime={toISODate(data.date)}>{formatDateFull(data.date)}</time>

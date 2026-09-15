@@ -22,6 +22,12 @@ export interface NodePageData {
   image: string;
   /** 面包屑，最后一项没有 url */
   trail: { title: string; url?: string }[];
+  /**
+   * 上一级。顶层大板块没有上一级（那就在页面上回首页）。
+   * 单独给一份而不是让页面自己从 trail 里取倒数第二项 ——
+   * 路径推导只有一处（utils/boards.ts），这里也一样，别让调用方各自猜。
+   */
+  parent: { title: string; url: string } | null;
   /** 下一层入口 */
   children: { title: string; url: string }[];
   /** 归到本节点的文章 */
@@ -51,6 +57,7 @@ export async function nodePageData(url: string): Promise<NodePageData | null> {
   if (!flat) return null;
 
   const posts = await articlesByNode();
+  const parentNode = flat.trail.length > 1 ? flat.trail[flat.trail.length - 2] : null;
 
   return {
     title: flat.node.title,
@@ -61,6 +68,9 @@ export async function nodePageData(url: string): Promise<NodePageData | null> {
       const last = i === arr.length - 1;
       return last ? { title: n.title } : { title: n.title, url: f?.url };
     }),
+    parent: parentNode
+      ? { title: parentNode.title, url: all.find((x) => x.node === parentNode)?.url ?? '/' }
+      : null,
     children: (flat.node.children ?? []).map((c) => ({
       title: c.title,
       url: all.find((x) => x.node === c)?.url ?? '/',

@@ -29,8 +29,14 @@ export async function getStaticPaths() {
 const { url } = Astro.props;
 const data = await nodePageData(url);
 if (!data) throw new Error(`大板块数据里找不到 ${url}`);
+
+// 「返回」回上一级，而不是一路回首页。
+// 顶层大板块没有上一级（parent 是 null），那才回首页 —— 这条规则写在
+// utils/boardPage.ts 里，页面只负责用。
+const backHref = data.parent?.url ?? '/';
+const backLabel = data.parent ? `返回 ${data.parent.title}` : '返回首页';
 ---
 
-<BoardLayout title={data.title} image={data.image}>
+<BoardLayout title={data.title} image={data.image} backHref={backHref} backLabel={backLabel}>
   <NodeView trail={data.trail} children={data.children} posts={data.posts} />
 </BoardLayout>

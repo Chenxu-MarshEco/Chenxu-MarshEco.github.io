@@ -24,8 +24,11 @@ export async function getStaticPaths() {
 const { url } = Astro.props;
 const data = await nodePageData(url);
 if (!data) throw new Error(`大板块数据里找不到 ${url}`);
+
+// 顶层大板块就是树的根，「返回」自然回首页（子层的上一级逻辑见 [...path].astro）
+const backLabel = data.parent ? `返回 ${data.parent.title}` : '返回首页';
 ---
 
-<BoardLayout title={data.title} image={data.image}>
+<BoardLayout title={data.title} image={data.image} backHref={data.parent?.url ?? '/'} backLabel={backLabel}>
   <NodeView trail={data.trail} children={data.children} posts={data.posts} />
 </BoardLayout>

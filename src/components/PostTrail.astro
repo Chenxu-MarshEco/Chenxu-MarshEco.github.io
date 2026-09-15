@@ -1,0 +1,95 @@
+---
+/**
+ * 文章 / 手记顶部的「所属版块」面包屑。
+ *
+ * 存在的理由：文章是靠 frontmatter 里的 subs 归到版块树上的，
+ * 但从文章本身看不出它归在哪 —— 进到文章之后就没有路回到上一级了，
+ * 只能靠浏览器的后退键。这里把所属的那条链摊开，
+ * 末一项就是「上一级」，点一下就回去了；顺带上面几级也都能直接跳。
+ *
+ * 一条链长这样（最后那个「测试文案」是当前页，不带链接）：
+ *   花娅陌域 › 陌质流记忆库 › 测试性流质酶 › 测试文案
+ *
+ * 一篇文章可以同时归到多个节点，那时候会有多条链，一行一条。
+ * 没归类（subs 是空的）时整块不渲染 —— 没有上一级，就不该硬造一个。
+ *
+ * 这是浅色页面（文章页不套 body.is-home / is-board），配色走 tokens，
+ * 和 NodeView 里那套深色底的面包屑不是一回事，别互相抄。
+ */
+import { withBase } from '../utils/url';
+import type { Crumb } from '../utils/boards';
+
+interface Props {
+  /** 每条链：大板块 → … → 这篇东西直接所属的节点 */
+  trails: Crumb[][];
+  /** 当前页面的标题，接在每条链末尾，不带链接 */
+  here: string;
+}
+
+const { trails, here } = Astro.props;
+---
+
+{
+  trails.length > 0 && (
+    <nav class="trail" aria-label="所属版块" data-edit="trail">
+      {trails.map((chain) => (
+        <p class="trail__line">
+          {chain.map((c) => (
+            <>
+              <a href={withBase(c.url ?? '/')}>{c.title}</a>
+              <span class="trail__sep" aria-hidden="true">
+                ›
+              </span>
+            </>
+          ))}
+          <span class="trail__here" aria-current="page">
+            {here}
+          </span>
+        </p>
+      ))}
+    </nav>
+  )
+}
+
+<style>
+  .trail {
+    margin: 0 0 var(--sp-4);
+    font-size: var(--fs-xs);
+    letter-spacing: var(--ls-wide);
+    color: var(--c-text-muted);
+  }
+
+  /*
+    一行一条链。用 flex 是为了让「链接 + 分隔符」跟着文字基线对齐，
+    长链在窄屏上也能逐项折行，不会挤成一坨。
+  */
+  .trail__line {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.3rem;
+    margin: 0;
+  }
+  .trail__line + .trail__line {
+    margin-top: 0.2rem;
+  }
+
+  .trail a {
+    color: var(--c-accent);
+    text-decoration: none;
+  }
+  .trail a:hover {
+    color: var(--c-accent-hover);
+    /* 这行本身就是「可点回去」的提示，悬停时给条下划线更明确 */
+    text-decoration: underline;
+  }
+
+  .trail__sep {
+    color: var(--c-text-faint);
+    opacity: 0.7;
+  }
+
+  .trail__here {
+    color: var(--c-text-muted);
+  }
+</style>
