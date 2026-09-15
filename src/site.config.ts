@@ -42,6 +42,15 @@ export type HomeBoard = {
   items: HomeBoardItem[];
 };
 
+/**
+ * 首页两个大板块的数据。
+ *
+ * 放在独立的 JSON（src/data/home-boards.json）里而不是写死在本文件中，
+ * 是为了让本地编辑器能直接读写它 —— 让编辑器去改 TypeScript 源码
+ * 很容易把格式弄坏，改 JSON 则简单可靠。手改那个 JSON 也完全没问题。
+ */
+import homeBoardsData from './data/home-boards.json';
+
 export const site = {
   /** 浏览器标题栏和页头显示的名字 */
   title: '花涧堂',
@@ -70,39 +79,13 @@ export const site = {
   ] as NavItem[],
 
   /**
-   * 首页的两个大板块。
+   * 首页的两个大板块（数据在 src/data/home-boards.json）。
    *
-   * 首页只显示这两个大板块本身（不显示子版块），点进去才在各自的
-   * 页面里列出 items。子版块的 href 留空就显示成「待定」占位。
+   * 首页只显示这两个大板块本身，点进去才在各自的页面里列出 items。
+   * 子版块的 href 留空就显示成「待定」占位。
+   * 可以用编辑器里的「子版块」面板增删改，也可以直接改那个 JSON。
    */
-  homeBoards: [
-    {
-      id: 'yongcheng',
-      title: '甬城晴雨',
-      subtitle: '甬神晴奇雨仰',
-      image: '/img/home/block-yongcheng.jpg',
-      href: '/yongcheng',
-      items: [
-        { label: '子版块一' },
-        { label: '子版块二' },
-        { label: '子版块三' },
-        { label: '子版块四' },
-      ],
-    },
-    {
-      id: 'huaya',
-      title: '花娅陌域',
-      subtitle: '绮花阈限带',
-      image: '/img/home/block-huaya.jpg',
-      href: '/huaya',
-      items: [
-        { label: '花娅陌质流', href: '/huaya/mozhiliu' },
-        { label: '花娅远位面', href: '/huaya/yuanweimian' },
-        { label: '子版块三' },
-        { label: '子版块四' },
-      ],
-    },
-  ] as HomeBoard[],
+  homeBoards: homeBoardsData.boards as HomeBoard[],
 
   /**
    * 花娅陌质流 子页面里列出的站点栏目。

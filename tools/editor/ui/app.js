@@ -60,6 +60,11 @@ const els = {
   modalAlt: $('modal-alt'),
   modalInsert: $('modal-insert'),
 
+  btnBoards: $('btn-boards'),
+  boardsModal: $('boards-modal'),
+  boardsEditor: $('boards-editor'),
+  boardsSave: $('boards-save'),
+
   toast: $('toast'),
 };
 
@@ -275,16 +280,39 @@ function sanitizeHtml(html) {
 }
 
 let previewTimer = null;
+// 上次渲染用的正文内容。用它挡掉重复渲染 —— 预览是整棵 DOM 替换，
+// 白跑一次就会让预览的滚动位置归零、里面的图片重新加载，
+// 表现出来就是"写到一半右边跳回顶部"。
+let previewLastMd = null;
 
 function schedulePreview() {
   clearTimeout(previewTimer);
   previewTimer = setTimeout(renderPreview, 200);
 }
 
+/** 找出真正在滚动的祖先元素，用来在重绘前后保住滚动位置 */
+function scrollParent(el) {
+  let node = el;
+  while (node && node !== document.body) {
+    const s = getComputedStyle(node);
+    if (/(auto|scroll)/.test(s.overflowY) && node.scrollHeight > node.clientHeight) return node;
+    node = node.parentElement;
+  }
+  return null;
+}
+
 function renderPreview() {
   clearTimeout(previewTimer);
   const md = els.body.value;
+
+  // 内容没变直接返回。切换文档、改标题、切栏目都会触发预览，
+  // 那些情况下正文其实一个字都没动，没必要整棵重建。
+  if (md === previewLastMd) return;
+
   if (!state.marked) {
+    // 注意：这里不写 previewLastMd。marked 是异步加载的，
+    // 早先写成"先记缓存再判断"，结果第一次渲染出的是占位符、
+    // 缓存却记成已渲染，等 marked 就绪后重绘被跳过，占位符就留在那儿了。
     els.preview.innerHTML =
       '<div class="preview__placeholder">未安装 marked，预览不可用。<br />' +
       '正文照样能编辑和保存，等装好 marked（<code>pnpm add -D marked</code>）刷新一下就会出现预览。</div>';
@@ -292,11 +320,17 @@ function renderPreview() {
   }
   if (!md.trim()) {
     els.preview.innerHTML = '<div class="preview__placeholder">还没有正文，右边会随着输入实时渲染。</div>';
+    previewLastMd = md;
     return;
   }
   try {
     const html = state.marked.parse(md, { gfm: true, breaks: false });
+    // 记住滚动位置，替换完再放回去
+    const scroller = scrollParent(els.preview);
+    const top = scroller ? scroller.scrollTop : 0;
     els.preview.innerHTML = `<article class="prose">${sanitizeHtml(html)}</article>`;
+    if (scroller) scroller.scrollTop = top;
+    previewLastMd = md;
   } catch (err) {
     els.preview.innerHTML = `<div class="preview__placeholder">Markdown 渲染失败：${String(
       err && err.message ? err.message : err
@@ -377,8 +411,20 @@ function filteredItems() {
   });
 }
 
+// 上次列表渲染的"指纹"（栏目 + 搜索词 + 文件清单 + 当前选中项）。
+// 搜索框每敲一个字都会走到 renderList，而它是整表重建 —— 文档一多
+// 就会明显卡顿。指纹没变就直接跳过。
+let listLastKey = null;
+
 function renderList() {
   const items = filteredItems();
+  const currentFile = state.current ? state.current.file : '';
+  const key =
+    state.type + '|' + state.search + '|' + currentFile + '|' +
+    items.map((i) => i.file + ':' + (i.title || '')).join(',');
+  if (key === listLastKey) return;
+  listLastKey = key;
+
   els.doclist.textContent = '';
 
   if (!items.length) {
@@ -392,7 +438,6 @@ function renderList() {
     return;
   }
 
-  const currentFile = state.current ? state.current.file : '';
   for (const item of items) {
     const li = document.createElement('li');
     li.className = 'doc';
@@ -955,6 +1000,113 @@ function doInsertImage() {
 }
 
 /* ---------------------------------------------------------------
+   首页大板块的子版块编辑
+
+   数据在 src/data/home-boards.json，服务端接口是 /api/boards。
+   改的是 JSON 而不是 site.config.ts —— 后者是 TypeScript 源码，
+   让编辑器去改它很容易把文件写坏。
+   --------------------------------------------------------------- */
+
+let boardsDraft = null;
+
+async function openBoardsModal() {
+  els.boardsEditor.textContent = '正在读取…';
+  els.boardsModal.hidden = false;
+  try {
+    const res = await fetch('/api/boards');
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    boardsDraft = await res.json();
+    renderBoardsEditor();
+  } catch (err) {
+    els.boardsEditor.textContent = `读取失败：${err.message}`;
+  }
+}
+
+function renderBoardsEditor() {
+  els.boardsEditor.textContent = '';
+
+  for (const board of boardsDraft.boards) {
+    const box = document.createElement('div');
+    box.className = 'boardedit';
+
+    const head = document.createElement('div');
+    head.className = 'boardedit__head';
+    head.textContent = `${board.title}　${board.id}`;
+    box.appendChild(head);
+
+    board.items.forEach((item, idx) => {
+      const row = document.createElement('div');
+      row.className = 'boardedit__row';
+
+      const label = document.createElement('input');
+      label.type = 'text';
+      label.className = 'input';
+      label.placeholder = '子版块名称';
+      label.value = item.label || '';
+      label.addEventListener('input', () => {
+        item.label = label.value;
+      });
+
+      const href = document.createElement('input');
+      href.type = 'text';
+      href.className = 'input';
+      href.placeholder = '地址（留空 = 待定占位）';
+      href.value = item.href || '';
+      href.addEventListener('input', () => {
+        item.href = href.value;
+      });
+
+      const del = document.createElement('button');
+      del.type = 'button';
+      del.className = 'btn btn--ghost boardedit__del';
+      del.textContent = '删除';
+      del.addEventListener('click', () => {
+        board.items.splice(idx, 1);
+        renderBoardsEditor();
+      });
+
+      row.append(label, href, del);
+      box.appendChild(row);
+    });
+
+    const add = document.createElement('button');
+    add.type = 'button';
+    add.className = 'btn btn--ghost boardedit__add';
+    add.textContent = '＋ 添加子版块';
+    add.addEventListener('click', () => {
+      board.items.push({ label: '' });
+      renderBoardsEditor();
+      const rows = box.querySelectorAll('.boardedit__row .input');
+      const last = rows[rows.length - 2];
+      if (last) last.focus();
+    });
+    box.appendChild(add);
+
+    els.boardsEditor.appendChild(box);
+  }
+}
+
+async function saveBoards() {
+  try {
+    const res = await fetch('/api/boards', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(boardsDraft),
+    });
+    const data = await res.json();
+    if (!res.ok || !data.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    closeBoardsModal();
+    toast('子版块已保存，重新构建后生效');
+  } catch (err) {
+    toast(`保存失败：${err.message}`, true);
+  }
+}
+
+function closeBoardsModal() {
+  els.boardsModal.hidden = true;
+}
+
+/* ---------------------------------------------------------------
    保存 / 删除
    --------------------------------------------------------------- */
 
@@ -1083,9 +1235,15 @@ function bindEvents() {
   });
 
   // 搜索
+  // 搜索：加 120ms 防抖。连打时没必要每敲一个键就过一遍列表，
+  // renderList 里还有一层"结果没变就不重建"的兜底。
+  let searchTimer = null;
   els.search.addEventListener('input', () => {
-    state.search = els.search.value;
-    renderList();
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => {
+      state.search = els.search.value;
+      renderList();
+    }, 120);
   });
 
   // 新建
@@ -1222,6 +1380,13 @@ function bindEvents() {
   els.modalInsert.addEventListener('click', doInsertImage);
   els.imgModal.addEventListener('click', (ev) => {
     if (ev.target.dataset && ev.target.dataset.close) closeImageModal();
+  });
+
+  // 子版块编辑
+  els.btnBoards.addEventListener('click', openBoardsModal);
+  els.boardsSave.addEventListener('click', saveBoards);
+  els.boardsModal.addEventListener('click', (ev) => {
+    if (ev.target.dataset && ev.target.dataset.close) closeBoardsModal();
   });
   els.modalUrl.addEventListener('keydown', (ev) => {
     if (ev.key === 'Enter') {

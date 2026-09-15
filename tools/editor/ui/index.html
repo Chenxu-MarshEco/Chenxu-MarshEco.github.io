@@ -23,6 +23,9 @@
       </div>
 
       <div class="topbar__actions">
+        <button type="button" class="btn btn--ghost" id="btn-boards" title="编辑首页大板块下的子版块">
+          子版块
+        </button>
         <button type="button" class="btn btn--ghost" id="btn-preview" title="显示 / 隐藏预览">
           预览
         </button>
@@ -214,6 +217,23 @@
         <div class="modal__actions">
           <button type="button" class="btn btn--ghost" data-close="1">取消</button>
           <button type="button" class="btn btn--primary" id="modal-insert">插入</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ 子版块编辑弹窗 ============ -->
+    <div class="modal" id="boards-modal" hidden>
+      <div class="modal__mask" data-close="1"></div>
+      <div class="modal__panel modal__panel--wide" role="dialog" aria-modal="true" aria-label="编辑子版块">
+        <h3 class="modal__title">首页两个大板块的子版块</h3>
+        <p class="hint">
+          子版块显示在大板块页面里。地址留空就是「待定」占位，不会被点。
+          保存后写进 <code>src/data/home-boards.json</code>，重新构建即可生效。
+        </p>
+        <div id="boards-editor"></div>
+        <div class="modal__actions">
+          <button type="button" class="btn btn--ghost" data-close="1">取消</button>
+          <button type="button" class="btn btn--primary" id="boards-save">保存</button>
         </div>
       </div>
     </div>

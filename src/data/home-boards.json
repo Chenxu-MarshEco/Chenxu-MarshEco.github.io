@@ -1,0 +1,30 @@
+{
+  "boards": [
+    {
+      "id": "yongcheng",
+      "title": "甬城晴雨",
+      "subtitle": "甬神晴奇雨仰",
+      "image": "/img/home/block-yongcheng.jpg",
+      "href": "/yongcheng",
+      "items": [
+        { "label": "子版块一" },
+        { "label": "子版块二" },
+        { "label": "子版块三" },
+        { "label": "子版块四" }
+      ]
+    },
+    {
+      "id": "huaya",
+      "title": "花娅陌域",
+      "subtitle": "绮花阈限带",
+      "image": "/img/home/block-huaya.jpg",
+      "href": "/huaya",
+      "items": [
+        { "label": "花娅陌质流", "href": "/huaya/mozhiliu" },
+        { "label": "花娅远位面", "href": "/huaya/yuanweimian" },
+        { "label": "子版块三" },
+        { "label": "子版块四" }
+      ]
+    }
+  ]
+}

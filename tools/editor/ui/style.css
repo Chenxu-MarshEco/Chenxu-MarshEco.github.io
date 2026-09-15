@@ -1080,3 +1080,67 @@ body[data-type="notes"] .field--posts-only {
     display: none;
   }
 }
+
+/* ---------- 子版块编辑弹窗 ---------- */
+
+/* 这个弹窗内容比插入图片那个多，需要更宽 */
+.modal__panel--wide {
+  max-width: 640px;
+  max-height: 82vh;
+  overflow-y: auto;
+}
+
+.boardedit {
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: 12px;
+  margin-bottom: 14px;
+  background: var(--surface);
+}
+.boardedit:last-child {
+  margin-bottom: 0;
+}
+
+.boardedit__head {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 10px;
+  letter-spacing: 0.04em;
+}
+
+.boardedit__row {
+  display: grid;
+  /* 名称 / 地址 / 删除，两列输入自适应 */
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) auto;
+  gap: 8px;
+  margin-bottom: 8px;
+  align-items: center;
+}
+
+.boardedit__row .input {
+  width: 100%;
+  min-width: 0;
+}
+
+.boardedit__del {
+  white-space: nowrap;
+  color: var(--danger, #b4443a);
+}
+
+.boardedit__add {
+  margin-top: 4px;
+  width: 100%;
+}
+
+/* 弹窗里的说明文字 */
+.modal__panel .hint {
+  margin: 0 0 14px;
+  line-height: 1.7;
+}
+
+@media (max-width: 640px) {
+  .boardedit__row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

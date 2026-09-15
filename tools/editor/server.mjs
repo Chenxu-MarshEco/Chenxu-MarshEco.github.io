@@ -794,7 +794,72 @@ async function handleApi(req, res, url) {
     return sendJson(res, 200, result);
   }
 
+  // ---- 首页大板块的子版块 ----
+  // 数据放在 src/data/home-boards.json，site.config.ts 直接 import 它。
+  // 之所以不让编辑器去改 site.config.ts：那是 TypeScript 源码，
+  // 用字符串替换很容易把文件弄坏，改 JSON 则安全得多。
+  if (route === '/api/boards' && req.method === 'GET') {
+    return sendJson(res, 200, await readBoards());
+  }
+  if (route === '/api/boards' && req.method === 'POST') {
+    const payload = await readBody(req);
+    return sendJson(res, 200, await writeBoards(payload));
+  }
+
   throw httpError(404, `未知接口 ${route}`);
+}
+
+/** 首页大板块数据文件 */
+const BOARDS_FILE = path.join(PROJECT_ROOT, 'src', 'data', 'home-boards.json');
+
+async function readBoards() {
+  const text = await fs.readFile(BOARDS_FILE, 'utf8');
+  return JSON.parse(text);
+}
+
+/**
+ * 写回大板块数据。
+ * 这里会把内容重新规整一遍再落盘：只保留认识的字段、去掉空白项，
+ * 免得前端传进来什么就原样写进仓库，把数据文件搞脏。
+ */
+async function writeBoards(payload) {
+  if (!payload || !Array.isArray(payload.boards)) {
+    throw httpError(400, '数据格式不对，需要 { boards: [...] }');
+  }
+
+  const boards = payload.boards.map((b) => {
+    const items = (Array.isArray(b.items) ? b.items : [])
+      .map((it) => {
+        const label = String((it && it.label) || '').trim();
+        if (!label) return null;
+        const href = String((it && it.href) || '').trim();
+        return href ? { label, href } : { label };
+      })
+      .filter(Boolean);
+
+    return {
+      id: String(b.id || '').trim(),
+      title: String(b.title || '').trim(),
+      subtitle: String(b.subtitle || '').trim(),
+      image: String(b.image || '').trim(),
+      href: String(b.href || '').trim(),
+      items,
+    };
+  });
+
+  if (boards.some((b) => !b.id || !b.title)) {
+    throw httpError(400, '每个大板块都必须有 id 和 title');
+  }
+
+  // 先留一份备份，万一写坏了还能捞回来
+  try {
+    await fs.copyFile(BOARDS_FILE, `${BOARDS_FILE}.bak`);
+  } catch {
+    /* 第一次写还没有原文件，忽略 */
+  }
+
+  await fs.writeFile(BOARDS_FILE, `${JSON.stringify({ boards }, null, 2)}\n`, 'utf8');
+  return { ok: true, boards };
 }
 
 async function serveStatic(res, pathname) {
