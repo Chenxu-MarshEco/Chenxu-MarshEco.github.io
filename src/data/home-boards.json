@@ -9,17 +9,17 @@
         {
           "id": "yongcheng-a",
           "title": "小隰虫记",
-          "href": "/huaya/xiinsect",
+          "href": "/yongshen/xiinsect",
           "children": [
             {
               "id": "yongcheng-a-1",
               "title": "成员介绍",
-              "href": "/huaya/xiinsect/member"
+              "href": "/yongshen/xiinsect/member"
             },
             {
               "id": "yongcheng-a-2",
               "title": "喂食记录",
-              "href": "huaya/xiinsect/feed"
+              "href": "/yongshen/xiinsect/feed"
             }
           ]
         }

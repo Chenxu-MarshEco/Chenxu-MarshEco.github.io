@@ -5,6 +5,7 @@ summary: 从本地改完到别人能打开你的网址，中间发生了什么�
 tags: [说明, 部署]
 draft: false
 pinned: 0
+subs: [huaya-a-1]
 ---
 
 这篇讲清楚整个流程，出问题的时候也好知道该看哪儿。
