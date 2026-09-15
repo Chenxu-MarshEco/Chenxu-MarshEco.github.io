@@ -14,7 +14,8 @@ import { nodePageData } from '../../utils/boardPage';
 export async function getStaticPaths() {
   const all = flattenBoards(site.homeBoards as BoardNode[]);
   return all
-    .filter((f) => f.depth === 0)
+    // 链接版块点了就跳走，不给它建页面
+    .filter((f) => f.depth === 0 && !f.external)
     .map((f) => ({
       params: { board: f.url.replace(/^\//, '') },
       props: { url: f.url },

@@ -47,12 +47,34 @@ export type CardShape = 'wide' | 'square' | 'tall';
 /** 子页面卡片的大小 */
 export type CardSize = 'l' | 'm' | 's';
 
+/**
+ * 链接版块：填了 link 的子版块不再有自己的页面，点它就是跳走。
+ *
+ * 为什么还要校验一遍协议：编辑器保存时服务端已经收过一遍，
+ * 但这份 JSON 是纯文本，手改得动。如果这里不挡，手写一个
+ * `javascript:` 进去，构建出来的就是一条能执行脚本的链接。
+ */
+const SAFE_LINK = /^(https?:\/\/|mailto:|tel:|\/|#)/i;
+
+/** 这个值能不能当链接用 */
+export function isLinkUrl(value: unknown): boolean {
+  return typeof value === 'string' && SAFE_LINK.test(value.trim());
+}
+
 export interface BoardNode {
   id: string;
   title: string;
   subtitle?: string;
   image?: string;
   href?: string;
+  /**
+   * 链接版块的目标地址。填了就：
+   *   · 它自己**不再生成页面**
+   *   · 卡片照旧有名字和封面图，但点下去是打开这个链接
+   *   · 页面上不显示这个地址本身
+   * 允许 http(s) / mailto / tel / 站内 `/路径` / `#锚点`。
+   */
+  link?: string;
   /**
    * 版式。目前只认 'region'（设计稿那套三列分区，只有花娅陌域用）。
    * 不写就是默认的竖排：子页面一条一条占满整行。
@@ -80,7 +102,7 @@ export interface FlatNode {
   node: BoardNode;
   /** 从根到当前节点的 id 链 */
   ids: string[];
-  /** URL 路径，例如 /yongcheng/a */
+  /** URL 路径，例如 /yongcheng/a；链接版块则是它那个外链 */
   url: string;
   /** 面包屑，从大板块到当前节点 */
   trail: BoardNode[];
@@ -88,6 +110,8 @@ export interface FlatNode {
   boardId: string;
   /** 0 = 大板块本身 */
   depth: number;
+  /** 链接版块：url 指向站外（或站内锚点），没有自己的页面，别再往下走 */
+  external: boolean;
 }
 
 /** 去重后的 URL 段：nodeId 去掉 parentId 前缀 -> a-1 这类短段 */
@@ -113,11 +137,19 @@ export function flattenBoards(boards: BoardNode[]): FlatNode[] {
     depth: number
   ) => {
     const seg = segmentOf(node.id, parentId);
-    const url = node.href || (depth === 0 ? `/${seg}` : `${parentUrl}/${seg}`);
+    /*
+      链接版块：url 直接用那个外链，并且**当成叶子**不再往下走。
+      往下走的话子节点的地址会拼成 https://别的站/xxx，既生不出页面，
+      也会在树上留下一堆指不到地方的条目。
+    */
+    const link = typeof node.link === 'string' ? node.link.trim() : '';
+    const external = isLinkUrl(link);
+    const url = external ? link : node.href || (depth === 0 ? `/${seg}` : `${parentUrl}/${seg}`);
     const nextIds = [...ids, node.id];
     const nextTrail = [...trail, node];
 
-    out.push({ node, ids: nextIds, url, trail: nextTrail, boardId, depth });
+    out.push({ node, ids: nextIds, url, trail: nextTrail, boardId, depth, external });
+    if (external) return;
 
     for (const child of node.children ?? []) {
       walk(child, node.id, url, nextIds, nextTrail, boardId, depth + 1);
@@ -165,7 +197,8 @@ export function trailsOf(boards: BoardNode[], ids: readonly string[]): Crumb[][]
 
   for (const id of ids) {
     const flat = all.find((f) => f.node.id === id);
-    if (!flat) continue;
+    // 链接版块没有页面，文章挂上去也没地方显示，直接跳过（编辑器里也选不到它）
+    if (!flat || flat.external) continue;
     out.push(
       flat.trail.map((n) => ({
         title: n.title,
@@ -184,9 +217,12 @@ export function selectableNodes(boards: BoardNode[]): {
   label: string;
   indent: string;
 }[] {
-  return flattenBoards(boards).map((f) => ({
-    id: f.node.id,
-    label: f.node.title,
-    indent: '　'.repeat(f.depth),
-  }));
+  return flattenBoards(boards)
+    // 链接版块不是「一层页面」，文章归不到它名下
+    .filter((f) => !f.external)
+    .map((f) => ({
+      id: f.node.id,
+      label: f.node.title,
+      indent: '　'.repeat(f.depth),
+    }));
 }

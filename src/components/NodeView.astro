@@ -123,7 +123,7 @@ const layout = wantLayout === 'region' && children.length >= 4 ? 'region' : 'sta
               <ul class="block__list">
                 {c.kids.map((k) => (
                   <li>
-                    <SubCard title={k.title} url={k.url} image={k.image} />
+                    <SubCard title={k.title} url={k.url} image={k.image} external={k.external} />
                   </li>
                 ))}
               </ul>
@@ -134,7 +134,8 @@ const layout = wantLayout === 'region' && children.length >= 4 ? 'region' : 'sta
           <a
             class="block block--leaf"
             data-edit={`block-${c.id}`}
-            href={withBase(c.url)}
+            href={c.external ? c.url : withBase(c.url)}
+            {...c.external ? { target: '_blank', rel: 'noopener' } : {}}
             style={c.image ? `--cover:url(${withBase(c.image)})` : undefined}
           >
             <span class="block__name">{c.title}</span>
@@ -143,7 +144,14 @@ const layout = wantLayout === 'region' && children.length >= 4 ? 'region' : 'sta
         ) : (
           /* 竖排版式里，子页面就是整整一条宽幅大卡（图铺满 / 没图就是扁平名字条） */
           <div class="stack" data-edit={`block-${c.id}`}>
-            <SubCard title={c.title} url={c.url} image={c.image} shape="wide" size="l" />
+            <SubCard
+              title={c.title}
+              url={c.url}
+              image={c.image}
+              shape="wide"
+              size="l"
+              external={c.external}
+            />
           </div>
         )
       )}

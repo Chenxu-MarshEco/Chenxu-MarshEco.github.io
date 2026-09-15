@@ -1082,6 +1082,23 @@ function cleanCardSize(v) {
   return CARD_SIZES.has(v) ? v : undefined;
 }
 
+/**
+ * 链接版块的目标地址。
+ *
+ * 这是个会被渲染成 <a href> 的东西，所以必须收一遍：
+ * 只留 http(s) / mailto / tel / 站内 /路径 / #锚点，
+ * javascript: 和 data: 这类一律丢掉（不然就是一条能执行脚本的链接）。
+ * 用户只写了 example.com 这种，帮他补上 https://。
+ */
+function cleanLink(raw) {
+  const s = String(raw ?? '').trim();
+  if (!s) return undefined;
+  if (s.startsWith('/') || s.startsWith('#')) return s;
+  if (/^(https?:|mailto:|tel:)/i.test(s)) return s;
+  if (/^[\w-]+(\.[\w-]+)+([/?#][^\s]*)?$/.test(s)) return `https://${s}`;
+  return undefined;
+}
+
 function cleanBlocks(raw, ownerId) {
   if (!Array.isArray(raw)) return [];
 
@@ -1209,6 +1226,10 @@ function cleanNode(raw, parentId, used) {
   if (cardShape) out.cardShape = cardShape;
   const cardSize = cleanCardSize(raw.cardSize);
   if (cardSize) out.cardSize = cardSize;
+
+  // 链接版块：填了就点它直接跳走，不再有自己的页面
+  const link = cleanLink(raw.link);
+  if (link) out.link = link;
 
   const kids = Array.isArray(raw.children) ? raw.children : [];
   const children = kids.map((k) => cleanNode(k, id, used)).filter(Boolean);

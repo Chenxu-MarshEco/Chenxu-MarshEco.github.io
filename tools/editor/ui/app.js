@@ -80,6 +80,7 @@ const els = {
   pwRebuild: $('pw-rebuild'),
   pwOpen: $('pw-open'),
   pwStatus: $('pw-status'),
+  pwAddLink: $('pw-addlink'),
   pageEditor: $('page-editor'),
   pageSave: $('page-save'),
 
@@ -1177,7 +1178,7 @@ async function openPagesView(node = null) {
     }
   }
 
-  const all = flattenBoardNodes();
+  const all = studioPages();
   const want = node || studioNode || all[0]?.node || null;
   selectStudioPage(want);
 }
@@ -1193,16 +1194,25 @@ function flattenBoardNodes() {
   const out = [];
   const walk = (list, parentId, parentUrl, depth) => {
     list.forEach((node, index) => {
+      const link = typeof node.link === 'string' ? node.link.trim() : '';
+      const external = !!link;
       const seg = parentId && node.id && node.id.startsWith(`${parentId}-`)
         ? node.id.slice(parentId.length + 1)
         : node.id;
-      const url = node.href || (depth === 0 ? `/${seg}` : `${parentUrl}/${seg}`);
-      out.push({ node, url, depth, list, index });
+      const url = external ? link : node.href || (depth === 0 ? `/${seg}` : `${parentUrl}/${seg}`);
+      out.push({ node, url, depth, list, index, external });
+      // 链接版块是叶子：它没有页面，下面的东西也不该再算成页面
+      if (external) return;
       walk(node.children ?? [], node.id, url, depth + 1);
     });
   };
   for (const board of boardsDraft?.boards ?? []) walk([board], null, '', 0);
   return out;
+}
+
+/** 页面清单：链接版块不是页面，不列在里面 */
+function studioPages() {
+  return flattenBoardNodes().filter((f) => !f.external);
 }
 
 /** 换到某一页：把它的内容读进草稿，然后整屏重画 */
@@ -1231,7 +1241,7 @@ function renderStudioTree() {
   const box = els.pwList;
   box.textContent = '';
 
-  const all = flattenBoardNodes();
+  const all = studioPages();
   const kw = studioSearch.trim().toLowerCase();
   const shown = kw
     ? all.filter((f) => (f.node.title || '').toLowerCase().includes(kw) || f.url.toLowerCase().includes(kw))
@@ -1381,6 +1391,8 @@ function renderStudioKids() {
     const row = document.createElement('div');
     row.className = 'pw-kid';
     row.dataset.kidIndex = String(i);
+    const isLink = !!(kid.link && String(kid.link).trim());
+    if (isLink) row.classList.add('pw-kid--link');
 
     // 第一行：名字 + 一排操作
     const top = document.createElement('div');
@@ -1392,6 +1404,23 @@ function renderStudioKids() {
       renderStudioTree();
     });
     name.classList.add('pw-kid__name');
+
+    /*
+      链接版块：填了地址就不再有自己的页面，点它是直接跳走。
+      地址只在这里出现，页面上不显示 —— 卡片上只有名字和封面图。
+    */
+    const linkInput = boardInput(kid.link ?? '', '链接（填了就点它跳走，不再是页面）', (v) => {
+      const was = !!(kid.link && String(kid.link).trim());
+      const now = !!v.trim();
+      if (now) kid.link = v;
+      else delete kid.link;
+      markStudioDirty();
+      // 从「普通」变「链接」或反过来，整行都要重画（按钮不一样）
+      if (was !== now) renderStudioKids();
+      renderStudioTree();
+    });
+    linkInput.classList.add('pw-kid__link');
+    linkInput.type = 'url';
 
     const shape = pageSelect(CARD_SHAPES_OR, kid.cardShape ?? '', (v) => {
       if (v) kid.cardShape = v;
@@ -1437,6 +1466,7 @@ function renderStudioKids() {
     open.className = 'btn btn--ghost boardedit__mini';
     open.textContent = '编辑这一页 ›';
     open.title = '切到它自己的页面继续改';
+    open.hidden = isLink; // 链接版块没有自己的页面可编辑
     open.addEventListener('click', () => selectStudioPage(kid));
 
     const del = document.createElement('button');
@@ -1471,8 +1501,15 @@ function renderStudioKids() {
     sizeLabel.append('大小', size);
     bar.append(cover, shapeLabel, sizeLabel);
 
+    if (isLink) {
+      const badge = document.createElement('span');
+      badge.className = 'pw-kid__badge';
+      badge.textContent = '↗ 链接版块：点它直接跳走，页面上不显示这个地址';
+      bar.appendChild(badge);
+    }
+
     top.append(name, up, down, open, del);
-    row.append(top, bar);
+    row.append(top, linkInput, bar);
     box.appendChild(row);
   });
 }
@@ -1968,6 +2005,8 @@ function renderBoardsEditor() {
     for (const [key, other] of idx.byKey) {
       if (!key.startsWith('k')) continue; // 顶层大板块上面已经列过
       if (isSelfOrDescendant(node, other)) continue;
+      // 挂到链接版块下面是挂到空气里：它是叶子，下面的东西不会渲染
+      if (other.link) continue;
       const info = idx.home.get(key);
       const o = document.createElement('option');
       o.value = key;
@@ -2029,12 +2068,29 @@ function renderBoardsEditor() {
         node.href = v.trim();
       });
 
+      /*
+        链接版块：填了地址这一项就不再是页面，点它是跳走。
+        放在这一行最后，空着就是普通子版块。
+      */
+      const link = boardInput(node.link || '', '链接（填了就跳走，不是页面）', (v) => {
+        const s = v.trim();
+        if (s) node.link = s;
+        else delete node.link;
+      });
+      link.type = 'url';
+      link.classList.add('boardedit__link');
+      link.title = '填了它就变成链接版块：卡片照旧有名字和封面图，但点下去打开这个网址，站里不再为它生成页面';
+
       // 加下级：这是「一层里能再加更多层」的入口
       const addKid = document.createElement('button');
       addKid.type = 'button';
       addKid.className = 'btn btn--ghost boardedit__mini';
       addKid.textContent = '＋下级';
-      addKid.title = '在这个版块下面再加一层';
+      // 链接版块是叶子：它没有页面，挂在它下面的东西不会出现在站里
+      addKid.disabled = !!node.link;
+      addKid.title = node.link
+        ? '链接版块点了就跳走，它下面不能再挂东西'
+        : '在这个版块下面再加一层';
       addKid.addEventListener('click', () => {
         if (!node.children) node.children = [];
         node.children.push({ title: '' });
@@ -2055,7 +2111,7 @@ function renderBoardsEditor() {
         renderBoardsEditor();
       });
 
-      row.append(title, href, addKid, del);
+      row.append(title, href, link, addKid, del);
       box.appendChild(row);
 
       // 第二行：id（只读，改了会切断文章归类）+ 移动到哪个版块下
@@ -2887,6 +2943,16 @@ function bindEvents() {
     renderStudioKids();
     renderStudioTree();
     toast('加好了，填个名字再点「保存并重新构建」');
+  });
+  els.pwAddLink.addEventListener('click', () => {
+    if (!studioNode) return;
+    if (!Array.isArray(studioNode.children)) studioNode.children = [];
+    // 先塞一个占位地址，行才会以「链接版块」的样子出现（有链接输入框、没有「编辑这一页」）
+    studioNode.children.push({ title: '', link: 'https://' });
+    markStudioDirty();
+    renderStudioKids();
+    renderStudioTree();
+    toast('链接版块加好了：填名字和网址，再点「保存并重新构建」');
   });
   els.pwRebuild.addEventListener('click', async () => {
     els.pwStatus.textContent = '正在重新构建…';

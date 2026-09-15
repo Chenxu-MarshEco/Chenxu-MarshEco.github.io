@@ -29,11 +29,22 @@ export interface BlockItem {
   subtitle?: string;
   /** 自己的封面图；没设就交给样式用渐变兜底（不要回落到大板块的图，会和 hero 重复） */
   image?: string;
+  /**
+   * 链接版块：url 是站外地址（或站内锚点），点了直接跳走。
+   * 没有自己的页面，界面上也不显示这个地址本身。
+   */
+  external?: boolean;
   /** 这一项作为卡片出现时的横竖比例 / 大小（设了才盖过「子页面」块的默认值） */
   cardShape?: 'wide' | 'square' | 'tall';
   cardSize?: 'l' | 'm' | 's';
   /** 它下面的子版块，用来在框里铺卡片 */
-  kids: { title: string; url: string; subtitle?: string; image?: string }[];
+  kids: {
+    title: string;
+    url: string;
+    subtitle?: string;
+    image?: string;
+    external?: boolean;
+  }[];
 }
 
 export interface NodePageData {
@@ -96,21 +107,30 @@ export async function nodePageData(url: string): Promise<NodePageData | null> {
     parent: parentNode
       ? { title: parentNode.title, url: all.find((x) => x.node === parentNode)?.url ?? '/' }
       : null,
-    children: (flat.node.children ?? []).map((c) => ({
-      id: c.id,
-      title: c.title,
-      subtitle: c.subtitle,
-      image: c.image,
-      cardShape: c.cardShape,
-      cardSize: c.cardSize,
-      url: all.find((x) => x.node === c)?.url ?? '/',
-      kids: (c.children ?? []).map((g) => ({
-        title: g.title,
-        subtitle: g.subtitle,
-        image: g.image,
-        url: all.find((x) => x.node === g)?.url ?? '/',
-      })),
-    })),
+    children: (flat.node.children ?? []).map((c) => {
+      const cf = all.find((x) => x.node === c);
+      return {
+        id: c.id,
+        title: c.title,
+        subtitle: c.subtitle,
+        image: c.image,
+        // 链接版块：url 就是那个外链，页面按 external 决定开新标签
+        external: cf?.external,
+        cardShape: c.cardShape,
+        cardSize: c.cardSize,
+        url: cf?.url ?? '/',
+        kids: (c.children ?? []).map((g) => {
+          const gf = all.find((x) => x.node === g);
+          return {
+            title: g.title,
+            subtitle: g.subtitle,
+            image: g.image,
+            external: gf?.external,
+            url: gf?.url ?? '/',
+          };
+        }),
+      };
+    }),
     posts: posts[flat.node.id] ?? [],
     layout: flat.node.layout,
     page: flat.node.page ?? [],

@@ -1334,6 +1334,31 @@ body[data-type="notes"] .field--posts-only {
   flex: 1 1 140px;
   min-width: 0;
 }
+/* 链接版块的地址输入：整行铺开，一眼看出这一项是「跳走」的 */
+.pw-kid__link {
+  width: 100%;
+}
+.pw-kid--link {
+  border-left: 3px solid var(--accent, #7a3f9d);
+}
+.pw-kid__badge {
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--text-muted);
+}
+.pw-addrow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+.pw-addrow__hint {
+  flex: 1 1 200px;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--text-muted);
+}
 .pw-kid .boardedit__cover {
   display: flex;
   align-items: center;
@@ -1725,6 +1750,13 @@ body[data-type="notes"] .field--posts-only {
 .boardedit__layout {
   width: auto;
   max-width: 15rem;
+}
+
+/* 版块树里的「链接」输入：跟地址输入一样宽，但带点提示色 */
+.boardedit__link {
+  width: auto;
+  flex: 1 1 180px;
+  min-width: 0;
 }
 
 @media (max-width: 640px) {

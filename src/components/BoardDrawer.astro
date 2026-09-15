@@ -37,6 +37,8 @@ const onPath = new Set(
 const boards = site.homeBoards as BoardNode[];
 
 const urlOf = (id: string) => all.find((f) => f.node.id === id)?.url ?? '/';
+/** 这一项是不是链接版块（点了跳外链，站里没有它的页面） */
+const isExternal = (id: string) => all.find((f) => f.node.id === id)?.external === true;
 
 /** 标题是用户数据，塞进 HTML 之前必须转义 */
 const esc = (s: string) =>
@@ -51,13 +53,16 @@ function renderNodes(nodes: BoardNode[]): string {
   return nodes
     .map((node) => {
       const url = urlOf(node.id);
+      const ext = isExternal(node.id);
       const kids = node.children ?? [];
       const open = onPath.has(node.id);
       const caret = kids.length
         ? `<button type="button" class="tree__caret${open ? ' is-open' : ''}" data-toggle="${esc(node.id)}" aria-label="展开 ${esc(node.title)}" aria-expanded="${open}">▸</button>`
         : '<span class="tree__caret tree__caret--none" aria-hidden="true"></span>';
+      // 链接版块：目录里也一样，新标签打开，别把站里的人带走
       const link =
-        `<a class="tree__link" href="${withBase(url)}"` +
+        `<a class="tree__link" href="${ext ? esc(url) : withBase(url)}"` +
+        (ext ? ' target="_blank" rel="noopener"' : '') +
         (current === url ? ' data-cur="1"' : '') +
         (open ? ' data-onpath="1"' : '') +
         `>${esc(node.title)}</a>`;

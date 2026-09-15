@@ -31,9 +31,15 @@ interface Props {
   shape?: 'row' | 'wide' | 'square' | 'tall';
   /** 大小（最大宽度占容器的多少），row 永远占满 */
   size?: 'l' | 'm' | 's';
+  /**
+   * 链接版块：url 是站外地址（或站内锚点）。
+   * 只是换个打开方式（新标签页，别把人从站里带走），
+   * 卡片样子完全一样 —— 地址本身不显示在页面上。
+   */
+  external?: boolean;
 }
 
-const { title, url, image, shape = 'row', size = 'l' } = Astro.props;
+const { title, url, image, shape = 'row', size = 'l', external = false } = Astro.props;
 ---
 
 <a
@@ -43,7 +49,8 @@ const { title, url, image, shape = 'row', size = 'l' } = Astro.props;
     shape !== 'row' && `card--sz-${size}`,
     image && 'card--cover',
   ]}
-  href={withBase(url)}
+  href={external ? url : withBase(url)}
+  {...external ? { target: '_blank', rel: 'noopener' } : {}}
   style={image ? `--cover:url(${withBase(image)})` : undefined}
 >
   <span class="card__label">{title}</span>
