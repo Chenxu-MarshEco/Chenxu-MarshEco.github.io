@@ -841,6 +841,13 @@ async function handleApi(req, res, url) {
     return sendJson(res, 200, await writeLayout(payload));
   }
 
+  // ---- 重新构建站点 ----
+  // 「页面」工作台保存之后要立刻看到效果，而预览服务（4321）发的是 dist，
+  // 所以得先把站点重新构建一遍。构建在本地只要一两秒，属于可以随手点的操作。
+  if (route === '/api/build' && req.method === 'POST') {
+    return sendJson(res, 200, await runBuild());
+  }
+
   // ---- 代理预览站点 ----
   // 编辑器在 4322、站点预览在 4321，端口不同就是跨源。浏览器里
   // 直接 fetch 会被 CORS 挡掉（报错只有一句 "Failed to fetch"，
@@ -865,6 +872,85 @@ async function handleApi(req, res, url) {
  * 表现就是编辑器里「排版」报「先打开看效果」—— 明明预览是开着的。
  */
 const PREVIEW_ORIGINS = ['http://127.0.0.1:4321', 'http://localhost:4321'];
+
+/**
+ * 跑一次站点构建（astro build）。
+ *
+ * 为什么直接 node 那个入口，而不走 `pnpm build`：
+ * pnpm 在 Windows 上是个 .cmd，要从编辑器里把它拉起来得经过 shell，
+ * 参数一多就容易出转义问题；而 node_modules/astro/bin/astro.mjs 是
+ * package.json 里 `build` 脚本真正执行的东西，效果完全一样，还少一层壳。
+ *
+ * 同时只允许一次构建：用户连点两下不该起两个进程抢 dist。
+ * 后来的请求等同一个 promise，拿到同一份结果。
+ */
+let buildInFlight = null;
+
+function runBuild() {
+  if (buildInFlight) return buildInFlight;
+
+  const run = (async () => {
+    const entry = path.join(PROJECT_ROOT, 'node_modules', 'astro', 'bin', 'astro.mjs');
+    try {
+      await fs.access(entry);
+    } catch {
+      throw httpError(500, '找不到 astro（node_modules/astro/bin/astro.mjs），先在启动器里做一次「首次设置」');
+    }
+
+    const started = Date.now();
+    return await new Promise((resolve, reject) => {
+      const child = spawn(process.execPath, [entry, 'build'], {
+        cwd: PROJECT_ROOT,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+
+      let out = '';
+      const keep = (buf) => {
+        out += buf.toString('utf8');
+        // 只留尾巴：够看报错就行，别把整个构建日志塞进浏览器
+        if (out.length > 8000) out = out.slice(-8000);
+      };
+      child.stdout.on('data', keep);
+      child.stderr.on('data', keep);
+
+      const timer = setTimeout(() => {
+        child.kill();
+        reject(httpError(500, '构建超时（120 秒），看看终端里是不是卡住了'));
+      }, 120000);
+
+      child.on('error', (err) => {
+        clearTimeout(timer);
+        reject(httpError(500, `构建起不来：${err.message}`));
+      });
+      child.on('exit', (code) => {
+        clearTimeout(timer);
+        if (code === 0) {
+          resolve({ ok: true, ms: Date.now() - started, output: tailOf(out) });
+        } else {
+          reject(httpError(500, `构建失败（退出码 ${code}）：\n${tailOf(out)}`));
+        }
+      });
+    });
+  })();
+
+  // 结束后放锁（成功失败都要放，否则一次失败就把后面的构建全堵死）。
+  // 这里把 finally 之后的 promise 交给调用方，调用方 await 到的就是同一次构建的结果。
+  buildInFlight = run.finally(() => {
+    buildInFlight = null;
+  });
+
+  return buildInFlight;
+}
+
+/** 构建日志的尾巴，去掉空行 */
+function tailOf(text) {
+  const lines = String(text || '')
+    .split('\n')
+    .map((l) => l.trimEnd())
+    .filter((l) => l.trim());
+  return lines.slice(-12).join('\n');
+}
+
 
 async function sendPreview(res, targetPath) {
   let lastErr = null;
@@ -1102,6 +1188,10 @@ function cleanNode(raw, parentId, used) {
   used.add(id);
 
   const out = { id, title };
+  // 副标题：面板标题旁边那行小字。以前这里只认顶层大板块的副标题（writeBoards 里），
+  // 子版块的副标题一保存就被丢掉 —— 编辑器里能填、填完却没了，属于静默丢数据。
+  const subtitle = String(raw.subtitle || '').trim();
+  if (subtitle) out.subtitle = subtitle;
   const href = String(raw.href || '').trim();
   if (href) out.href = href;
   const image = String(raw.image || '').trim();

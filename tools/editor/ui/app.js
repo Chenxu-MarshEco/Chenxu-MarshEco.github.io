@@ -65,9 +65,22 @@ const els = {
   boardsModal: $('boards-modal'),
   boardsEditor: $('boards-editor'),
   boardsSave: $('boards-save'),
-  pageModal: $('page-modal'),
+
+  btnPages: $('btn-pages'),
+  pagesModal: $('pages-modal'),
+  pagesTitle: $('pages-title'),
+  pwSearch: $('pw-search'),
+  pwList: $('pw-list'),
+  pwFields: $('pw-fields'),
+  pwKids: $('pw-kids'),
+  pwAddKid: $('pw-addkid'),
+  pwContentNote: $('pw-content-note'),
+  pwUrl: $('pw-url'),
+  pwFrame: $('pw-frame'),
+  pwRebuild: $('pw-rebuild'),
+  pwOpen: $('pw-open'),
+  pwStatus: $('pw-status'),
   pageEditor: $('page-editor'),
-  pageTitle: $('page-modal-title'),
   pageSave: $('page-save'),
 
   btnLayout: $('btn-layout'),
@@ -1100,13 +1113,18 @@ function boardInput(value, placeholder, onInput) {
 }
 
 /* ---------------------------------------------------------------
-   页面内容编辑器
+   页面工作台（整页编辑）
 
-   每个版块可以写一段自己的内容：介绍文字、图片、链接，
-   以及把这一层的子页面插到任意位置。数据存在节点的 page 数组上。
+   这是编辑器里「改页面」的唯一入口，长得跟写文章那边一样：
+   左栏挑页面、中栏改这一页的全部东西、右栏是这一页现在的样子。
 
-   块 id 是排版模式的锚点（pg-<id>），所以新建块时给它一个
-   「节点 id + 序号」的 id —— 全站唯一，换页面也不会撞。
+   中栏管三件事：
+     1. 这一页自己的字段：名称、副标题、地址、版式、封面图
+     2. 这一页的内容块（就是上面那套「页面内容」编辑器）
+     3. 这一页的子版块：改名、传封面、单张卡的比例/大小、上下换顺序
+
+   保存 = 写进 home-boards.json + 自动重新构建，右栏立刻能看到结果。
+   数据仍然是同一棵 boardsDraft，和「子版块」弹窗共用，不会各存一份。
    --------------------------------------------------------------- */
 
 const BLOCK_LABEL = {
@@ -1123,7 +1141,7 @@ const TEXT_HINT = '支持 Markdown：**粗体**、[链接](地址)、- 列表、
 const IMG_WIDTHS = [['full', '全宽'], ['wide', '宽'], ['half', '半宽'], ['third', '窄']];
 const CARD_SHAPES = [['wide', '横（16:3）'], ['square', '方（1:1）'], ['tall', '竖（3:4）']];
 const CARD_SIZES = [['l', '大'], ['m', '中'], ['s', '小']];
-/** 「子页面」块的默认值下拉里多一项「默认」，表示不覆盖整块的设置 */
+/** 「子页面」块里单张卡的下拉多一项「默认」，表示不覆盖整块的设置 */
 const CARD_SHAPES_OR = [['', '默认比例'], ...CARD_SHAPES];
 const CARD_SIZES_OR = [['', '默认大小'], ...CARD_SIZES];
 /** 版式：不写 = 竖排（子页面一条条占满整行） */
@@ -1134,22 +1152,405 @@ const LAYOUT_HINT = '三列分区要有 4 个以上子版块才生效；这一�
 let pageNode = null;
 let pageDraft = [];
 
+/** 工作台里当前选中的节点（和 pageNode 是同一个东西，读起来更像页面） */
+let studioNode = null;
+/** 左栏搜索词 */
+let studioSearch = '';
+
 let blockSeq = 0;
 const newBlockId = (nodeId) => `${nodeId}-p${Date.now().toString(36)}${(blockSeq += 1)}`;
 
-function openPageModal(node) {
-  pageNode = node;
-  // 深拷一份：取消时不该动到原数据
-  pageDraft = JSON.parse(JSON.stringify(node.page ?? []));
-  els.pageTitle.textContent = `页面内容 · ${node.title || node.id || '未命名'}`;
-  els.pageModal.hidden = false;
-  renderPageEditor();
+/** 打开工作台。传节点就定位到那一页，不传就用上次看的 / 第一个大板块。 */
+async function openPagesView(node = null) {
+  els.pagesModal.hidden = false;
+  closeBoardsModal();
+
+  if (!boardsDraft) {
+    els.pwList.textContent = '正在读取版块树…';
+    try {
+      const res = await fetch('/api/boards');
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      boardsDraft = await res.json();
+    } catch (err) {
+      els.pwList.textContent = `读取失败：${err.message}`;
+      return;
+    }
+  }
+
+  const all = flattenBoardNodes();
+  const want = node || studioNode || all[0]?.node || null;
+  selectStudioPage(want);
 }
 
-function closePageModal() {
-  els.pageModal.hidden = true;
-  pageNode = null;
-  pageDraft = [];
+/** 关掉工作台（块草稿不丢：没保存的改动本来就只在内存里） */
+function closePagesView() {
+  els.pagesModal.hidden = true;
+  els.pwFrame.srcdoc = '';
+}
+
+/** 把整棵草稿树摊平，带上「在第几个、父级是谁」，方便换顺序 */
+function flattenBoardNodes() {
+  const out = [];
+  const walk = (list, parentId, parentUrl, depth) => {
+    list.forEach((node, index) => {
+      const seg = parentId && node.id && node.id.startsWith(`${parentId}-`)
+        ? node.id.slice(parentId.length + 1)
+        : node.id;
+      const url = node.href || (depth === 0 ? `/${seg}` : `${parentUrl}/${seg}`);
+      out.push({ node, url, depth, list, index });
+      walk(node.children ?? [], node.id, url, depth + 1);
+    });
+  };
+  for (const board of boardsDraft?.boards ?? []) walk([board], null, '', 0);
+  return out;
+}
+
+/** 换到某一页：把它的内容读进草稿，然后整屏重画 */
+function selectStudioPage(node) {
+  if (!node) return;
+  studioNode = node;
+  pageNode = node;
+  // 深拷一份块：没点保存之前不该动到原数据
+  pageDraft = JSON.parse(JSON.stringify(node.page ?? []));
+  renderPageStudio();
+  loadStudioFrame();
+}
+
+function renderPageStudio() {
+  if (!studioNode) return;
+  els.pagesTitle.textContent = `页面 · ${studioNode.title || studioNode.id || '未命名'}`;
+  renderStudioTree();
+  renderStudioFields();
+  renderPageEditor();
+  renderStudioKids();
+}
+
+/* ---------- 左栏：页面清单 ---------- */
+
+function renderStudioTree() {
+  const box = els.pwList;
+  box.textContent = '';
+
+  const all = flattenBoardNodes();
+  const kw = studioSearch.trim().toLowerCase();
+  const shown = kw
+    ? all.filter((f) => (f.node.title || '').toLowerCase().includes(kw) || f.url.toLowerCase().includes(kw))
+    : all;
+
+  if (!shown.length) {
+    const li = document.createElement('li');
+    li.className = 'pw-tree__empty';
+    li.textContent = '没有匹配的页面';
+    box.appendChild(li);
+    return;
+  }
+
+  for (const f of shown) {
+    const li = document.createElement('li');
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'pw-tree__item';
+    if (f.node === studioNode) btn.classList.add('is-active');
+    btn.style.paddingLeft = `${8 + f.depth * 14}px`;
+
+    const name = document.createElement('span');
+    name.className = 'pw-tree__name';
+    name.textContent = f.node.title || '(未命名)';
+
+    const meta = document.createElement('em');
+    meta.className = 'pw-tree__url';
+    meta.textContent = (f.node.page ?? []).length ? `${f.url} · ${f.node.page.length} 块` : f.url;
+
+    btn.append(name, meta);
+    btn.addEventListener('click', () => selectStudioPage(f.node));
+    li.appendChild(btn);
+    box.appendChild(li);
+  }
+}
+
+/* ---------- 中栏（上）：这一页自己的字段 ---------- */
+
+function pwField(labelText, control, hint) {
+  const wrap = document.createElement('label');
+  wrap.className = 'pw-field';
+  // 给测试和以后的脚本一个稳定的抓手，别靠"第几个 input"去猜
+  wrap.dataset.field = labelText;
+  const cap = document.createElement('span');
+  cap.className = 'pw-field__label';
+  cap.textContent = labelText;
+  wrap.append(cap, control);
+  if (hint) {
+    const h = document.createElement('span');
+    h.className = 'pw-field__hint';
+    h.textContent = hint;
+    wrap.appendChild(h);
+  }
+  return wrap;
+}
+
+function renderStudioFields() {
+  const node = studioNode;
+  const box = els.pwFields;
+  box.textContent = '';
+
+  const grid = document.createElement('div');
+  grid.className = 'pw-grid';
+
+  grid.appendChild(pwField('名称', boardInput(node.title ?? '', '这一页叫什么', (v) => {
+    node.title = v;
+    els.pagesTitle.textContent = `页面 · ${v || node.id || '未命名'}`;
+    renderStudioTree();
+    markStudioDirty();
+  })));
+
+  grid.appendChild(pwField('副标题', boardInput(node.subtitle ?? '', '可留空（面板标题旁边那行小字）', (v) => {
+    node.subtitle = v;
+    markStudioDirty();
+  })));
+
+  grid.appendChild(pwField('地址', boardInput(node.href ?? '', '留空 = 按 id 自动生成', (v) => {
+    node.href = v.trim();
+    markStudioDirty();
+    renderStudioTree();
+  }), node.href ? '用的是你写的这个地址' : `现在自动生成的是 ${flattenBoardNodes().find((f) => f.node === node)?.url ?? '—'}`));
+
+  const layoutSel = pageSelect(LAYOUTS, node.layout ?? '', (v) => {
+    if (v) node.layout = v;
+    else delete node.layout;
+    markStudioDirty();
+  });
+  layoutSel.title = LAYOUT_HINT;
+  grid.appendChild(pwField('版式', layoutSel, LAYOUT_HINT));
+
+  const cover = pwField('封面图', boardCoverControl(node, () => {
+    markStudioDirty();
+    renderStudioFields();
+  }), '卡片上的那张图；没传就用渐变兜底');
+
+  const idLine = document.createElement('div');
+  idLine.className = 'pw-field';
+  const idCap = document.createElement('span');
+  idCap.className = 'pw-field__label';
+  idCap.textContent = '标识 id';
+  const idVal = document.createElement('code');
+  idVal.className = 'pw-field__id';
+  idVal.textContent = node.id || '（保存后自动生成）';
+  idVal.title = '文章归类靠它；换父级也不会变，别手改';
+  idLine.append(idCap, idVal);
+
+  grid.append(cover, idLine);
+  box.appendChild(grid);
+
+  // 上一级：一键跳到父页面，省得在左栏里翻
+  const all = flattenBoardNodes();
+  const me = all.find((f) => f.node === node);
+  const parentRow = document.createElement('div');
+  parentRow.className = 'pw-parent';
+  const up = document.createElement('button');
+  up.type = 'button';
+  up.className = 'btn btn--ghost boardedit__mini';
+  up.textContent = '← 上一级';
+  if (me && me.depth > 0) {
+    const parent = all.find((f) => f.node !== node && (node.id ?? '').startsWith(`${f.node.id}-`)
+      && f.depth === me.depth - 1);
+    up.disabled = !parent;
+    if (parent) up.addEventListener('click', () => selectStudioPage(parent.node));
+  } else {
+    up.disabled = true;
+  }
+  parentRow.appendChild(up);
+  box.appendChild(parentRow);
+}
+
+/* ---------- 中栏（下）：这一页的子版块 ---------- */
+
+function renderStudioKids() {
+  const box = els.pwKids;
+  box.textContent = '';
+  const kids = studioNode.children ?? (studioNode.children = []);
+
+  if (!kids.length) {
+    const p = document.createElement('p');
+    p.className = 'hint';
+    p.textContent = '这一页下面还没有子版块。点下面的「＋ 加一个子版块」就能加一个属于自己的子页面。';
+    box.appendChild(p);
+    return;
+  }
+
+  kids.forEach((kid, i) => {
+    const row = document.createElement('div');
+    row.className = 'pw-kid';
+    row.dataset.kidIndex = String(i);
+
+    // 第一行：名字 + 一排操作
+    const top = document.createElement('div');
+    top.className = 'pw-kid__top';
+
+    const name = boardInput(kid.title ?? '', '子版块名字', (v) => {
+      kid.title = v;
+      markStudioDirty();
+      renderStudioTree();
+    });
+    name.classList.add('pw-kid__name');
+
+    const shape = pageSelect(CARD_SHAPES_OR, kid.cardShape ?? '', (v) => {
+      if (v) kid.cardShape = v;
+      else delete kid.cardShape;
+      markStudioDirty();
+    });
+    const size = pageSelect(CARD_SIZES_OR, kid.cardSize ?? '', (v) => {
+      if (v) kid.cardSize = v;
+      else delete kid.cardSize;
+      markStudioDirty();
+    });
+    shape.title = '这一项作为卡片出现时的横竖比例（空着就跟「子页面」块的默认值）';
+    size.title = '这一项作为卡片出现时的大小';
+
+    const up = document.createElement('button');
+    up.type = 'button';
+    up.className = 'btn btn--ghost boardedit__mini';
+    up.textContent = '↑';
+    up.title = '往前挪';
+    up.disabled = i === 0;
+    up.addEventListener('click', () => {
+      [kids[i - 1], kids[i]] = [kids[i], kids[i - 1]];
+      markStudioDirty();
+      renderStudioKids();
+      renderStudioTree();
+    });
+
+    const down = document.createElement('button');
+    down.type = 'button';
+    down.className = 'btn btn--ghost boardedit__mini';
+    down.textContent = '↓';
+    down.title = '往后挪';
+    down.disabled = i === kids.length - 1;
+    down.addEventListener('click', () => {
+      [kids[i + 1], kids[i]] = [kids[i], kids[i + 1]];
+      markStudioDirty();
+      renderStudioKids();
+      renderStudioTree();
+    });
+
+    const open = document.createElement('button');
+    open.type = 'button';
+    open.className = 'btn btn--ghost boardedit__mini';
+    open.textContent = '编辑这一页 ›';
+    open.title = '切到它自己的页面继续改';
+    open.addEventListener('click', () => selectStudioPage(kid));
+
+    const del = document.createElement('button');
+    del.type = 'button';
+    del.className = 'btn btn--ghost boardedit__mini boardedit__del';
+    del.textContent = '删除';
+    del.title = (kid.children ?? []).length ? '会连同它下面的子版块一起删掉' : '删掉这一项';
+    del.addEventListener('click', () => {
+      if ((kid.children ?? []).length
+        && !confirm(`「${kid.title || '这一项'}」下面还有 ${kid.children.length} 个子版块，一起删掉吗？`)) {
+        return;
+      }
+      kids.splice(i, 1);
+      markStudioDirty();
+      renderStudioKids();
+      renderStudioTree();
+    });
+
+    const cover = boardCoverControl(kid, () => {
+      markStudioDirty();
+      renderStudioKids();
+    });
+
+    // 第二行：封面 + 单张卡的比例和大小
+    const bar = document.createElement('div');
+    bar.className = 'pw-kid__bar';
+    const shapeLabel = document.createElement('label');
+    shapeLabel.className = 'pw-mini';
+    shapeLabel.append('比例', shape);
+    const sizeLabel = document.createElement('label');
+    sizeLabel.className = 'pw-mini';
+    sizeLabel.append('大小', size);
+    bar.append(cover, shapeLabel, sizeLabel);
+
+    top.append(name, up, down, open, del);
+    row.append(top, bar);
+    box.appendChild(row);
+  });
+}
+
+/** 工作台里的改动只是内存里的草稿，提示一句，免得以为已经存了 */
+function markStudioDirty() {
+  els.pwStatus.textContent = '有改动没保存';
+  els.pwStatus.classList.add('is-dirty');
+}
+
+/* ---------- 右栏：预览 ---------- */
+
+/** 这一页现在（草稿里）的地址 */
+function studioUrl() {
+  const f = flattenBoardNodes().find((x) => x.node === studioNode);
+  const url = f?.url || '/';
+  return url.endsWith('/') ? url : `${url}/`;
+}
+
+/** 把这一页的 HTML 抓过来塞进 srcdoc（同源，方便以后做点选） */
+async function loadStudioFrame({ keepStatus = false } = {}) {
+  const url = studioUrl();
+  els.pwUrl.textContent = url;
+  if (!keepStatus) {
+    els.pwStatus.textContent = '';
+    els.pwStatus.classList.remove('is-dirty');
+  }
+  try {
+    const res = await fetch(`/api/preview?path=${encodeURIComponent(url)}`, { cache: 'no-store' });
+    if (!res.ok) {
+      const detail = await res.text().catch(() => '');
+      let msg = `HTTP ${res.status}`;
+      try {
+        msg = JSON.parse(detail).error || msg;
+      } catch { /* 不是 JSON 就用状态码 */ }
+      throw new Error(msg);
+    }
+    let html = await res.text();
+    // srcdoc 没有自己的地址，相对路径要靠 <base> 指回预览服务
+    html = html.replace(/<head([^>]*)>/i, `<head$1><base href="${PREVIEW_URL}${url}">`);
+    els.pwFrame.srcdoc = html;
+  } catch (err) {
+    els.pwFrame.srcdoc = `<body style="font:14px/1.8 system-ui;padding:24px;color:#b4443a">
+      载入这一页失败：${String(err.message).replace(/[<>&]/g, '')}<br>
+      先在启动器里点「看效果」把预览服务（4321）起起来。</body>`;
+  }
+}
+
+/** 保存：写盘 → 重新构建 → 刷新预览 */
+async function saveStudio() {
+  if (!studioNode) return;
+  commitPageBlocks();
+  els.pageSave.disabled = true;
+  els.pwStatus.textContent = '正在保存…';
+  els.pwStatus.classList.remove('is-dirty');
+  try {
+    const ok = await saveBoards({ silent: true });
+    if (!ok) throw new Error('写入 home-boards.json 失败');
+
+    els.pwStatus.textContent = '正在重新构建…';
+    const res = await fetch('/api/build', { method: 'POST' });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.ok) throw new Error(data.error || `构建失败 HTTP ${res.status}`);
+
+    // 顺序要紧：先把预览刷新了，再写状态栏 ——
+    // loadStudioFrame 会把状态清掉，反过来的话「已保存」一闪就没了。
+    await loadStudioFrame({ keepStatus: true });
+    els.pwStatus.textContent = `已保存并重新构建（${data.ms} ms）`;
+    toast('页面已保存，右边就是最新效果');
+    renderStudioTree();
+    renderStudioFields();
+  } catch (err) {
+    els.pwStatus.textContent = `出错了：${err.message}`;
+    els.pwStatus.classList.add('is-dirty');
+    toast(`保存失败：${err.message}`, true);
+  } finally {
+    els.pageSave.disabled = false;
+  }
 }
 
 function pageSelect(options, value, onChange) {
@@ -1339,54 +1740,17 @@ function blockFields(block) {
   });
   const hint = document.createElement('span');
   hint.className = 'pblock-edit__hint pblock-edit__hint--inline';
-  hint.textContent = '下面这些卡按这里的比例和大小铺开';
+  hint.textContent = '整块的默认比例和大小；单张想不一样，在下面「这一页的子版块」里单独设';
   row.append(shape, size, hint);
   wrap.appendChild(row);
 
-  /*
-    一张一个样：每个子版块可以单独改比例和大小。
-    这些值写在**子版块自己身上**（cardShape / cardSize），不是写在块里 ——
-    块里按 id 对的话，新加的版块还没 id，一对就错位；写在节点上，
-    换顺序、移动到别的块、移到别的页面都还跟着走。
-  */
   const kids = Array.isArray(pageNode?.children) ? pageNode.children : [];
   if (!kids.length) {
     const none = document.createElement('p');
     none.className = 'pblock-edit__hint';
-    none.textContent = '这一层还没有子页面 —— 先在上面「板块」里用 ＋下级 加几个，再回来把它们铺进来。';
+    none.textContent = '这一页还没有子版块 —— 在下面「这一页的子版块」里加几个，它们就会铺在这里。';
     wrap.appendChild(none);
-    return wrap;
   }
-
-  const list = document.createElement('div');
-  list.className = 'pcard-row-list';
-  const cap = document.createElement('p');
-  cap.className = 'pblock-edit__hint';
-  cap.textContent = '单张卡想不一样就单独调（空着 = 跟上面的默认值）：';
-  list.appendChild(cap);
-
-  for (const kid of kids) {
-    const line = document.createElement('div');
-    line.className = 'pcard-row';
-
-    const name = document.createElement('span');
-    name.className = 'pcard-row__name';
-    name.textContent = kid.title || '(未命名)';
-    name.title = kid.id ? `id: ${kid.id}` : '还没保存过，保存后就有 id 了';
-
-    const kShape = pageSelect(CARD_SHAPES_OR, kid.cardShape ?? '', (v) => {
-      if (v) kid.cardShape = v;
-      else delete kid.cardShape;
-    });
-    const kSize = pageSelect(CARD_SIZES_OR, kid.cardSize ?? '', (v) => {
-      if (v) kid.cardSize = v;
-      else delete kid.cardSize;
-    });
-
-    line.append(name, kShape, kSize);
-    list.appendChild(line);
-  }
-  wrap.appendChild(list);
   return wrap;
 }
 
@@ -1493,11 +1857,10 @@ function renderPageEditor() {
   els.pageEditor.appendChild(addRow);
 }
 
-/** 保存页面内容：写回草稿，然后连同整棵版块树一起落盘 */
-async function savePageContent() {
+/** 把草稿里的块写回节点，顺手丢掉空块（没写字的文字、没选图的图片…） */
+function commitPageBlocks() {
   if (!pageNode) return;
-  // 空块（没写字的文字、没选图的图片、缺字段的链接）直接丢掉，别存垃圾
-  const kept = pageDraft.filter((b) => {
+  pageDraft = pageDraft.filter((b) => {
     if (b.type === 'text') return String(b.text ?? '').trim();
     if (b.type === 'image') return String(b.src ?? '').trim();
     if (b.type === 'link') return String(b.text ?? '').trim() && String(b.href ?? '').trim();
@@ -1507,9 +1870,7 @@ async function savePageContent() {
     if (b.type === 'video') return String(b.src ?? '').trim();
     return true;
   });
-  pageNode.page = kept;
-  closePageModal();
-  await saveBoards();
+  pageNode.page = pageDraft;
 }
 
 /**
@@ -1519,7 +1880,7 @@ async function savePageContent() {
  * （服务端 cleanNode 会原样保留）。页面上这张图就是卡片左边那格；
  * 没设的话用渐变兜底，不会是块空白。
  */
-function boardCoverControl(node) {
+function boardCoverControl(node, onChange = renderBoardsEditor) {
   const wrap = document.createElement('span');
   wrap.className = 'boardedit__cover';
 
@@ -1551,7 +1912,7 @@ function boardCoverControl(node) {
     if (!f) return;
     try {
       node.image = await uploadImage(f);
-      renderBoardsEditor();
+      onChange();
       toast('封面图传好了，记得保存');
     } catch (err) {
       toast(`传图失败：${err.message}`, true);
@@ -1565,7 +1926,7 @@ function boardCoverControl(node) {
   clear.hidden = !node.image;
   clear.addEventListener('click', () => {
     delete node.image;
-    renderBoardsEditor();
+    onChange();
   });
 
   wrap.append(thumb, pick, clear, file);
@@ -1711,13 +2072,13 @@ function renderBoardsEditor() {
       meta.appendChild(layoutSelect(node));
       meta.appendChild(boardCoverControl(node));
 
-      // 页面内容：这一页自己的介绍 / 图片 / 链接 / 子页面
+      // 页面内容：直接开工作台（那里能整页地改，还带预览）
       const content = document.createElement('button');
       content.type = 'button';
       content.className = 'btn btn--ghost boardedit__mini';
-      content.textContent = (node.page ?? []).length ? `页面内容（${node.page.length}）` : '页面内容';
-      content.title = '写这一页的介绍文字、插图片、插链接，或把子页面插到指定位置';
-      content.addEventListener('click', () => openPageModal(node));
+      content.textContent = (node.page ?? []).length ? `改这一页（${node.page.length} 块）` : '改这一页';
+      content.title = '写这一页的介绍文字、插图片、插子页面；右边直接看效果';
+      content.addEventListener('click', () => openPagesView(node));
       meta.appendChild(content);
 
       box.appendChild(meta);
@@ -1769,9 +2130,9 @@ function renderBoardsEditor() {
     const topContent = document.createElement('button');
     topContent.type = 'button';
     topContent.className = 'btn btn--ghost boardedit__mini';
-    topContent.textContent = (board.page ?? []).length ? `页面内容（${board.page.length}）` : '页面内容';
-    topContent.title = '写这一页的介绍文字、插图片、插链接，或把子页面插到指定位置';
-    topContent.addEventListener('click', () => openPageModal(board));
+    topContent.textContent = (board.page ?? []).length ? `改这一页（${board.page.length} 块）` : '改这一页';
+    topContent.title = '写这一页的介绍文字、插图片、插子页面；右边直接看效果';
+    topContent.addEventListener('click', () => openPagesView(board));
     topCover.appendChild(topContent);
     box.appendChild(topCover);
 
@@ -1793,7 +2154,14 @@ function renderBoardsEditor() {
   }
 }
 
-async function saveBoards() {
+/**
+ * 把整棵版块树写进 home-boards.json。
+ *
+ * 工作台（页面）和「子版块」弹窗都走这里 —— 数据只有一份草稿，
+ * 谁先保存都会把对方的改动一起带上，不会各存一份互相覆盖。
+ * silent = true 时不弹 toast、不关「子版块」弹窗（工作台自己管提示）。
+ */
+async function saveBoards({ silent = false } = {}) {
   try {
     const res = await fetch('/api/boards', {
       method: 'POST',
@@ -1814,10 +2182,14 @@ async function saveBoards() {
     if (state.subs.length !== before) setDirty(true);
     renderSubPicker();
 
-    closeBoardsModal();
-    toast('子版块已保存，重新构建后生效');
+    if (!silent) {
+      closeBoardsModal();
+      toast('子版块已保存，重新构建后生效');
+    }
+    return true;
   } catch (err) {
     toast(`保存失败：${err.message}`, true);
+    return false;
   }
 }
 
@@ -2495,14 +2867,46 @@ function bindEvents() {
 
   // 子版块编辑
   els.btnBoards.addEventListener('click', openBoardsModal);
-  els.boardsSave.addEventListener('click', saveBoards);
-  els.pageSave.addEventListener('click', savePageContent);
+  els.boardsSave.addEventListener('click', () => saveBoards());
   els.boardsModal.addEventListener('click', (ev) => {
     if (ev.target.dataset && ev.target.dataset.close) closeBoardsModal();
   });
-  els.pageModal.addEventListener('click', (ev) => {
-    // 取消/点遮罩：只关这一层，版块树还开着，方便接着编辑别的
-    if (ev.target.dataset && ev.target.dataset.close) closePageModal();
+
+  // 页面工作台
+  els.btnPages.addEventListener('click', () => openPagesView());
+  els.pageSave.addEventListener('click', saveStudio);
+  els.pwSearch.addEventListener('input', () => {
+    studioSearch = els.pwSearch.value;
+    renderStudioTree();
+  });
+  els.pwAddKid.addEventListener('click', () => {
+    if (!studioNode) return;
+    if (!Array.isArray(studioNode.children)) studioNode.children = [];
+    studioNode.children.push({ title: '' });
+    markStudioDirty();
+    renderStudioKids();
+    renderStudioTree();
+    toast('加好了，填个名字再点「保存并重新构建」');
+  });
+  els.pwRebuild.addEventListener('click', async () => {
+    els.pwStatus.textContent = '正在重新构建…';
+    els.pwStatus.classList.remove('is-dirty');
+    try {
+      const res = await fetch('/api/build', { method: 'POST' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      await loadStudioFrame({ keepStatus: true });
+      els.pwStatus.textContent = `重新构建好了（${data.ms} ms）`;
+    } catch (err) {
+      els.pwStatus.textContent = `构建失败：${err.message}`;
+      els.pwStatus.classList.add('is-dirty');
+    }
+  });
+  els.pwOpen.addEventListener('click', () => {
+    window.open(`${PREVIEW_URL}${studioUrl()}`, '_blank', 'noopener');
+  });
+  els.pagesModal.addEventListener('click', (ev) => {
+    if (ev.target.dataset && ev.target.dataset.close) closePagesView();
   });
 
   // 排版
