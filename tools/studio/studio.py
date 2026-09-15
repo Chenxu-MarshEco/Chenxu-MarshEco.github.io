@@ -116,6 +116,19 @@ def rounded_points(x1, y1, x2, y2, r, steps=10):
     return pts
 
 
+def auto_message():
+    """自动生成提交说明。
+
+    早先这里是弹一个输入框让用户手填，但那个框只有「按回车」一条提交路径，
+    窗口一旦没拿到键盘焦点（从 .cmd 用 start 拉起来时很常见），
+    敲回车毫无反应，界面就永久卡在那一屏 —— 用户遇到的就是这个。
+
+    既然要的是傻瓜式一键发布，说明就自动生成，带上日期时间，
+    在提交历史里仍能看出「这次是哪天发的」。
+    """
+    return time.strftime('更新内容 %Y-%m-%d %H:%M')
+
+
 # ---------------------------------------------------------------- 主程序
 
 class Studio:
@@ -663,46 +676,8 @@ class Studio:
                 self.log_write(f'\n（细节：{detail[:300]}）\n')
             return
 
-        self.log_write('连接正常。\n')
-        self.ask_message()
-
-    def ask_message(self):
-        """弹一个自绘的小面板问提交说明，避免用灰扑扑的系统对话框。"""
-        self.busy = False
-        overlay = self.canvas.create_rectangle(0, 0, W, H, fill='#12000f',
-                                               outline='', stipple='gray50',
-                                               tags='modal')
-        w, h = 520, 210
-        x1, y1 = (W - w) / 2, (H - h) / 2
-        pts = rounded_points(x1, y1, x1 + w, y1 + h, 14)
-        self.canvas.create_polygon(pts, fill='#22032a', outline=NEON, width=2,
-                                   tags='modal')
-        self.canvas.create_text(W / 2, y1 + 40, text='这次改了什么？',
-                                font=self.f_btn, fill='#ffffff', tags='modal')
-        self.canvas.create_text(W / 2, y1 + 70,
-                                text='直接回车用「更新内容」',
-                                font=self.f_hint, fill=NEON_SOFT, tags='modal')
-
-        entry = tk.Entry(self.root, bg='#12000f', fg='#ffffff',
-                         insertbackground=NEON, font=self.f_sub, relief='flat',
-                         highlightthickness=1, highlightbackground='#8a2b6b')
-        self.canvas.create_window(W / 2, y1 + 112, window=entry, width=w - 80,
-                                  height=34)
-        entry.focus_set()
-
-        def submit(_event=None):
-            text = entry.get().strip() or '更新内容'
-            entry.destroy()
-            self.canvas.delete('modal')
-            self.do_publish(text)
-
-        entry.bind('<Return>', submit)
-        self._modal_entry = entry
-        self._modal_submit = submit
-
-        self.canvas.create_text(W / 2, y1 + 165,
-                                text='回车确认　·　内容不为空',
-                                font=self.f_hint, fill=DIM, tags='modal')
+        self.log_write('连接正常，开始发布…\n')
+        self.do_publish(auto_message())
 
     def do_publish(self, message):
         self.show_running('发布上线')
