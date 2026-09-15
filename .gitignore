@@ -23,3 +23,6 @@ __pycache__/
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# 编辑器保存子版块时自动生成的备份，不进仓库
+*.bak
