@@ -1191,10 +1191,10 @@ body[data-type="notes"] .field--posts-only {
 
 .boardedit__row {
   display: grid;
-  /* 名称 / 地址 / 删除，两列输入自适应 */
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) auto;
-  gap: 8px;
-  margin-bottom: 8px;
+  /* 名称 / 地址 / 加下级 / 删除 */
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr) auto auto;
+  gap: 6px;
+  margin-bottom: 2px;
   align-items: center;
 }
 
@@ -1203,13 +1203,35 @@ body[data-type="notes"] .field--posts-only {
   min-width: 0;
 }
 
+.boardedit__mini {
+  white-space: nowrap;
+  padding: 5px 8px;
+  font-size: 12px;
+}
+
 .boardedit__del {
   white-space: nowrap;
   color: var(--danger, #b4443a);
 }
 
+/* 树形层级：子级整体缩进，并用一条竖线标出从属 */
+.boardnode__kids {
+  border-left: 1px solid var(--border);
+  margin-left: 8px;
+  padding-left: 2px;
+  margin-bottom: 4px;
+}
+
+.boardnode__id {
+  font-size: 10px;
+  color: var(--text-muted);
+  opacity: 0.55;
+  padding: 0 0 4px 2px;
+  font-family: var(--font-mono, monospace);
+}
+
 .boardedit__add {
-  margin-top: 4px;
+  margin-top: 6px;
   width: 100%;
 }
 

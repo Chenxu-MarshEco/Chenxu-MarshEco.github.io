@@ -3,8 +3,17 @@ import BaseLayout from '../layouts/BaseLayout.astro';
 import site from '../site.config';
 import { withBase } from '../utils/url';
 import layout from '../data/layout.json';
+import { flattenBoards, type BoardNode } from '../utils/boards';
 
 const skyline = withBase('/img/home/skyline.png');
+
+/*
+  大板块的地址由数据推导（用户选了「自动生成页面」），
+  数据里不再写 href。推导规则只有一处：utils/boards.ts。
+*/
+const flatBoards = flattenBoards(site.homeBoards as BoardNode[]);
+const boardUrl = (id: string) =>
+  flatBoards.find((f) => f.depth === 0 && f.node.id === id)?.url ?? '/';
 
 /*
   排版微调值来自 src/data/layout.json，由编辑器的「排版」模式写入。
@@ -106,7 +115,7 @@ const styleOf = (key: string) => {
     <div class="boards" data-edit="boards" style={styleOf('boards')}>
       {
         site.homeBoards.map((board) => (
-          <a class="board" href={withBase(board.href)} id={board.id}>
+          <a class="board" href={withBase(boardUrl(board.id))} id={board.id}>
             <div
               class="board__bg"
               style={`background-image:url(${withBase(board.image)})`}

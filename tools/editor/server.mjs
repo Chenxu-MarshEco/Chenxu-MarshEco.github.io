@@ -933,17 +933,41 @@ async function readBoards() {
 }
 
 /**
- * 写回大板块数据。
+ * 递归清理一个节点。
  *
- * 关键：必须保住每个子版块的 id。
- * id 是「文章归类到子版块」的唯一依据（文章 frontmatter 里存 subs: [id]），
- * 丢了 id 等于把归类关系全部切断。早先这里重建对象时只写了 label 和 href，
- * 于是用户每次在编辑器里动一下子版块，所有 id 就被抹掉，
- * 归类勾选框随之变成空的 —— 就是这么坏的。
+ * 关键：必须保住 id。id 是「文章归类到节点」的唯一依据
+ * （文章 frontmatter 里存 subs: [id]），丢了就等于把归类关系全切断。
+ * 早先重建对象时只写了 label 和 href，用户每次动一下子版块 id 就被抹掉 ——
+ * 归类勾选框变空就是这么来的。
  *
- * 新增的子版块没有 id，这里补一个。不用 label 当 id：
- * 名字一改归类关系就断了。
+ * 新增节点没有 id 就补一个。不用标题当 id：名字一改归类关系就断。
  */
+function cleanNode(raw, parentId, used) {
+  if (!raw || typeof raw !== 'object') return null;
+  const title = String(raw.title || raw.label || '').trim();
+  if (!title) return null;
+
+  let id = String(raw.id || '').trim();
+  if (!id || used.has(id)) {
+    let n = 1;
+    while (used.has(`${parentId}-${n}`)) n += 1;
+    id = `${parentId}-${n}`;
+  }
+  used.add(id);
+
+  const out = { id, title };
+  const href = String(raw.href || '').trim();
+  if (href) out.href = href;
+  const image = String(raw.image || '').trim();
+  if (image) out.image = image;
+
+  const kids = Array.isArray(raw.children) ? raw.children : [];
+  const children = kids.map((k) => cleanNode(k, id, used)).filter(Boolean);
+  if (children.length) out.children = children;
+
+  return out;
+}
+
 async function writeBoards(payload) {
   if (!payload || !Array.isArray(payload.boards)) {
     throw httpError(400, '数据格式不对，需要 { boards: [...] }');
@@ -952,33 +976,17 @@ async function writeBoards(payload) {
   const boards = payload.boards.map((b) => {
     const boardId = String(b.id || '').trim();
     const used = new Set();
+    const kids = Array.isArray(b.children) ? b.children : [];
+    const children = kids.map((k) => cleanNode(k, boardId, used)).filter(Boolean);
 
-    const items = (Array.isArray(b.items) ? b.items : [])
-      .map((it) => {
-        const label = String((it && it.label) || '').trim();
-        if (!label) return null;
-
-        let id = String((it && it.id) || '').trim();
-        if (!id || used.has(id)) {
-          let n = 1;
-          while (used.has(`${boardId}-${n}`)) n += 1;
-          id = `${boardId}-${n}`;
-        }
-        used.add(id);
-
-        const href = String((it && it.href) || '').trim();
-        return href ? { id, label, href } : { id, label };
-      })
-      .filter(Boolean);
-
-    return {
+    const out = {
       id: boardId,
       title: String(b.title || '').trim(),
       subtitle: String(b.subtitle || '').trim(),
       image: String(b.image || '').trim(),
-      href: String(b.href || '').trim(),
-      items,
     };
+    if (children.length) out.children = children;
+    return out;
   });
 
   if (boards.some((b) => !b.id || !b.title)) {

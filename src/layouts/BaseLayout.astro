@@ -3,6 +3,7 @@ import '../styles/fonts.css';
 import '../styles/global.css';
 import SiteHeader from '../components/SiteHeader.astro';
 import SiteFooter from '../components/SiteFooter.astro';
+import BoardDrawer from '../components/BoardDrawer.astro';
 import site from '../site.config';
 import { absoluteUrl, withBase } from '../utils/url';
 
@@ -35,6 +36,15 @@ const {
 const pageTitle = title ? `${title} · ${site.title}` : `${site.title} · ${site.tagline}`;
 const canonical = absoluteUrl(Astro.url.pathname, Astro.site);
 const ogImage = absoluteUrl('/og-default.svg', Astro.site);
+
+/** 目录栏用它高亮「当前在哪」，并自动展开到这一层 */
+const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+const rawPath = Astro.url.pathname;
+const withoutBase =
+  base && rawPath.startsWith(base) ? rawPath.slice(base.length) || '/' : rawPath;
+// 归一化：Astro 生成的目录式地址带尾斜杠（/yongcheng/），
+// 而节点地址是 /yongcheng，不处理的话「当前项」永远匹配不上。
+const currentPath = withoutBase.length > 1 ? withoutBase.replace(/\/+$/, '') : '/';
 ---
 
 <!doctype html>
@@ -93,6 +103,8 @@ const ogImage = absoluteUrl('/og-default.svg', Astro.site);
   <body class={bodyClass}>
     <a class="skip-link" href="#main">跳到正文</a>
     <SiteHeader />
+    {/* 右上角目录栏（三条杠）。全站都要有，所以挂在布局里 */}
+    <BoardDrawer current={currentPath} />
 
     <main id="main" class="site-main">
       <div class:list={['container', narrow && 'container--narrow']}>

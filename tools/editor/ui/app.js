@@ -1045,7 +1045,88 @@ async function openBoardsModal() {
 function renderBoardsEditor() {
   els.boardsEditor.textContent = '';
 
+  // 递归渲染一层
+  const renderLevel = (list, container, boardId, depth) => {
+    for (let i = 0; i < list.length; i += 1) {
+      const node = list[i];
+      if (!node.children) node.children = [];
+
+      const box = document.createElement('div');
+      box.className = 'boardnode';
+      box.style.marginLeft = depth === 0 ? '0' : '16px';
+
+      const row = document.createElement('div');
+      row.className = 'boardedit__row';
+
+      const title = document.createElement('input');
+      title.type = 'text';
+      title.className = 'input';
+      title.placeholder = '名称';
+      title.value = node.title || node.label || '';
+      title.addEventListener('input', () => {
+        node.title = title.value;
+      });
+
+      const href = document.createElement('input');
+      href.type = 'text';
+      href.className = 'input';
+      href.placeholder = '地址（留空 = 自动生成页面）';
+      href.value = node.href || '';
+      href.addEventListener('input', () => {
+        node.href = href.value.trim();
+      });
+
+      // 加下级：这是「一层里能再加更多层」的入口
+      const addKid = document.createElement('button');
+      addKid.type = 'button';
+      addKid.className = 'btn btn--ghost boardedit__mini';
+      addKid.textContent = '＋下级';
+      addKid.title = '在这个版块下面再加一层';
+      addKid.addEventListener('click', () => {
+        if (!node.children) node.children = [];
+        node.children.push({ title: '' });
+        renderBoardsEditor();
+      });
+
+      const del = document.createElement('button');
+      del.type = 'button';
+      del.className = 'btn btn--ghost boardedit__mini boardedit__del';
+      del.textContent = '删除';
+      del.title = node.children.length ? '会连同下面的子版块一起删掉' : '删除这一项';
+      del.addEventListener('click', () => {
+        if (node.children.length
+          && !confirm(`「${node.title || '这一项'}」下面还有 ${node.children.length} 个子版块，一起删掉吗？`)) {
+          return;
+        }
+        list.splice(i, 1);
+        renderBoardsEditor();
+      });
+
+      row.append(title, href, addKid, del);
+      box.appendChild(row);
+
+      if (node.id) {
+        const idLine = document.createElement('div');
+        idLine.className = 'boardnode__id';
+        idLine.textContent = node.id;
+        idLine.title = '文章归类用的标识，自动生成，不用管';
+        box.appendChild(idLine);
+      }
+
+      container.appendChild(box);
+
+      if (node.children.length) {
+        const kids = document.createElement('div');
+        kids.className = 'boardnode__kids';
+        container.appendChild(kids);
+        renderLevel(node.children, kids, boardId, depth + 1);
+      }
+    }
+  };
+
   for (const board of boardsDraft.boards) {
+    if (!board.children) board.children = [];
+
     const box = document.createElement('div');
     box.className = 'boardedit';
 
@@ -1054,51 +1135,17 @@ function renderBoardsEditor() {
     head.textContent = `${board.title}　${board.id}`;
     box.appendChild(head);
 
-    board.items.forEach((item, idx) => {
-      const row = document.createElement('div');
-      row.className = 'boardedit__row';
-
-      const label = document.createElement('input');
-      label.type = 'text';
-      label.className = 'input';
-      label.placeholder = '子版块名称';
-      label.value = item.label || '';
-      label.addEventListener('input', () => {
-        item.label = label.value;
-      });
-
-      const href = document.createElement('input');
-      href.type = 'text';
-      href.className = 'input';
-      href.placeholder = '地址（留空 = 待定占位）';
-      href.value = item.href || '';
-      href.addEventListener('input', () => {
-        item.href = href.value;
-      });
-
-      const del = document.createElement('button');
-      del.type = 'button';
-      del.className = 'btn btn--ghost boardedit__del';
-      del.textContent = '删除';
-      del.addEventListener('click', () => {
-        board.items.splice(idx, 1);
-        renderBoardsEditor();
-      });
-
-      row.append(label, href, del);
-      box.appendChild(row);
-    });
+    const list = document.createElement('div');
+    box.appendChild(list);
+    renderLevel(board.children, list, board.id, 0);
 
     const add = document.createElement('button');
     add.type = 'button';
     add.className = 'btn btn--ghost boardedit__add';
-    add.textContent = '＋ 添加子版块';
+    add.textContent = '＋ 添加一级版块';
     add.addEventListener('click', () => {
-      board.items.push({ label: '' });
+      board.children.push({ title: '' });
       renderBoardsEditor();
-      const rows = box.querySelectorAll('.boardedit__row .input');
-      const last = rows[rows.length - 2];
-      if (last) last.focus();
     });
     box.appendChild(add);
 
@@ -1152,11 +1199,22 @@ async function loadSubs() {
     const res = await fetch('/api/boards');
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
+
+    // 数据是树（children 可无限嵌套），递归摊平。
+    // indent 用全角空格按层数缩进，勾选框里就能看出从属关系。
     const flat = [];
+    const walk = (node, board, depth) => {
+      if (!node || !node.id) return;
+      flat.push({
+        id: node.id,
+        label: node.title || node.label || '(未命名)',
+        board,
+        depth,
+      });
+      for (const child of node.children || []) walk(child, board, depth + 1);
+    };
     for (const board of data.boards || []) {
-      for (const item of board.items || []) {
-        if (item.id) flat.push({ id: item.id, label: item.label, board: board.title });
-      }
+      for (const child of board.children || []) walk(child, board.title, 0);
     }
     state.allSubs = flat;
   } catch {
@@ -1195,7 +1253,8 @@ function renderSubPicker() {
     });
 
     const text = document.createElement('span');
-    text.textContent = sub.label;
+    // 按层级缩进，让人一眼看出这个节点挂在谁下面
+    text.textContent = '　'.repeat(sub.depth || 0) + sub.label;
 
     const meta = document.createElement('em');
     meta.textContent = sub.board;

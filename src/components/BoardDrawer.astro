@@ -1,0 +1,395 @@
+---
+/**
+ * 右上角的目录栏（三条杠）。
+ *
+ * 数据就是首页那两棵大板块树，所以它天然反映「当前在哪个板块」。
+ * 常见文档站的目录树：点章节名跳转，点箭头展开/收起下一层。
+ *
+ * 交互全在这个组件自己的一段小脚本里，不用任何框架 ——
+ * 站里其他页面都是纯静态的，为这一个抽屉引入运行时依赖不划算。
+ */
+import site from '../site.config';
+import { flattenBoards, type BoardNode } from '../utils/boards';
+
+interface Props {
+  /** 当前页面路径，用来高亮位置并自动展开到它 */
+  current: string;
+}
+
+const { current } = Astro.props;
+
+const all = flattenBoards(site.homeBoards as BoardNode[]);
+
+/** 当前路径上的所有节点 id，用来展开祖先 */
+const onPath = new Set(
+  all
+    .filter((f) => current === f.url || current.startsWith(`${f.url}/`))
+    .map((f) => f.node.id)
+);
+
+// 只把顶层大板块交给前端；子层在 HTML 里一次性铺好，用 hidden 控制显隐。
+const boards = site.homeBoards as BoardNode[];
+
+const nodeUrl = (id: string) => all.find((f) => f.node.id === id)?.url ?? '/';
+const nodeDepth = (id: string) => all.find((f) => f.node.id === id)?.depth ?? 0;
+---
+
+<button
+  type="button"
+  class="drawer__toggle"
+  id="drawer-toggle"
+  aria-label="打开目录"
+  aria-expanded="false"
+  aria-controls="drawer-panel"
+>
+  <span class="drawer__bars" aria-hidden="true"><i></i><i></i><i></i></span>
+</button>
+
+<div class="drawer__scrim" id="drawer-scrim" hidden></div>
+
+<aside class="drawer" id="drawer-panel" hidden aria-label="目录">
+  <div class="drawer__head">
+    <span class="drawer__site">{site.title}</span>
+    <button type="button" class="drawer__close" id="drawer-close" aria-label="关闭目录">×</button>
+  </div>
+
+  <nav class="drawer__body">
+    <ul class="tree" role="tree">
+      {
+        boards.map((board) => (
+          <li class="tree__item">
+            <div class="tree__row">
+              {board.children?.length ? (
+                <button
+                  type="button"
+                  class="tree__caret"
+                  data-toggle={board.id}
+                  aria-label={`展开 ${board.title}`}
+                  aria-expanded={onPath.has(board.id) ? 'true' : 'false'}
+                >
+                  ▸
+                </button>
+              ) : (
+                <span class="tree__caret tree__caret--none" aria-hidden="true" />
+              )}
+              <a
+                class="tree__link"
+                href={nodeUrl(board.id)}
+                data-cur={current === nodeUrl(board.id) ? '1' : undefined}
+                data-onpath={onPath.has(board.id) ? '1' : undefined}
+              >
+                {board.title}
+              </a>
+            </div>
+
+            {board.children?.length ? (
+              <ul class="tree__kids" data-kids={board.id} hidden={!onPath.has(board.id)}>
+                {board.children.map((c) => (
+                  <li class="tree__item">
+                    <div class="tree__row">
+                      {c.children?.length ? (
+                        <button
+                          type="button"
+                          class="tree__caret"
+                          data-toggle={c.id}
+                          aria-label={`展开 ${c.title}`}
+                          aria-expanded={onPath.has(c.id) ? 'true' : 'false'}
+                        >
+                          ▸
+                        </button>
+                      ) : (
+                        <span class="tree__caret tree__caret--none" aria-hidden="true" />
+                      )}
+                      <a
+                        class="tree__link"
+                        href={nodeUrl(c.id)}
+                        data-cur={current === nodeUrl(c.id) ? '1' : undefined}
+                        data-onpath={onPath.has(c.id) ? '1' : undefined}
+                      >
+                        {c.title}
+                      </a>
+                    </div>
+
+                    {c.children?.length ? (
+                      <ul class="tree__kids" data-kids={c.id} hidden={!onPath.has(c.id)}>
+                        {c.children.map((g) => (
+                          <li class="tree__item">
+                            <div class="tree__row">
+                              <span class="tree__caret tree__caret--none" aria-hidden="true" />
+                              <a
+                                class="tree__link"
+                                href={nodeUrl(g.id)}
+                                data-cur={current === nodeUrl(g.id) ? '1' : undefined}
+                                data-onpath={onPath.has(g.id) ? '1' : undefined}
+                              >
+                                {g.title}
+                              </a>
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </li>
+        ))
+      }
+    </ul>
+  </nav>
+</aside>
+
+<script is:inline>
+  (() => {
+    const toggle = document.getElementById('drawer-toggle');
+    const panel = document.getElementById('drawer-panel');
+    const scrim = document.getElementById('drawer-scrim');
+    const close = document.getElementById('drawer-close');
+    if (!toggle || !panel || !scrim || !close) return;
+
+    const setOpen = (open) => {
+      panel.hidden = !open;
+      scrim.hidden = !open;
+      toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+      document.documentElement.classList.toggle('drawer-open', open);
+      if (open) close.focus();
+      else toggle.focus();
+    };
+
+    toggle.addEventListener('click', () => setOpen(panel.hidden));
+    close.addEventListener('click', () => setOpen(false));
+    scrim.addEventListener('click', () => setOpen(false));
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && !panel.hidden) setOpen(false);
+    });
+
+    // 展开 / 收起下一层。禁用 JS 时子层默认展开，靠 hidden 属性控制。
+    panel.querySelectorAll('[data-toggle]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const key = btn.dataset.toggle;
+        const kids = panel.querySelector(`[data-kids="${key}"]`);
+        if (!kids) return;
+        const open = kids.hidden;
+        kids.hidden = !open;
+        btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+        btn.classList.toggle('is-open', open);
+      });
+    });
+
+    // 进页面时把箭头方向摆正、并把当前项滚进视野
+    panel.querySelectorAll('[data-toggle]').forEach((btn) => {
+      const kids = panel.querySelector(`[data-kids="${btn.dataset.toggle}"]`);
+      if (kids && !kids.hidden) btn.classList.add('is-open');
+    });
+    const here = panel.querySelector('[data-cur]');
+    if (here && here.scrollIntoView) here.scrollIntoView({ block: 'center' });
+  })();
+</script>
+
+<style>
+  /* ---------- 三条杠按钮 ---------- */
+  .drawer__toggle {
+    position: fixed;
+    top: 0.85rem;
+    right: clamp(0.9rem, 2.5vw, 1.8rem);
+    z-index: 60;
+    width: 42px;
+    height: 42px;
+    display: grid;
+    place-items: center;
+    padding: 0;
+    border-radius: 11px;
+    border: 1px solid var(--c-border-strong);
+    background: var(--c-bg-raised);
+    cursor: pointer;
+  }
+  .drawer__bars {
+    display: grid;
+    gap: 4px;
+    width: 19px;
+  }
+  .drawer__bars i {
+    display: block;
+    height: 2px;
+    border-radius: 2px;
+    background: var(--c-text);
+    transition: transform 0.18s ease, opacity 0.18s ease;
+  }
+  /* 打开时变成叉 */
+  :global(.drawer-open) .drawer__bars i:nth-child(1) {
+    transform: translateY(6px) rotate(45deg);
+  }
+  :global(.drawer-open) .drawer__bars i:nth-child(2) {
+    opacity: 0;
+  }
+  :global(.drawer-open) .drawer__bars i:nth-child(3) {
+    transform: translateY(-6px) rotate(-45deg);
+  }
+
+  /* 深色页面（首页、板块页）上的按钮要反过来配色 */
+  :global(body.is-home) .drawer__toggle,
+  :global(body.is-board) .drawer__toggle {
+    background: rgba(38, 4, 52, 0.72);
+    border-color: rgba(255, 120, 190, 0.5);
+    backdrop-filter: blur(4px);
+  }
+  :global(body.is-home) .drawer__bars i,
+  :global(body.is-board) .drawer__bars i {
+    background: #ffd9ef;
+  }
+
+  /* ---------- 遮罩 ---------- */
+  .drawer__scrim {
+    position: fixed;
+    inset: 0;
+    z-index: 58;
+    background: rgba(10, 0, 12, 0.42);
+  }
+
+  /* ---------- 抽屉 ---------- */
+  .drawer {
+    position: fixed;
+    top: 0;
+    right: 0;
+    z-index: 59;
+    width: min(320px, 86vw);
+    height: 100%;
+    overflow-y: auto;
+    background: var(--c-bg-raised);
+    border-left: 1px solid var(--c-border);
+    box-shadow: -14px 0 40px -18px rgb(0 0 0 / 0.4);
+    padding: 0 0 2rem;
+  }
+  .drawer__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.6rem;
+    padding: 1rem 1.1rem;
+    border-bottom: 1px solid var(--c-border);
+    position: sticky;
+    top: 0;
+    background: var(--c-bg-raised);
+  }
+  .drawer__site {
+    font-weight: 600;
+    letter-spacing: 0.1em;
+  }
+  .drawer__close {
+    border: 0;
+    background: none;
+    font-size: 1.4rem;
+    line-height: 1;
+    cursor: pointer;
+    color: var(--c-text-muted);
+    padding: 0 0.3rem;
+  }
+  .drawer__body {
+    padding: 0.7rem 0.6rem;
+  }
+
+  /* ---------- 树 ---------- */
+  .tree,
+  .tree__kids {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .tree__kids {
+    padding-left: 1.05rem;
+    border-left: 1px solid var(--c-border);
+    margin-left: 0.75rem;
+  }
+  .tree__row {
+    display: flex;
+    align-items: center;
+    gap: 0.15rem;
+  }
+  .tree__caret {
+    flex: 0 0 auto;
+    width: 22px;
+    height: 22px;
+    display: grid;
+    place-items: center;
+    border: 0;
+    background: none;
+    cursor: pointer;
+    color: var(--c-text-faint);
+    font-size: 0.7rem;
+    transition: transform 0.15s ease;
+  }
+  .tree__caret.is-open {
+    transform: rotate(90deg);
+  }
+  .tree__caret--none {
+    cursor: default;
+  }
+  .tree__link {
+    flex: 1 1 auto;
+    padding: 0.34rem 0.3rem;
+    border-radius: 7px;
+    text-decoration: none;
+    color: var(--c-text);
+    font-size: 0.92rem;
+  }
+  .tree__link:hover {
+    background: var(--c-accent-soft);
+  }
+  /* 路径上的祖先：稍微强调，让人看出自己在哪一支 */
+  .tree__link[data-onpath] {
+    color: var(--c-accent);
+  }
+  /* 当前所在：加重并加一条竖标 */
+  .tree__link[data-cur] {
+    background: var(--c-accent-soft);
+    color: var(--c-accent);
+    font-weight: 600;
+    box-shadow: inset 3px 0 0 var(--c-accent);
+  }
+
+  /* 深色页面上的抽屉也跟着换色，否则白底会很刺眼 */
+  :global(body.is-home) .drawer,
+  :global(body.is-board) .drawer {
+    background: #1e0730;
+    border-left-color: rgba(255, 120, 190, 0.32);
+  }
+  :global(body.is-home) .drawer__head,
+  :global(body.is-board) .drawer__head {
+    background: #1e0730;
+    border-bottom-color: rgba(255, 120, 190, 0.32);
+  }
+  :global(body.is-home) .drawer__site,
+  :global(body.is-board) .drawer__site {
+    color: #ffd9ef;
+  }
+  :global(body.is-home) .tree__link,
+  :global(body.is-board) .tree__link {
+    color: #ffe6f6;
+  }
+  :global(body.is-home) .tree__link:hover,
+  :global(body.is-board) .tree__link:hover {
+    background: rgba(212, 0, 123, 0.3);
+  }
+  :global(body.is-home) .tree__link[data-onpath],
+  :global(body.is-board) .tree__link[data-onpath] {
+    color: #ffb3dd;
+  }
+  :global(body.is-home) .tree__link[data-cur],
+  :global(body.is-board) .tree__link[data-cur] {
+    background: rgba(212, 0, 123, 0.42);
+    color: #fff;
+    box-shadow: inset 3px 0 0 #ff4fa3;
+  }
+  :global(body.is-home) .tree__kids,
+  :global(body.is-board) .tree__kids {
+    border-left-color: rgba(255, 120, 190, 0.3);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .drawer__bars i,
+    .tree__caret {
+      transition: none;
+    }
+  }
+</style>

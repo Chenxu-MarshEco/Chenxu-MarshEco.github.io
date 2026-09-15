@@ -7,6 +7,7 @@ import { getNotes, getPosts } from '../utils/content';
 import { absoluteUrl } from '../utils/url';
 import { toISODate } from '../utils/date';
 import site from '../site.config';
+import { flattenBoards, type BoardNode } from '../utils/boards';
 
 export const GET: APIRoute = async ({ site: astroSite }) => {
   const entries = [...(await getPosts()), ...(await getNotes())];
@@ -14,18 +15,14 @@ export const GET: APIRoute = async ({ site: astroSite }) => {
   const staticPages = ['/', '/posts', '/notes', '/tags', '/archive', '/about', '/friends'];
 
   /*
-    首页那两个大板块以及它们的子页面也要收录。
-    这些页面是后加的，早先 staticPages 是写死的，所以漏掉了 ——
-    feed-check 就是靠比对 sitemap 和 dist 里的真实页面发现这个问题的。
-    这里从 site.config 里取大板块，再补上花娅陌域下的两个固定子页面。
+    大板块树里的每一层都会自动生成页面，这里把它们的地址全部收录。
+    以前是手写死的列表，加一层就漏一个 —— 现在直接从树里推导，
+    不会再出现 sitemap 和实际页面不一致的情况。
+    feed-check 就是靠比对这两者发现问题的。
   */
-  const boardPages = site.homeBoards.map((b) => b.href);
-  // 花娅陌域下的两个固定子页面。地址必须和
-  // src/data/home-boards.json 里配置的 href 一致 —— 那边改了这里也要改，
-  // 否则 sitemap 会指到不存在的页面（feed-check 会报出来）。
-  const huayaChildren = ['/huaya/mozhi', '/huaya/farland'];
+  const boardPages = flattenBoards(site.homeBoards as BoardNode[]).map((f) => f.url);
 
-  const allStatic = [...staticPages, ...boardPages, ...huayaChildren];
+  const allStatic = [...staticPages, ...boardPages];
 
   const tags = [...new Set(entries.flatMap((e) => e.data.tags ?? []))].map(
     (tag) => `/tags/${encodeURIComponent(tag)}/`

@@ -1,0 +1,224 @@
+---
+/**
+ * 大板块树里任意一个节点的页面内容。
+ *
+ * 两种路由（/[board]/ 和 /[board]/[...path]/）共用这个组件，
+ * 免得同样的渲染逻辑写两遍。
+ *
+ * 页面上有三块：
+ *   1. 面包屑 —— 让人知道自己在树的哪一层
+ *   2. 子节点网格 —— 下一层入口
+ *   3. 归到本节点的文章
+ *
+ * URL 全部由调用方在服务端算好传进来 —— 组件里不要去推路径，
+ * 推导逻辑只有一处（utils/boards.ts），放两处迟早对不上。
+ */
+import { withBase } from '../utils/url';
+
+interface SubPost {
+  title: string;
+  href: string;
+  date: string;
+}
+
+interface Crumb {
+  title: string;
+  /** 最后一项没有 url，表示「当前所在」 */
+  url?: string;
+}
+
+interface ChildLink {
+  title: string;
+  url: string;
+}
+
+interface Props {
+  trail: Crumb[];
+  children: ChildLink[];
+  posts: SubPost[];
+}
+
+const { trail, children, posts } = Astro.props;
+---
+
+{trail.length > 1 && (
+  <nav class="crumbs" aria-label="位置">
+    {trail.map((c, i) => (
+      <>
+        {i > 0 && (
+          <span class="crumbs__sep" aria-hidden="true">
+            ›
+          </span>
+        )}
+        {c.url ? (
+          <a href={withBase(c.url)}>{c.title}</a>
+        ) : (
+          <span class="crumbs__here" aria-current="page">
+            {c.title}
+          </span>
+        )}
+      </>
+    ))}
+  </nav>
+)}
+
+{children.length > 0 && (
+  <ul class="subgrid">
+    {children.map((c) => (
+      <li class="subcell">
+        <a class="subcard" href={withBase(c.url)}>
+          <span class="subcard__label">{c.title}</span>
+          <span class="subcard__arrow" aria-hidden="true">
+            →
+          </span>
+        </a>
+      </li>
+    ))}
+  </ul>
+)}
+
+{posts.length > 0 && (
+  <>
+    <h2 class="node__h2">这里的文章</h2>
+    <ul class="subposts subposts--page">
+      {posts.map((p) => (
+        <li>
+          <a href={withBase(p.href)}>{p.title}</a>
+          <em>{p.date}</em>
+        </li>
+      ))}
+    </ul>
+  </>
+)}
+
+{
+  children.length === 0 && posts.length === 0 && (
+    <p class="node__empty">
+      这一层还没有内容。可以在编辑器里给它加子版块，或把文章归到这里。
+    </p>
+  )
+}
+
+<style>
+  .crumbs {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.45rem;
+    font-size: 0.86rem;
+    margin-bottom: 1.2rem;
+  }
+  .crumbs a {
+    color: #ffd9ef;
+    text-decoration: none;
+  }
+  .crumbs a:hover {
+    color: #fff;
+    text-shadow: 0 0 10px rgba(255, 79, 163, 0.9);
+  }
+  .crumbs__sep {
+    color: rgba(255, 226, 244, 0.45);
+  }
+  .crumbs__here {
+    color: rgba(255, 226, 244, 0.7);
+  }
+
+  .subgrid {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+    gap: 0.9rem;
+  }
+  .subcell {
+    display: flex;
+    flex-direction: column;
+  }
+  .subcard {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.8rem;
+    min-height: 64px;
+    padding: 0.9rem 1.1rem;
+    border-radius: 12px;
+    text-decoration: none;
+    color: #ffe6f6;
+    background: rgba(38, 4, 52, 0.62);
+    border: 1px solid rgba(255, 120, 190, 0.42);
+    backdrop-filter: blur(3px);
+    transition:
+      background 0.18s ease,
+      border-color 0.18s ease,
+      transform 0.18s ease;
+  }
+  .subcard:hover,
+  .subcard:focus-visible {
+    background: rgba(212, 0, 123, 0.72);
+    border-color: #ffb3dd;
+    color: #fff;
+    transform: translateY(-2px);
+  }
+  .subcard__label {
+    font-size: 1rem;
+    letter-spacing: 0.08em;
+  }
+  .subcard__arrow {
+    color: #ffb3dd;
+    font-size: 1.1rem;
+  }
+
+  .node__h2 {
+    font-size: 1rem;
+    letter-spacing: 0.14em;
+    color: rgba(255, 226, 244, 0.72);
+    margin: 2rem 0 0.8rem;
+  }
+
+  .subposts {
+    list-style: none;
+    margin: 0;
+    padding: 0 0 0 0.9rem;
+    border-left: 2px solid rgba(255, 120, 190, 0.35);
+  }
+  .subposts--page {
+    padding-left: 1.1rem;
+  }
+  .subposts li {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.6rem;
+    padding: 0.24rem 0;
+  }
+  .subposts a {
+    color: #ffd9ef;
+    text-decoration: none;
+    font-size: 0.92rem;
+  }
+  .subposts a:hover {
+    color: #fff;
+    text-shadow: 0 0 10px rgba(255, 79, 163, 0.9);
+  }
+  .subposts em {
+    font-style: normal;
+    font-size: 0.72rem;
+    color: rgba(255, 226, 244, 0.55);
+    white-space: nowrap;
+  }
+
+  .node__empty {
+    color: rgba(255, 226, 244, 0.6);
+    font-size: 0.9rem;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .subcard {
+      transition: none;
+    }
+    .subcard:hover {
+      transform: none;
+    }
+  }
+</style>
