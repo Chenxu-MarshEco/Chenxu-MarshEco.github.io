@@ -6,6 +6,7 @@ import SiteFooter from '../components/SiteFooter.astro';
 import BoardDrawer from '../components/BoardDrawer.astro';
 import site from '../site.config';
 import { absoluteUrl, withBase } from '../utils/url';
+import { editStyleBlock, type PageKey } from '../utils/layout';
 
 interface Props {
   /** 页面标题，会拼在站点名前面。首页留空即可 */
@@ -20,6 +21,11 @@ interface Props {
   narrow?: boolean;
   /** 挂到 <body> 上的 class，首页用它切换整屏背景 */
   bodyClass?: string;
+  /**
+   * 这一页属于哪种页面类型，决定「排版」模式调的是哪一组值。
+   * 不填就没有排版微调（比如 404 页）。
+   */
+  layoutPage?: PageKey;
 }
 
 const {
@@ -31,7 +37,11 @@ const {
   noindex = false,
   narrow = false,
   bodyClass = '',
+  layoutPage,
 } = Astro.props;
+
+/** 这一页的排版微调样式；全是默认值时为 null，不输出 */
+const layoutCss = layoutPage ? editStyleBlock(layoutPage) : null;
 
 const pageTitle = title ? `${title} · ${site.title}` : `${site.title} · ${site.tagline}`;
 const canonical = absoluteUrl(Astro.url.pathname, Astro.site);
@@ -102,6 +112,9 @@ const currentPath = withoutBase.length > 1 ? withoutBase.replace(/\/+$/, '') : '
 
   <body class={bodyClass}>
     <a class="skip-link" href="#main">跳到正文</a>
+    {/* 排版微调：把这一页各元素的偏移/缩放变量输出成规则，
+        配合 global.css 里的 [data-edit] 生效。 */}
+    {layoutCss && <style is:inline set:html={layoutCss} />}
     <SiteHeader />
     {/* 右上角目录栏（三条杠）。全站都要有，所以挂在布局里 */}
     <BoardDrawer current={currentPath} />

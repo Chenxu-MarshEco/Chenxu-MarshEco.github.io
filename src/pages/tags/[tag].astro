@@ -19,9 +19,10 @@ const matched = filterByTag(entries, tag).sort(
 );
 ---
 
-<BaseLayout title={`#${tag}`} description={`标签 ${tag} 下的全部内容`}>
+<BaseLayout title={`#${tag}`} description={`标签 ${tag} 下的全部内容`}
+  layoutPage="list">
   <header class="page-header">
-    <h1 class="page-header__title">#{tag}</h1>
+    <h1 class="page-header__title" data-edit="heading">#{tag}</h1>
     <p class="page-header__desc">
       共 {matched.length} 条记录。<a href={withBase('/tags')}>← 全部标签</a>
     </p>

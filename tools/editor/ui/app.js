@@ -70,6 +70,7 @@ const els = {
   layoutModal: $('layout-modal'),
   layoutFrame: $('layout-frame'),
   layoutPick: $('layout-pick'),
+  layoutPage: $('layout-page'),
   layoutReset: $('layout-reset'),
   layoutResetAll: $('layout-resetall'),
   layoutSave: $('layout-save'),
@@ -1278,6 +1279,20 @@ function renderSubPicker() {
 /** 预览站点地址。本地预览服务默认在 4321。 */
 const PREVIEW_URL = 'http://127.0.0.1:4321';
 
+/**
+ * 每种页面类型拿哪个真实页面来做预览。
+ * 大板块页/详情页/列表页都只是「这一类」的代表 ——
+ * 同一类里所有页面共用一套微调，所以拿最典型的一个当样板就行。
+ */
+const LAYOUT_SAMPLES = {
+  home: '/',
+  board: '/yongcheng/',
+  post: '/posts/hello/',
+  list: '/posts/',
+};
+
+let layoutPage = 'home';
+
 /** 注入进 iframe 的编辑脚本。字符串拼接，避免和外层的模板字面量打架。 */
 const LAYOUT_SCRIPT = [
   '(function () {',
@@ -1401,16 +1416,25 @@ let layoutPicked = null;
 
 async function openLayoutModal() {
   els.layoutModal.hidden = false;
+  await loadLayoutPage(layoutPage);
+}
+
+/** 把某个页面类型的样板页载进 iframe */
+async function loadLayoutPage(page) {
+  layoutPage = page;
+  els.layoutPage.value = page;
   els.layoutPick.textContent = '正在载入页面…';
+  els.layoutPick.style.color = '';
+
+  const sample = LAYOUT_SAMPLES[page] || '/';
 
   try {
     const [pageRes, layRes] = await Promise.all([
       // 走服务端代理，不直接 fetch 4321 —— 那是跨源，会被 CORS 挡掉
-      fetch('/api/preview?path=/', { cache: 'no-store' }),
+      fetch(`/api/preview?path=${encodeURIComponent(sample)}`, { cache: 'no-store' }),
       fetch('/api/layout'),
     ]);
     if (!pageRes.ok) {
-      // 502 时把服务端那句人话提示带出来
       const detail = await pageRes.text().catch(() => '');
       let msg = `HTTP ${pageRes.status}`;
       try {
@@ -1423,10 +1447,11 @@ async function openLayoutModal() {
     if (!layRes.ok) throw new Error(`读取排版数据失败 HTTP ${layRes.status}`);
 
     layoutState = await layRes.json();
+    layoutPicked = null;
 
     let html = await pageRes.text();
     // 让页面里的相对路径都指向预览服务（iframe 本身是 srcdoc，没有自己的地址）
-    html = html.replace(/<head([^>]*)>/i, `<head$1><base href="${PREVIEW_URL}/">`);
+    html = html.replace(/<head([^>]*)>/i, `<head$1><base href="${PREVIEW_URL}${sample}">`);
     html = html.replace(/<\/body>/i, `<script>${LAYOUT_SCRIPT}<\/script></body>`);
 
     els.layoutFrame.srcdoc = html;
@@ -1458,7 +1483,8 @@ async function saveLayout() {
     const res = await fetch('/api/layout', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ home: win.__layoutApi.state }),
+      // 只提交当前这一类页面；服务端会合并，别的页面不受影响
+      body: JSON.stringify({ pages: { [layoutPage]: win.__layoutApi.state } }),
     });
     const data = await res.json();
     if (!res.ok || !data.ok) throw new Error(data.error || `HTTP ${res.status}`);
@@ -1760,6 +1786,7 @@ function bindEvents() {
 
   // 排版
   els.btnLayout.addEventListener('click', openLayoutModal);
+  els.layoutPage.addEventListener('change', () => loadLayoutPage(els.layoutPage.value));
   els.layoutSave.addEventListener('click', saveLayout);
   els.layoutReset.addEventListener('click', () => {
     const win = els.layoutFrame.contentWindow;
@@ -1795,7 +1822,7 @@ function bindEvents() {
       // 页面可能还没重新构建，内联样式是旧的。
       const win = els.layoutFrame.contentWindow;
       if (!win || !win.__layoutApi || !layoutState) return;
-      const saved = layoutState.home || {};
+      const saved = (layoutState.pages || {})[layoutPage] || {};
       for (const [key, v] of Object.entries(saved)) {
         win.__layoutApi.applyKey(key, v);
       }

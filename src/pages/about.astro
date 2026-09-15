@@ -6,9 +6,10 @@ import { withBase } from '../utils/url';
 const repoUrl = site.socials.find((s) => s.href.includes('github.com'))?.href ?? '';
 ---
 
-<BaseLayout title="关于" description={`关于 ${site.title}`} narrow>
+<BaseLayout title="关于" description={`关于 ${site.title}`} narrow
+  layoutPage="list">
   <header class="page-header">
-    <h1 class="page-header__title">关于</h1>
+    <h1 class="page-header__title" data-edit="heading">关于</h1>
     <p class="page-header__desc">{site.tagline}</p>
   </header>
 

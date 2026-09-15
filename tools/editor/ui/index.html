@@ -260,7 +260,16 @@
           改完保存，重新构建才生效。
         </p>
         <div class="layoutbar">
-          <span id="layout-pick" class="layoutbar__pick">正在载入页面…</span>
+          <label class="layoutbar__pick">
+            页面
+            <select id="layout-page" class="input layoutbar__select">
+              <option value="home">首页</option>
+              <option value="board">大板块页</option>
+              <option value="post">文章 / 手记</option>
+              <option value="list">列表页（文章·手记·标签·归档·关于）</option>
+            </select>
+          </label>
+          <span id="layout-pick" class="layoutbar__status">正在载入页面…</span>
           <button type="button" class="btn btn--ghost" id="layout-reset">重置选中</button>
           <button type="button" class="btn btn--ghost" id="layout-resetall">全部重置</button>
           <button type="button" class="btn btn--primary" id="layout-save">保存</button>

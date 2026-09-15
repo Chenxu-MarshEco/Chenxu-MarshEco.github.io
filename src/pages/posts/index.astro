@@ -7,9 +7,10 @@ const posts = await getPosts();
 const groups = groupByYear(posts);
 ---
 
-<BaseLayout title="文章" description="全部文章列表">
+<BaseLayout title="文章" description="全部文章列表"
+  layoutPage="list">
   <header class="page-header">
-    <h1 class="page-header__title">文章</h1>
+    <h1 class="page-header__title" data-edit="heading">文章</h1>
     <p class="page-header__desc">
       共 {posts.length} 篇。写成系列或长文的东西都放这里。
     </p>

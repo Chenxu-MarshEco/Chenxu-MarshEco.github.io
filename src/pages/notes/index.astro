@@ -6,9 +6,10 @@ import { getNotes } from '../../utils/content';
 const notes = await getNotes();
 ---
 
-<BaseLayout title="手记" description="短一点的日常记录">
+<BaseLayout title="手记" description="短一点的日常记录"
+  layoutPage="list">
   <header class="page-header">
-    <h1 class="page-header__title">手记</h1>
+    <h1 class="page-header__title" data-edit="heading">手记</h1>
     <p class="page-header__desc">
       比文章更短、更随意的记录：今天做了什么、看到什么、想到什么。共 {notes.length} 条。
     </p>

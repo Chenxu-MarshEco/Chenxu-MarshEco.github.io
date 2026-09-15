@@ -24,11 +24,12 @@ const { prev, next } = neighbors(all, entry.id);
   type="article"
   publishedTime={data.date}
   narrow
+  layoutPage="post"
 >
   <article>
     <header class="post-header">
-      <h1 class="post-header__title">{data.title}</h1>
-      <div class="post-header__meta">
+      <h1 class="post-header__title" data-edit="title">{data.title}</h1>
+      <div class="post-header__meta" data-edit="meta">
         <time datetime={toISODate(data.date)}>{formatDateFull(data.date)}</time>
         {data.week && <span>{data.week}</span>}
         {data.mood && <span>{data.mood}</span>}
@@ -49,7 +50,7 @@ const { prev, next } = neighbors(all, entry.id);
       }
     </header>
 
-    <div class="prose">
+    <div class="prose" data-edit="body">
       <Content />
     </div>
 

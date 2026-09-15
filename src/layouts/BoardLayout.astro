@@ -21,14 +21,15 @@ interface Props {
 const { title, image, backHref = '/', backLabel = '返回' } = Astro.props;
 ---
 
-<BaseLayout title={title} bodyClass="is-board">
+<BaseLayout title={title} bodyClass="is-board" layoutPage="board">
   <div class="bp">
-    <header class="bp__hero">
+    {/* data-edit 是排版模式的锚点，配合 layout.json 的 board 组生效 */}
+    <header class="bp__hero" data-edit="hero">
       {image && <div class="bp__bg" style={`background-image:url(${withBase(image)})`} />}
       <div class="bp__veil"></div>
       <div class="bp__heroInner">
         <a class="bp__back" href={withBase(backHref)}>← {backLabel}</a>
-        <h1 class="bp__title">{title}</h1>
+        <h1 class="bp__title" data-edit="title">{title}</h1>
       </div>
     </header>
 

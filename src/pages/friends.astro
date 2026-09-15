@@ -4,9 +4,10 @@ import site from '../site.config';
 import { withBase } from '../utils/url';
 ---
 
-<BaseLayout title="友链" description="朋友们的地方" narrow>
+<BaseLayout title="友链" description="朋友们的地方" narrow
+  layoutPage="list">
   <header class="page-header">
-    <h1 class="page-header__title">友链</h1>
+    <h1 class="page-header__title" data-edit="heading">友链</h1>
     <p class="page-header__desc">
       这里放一些我常看的站点。想交换链接的话，写信告诉我你的站名、地址和一句话介绍。
     </p>

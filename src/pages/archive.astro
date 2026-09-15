@@ -20,9 +20,10 @@ const years = [...byYear.entries()]
   .sort((a, b) => b.year - a.year);
 ---
 
-<BaseLayout title="归档" description="按时间浏览全部内容">
+<BaseLayout title="归档" description="按时间浏览全部内容"
+  layoutPage="list">
   <header class="page-header">
-    <h1 class="page-header__title">归档</h1>
+    <h1 class="page-header__title" data-edit="heading">归档</h1>
     <p class="page-header__desc">全部 {entries.length} 条记录，按年份倒序。</p>
   </header>
 

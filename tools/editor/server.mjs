@@ -890,8 +890,10 @@ async function sendPreview(res, targetPath) {
 const LAYOUT_FILE = path.join(PROJECT_ROOT, 'src', 'data', 'layout.json');
 
 const LAYOUT_README =
-  '编辑器「排版」模式存下来的微调值。dx/dy 是相对自身尺寸的百分比，' +
+  '编辑器「排版」模式存下来的微调值，按页面类型分组。dx/dy 是相对自身尺寸的百分比，' +
   's 是缩放倍数。全部为 0/1 时等于原始版式。可以手改，也可以让编辑器改。';
+
+const PAGE_KEYS = ['home', 'board', 'post', 'list'];
 
 async function readLayout() {
   return JSON.parse(await fs.readFile(LAYOUT_FILE, 'utf8'));
@@ -899,12 +901,14 @@ async function readLayout() {
 
 /**
  * 写回排版微调。
- * 夹一下取值范围：偏移限制在 ±200%，缩放限制在 0.2~5 倍。
- * 没有这道闸，一次误拖就能把元素甩到屏幕外面去，而且很难找回来。
+ *
+ * 按页面类型分组（home / board / post / list），每组的键是元素锚点名。
+ * 夹一下取值范围：偏移限制在 ±200%，缩放限制在 0.2~5 倍 ——
+ * 没有这道闸，一次误拖就能把元素甩到屏幕外，而且很难找回来。
  */
 async function writeLayout(payload) {
-  if (!payload || typeof payload !== 'object' || !payload.home) {
-    throw httpError(400, '数据格式不对，需要 { home: { ... } }');
+  if (!payload || typeof payload !== 'object' || !payload.pages) {
+    throw httpError(400, '数据格式不对，需要 { pages: { home: {...}, ... } }');
   }
 
   const clamp = (v, lo, hi, dflt) => {
@@ -913,23 +917,30 @@ async function writeLayout(payload) {
     return Math.min(hi, Math.max(lo, n));
   };
 
-  // 先读现有的，再合并。不能直接替换 —— 只提交部分元素的话，
-  // 没提交的那些会被抹掉（早先就是这么写的，测试时 logo/boards 直接消失了）。
+  // 先读现有的，再合并。不能直接替换 —— 一次只提交一个页面时，
+  // 其他页面的微调会被整个抹掉（早先就踩过这个坑）。
   let prev = {};
   try {
-    prev = (await readLayout()).home || {};
+    prev = (await readLayout()).pages || {};
   } catch {
     prev = {};
   }
 
-  const home = { ...prev };
-  for (const [key, v] of Object.entries(payload.home)) {
-    const o = v && typeof v === 'object' ? v : {};
-    home[key] = {
-      dx: Math.round(clamp(o.dx, -200, 200, 0) * 10) / 10,
-      dy: Math.round(clamp(o.dy, -200, 200, 0) * 10) / 10,
-      s: Math.round(clamp(o.s, 0.2, 5, 1) * 100) / 100,
-    };
+  const pages = { ...prev };
+  for (const [page, group] of Object.entries(payload.pages)) {
+    if (!PAGE_KEYS.includes(page)) continue;
+    if (!group || typeof group !== 'object') continue;
+
+    const merged = { ...(pages[page] || {}) };
+    for (const [key, v] of Object.entries(group)) {
+      const o = v && typeof v === 'object' ? v : {};
+      merged[key] = {
+        dx: Math.round(clamp(o.dx, -200, 200, 0) * 10) / 10,
+        dy: Math.round(clamp(o.dy, -200, 200, 0) * 10) / 10,
+        s: Math.round(clamp(o.s, 0.2, 5, 1) * 100) / 100,
+      };
+    }
+    pages[page] = merged;
   }
 
   try {
@@ -938,7 +949,7 @@ async function writeLayout(payload) {
     /* 第一次写还没有原文件 */
   }
 
-  const out = { _readme: LAYOUT_README, home };
+  const out = { _readme: LAYOUT_README, pages };
   await fs.writeFile(LAYOUT_FILE, `${JSON.stringify(out, null, 2)}\n`, 'utf8');
   return { ok: true, ...out };
 }

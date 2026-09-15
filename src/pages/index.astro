@@ -2,8 +2,8 @@
 import BaseLayout from '../layouts/BaseLayout.astro';
 import site from '../site.config';
 import { withBase } from '../utils/url';
-import layout from '../data/layout.json';
 import { flattenBoards, type BoardNode } from '../utils/boards';
+import { editVars } from '../utils/layout';
 
 const skyline = withBase('/img/home/skyline.png');
 
@@ -15,24 +15,11 @@ const flatBoards = flattenBoards(site.homeBoards as BoardNode[]);
 const boardUrl = (id: string) =>
   flatBoards.find((f) => f.depth === 0 && f.node.id === id)?.url ?? '/';
 
-/*
-  排版微调值来自 src/data/layout.json，由编辑器的「排版」模式写入。
-  全是默认值（0 / 1）时不输出 style，保持 HTML 干净。
-  dx / dy 是百分比（相对元素自身尺寸），s 是缩放倍数。
-  对应样式在 global.css 的 [data-edit] 规则里。
-*/
-const LHOME = (layout as { home?: Record<string, { dx?: number; dy?: number; s?: number }> }).home ?? {};
-const styleOf = (key: string) => {
-  const v = LHOME[key] ?? {};
-  const dx = v.dx ?? 0;
-  const dy = v.dy ?? 0;
-  const s = v.s ?? 1;
-  if (dx === 0 && dy === 0 && s === 1) return undefined;
-  return `--dx:${dx}%;--dy:${dy}%;--s:${s}`;
-};
+/** 首页各元素的排版微调值（编辑器「排版」模式写入 src/data/layout.json） */
+const styleOf = (key: string) => editVars('home', key) ?? undefined;
 ---
 
-<BaseLayout description={site.description} bodyClass="is-home">
+<BaseLayout description={site.description} bodyClass="is-home" layoutPage="home">
   {/*
     蒸汽波背景，分四层叠（而不是烘焙成一张图）。
 

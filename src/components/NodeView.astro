@@ -42,7 +42,7 @@ const { trail, children, posts } = Astro.props;
 ---
 
 {trail.length > 1 && (
-  <nav class="crumbs" aria-label="位置">
+  <nav class="crumbs" aria-label="位置" data-edit="crumbs">
     {trail.map((c, i) => (
       <>
         {i > 0 && (
@@ -63,7 +63,7 @@ const { trail, children, posts } = Astro.props;
 )}
 
 {children.length > 0 && (
-  <ul class="subgrid">
+  <ul class="subgrid" data-edit="children">
     {children.map((c) => (
       <li class="subcell">
         <a class="subcard" href={withBase(c.url)}>
