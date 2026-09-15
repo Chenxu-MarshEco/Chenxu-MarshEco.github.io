@@ -835,24 +835,36 @@ async function handleApi(req, res, url) {
   throw httpError(404, `未知接口 ${route}`);
 }
 
-/** 本地站点预览服务的地址 */
-const PREVIEW_ORIGIN = 'http://127.0.0.1:4321';
+/**
+ * 本地站点预览服务的候选地址。
+ *
+ * 必须给两个：`astro dev` 默认只绑 localhost，在 Windows 上优先解析成
+ * IPv6 的 ::1，127.0.0.1 是连不上的；而 `astro preview --host 127.0.0.1`
+ * 又只绑 IPv4。只写一个的话，总有一种启动方式会连不上，
+ * 表现就是编辑器里「排版」报「先打开看效果」—— 明明预览是开着的。
+ */
+const PREVIEW_ORIGINS = ['http://127.0.0.1:4321', 'http://localhost:4321'];
 
 async function sendPreview(res, targetPath) {
-  try {
-    const r = await fetch(PREVIEW_ORIGIN + targetPath, { redirect: 'follow' });
-    const text = await r.text();
-    res.writeHead(r.status, {
-      'Content-Type': r.headers.get('content-type') || 'text/html; charset=utf-8',
-      'Cache-Control': 'no-store',
-    });
-    res.end(text);
-  } catch {
-    throw httpError(
-      502,
-      `连不上本地预览服务（${PREVIEW_ORIGIN}）。先在启动器里点「看效果」把它起起来。`
-    );
+  let lastErr = null;
+  for (const origin of PREVIEW_ORIGINS) {
+    try {
+      const r = await fetch(origin + targetPath, { redirect: 'follow' });
+      const text = await r.text();
+      res.writeHead(r.status, {
+        'Content-Type': r.headers.get('content-type') || 'text/html; charset=utf-8',
+        'Cache-Control': 'no-store',
+      });
+      res.end(text);
+      return;
+    } catch (err) {
+      lastErr = err;
+    }
   }
+  throw httpError(
+    502,
+    '连不上本地预览服务（4321）。先在启动器里点「看效果」把它起起来。'
+  );
 }
 
 /** 排版微调数据文件 */

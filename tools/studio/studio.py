@@ -137,7 +137,11 @@ class Studio:
         self.root = root
         self.bg_rows = []          # 背景逐行颜色，重绘时复用
         self.mode = 'menu'
-        self.proc = None
+        # 可以同时跑多个后台进程（编辑器 + 预览），用 key 区分。
+        # 以前只有一个 self.proc，开一个就把另一个顶掉。
+        self.procs = {}
+        # 当前在日志页里看着哪个进程
+        self.active = None
         self.outq = queue.Queue()
         self.busy = False
         self.buttons = {}
@@ -468,6 +472,13 @@ class Studio:
         parts.append((('依赖 已就绪' if deps else '依赖 未安装'), deps))
         parts.append((('备份 已连接' if remote else '备份 未连接'), bool(remote)))
 
+        # 后台还在跑的进程也列出来。返回菜单不会停掉它们，
+        # 不显示的话用户会以为已经关了。
+        running = [v['title'] for k, v in self.procs.items()
+                   if v['proc'].poll() is None]
+        if running:
+            parts.append(('运行中 ' + '、'.join(running), True))
+
         self.canvas.delete('status')
         x = 30
         for text, good in parts:
@@ -480,10 +491,24 @@ class Studio:
             bbox = self.canvas.bbox(item)
             x = bbox[2] + 26
 
+        # 有后台进程时，右下角给一个「停止后台」。
+        # 返回菜单不会停进程，所以得留一个明确的收尾入口。
+        self.canvas.delete('stopall')
+        if running:
+            self.canvas.create_text(
+                W - 92, self.status_y, text='停止后台', anchor='e',
+                font=self.f_hint, fill='#ff9b6b', tags=('stopall',))
+            self.canvas.tag_bind('stopall', '<Button-1>', lambda e: self.stop_all_ui())
+
+    def stop_all_ui(self):
+        self.stop_all()
+        self._paint_status()
+
     # ------------------------------------------------------------ 运行界面
 
-    def show_running(self, title):
+    def show_running(self, title, key=None):
         self.mode = 'running'
+        self.active = key
         self.hover = None
         self.clear()
         self.canvas.create_rectangle(0, 0, W, H, fill=hexof(sky_at(0.5)),
@@ -491,7 +516,14 @@ class Studio:
         self.paint_sky()
 
         self.glow_text(W / 2, 62, title, self.f_btn, '#ffffff', NEON, layers=5)
-        self.canvas.create_text(W / 2, 96, text='输出实时显示在下面',
+
+        # 有别的进程还在后台跑时，提示一句 —— 否则用户会以为切走了就没了
+        others = [v['title'] for k, v in self.procs.items()
+                  if k != key and v['proc'].poll() is None]
+        sub = '输出实时显示在下面'
+        if others:
+            sub += '　·　后台还在跑：' + '、'.join(others)
+        self.canvas.create_text(W / 2, 96, text=sub,
                                 font=self.f_hint, fill=NEON_SOFT, tags='ui')
 
         # 日志区用真正的 Text 控件叠在画布上，方便滚动和选中
@@ -499,13 +531,15 @@ class Studio:
                            insertbackground=NEON, font=self.f_log,
                            relief='flat', bd=0, wrap='word',
                            highlightthickness=1, highlightbackground='#8a2b6b')
-        self.canvas.create_window(W / 2, 356, window=self.log,
-                                  width=W - 96, height=380)
+        self.canvas.create_window(W / 2, 396, window=self.log,
+                                  width=W - 96, height=320)
 
         self.make_small_button('back', '返 回', 90, H - 46, self.back_to_menu)
         self.stop_btn = self.make_small_button('stop', '停 止', W - 190, H - 46,
                                                self.stop_proc)
-        self.canvas.itemconfigure(self.stop_btn, state='hidden')
+        # 只有真的在跑才显示「停止」
+        state = 'normal' if (key and self.is_running(key)) else 'hidden'
+        self.canvas.itemconfigure(self.stop_btn, state=state)
 
     def make_small_button(self, key, label, x, y, cmd):
         tag = f'small_{key}'
@@ -523,8 +557,14 @@ class Studio:
         return tag
 
     def back_to_menu(self):
-        if self.proc:
-            return
+        """回到菜单。
+
+        以前这里写的是 `if self.proc: return` —— 只要还有进程在跑，
+        点「返回」就完全没反应，看着像界面卡死了。用户遇到的就是这个。
+
+        其实返回根本不需要先停进程：编辑器和预览留在后台继续跑就行，
+        菜单底部会显示它们还在运行。要停哪个再单独停。
+        """
         self.draw_menu()
 
     def log_write(self, text):
@@ -535,23 +575,27 @@ class Studio:
     def poll_queue(self):
         try:
             while True:
-                kind, payload = self.outq.get_nowait()
+                kind, key, payload = self.outq.get_nowait()
                 if kind == 'out':
-                    self.log_write(payload)
+                    # 只把「正在看的那个进程」的输出打到日志上，
+                    # 否则编辑器和预览的输出会混在一起
+                    if self.active == key:
+                        self.log_write(payload)
                 elif kind == 'done':
-                    self.on_proc_done(payload)
+                    self.on_proc_done(key, payload)
         except queue.Empty:
             pass
         self.root.after(100, self.poll_queue)
 
-    def on_proc_done(self, code):
-        self.proc = None
-        self.busy = False
-        self.canvas.itemconfigure(self.stop_btn, state='hidden')
-        if code == 0:
-            self.log_write('\n─── 完成 ───\n')
-        else:
-            self.log_write(f'\n─── 结束，退出码 {code} ───\n')
+    def on_proc_done(self, key, code):
+        self.procs.pop(key, None)
+        if self.active == key:
+            self.busy = False
+            self.canvas.itemconfigure(self.stop_btn, state='hidden')
+            if code == 0:
+                self.log_write('\n─── 完成 ───\n')
+            else:
+                self.log_write(f'\n─── 结束，退出码 {code} ───\n')
 
     # ------------------------------------------------------------ 执行
 
@@ -559,12 +603,27 @@ class Studio:
         """Windows 上 pnpm / npm 是 .cmd，要用 which 找出真实路径。"""
         return shutil.which(name) or name
 
-    def spawn(self, args, title):
-        if self.busy:
+    def is_running(self, key):
+        entry = self.procs.get(key)
+        return bool(entry and entry['proc'].poll() is None)
+
+    def spawn(self, key, args, title, show=True):
+        """启动一个后台进程。
+
+        与早先最大的不同：用 key 区分进程，可以同时跑多个。
+        写文章（编辑器 4322）和看效果（预览 4321）本来就该并存 ——
+        编辑器里的「排版」模式要靠预览服务取页面。以前只有一个
+        self.proc，开一个顶掉另一个，排版因此根本没法用。
+
+        同一个 key 已在跑就直接切过去，不会起第二份（端口会撞）。
+        """
+        if self.is_running(key):
+            if show:
+                self.show_running(title, key)
             return
-        self.busy = True
-        self.show_running(title)
-        self.canvas.itemconfigure(self.stop_btn, state='normal')
+
+        if show:
+            self.show_running(title, key)
 
         env = dict(os.environ)
         env['PYTHONIOENCODING'] = 'utf-8'
@@ -572,35 +631,53 @@ class Studio:
 
         def worker():
             try:
-                self.proc = subprocess.Popen(
+                proc = subprocess.Popen(
                     args, cwd=str(ROOT), stdout=subprocess.PIPE,
                     stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
                     env=env, bufsize=1, universal_newlines=True,
                     encoding='utf-8', errors='replace',
                     creationflags=NO_WINDOW)
-                for line in self.proc.stdout:
-                    self.outq.put(('out', line))
-                code = self.proc.wait()
-                self.outq.put(('done', code))
+                self.procs[key] = {'proc': proc, 'title': title}
+                for line in proc.stdout:
+                    self.outq.put(('out', key, line))
+                code = proc.wait()
+                self.outq.put(('done', key, code))
             except Exception as exc:
-                self.outq.put(('out', f'启动失败：{exc}\n'))
-                self.outq.put(('done', 1))
+                self.outq.put(('out', key, f'启动失败：{exc}\n'))
+                self.outq.put(('done', key, 1))
 
         threading.Thread(target=worker, daemon=True).start()
 
     def stop_proc(self):
-        if not self.proc:
+        """停掉当前正在看的那个进程。"""
+        entry = self.procs.get(self.active) if self.active else None
+        if not entry:
             return
-        pid = self.proc.pid
+        pid = entry['proc'].pid
         self.log_write('\n正在停止…\n')
         try:
             if IS_WIN:
                 subprocess.run(['taskkill', '/F', '/T', '/PID', str(pid)],
                                capture_output=True, creationflags=NO_WINDOW)
             else:
-                self.proc.terminate()
+                entry['proc'].terminate()
         except Exception:
             pass
+
+    def stop_all(self):
+        """把所有后台进程停掉（菜单里的「停止后台」用）"""
+        for key in list(self.procs.keys()):
+            self.active = key
+            entry = self.procs.get(key)
+            if entry:
+                try:
+                    subprocess.run(
+                        ['taskkill', '/F', '/T', '/PID', str(entry['proc'].pid)],
+                        capture_output=True, creationflags=NO_WINDOW)
+                except Exception:
+                    pass
+        self.procs.clear()
+        self.active = None
 
     # ------------------------------------------------------------ 四个动作
 
@@ -610,25 +687,36 @@ class Studio:
         self.show_running('还没装依赖')
         self.log_write('项目依赖还没有安装。\n\n请先返回，选「首次设置」。\n')
         self.busy = False
-        self.proc = None
         self.canvas.itemconfigure(self.stop_btn, state='hidden')
         return False
 
     def launch(self, key):
-        if self.busy:
-            return
         if key == 'write':
-            if self.need_deps():
-                self.spawn([self.resolve('pnpm'), 'editor', '--open'], '写文章')
+            if not self.need_deps():
+                return
+            # 编辑器要连着预览一起开。
+            # 编辑器里的「排版」模式需要预览服务（4321）在场才能取到页面，
+            # 只开编辑器的话排版会报「先打开看效果」。预览放后台、不弹浏览器。
+            # 显式 --host 127.0.0.1：astro dev 默认只绑 localhost（Windows 上
+            # 常解析成 IPv6 ::1），那样 127.0.0.1 连不上，代理会失败。
+            self.spawn('preview',
+                       [self.resolve('pnpm'), 'dev', '--host', '127.0.0.1'],
+                       '看效果', show=False)
+            self.spawn('editor', [self.resolve('pnpm'), 'editor', '--open'],
+                       '写文章')
         elif key == 'preview':
-            if self.need_deps():
-                self.spawn([self.resolve('pnpm'), 'dev'], '看效果')
-                self.root.after(5000, self.open_browser)
+            if not self.need_deps():
+                return
+            self.spawn('preview',
+                       [self.resolve('pnpm'), 'dev', '--host', '127.0.0.1'],
+                       '看效果')
+            self.root.after(5000, self.open_browser)
         elif key == 'publish':
-            if self.need_deps():
-                self.start_publish()
+            if not self.need_deps():
+                return
+            self.start_publish()
         elif key == 'setup':
-            self.spawn([self.resolve('pnpm'), 'install'], '首次设置')
+            self.spawn('setup', [self.resolve('pnpm'), 'install'], '首次设置')
 
     def open_browser(self):
         try:
@@ -637,8 +725,8 @@ class Studio:
             pass
 
     def start_publish(self):
-        """发布前先确认能连上 GitHub，再让用户填一句说明。"""
-        self.show_running('发布上线')
+        """发布前先确认能连上 GitHub，再直接开始发布。"""
+        self.show_running('发布上线', 'publish')
         self.log_write('正在检查能否连上 GitHub…\n')
         self.busy = True
 
@@ -680,7 +768,7 @@ class Studio:
         self.do_publish(auto_message())
 
     def do_publish(self, message):
-        self.show_running('发布上线')
+        self.show_running('发布上线', 'publish')
         self.busy = True
         self.canvas.itemconfigure(self.stop_btn, state='normal')
         git = shutil.which('git') or 'git'
@@ -733,12 +821,23 @@ class Studio:
     # ------------------------------------------------------------ 交互
 
     def on_escape(self):
-        if self.mode == 'running' and self.proc:
-            self.stop_proc()
-        elif self.mode == 'running':
+        # 日志页按 Esc：先回菜单（不停进程），再按一次才退出。
+        # 以前在日志页按 Esc 会直接停掉进程，容易误伤正在跑的编辑器。
+        if self.mode == 'running':
             self.back_to_menu()
         else:
-            self.root.destroy()
+            self.on_close()
+
+    def on_close(self):
+        """退出前把后台进程收干净 —— 否则编辑器/预览会变成孤儿进程
+        一直占着 4321 / 4322 端口，下次启动就冲突。"""
+        running = [k for k in self.procs if self.is_running(k)]
+        if running:
+            try:
+                self.stop_all()
+            except Exception:
+                pass
+        self.root.destroy()
 
 
 def work_area():
@@ -795,7 +894,10 @@ def main():
         print('这个窗口目前只针对 Windows 写。')
     try:
         root = tk.Tk()
-        Studio(root)
+        app = Studio(root)
+        # 点窗口的 X 也要走 on_close —— 否则编辑器/预览会变成孤儿进程
+        # 继续占着 4321 / 4322，下次启动直接端口冲突。
+        root.protocol('WM_DELETE_WINDOW', app.on_close)
         center_window(root, W, H)
         # 窗口真正映射到屏幕之后，系统可能又把它摆到别处（层叠位置之类），
         # 所以等它显示出来再摆一次，确保稳稳落在屏幕中央。
