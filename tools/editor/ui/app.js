@@ -1283,13 +1283,40 @@ const PREVIEW_URL = 'http://127.0.0.1:4321';
  * 每种页面类型拿哪个真实页面来做预览。
  * 大板块页/详情页/列表页都只是「这一类」的代表 ——
  * 同一类里所有页面共用一套微调，所以拿最典型的一个当样板就行。
+ *
+ * 注意 board 不在这张表里：它的样板页是「第一个大板块」，由 resolveSample()
+ * 现从 /api/boards 取。写死成 /yongcheng/ 的话，一旦改了板块地址
+ * （比如换成 /yongshen）这里就 404，排版模式直接打不开。
  */
 const LAYOUT_SAMPLES = {
   home: '/',
-  board: '/yongcheng/',
   post: '/posts/hello/',
   list: '/posts/',
 };
+
+/** 第一个大板块的地址，取一次缓存起来 */
+let boardSampleUrl = null;
+
+/**
+ * 算出某一类页面该拿哪个地址当样板。
+ * 大板块页要现查数据，因为地址是可以在编辑器里改的。
+ */
+async function resolveSample(page) {
+  if (page !== 'board') return LAYOUT_SAMPLES[page] || '/';
+
+  if (!boardSampleUrl) {
+    try {
+      const res = await fetch('/api/boards');
+      const data = await res.json();
+      const first = (data.boards || [])[0];
+      // 板块可以有显式 href，也可以按 id 推导；这里两种都兜住
+      boardSampleUrl = first ? (first.href || `/${first.id}`) : '/';
+    } catch {
+      boardSampleUrl = '/';
+    }
+  }
+  return boardSampleUrl.endsWith('/') ? boardSampleUrl : `${boardSampleUrl}/`;
+}
 
 let layoutPage = 'home';
 
@@ -1426,7 +1453,7 @@ async function loadLayoutPage(page) {
   els.layoutPick.textContent = '正在载入页面…';
   els.layoutPick.style.color = '';
 
-  const sample = LAYOUT_SAMPLES[page] || '/';
+  const sample = await resolveSample(page);
 
   try {
     const [pageRes, layRes] = await Promise.all([

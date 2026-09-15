@@ -5,6 +5,7 @@
       "title": "甬城晴雨",
       "subtitle": "甬神晴奇雨仰",
       "image": "/img/home/block-yongcheng.jpg",
+      "href": "/yongshen",
       "children": [
         {
           "id": "yongcheng-a",
