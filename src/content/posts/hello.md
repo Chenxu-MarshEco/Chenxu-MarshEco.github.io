@@ -1,8 +1,9 @@
 ---
 title: 从这一篇开始
 date: 2026-09-14
-tags: [说明, 开始]
 summary: 这是一篇示例文章。它同时也是这个站点的使用说明，读完可以删掉。
+tags: [说明, 开始]
+draft: false
 pinned: 1
 ---
 

@@ -1,8 +1,10 @@
 ---
 title: Markdown 写法速查
 date: 2026-09-10
-tags: [说明, Markdown]
 summary: 常用语法的对照示例，写东西之前扫一眼就够。
+tags: [说明, Markdown]
+draft: false
+pinned: 0
 ---
 
 这篇把最常用的写法列一遍，当作速查表。

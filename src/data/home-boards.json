@@ -9,28 +9,19 @@
         {
           "id": "yongcheng-a",
           "title": "小隰虫记",
+          "href": "/huaya/xiinsect",
           "children": [
             {
               "id": "yongcheng-a-1",
-              "title": "成员介绍"
+              "title": "成员介绍",
+              "href": "/huaya/xiinsect/member"
             },
             {
               "id": "yongcheng-a-2",
-              "title": "喂食记录"
+              "title": "喂食记录",
+              "href": "huaya/xiinsect/feed"
             }
           ]
-        },
-        {
-          "id": "yongcheng-b",
-          "title": "子版块二"
-        },
-        {
-          "id": "yongcheng-c",
-          "title": "子版块三"
-        },
-        {
-          "id": "yongcheng-d",
-          "title": "子版块四"
         }
       ]
     },
@@ -43,30 +34,24 @@
         {
           "id": "huaya-a",
           "title": "陌质流记忆库",
+          "href": "/huaya/mozhi",
           "children": [
             {
               "id": "huaya-a-1",
-              "title": "子版块一"
+              "title": "肥鱼手册",
+              "href": "/huaya/mozhi/dssay"
             },
             {
               "id": "huaya-a-2",
-              "title": "子版块二"
+              "title": "测试性流质酶",
+              "href": "/huaya/mozhi/test"
             }
           ]
         },
         {
           "id": "huaya-b",
           "title": "花娅远位面",
-          "children": [
-            {
-              "id": "huaya-b-1",
-              "title": "子版块一"
-            }
-          ]
-        },
-        {
-          "id": "huaya-d",
-          "title": "子版块四"
+          "href": "/huaya/farland"
         }
       ]
     }
