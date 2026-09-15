@@ -1,0 +1,191 @@
+---
+/**
+ * 版块页里的一个「子页面入口」。
+ *
+ * 三处都在用它，所以单独抽出来：
+ *   1. 花娅陌域那种分区面板里的清单
+ *   2. 竖排页面上一条条占满整行的宽幅大卡
+ *   3. 页面内容里插进来的「子页面」块
+ *
+ * 样式全在这个文件里 —— 用它的页面各自有自己的作用域样式，
+ * Astro 的作用域选择器跨不进组件内部，卡片一多就容易出现
+ * 「这里能改、那里改不动」的怪事。所以卡片的形状、大小、
+ * 悬停效果统统归它自己管，外面只传参数。
+ *
+ * 两种基本形态：
+ *   传了封面图 → 图铺满整块（微微半透明），名字压在正中
+ *   没传封面图 → 不摆空图位，就是一条扁平的名字条
+ * 都不放右箭头 —— 整块本来就是链接。
+ */
+import { withBase } from '../utils/url';
+
+interface Props {
+  title: string;
+  url: string;
+  image?: string;
+  /**
+   * 形状：
+   *   row    默认，跟着内容走（面板里的清单用这个）
+   *   wide / square / tall  按比例（页面内容里的子页面块用）
+   */
+  shape?: 'row' | 'wide' | 'square' | 'tall';
+  /** 大小（最大宽度占容器的多少），row 永远占满 */
+  size?: 'l' | 'm' | 's';
+}
+
+const { title, url, image, shape = 'row', size = 'l' } = Astro.props;
+---
+
+<a
+  class:list={[
+    'card',
+    shape !== 'row' && `card--${shape}`,
+    shape !== 'row' && `card--sz-${size}`,
+    image && 'card--cover',
+  ]}
+  href={withBase(url)}
+  style={image ? `--cover:url(${withBase(image)})` : undefined}
+>
+  <span class="card__label">{title}</span>
+</a>
+
+<style>
+  .card {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    width: 100%;
+    min-height: 58px;
+    padding: 0.7rem 0.9rem;
+    border-radius: 10px;
+    border: 1px solid rgba(255, 120, 190, 0.4);
+    background: rgba(60, 8, 82, 0.5);
+    text-align: center;
+    text-decoration: none;
+    color: #ffe6f6;
+    transition:
+      background 0.16s ease,
+      border-color 0.16s ease,
+      transform 0.16s ease;
+  }
+
+  /* 有封面图：整块就是一张图，比纯名字条高一些才有得看 */
+  .card--cover {
+    min-height: 92px;
+    background-color: rgba(22, 2, 36, 0.9);
+  }
+  .card--cover::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image: var(--cover);
+    background-size: cover;
+    background-position: center;
+    /* 微微半透明：底下的深色透上来一点，和整站的调子是一伙的 */
+    opacity: 0.82;
+    transition:
+      opacity 0.18s ease,
+      transform 0.4s ease;
+  }
+  /* 再压一层很淡的暗底：名字要压在任意一张图上都读得清 */
+  .card--cover::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(
+      130% 130% at 50% 50%,
+      rgba(12, 0, 20, 0.22) 0%,
+      rgba(12, 0, 20, 0.62) 100%
+    );
+  }
+
+  /*
+    有形状的卡片（页面内容里的子页面块）。
+    width:100% + aspect-ratio 必须成对写 —— 只给 aspect-ratio 的话，
+    min-height 会反过来按比例把宽度撑出去（实测 1040 的容器里涨到 1120，溢出去）。
+  */
+  .card--wide {
+    aspect-ratio: 16 / 3;
+    min-height: clamp(120px, 18vw, 210px);
+    padding: 0.9rem 1.2rem;
+  }
+  .card--square {
+    aspect-ratio: 1 / 1;
+    min-height: clamp(140px, 22vw, 260px);
+    padding: 0.9rem 1.2rem;
+  }
+  .card--tall {
+    aspect-ratio: 3 / 4;
+    min-height: clamp(180px, 30vw, 340px);
+    padding: 0.9rem 1.2rem;
+  }
+  .card--wide .card__label,
+  .card--square .card__label,
+  .card--tall .card__label {
+    font-size: clamp(1.05rem, 1.8vw, 1.35rem);
+    letter-spacing: 0.12em;
+  }
+
+  /* 大小 = 最大宽度。窄的自动靠左，一列里就有了节奏 */
+  .card--sz-l {
+    max-width: 100%;
+  }
+  .card--sz-m {
+    max-width: 72%;
+  }
+  .card--sz-s {
+    max-width: 46%;
+  }
+
+  .card__label {
+    /* 压在图和暗底上面 */
+    position: relative;
+    z-index: 1;
+    max-width: 100%;
+    font-size: 0.95rem;
+    letter-spacing: 0.08em;
+    /* 名字太长就省略，别撑破格子 */
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    text-shadow:
+      0 1px 6px rgba(10, 0, 18, 0.9),
+      0 0 16px rgba(10, 0, 18, 0.7);
+  }
+
+  .card:hover,
+  .card:focus-visible {
+    border-color: #ffb3dd;
+    color: #fff;
+    transform: translateY(-1px);
+  }
+  .card:not(.card--cover):hover,
+  .card:not(.card--cover):focus-visible {
+    background: rgba(212, 0, 123, 0.72);
+  }
+  .card--cover:hover::before,
+  .card--cover:focus-visible::before {
+    opacity: 0.96;
+    transform: scale(1.04);
+  }
+
+  @media (max-width: 46rem) {
+    /* 窄屏上「小卡」占半屏就没法看了，一律铺满 */
+    .card--sz-m,
+    .card--sz-s {
+      max-width: 100%;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .card {
+      transition: none;
+    }
+    .card:hover,
+    .card:focus-visible {
+      transform: none;
+    }
+  }
+</style>

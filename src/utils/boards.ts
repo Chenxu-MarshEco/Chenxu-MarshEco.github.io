@@ -12,6 +12,29 @@
  * 节点上显式写了 href 时以 href 为准，那就不再自动生成页面。
  */
 
+/**
+ * 页面内容块。
+ *
+ * 一个版块页除了「子版块自动铺开」，还可以自己写一段内容：
+ * 介绍文字、图片、链接，以及把子页面插到任意位置。
+ * 每种块都带一个 id —— 排版模式就是拿它当锚点（data-edit="pg-<id>"），
+ * 所以 id 要**全站唯一**（同一块内容在不同页面之间不能撞），
+ * 编辑器新建块时用「节点 id + 序号」来保证这点。
+ */
+export type PageBlock =
+  | { id: string; type: 'text'; text: string }
+  | { id: string; type: 'image'; src: string; alt?: string; width?: ImageWidth }
+  | { id: string; type: 'link'; text: string; href: string }
+  /** 把这一层的子页面铺在这里，横竖比例和大小可以调 */
+  | { id: string; type: 'children'; shape?: CardShape; size?: CardSize };
+
+/** 图片宽度档位 */
+export type ImageWidth = 'full' | 'wide' | 'half' | 'third';
+/** 子页面卡片的横竖比例 */
+export type CardShape = 'wide' | 'square' | 'tall';
+/** 子页面卡片的大小 */
+export type CardSize = 'l' | 'm' | 's';
+
 export interface BoardNode {
   id: string;
   title: string;
@@ -24,6 +47,11 @@ export interface BoardNode {
    * 这个字段是给「这一页怎么排」用的，和树结构无关，所以随便哪一层都能挂。
    */
   layout?: string;
+  /**
+   * 这一页自己写的内容（介绍文字 / 图片 / 链接 / 子页面）。
+   * 不写就退回老样子：子版块自动铺开。
+   */
+  page?: PageBlock[];
   children?: BoardNode[];
 }
 

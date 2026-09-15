@@ -1,0 +1,262 @@
+---
+/**
+ * 版块页里「自己写的那段内容」。
+ *
+ * 数据是节点上的 page 数组，四种块：
+ *   text      介绍文字（Markdown：段落、粗体、列表、行内链接、行内图片都能写）
+ *   image     一张图，宽度可分档
+ *   link      一个链接
+ *   children  把这一层的子页面铺在这里，卡片的横竖比例和大小可分档
+ *
+ * 每个块外面都包了一层 [data-edit="pg-<id>"]：
+ * 编辑器「排版」模式就是靠它把块拖走、缩放的。所以块 id 必须全站唯一。
+ *
+ * 没写 page 的页面不走这里 —— 它们仍然沿用老的「子版块自动铺开」。
+ */
+import { marked } from 'marked';
+import SubCard from './SubCard.astro';
+import { withBase } from '../utils/url';
+import type { BlockItem } from '../utils/boardPage';
+import type { PageBlock } from '../utils/boards';
+
+interface Props {
+  blocks: PageBlock[];
+  /** 这一层的子页面，供 children 块使用 */
+  children: BlockItem[];
+}
+
+const { blocks, children } = Astro.props;
+
+/*
+  Markdown 用 marked 渲染。
+  它装在 devDependencies 里（编辑器的实时预览也用同一个），
+  而部署流程跑的是 pnpm install（不加 --prod），构建期拿得到。
+  所以这里不用把它挪进 dependencies —— 挪了就得同步改 lockfile，
+  而 CI 用的是 --frozen-lockfile，改不干净会直接把部署卡死。
+*/
+const renderText = (text: string) => marked.parse(text, { async: false }) as string;
+
+/** 子页面块里的卡片怎么排 */
+const cardsOf = (b: Extract<PageBlock, { type: 'children' }>) => ({
+  shape: (b.shape ?? 'wide') as 'wide' | 'square' | 'tall',
+  size: (b.size ?? 'l') as 'l' | 'm' | 's',
+});
+---
+
+<div class="page">
+  {
+    blocks.map((b) => (
+      <div class="pblock" data-edit={`pg-${b.id}`}>
+        {b.type === 'text' && <div class="ptext" set:html={renderText(b.text)} />}
+
+        {b.type === 'image' && (
+          <figure class:list={['pfigure', `pfigure--${b.width ?? 'wide'}`]}>
+            <img src={withBase(b.src)} alt={b.alt ?? ''} loading="lazy" decoding="async" />
+            {b.alt && <figcaption>{b.alt}</figcaption>}
+          </figure>
+        )}
+
+        {b.type === 'link' && (
+          <a
+            class="plink"
+            href={b.href.startsWith('http') || b.href.startsWith('#') ? b.href : withBase(b.href)}
+            {...b.href.startsWith('http') ? { target: '_blank', rel: 'noopener' } : {}}
+          >
+            <span class="plink__text">{b.text}</span>
+          </a>
+        )}
+
+        {b.type === 'children' && (
+          <div
+            class="pcards"
+            data-shape={cardsOf(b).shape}
+            data-size={cardsOf(b).size}
+          >
+            {children.length === 0 && <p class="pcards__empty">这一层还没有子页面。</p>}
+            {children.map((c) => (
+              <SubCard
+                title={c.title}
+                url={c.url}
+                image={c.image}
+                shape={cardsOf(b).shape}
+                size={cardsOf(b).size}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    ))
+  }
+</div>
+
+<style>
+  .page {
+    display: flex;
+    flex-direction: column;
+    gap: clamp(1rem, 2vw, 1.6rem);
+  }
+
+  /*
+    每个块单独一层，才有东西给排版模式抓。
+    transform 由 [data-edit] 上的 translate/scale 管，这里不要碰。
+  */
+  .pblock {
+    min-width: 0;
+  }
+
+  /* ---------- 文字 ---------- */
+  .ptext {
+    font-size: 1rem;
+    line-height: 1.9;
+    color: rgba(255, 236, 248, 0.9);
+    letter-spacing: 0.02em;
+  }
+  .ptext :global(p) {
+    margin: 0 0 0.9em;
+  }
+  .ptext :global(p:last-child) {
+    margin-bottom: 0;
+  }
+  .ptext :global(h2),
+  .ptext :global(h3) {
+    margin: 1.4em 0 0.5em;
+    font-family: var(--font-display);
+    color: #fff;
+    letter-spacing: 0.08em;
+    text-shadow: 0 0 12px rgba(255, 79, 163, 0.6);
+  }
+  .ptext :global(h2) {
+    font-size: 1.3rem;
+  }
+  .ptext :global(h3) {
+    font-size: 1.1rem;
+  }
+  .ptext :global(a) {
+    color: #ffb3dd;
+    text-decoration: underline;
+    text-decoration-color: rgba(255, 179, 221, 0.45);
+    text-underline-offset: 0.2em;
+  }
+  .ptext :global(a:hover) {
+    color: #fff;
+  }
+  .ptext :global(strong) {
+    color: #fff;
+  }
+  .ptext :global(ul),
+  .ptext :global(ol) {
+    margin: 0 0 0.9em;
+    padding-left: 1.4em;
+  }
+  .ptext :global(li) {
+    margin: 0.25em 0;
+  }
+  .ptext :global(blockquote) {
+    margin: 0 0 0.9em;
+    padding: 0.2em 0 0.2em 1em;
+    border-left: 3px solid rgba(255, 120, 190, 0.5);
+    color: rgba(255, 226, 244, 0.72);
+  }
+  .ptext :global(code) {
+    padding: 0.1em 0.35em;
+    border-radius: 4px;
+    background: rgba(0, 0, 0, 0.35);
+    font-family: var(--font-mono);
+    font-size: 0.9em;
+  }
+  .ptext :global(img) {
+    max-width: 100%;
+    height: auto;
+    border-radius: 10px;
+    margin: 0.4em 0;
+  }
+  .ptext :global(hr) {
+    border: none;
+    border-top: 1px solid rgba(255, 120, 190, 0.28);
+    margin: 1.4em 0;
+  }
+
+  /* ---------- 图片 ---------- */
+  .pfigure {
+    margin: 0;
+  }
+  .pfigure img {
+    display: block;
+    width: 100%;
+    height: auto;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 120, 190, 0.35);
+    box-shadow: 0 14px 40px rgba(10, 0, 20, 0.45);
+  }
+  .pfigure figcaption {
+    margin-top: 0.5rem;
+    font-size: 0.8rem;
+    letter-spacing: 0.06em;
+    color: rgba(255, 226, 244, 0.6);
+  }
+  /* 宽度分档：窄的靠左 */
+  .pfigure--full {
+    width: 100%;
+  }
+  .pfigure--wide {
+    width: min(100%, 44rem);
+  }
+  .pfigure--half {
+    width: min(100%, 30rem);
+  }
+  .pfigure--third {
+    width: min(100%, 20rem);
+  }
+
+  /* ---------- 链接 ---------- */
+  .plink {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.6rem 1.1rem;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 120, 190, 0.5);
+    background: rgba(60, 8, 82, 0.55);
+    color: #ffd9ef;
+    text-decoration: none;
+    letter-spacing: 0.06em;
+    transition:
+      background 0.16s ease,
+      border-color 0.16s ease,
+      transform 0.16s ease;
+  }
+  .plink::after {
+    content: '↗';
+    font-size: 0.9em;
+    color: #ffb3dd;
+  }
+  .plink:hover,
+  .plink:focus-visible {
+    background: rgba(212, 0, 123, 0.7);
+    border-color: #ffb3dd;
+    color: #fff;
+    transform: translateY(-1px);
+  }
+
+  /* ---------- 子页面 ---------- */
+  .pcards {
+    display: flex;
+    flex-direction: column;
+    gap: clamp(0.7rem, 1.4vw, 1.1rem);
+    align-items: flex-start;
+  }
+  .pcards__empty {
+    margin: 0;
+    color: rgba(255, 226, 244, 0.6);
+    font-size: 0.9rem;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .plink {
+      transition: none;
+    }
+    .plink:hover {
+      transform: none;
+    }
+  }
+</style>

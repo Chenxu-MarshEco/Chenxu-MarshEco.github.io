@@ -65,6 +65,10 @@ const els = {
   boardsModal: $('boards-modal'),
   boardsEditor: $('boards-editor'),
   boardsSave: $('boards-save'),
+  pageModal: $('page-modal'),
+  pageEditor: $('page-editor'),
+  pageTitle: $('page-modal-title'),
+  pageSave: $('page-save'),
 
   btnLayout: $('btn-layout'),
   layoutModal: $('layout-modal'),
@@ -1095,6 +1099,281 @@ function boardInput(value, placeholder, onInput) {
   return el;
 }
 
+/* ---------------------------------------------------------------
+   页面内容编辑器
+
+   每个版块可以写一段自己的内容：介绍文字、图片、链接，
+   以及把这一层的子页面插到任意位置。数据存在节点的 page 数组上。
+
+   块 id 是排版模式的锚点（pg-<id>），所以新建块时给它一个
+   「节点 id + 序号」的 id —— 全站唯一，换页面也不会撞。
+   --------------------------------------------------------------- */
+
+const BLOCK_LABEL = { text: '文字', image: '图片', link: '链接', children: '子页面' };
+const TEXT_HINT = '支持 Markdown：**粗体**、[链接](地址)、- 列表、![图](/img/uploads/x.png)、## 小标题';
+const IMG_WIDTHS = [['full', '全宽'], ['wide', '宽'], ['half', '半宽'], ['third', '窄']];
+const CARD_SHAPES = [['wide', '横（16:3）'], ['square', '方（1:1）'], ['tall', '竖（3:4）']];
+const CARD_SIZES = [['l', '大'], ['m', '中'], ['s', '小']];
+
+/** 当前正在编辑哪个节点、它下面那份块的草稿 */
+let pageNode = null;
+let pageDraft = [];
+
+let blockSeq = 0;
+const newBlockId = (nodeId) => `${nodeId}-p${Date.now().toString(36)}${(blockSeq += 1)}`;
+
+function openPageModal(node) {
+  pageNode = node;
+  // 深拷一份：取消时不该动到原数据
+  pageDraft = JSON.parse(JSON.stringify(node.page ?? []));
+  els.pageTitle.textContent = `页面内容 · ${node.title || node.id || '未命名'}`;
+  els.pageModal.hidden = false;
+  renderPageEditor();
+}
+
+function closePageModal() {
+  els.pageModal.hidden = true;
+  pageNode = null;
+  pageDraft = [];
+}
+
+function pageSelect(options, value, onChange) {
+  const sel = document.createElement('select');
+  sel.className = 'input';
+  for (const [v, label] of options) {
+    const o = document.createElement('option');
+    o.value = v;
+    o.textContent = label;
+    sel.appendChild(o);
+  }
+  sel.value = value;
+  sel.addEventListener('change', () => onChange(sel.value));
+  return sel;
+}
+
+/** 一个块的字段区 */
+function blockFields(block) {
+  const wrap = document.createElement('div');
+  wrap.className = 'pblock-edit__body';
+
+  if (block.type === 'text') {
+    const ta = document.createElement('textarea');
+    ta.className = 'input pblock-edit__text';
+    ta.rows = 5;
+    ta.placeholder = TEXT_HINT;
+    ta.value = block.text ?? '';
+    ta.addEventListener('input', () => {
+      block.text = ta.value;
+    });
+    wrap.appendChild(ta);
+    const hint = document.createElement('p');
+    hint.className = 'pblock-edit__hint';
+    hint.textContent = TEXT_HINT;
+    wrap.appendChild(hint);
+    return wrap;
+  }
+
+  if (block.type === 'image') {
+    const row = document.createElement('div');
+    row.className = 'pblock-edit__row';
+
+    const thumb = document.createElement('span');
+    thumb.className = 'boardedit__thumb';
+    const paint = () => {
+      if (block.src) {
+        thumb.style.backgroundImage = `url(${block.src})`;
+        thumb.classList.remove('boardedit__thumb--empty');
+        thumb.title = block.src;
+      } else {
+        thumb.style.backgroundImage = '';
+        thumb.classList.add('boardedit__thumb--empty');
+        thumb.title = '还没选图';
+      }
+    };
+    paint();
+
+    const file = document.createElement('input');
+    file.type = 'file';
+    file.accept = 'image/png,image/jpeg,image/gif,image/webp,image/svg+xml';
+    file.hidden = true;
+
+    const pick = document.createElement('button');
+    pick.type = 'button';
+    pick.className = 'btn btn--ghost boardedit__mini';
+    pick.textContent = '选图片';
+    pick.addEventListener('click', () => file.click());
+    file.addEventListener('change', async () => {
+      const f = file.files && file.files[0];
+      file.value = '';
+      if (!f) return;
+      try {
+        block.src = await uploadImage(f);
+        paint();
+        toast('图片传好了');
+      } catch (err) {
+        toast(`传图失败：${err.message}`, true);
+      }
+    });
+
+    const alt = boardInput(block.alt ?? '', '说明文字（可留空）', (v) => {
+      block.alt = v;
+    });
+
+    const width = pageSelect(IMG_WIDTHS, block.width ?? 'wide', (v) => {
+      block.width = v;
+    });
+
+    row.append(thumb, pick, alt, width, file);
+    wrap.appendChild(row);
+    return wrap;
+  }
+
+  if (block.type === 'link') {
+    const row = document.createElement('div');
+    row.className = 'pblock-edit__row';
+    row.append(
+      boardInput(block.text ?? '', '链接文字', (v) => {
+        block.text = v;
+      }),
+      boardInput(block.href ?? '', '地址（站内写 /huaya，站外写 https://…）', (v) => {
+        block.href = v.trim();
+      })
+    );
+    wrap.appendChild(row);
+    return wrap;
+  }
+
+  // children：把这一层的子页面铺在这里
+  const row = document.createElement('div');
+  row.className = 'pblock-edit__row';
+  const shape = pageSelect(CARD_SHAPES, block.shape ?? 'wide', (v) => {
+    block.shape = v;
+  });
+  const size = pageSelect(CARD_SIZES, block.size ?? 'l', (v) => {
+    block.size = v;
+  });
+  const hint = document.createElement('span');
+  hint.className = 'pblock-edit__hint pblock-edit__hint--inline';
+  hint.textContent = '子版块会按这里选的比例和大小铺开';
+  row.append(shape, size, hint);
+  wrap.appendChild(row);
+  return wrap;
+}
+
+function renderPageEditor() {
+  els.pageEditor.textContent = '';
+
+  if (!pageDraft.length) {
+    const empty = document.createElement('p');
+    empty.className = 'pblock-edit__hint';
+    empty.textContent = '还没有内容。写点介绍、传张图，或者把子页面插进来 —— 不写就按老样子自动铺开子版块。';
+    els.pageEditor.appendChild(empty);
+  }
+
+  pageDraft.forEach((block, i) => {
+    const box = document.createElement('div');
+    box.className = 'pblock-edit';
+
+    const head = document.createElement('div');
+    head.className = 'pblock-edit__head';
+
+    const n = document.createElement('span');
+    n.className = 'pblock-edit__n';
+    n.textContent = String(i + 1);
+
+    const type = document.createElement('span');
+    type.className = 'pblock-edit__type';
+    type.textContent = BLOCK_LABEL[block.type] || block.type;
+
+    const idTag = document.createElement('code');
+    idTag.className = 'pblock-edit__id';
+    idTag.textContent = block.id;
+    idTag.title = '排版模式用它当锚点（pg-<id>）';
+
+    const spacer = document.createElement('span');
+    spacer.className = 'pblock-edit__spacer';
+
+    const move = (delta) => {
+      const to = i + delta;
+      if (to < 0 || to >= pageDraft.length) return;
+      [pageDraft[i], pageDraft[to]] = [pageDraft[to], pageDraft[i]];
+      renderPageEditor();
+    };
+
+    const up = document.createElement('button');
+    up.type = 'button';
+    up.className = 'btn btn--ghost boardedit__mini';
+    up.textContent = '↑';
+    up.title = '上移';
+    up.disabled = i === 0;
+    up.addEventListener('click', () => move(-1));
+
+    const down = document.createElement('button');
+    down.type = 'button';
+    down.className = 'btn btn--ghost boardedit__mini';
+    down.textContent = '↓';
+    down.title = '下移';
+    down.disabled = i === pageDraft.length - 1;
+    down.addEventListener('click', () => move(1));
+
+    const del = document.createElement('button');
+    del.type = 'button';
+    del.className = 'btn btn--ghost boardedit__mini boardedit__del';
+    del.textContent = '删除';
+    del.addEventListener('click', () => {
+      pageDraft.splice(i, 1);
+      renderPageEditor();
+    });
+
+    head.append(n, type, idTag, spacer, up, down, del);
+    box.appendChild(head);
+    box.appendChild(blockFields(block));
+    els.pageEditor.appendChild(box);
+  });
+
+  // 添加新块
+  const addRow = document.createElement('div');
+  addRow.className = 'pblock-add';
+  const addLabel = document.createElement('span');
+  addLabel.className = 'pblock-add__label';
+  addLabel.textContent = '添加：';
+  addRow.appendChild(addLabel);
+
+  const adders = [
+    ['text', '文字', () => ({ id: newBlockId(pageNode.id), type: 'text', text: '' })],
+    ['image', '图片', () => ({ id: newBlockId(pageNode.id), type: 'image', src: '', width: 'wide' })],
+    ['link', '链接', () => ({ id: newBlockId(pageNode.id), type: 'link', text: '', href: '' })],
+    ['children', '子页面', () => ({ id: newBlockId(pageNode.id), type: 'children', shape: 'wide', size: 'l' })],
+  ];
+  for (const [, label, make] of adders) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'btn btn--ghost';
+    btn.textContent = `＋ ${label}`;
+    btn.addEventListener('click', () => {
+      pageDraft.push(make());
+      renderPageEditor();
+    });
+    addRow.appendChild(btn);
+  }
+  els.pageEditor.appendChild(addRow);
+}
+
+/** 保存页面内容：写回草稿，然后连同整棵版块树一起落盘 */
+async function savePageContent() {
+  if (!pageNode) return;
+  // 空块（没写字的文字、没选图的图片、缺字段的链接）直接丢掉，别存垃圾
+  const kept = pageDraft.filter((b) => {
+    if (b.type === 'text') return String(b.text ?? '').trim();
+    if (b.type === 'image') return String(b.src ?? '').trim();
+    if (b.type === 'link') return String(b.text ?? '').trim() && String(b.href ?? '').trim();
+    return true;
+  });
+  pageNode.page = kept;
+  closePageModal();
+  await saveBoards();
+}
+
 /**
  * 版块封面图：缩略图 + 上传 + 去掉。
  *
@@ -1274,6 +1553,16 @@ function renderBoardsEditor() {
       }
       meta.appendChild(moveSelect(node));
       meta.appendChild(boardCoverControl(node));
+
+      // 页面内容：这一页自己的介绍 / 图片 / 链接 / 子页面
+      const content = document.createElement('button');
+      content.type = 'button';
+      content.className = 'btn btn--ghost boardedit__mini';
+      content.textContent = (node.page ?? []).length ? `页面内容（${node.page.length}）` : '页面内容';
+      content.title = '写这一页的介绍文字、插图片、插链接，或把子页面插到指定位置';
+      content.addEventListener('click', () => openPageModal(node));
+      meta.appendChild(content);
+
       box.appendChild(meta);
 
       container.appendChild(box);
@@ -1318,6 +1607,14 @@ function renderBoardsEditor() {
     const topCover = document.createElement('div');
     topCover.className = 'boardedit__row2';
     topCover.appendChild(boardCoverControl(board));
+
+    const topContent = document.createElement('button');
+    topContent.type = 'button';
+    topContent.className = 'btn btn--ghost boardedit__mini';
+    topContent.textContent = (board.page ?? []).length ? `页面内容（${board.page.length}）` : '页面内容';
+    topContent.title = '写这一页的介绍文字、插图片、插链接，或把子页面插到指定位置';
+    topContent.addEventListener('click', () => openPageModal(board));
+    topCover.appendChild(topContent);
     box.appendChild(topCover);
 
     const list = document.createElement('div');
@@ -2041,8 +2338,13 @@ function bindEvents() {
   // 子版块编辑
   els.btnBoards.addEventListener('click', openBoardsModal);
   els.boardsSave.addEventListener('click', saveBoards);
+  els.pageSave.addEventListener('click', savePageContent);
   els.boardsModal.addEventListener('click', (ev) => {
     if (ev.target.dataset && ev.target.dataset.close) closeBoardsModal();
+  });
+  els.pageModal.addEventListener('click', (ev) => {
+    // 取消/点遮罩：只关这一层，版块树还开着，方便接着编辑别的
+    if (ev.target.dataset && ev.target.dataset.close) closePageModal();
   });
 
   // 排版

@@ -974,6 +974,76 @@ async function readBoards() {
  *
  * 新增节点没有 id 就补一个。不用标题当 id：名字一改归类关系就断。
  */
+/**
+ * 页面内容块的清洗。
+ *
+ * 只认这四种块，每种按字段白名单收 —— 编辑器传上来的东西不一定干净，
+ * 而这个数组会被渲染到页面上（文字还会走 Markdown 渲染），
+ * 与其相信前端，不如在这里收一遍。
+ *
+ * 块 id 必须留着：排版模式的锚点是 pg-<id>，id 一变，之前调好的位置就丢了。
+ * 缺 id 或者撞了才补一个。
+ */
+const BLOCK_WIDTHS = new Set(['full', 'wide', 'half', 'third']);
+const CARD_SHAPES = new Set(['wide', 'square', 'tall']);
+const CARD_SIZES = new Set(['l', 'm', 's']);
+
+function cleanBlocks(raw, ownerId) {
+  if (!Array.isArray(raw)) return [];
+
+  const used = new Set();
+  const out = [];
+
+  raw.forEach((b, i) => {
+    if (!b || typeof b !== 'object') return;
+    const type = String(b.type || '');
+
+    let id = String(b.id || '').trim();
+    if (!id || used.has(id)) {
+      id = `${ownerId}-p${i + 1}`;
+      let n = 1;
+      while (used.has(id)) id = `${ownerId}-p${i + 1}-${n++}`;
+    }
+    used.add(id);
+
+    if (type === 'text') {
+      const text = String(b.text ?? '');
+      if (text.trim()) out.push({ id, type, text });
+      return;
+    }
+
+    if (type === 'image') {
+      const src = String(b.src || '').trim();
+      if (!src) return;
+      const block = { id, type, src };
+      const alt = String(b.alt || '').trim();
+      if (alt) block.alt = alt;
+      block.width = BLOCK_WIDTHS.has(b.width) ? b.width : 'wide';
+      out.push(block);
+      return;
+    }
+
+    if (type === 'link') {
+      const text = String(b.text || '').trim();
+      const href = String(b.href || '').trim();
+      if (!text || !href) return;
+      out.push({ id, type, text, href });
+      return;
+    }
+
+    if (type === 'children') {
+      out.push({
+        id,
+        type,
+        shape: CARD_SHAPES.has(b.shape) ? b.shape : 'wide',
+        size: CARD_SIZES.has(b.size) ? b.size : 'l',
+      });
+    }
+  });
+
+  return out;
+}
+
 function cleanNode(raw, parentId, used) {
   if (!raw || typeof raw !== 'object') return null;
   const title = String(raw.title || raw.label || '').trim();
@@ -996,6 +1066,9 @@ function cleanNode(raw, parentId, used) {
   // 但必须原样带过去 —— 不认识的字段会被这里丢掉，用户一保存版式就没了。
   const layout = String(raw.layout || '').trim();
   if (layout) out.layout = layout;
+  // 页面内容（介绍文字 / 图片 / 链接 / 子页面块）
+  const page = cleanBlocks(raw.page, id);
+  if (page.length) out.page = page;
 
   const kids = Array.isArray(raw.children) ? raw.children : [];
   const children = kids.map((k) => cleanNode(k, id, used)).filter(Boolean);
@@ -1027,6 +1100,9 @@ async function writeBoards(payload) {
     // 版式字段同理：'region' = 三列分区（花娅陌域在用），编辑器不显示但要原样保留
     const layout = String(b.layout || '').trim();
     if (layout) out.layout = layout;
+    // 顶层大板块也能自己写页面内容
+    const page = cleanBlocks(b.page, boardId);
+    if (page.length) out.page = page;
     if (children.length) out.children = children;
     return out;
   });

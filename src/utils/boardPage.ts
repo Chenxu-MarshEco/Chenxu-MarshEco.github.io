@@ -6,7 +6,7 @@
  */
 import { getNotes, getPosts } from './content';
 import { toISODate } from './date';
-import { flattenBoards, type BoardNode, type FlatNode } from './boards';
+import { flattenBoards, type BoardNode, type FlatNode, type PageBlock } from './boards';
 import site from '../site.config';
 
 export interface SubPost {
@@ -52,6 +52,8 @@ export interface NodePageData {
   posts: SubPost[];
   /** 这一页的版式（'region' 才会用三列分区，其它都是竖排） */
   layout?: string;
+  /** 这一页自己写的内容；空数组 = 没写过，走「子版块自动铺开」 */
+  page: PageBlock[];
 }
 
 /** 所有节点的 id -> 该节点下的文章。构建时算一次就够。 */
@@ -106,6 +108,7 @@ export async function nodePageData(url: string): Promise<NodePageData | null> {
     })),
     posts: posts[flat.node.id] ?? [],
     layout: flat.node.layout,
+    page: flat.node.page ?? [],
   };
 }
 

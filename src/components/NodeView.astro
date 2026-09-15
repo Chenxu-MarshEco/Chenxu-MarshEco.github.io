@@ -26,7 +26,10 @@
  * 推导逻辑只有一处（utils/boards.ts），放两处迟早对不上。
  */
 import { withBase } from '../utils/url';
+import SubCard from './SubCard.astro';
+import PageContent from './PageContent.astro';
 import type { BlockItem } from '../utils/boardPage';
+import type { PageBlock } from '../utils/boards';
 
 interface SubPost {
   title: string;
@@ -46,9 +49,11 @@ interface Props {
   posts: SubPost[];
   /** 版式：'region' = 设计稿那套三列分区（只有花娅陌域用），其它一律竖排 */
   layout?: string;
+  /** 这一页自己写的内容；有内容就整段顶掉「子版块自动铺开」 */
+  page?: PageBlock[];
 }
 
-const { trail, children, posts, layout: wantLayout } = Astro.props;
+const { trail, children, posts, layout: wantLayout, page: blocks = [] } = Astro.props;
 
 /*
   版面分两种，由数据里的 layout 字段决定：
@@ -89,7 +94,11 @@ const layout = wantLayout === 'region' && children.length >= 4 ? 'region' : 'sta
 )}
 
 {
-  children.length > 0 && (
+  blocks.length > 0 && <PageContent blocks={blocks} children={children} />
+}
+
+{
+  blocks.length === 0 && children.length > 0 && (
     <div class="blocks" data-layout={layout} data-edit="children">
       {children.map((c) =>
         c.kids.length > 0 ? (
@@ -105,19 +114,7 @@ const layout = wantLayout === 'region' && children.length >= 4 ? 'region' : 'sta
               <ul class="block__list">
                 {c.kids.map((k) => (
                   <li>
-                    {/*
-                      两种样式：
-                        传了封面图 → 图铺满整块（微微半透明），名字压在正中
-                        没传封面图 → 不摆空图位，就是一条扁平的名字条
-                      都不再放右箭头 —— 整块本来就是链接，箭头是多余的。
-                    */}
-                    <a
-                      class:list={['card', k.image && 'card--cover']}
-                      href={withBase(k.url)}
-                      style={k.image ? `--cover:url(${withBase(k.image)})` : undefined}
-                    >
-                      <span class="card__label">{k.title}</span>
-                    </a>
+                    <SubCard title={k.title} url={k.url} image={k.image} />
                   </li>
                 ))}
               </ul>
@@ -136,14 +133,9 @@ const layout = wantLayout === 'region' && children.length >= 4 ? 'region' : 'sta
           </a>
         ) : (
           /* 竖排版式里，子页面就是整整一条宽幅大卡（图铺满 / 没图就是扁平名字条） */
-          <a
-            class:list={['card', 'card--wide', c.image && 'card--cover']}
-            data-edit={`block-${c.id}`}
-            href={withBase(c.url)}
-            style={c.image ? `--cover:url(${withBase(c.image)})` : undefined}
-          >
-            <span class="card__label">{c.title}</span>
-          </a>
+          <div class="stack" data-edit={`block-${c.id}`}>
+            <SubCard title={c.title} url={c.url} image={c.image} shape="wide" size="l" />
+          </div>
         )
       )}
     </div>
@@ -167,7 +159,7 @@ const layout = wantLayout === 'region' && children.length >= 4 ? 'region' : 'sta
 }
 
 {
-  children.length === 0 && posts.length === 0 && (
+  blocks.length === 0 && children.length === 0 && posts.length === 0 && (
     <p class="node__empty">
       这一层还没有内容。可以在编辑器里给它加子版块，或把文章归到这里。
     </p>
@@ -306,111 +298,13 @@ const layout = wantLayout === 'region' && children.length >= 4 ? 'region' : 'sta
   }
 
   /*
-    框里的条目：整块都是链接，名字居中。
-    没有右箭头 —— 整块可点这件事，靠悬停变色已经说清楚了。
-
-    两种形态：
-      .card--cover（传了封面图）→ 图铺满整块，微微半透明，名字压在上面
-      .card（没传图）         → 扁平的名字条，不摆空图位
+    卡片的样子归 SubCard.astro 管 —— 面板里的清单、竖排的大卡、
+    页面内容里插的子页面，三处都在用它，样式集中一处才不会
+    「这里能改、那里改不动」。这里只留位置相关的东西。
+    竖排里每条卡外面包一层 .stack，它同时是排版模式的锚点。
   */
-  .card {
-    position: relative;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    overflow: hidden;
-    min-height: 58px;
-    padding: 0.7rem 0.9rem;
-    border-radius: 10px;
-    border: 1px solid rgba(255, 120, 190, 0.4);
-    background: rgba(60, 8, 82, 0.5);
-    text-align: center;
-    text-decoration: none;
-    color: #ffe6f6;
-    transition:
-      background 0.16s ease,
-      border-color 0.16s ease,
-      transform 0.16s ease;
-  }
-
-  /* 有封面图：整块就是一张图，比纯名字条高一些才有得看 */
-  .card--cover {
-    min-height: 92px;
-    background-color: rgba(22, 2, 36, 0.9);
-  }
-  .card--cover::before {
-    content: '';
-    position: absolute;
-    inset: 0;
-    background-image: var(--cover);
-    background-size: cover;
-    background-position: center;
-    /* 微微半透明：底下的深色透上来一点，和整站的调子是一伙的 */
-    opacity: 0.82;
-    transition:
-      opacity 0.18s ease,
-      transform 0.4s ease;
-  }
-  /* 再压一层很淡的暗底：名字要压在任意一张图上都读得清 */
-  .card--cover::after {
-    content: '';
-    position: absolute;
-    inset: 0;
-    background: radial-gradient(
-      130% 130% at 50% 50%,
-      rgba(12, 0, 20, 0.22) 0%,
-      rgba(12, 0, 20, 0.62) 100%
-    );
-  }
-
-  .card__label {
-    /* 压在图和暗底上面 */
-    position: relative;
-    z-index: 1;
-    max-width: 100%;
-    font-size: 0.95rem;
-    letter-spacing: 0.08em;
-    /* 名字太长就省略，别撑破格子 */
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    text-shadow:
-      0 1px 6px rgba(10, 0, 18, 0.9),
-      0 0 16px rgba(10, 0, 18, 0.7);
-  }
-
-  /*
-    竖排里的宽幅大卡：整行铺满，做成一条横向长条（设计稿里就是这种感觉）。
-    width:100% 必须写 —— 只给 aspect-ratio 的话，min-height 会反过来
-    按比例把宽度撑出去（实测 1040 的容器里卡片涨到 1120，溢出去了）。
-    宽度钉死之后，aspect-ratio 只负责算高度；窄屏再靠 min-height 兜住，
-    不然会被压成一条线。
-  */
-  .card--wide {
-    width: 100%;
-    aspect-ratio: 16 / 3;
-    min-height: clamp(120px, 18vw, 210px);
-    padding: 0.9rem 1.2rem;
-  }
-  .card--wide .card__label {
-    font-size: clamp(1.05rem, 1.8vw, 1.35rem);
-    letter-spacing: 0.12em;
-  }
-
-  .card:hover,
-  .card:focus-visible {
-    border-color: #ffb3dd;
-    color: #fff;
-    transform: translateY(-1px);
-  }
-  .card:not(.card--cover):hover,
-  .card:not(.card--cover):focus-visible {
-    background: rgba(212, 0, 123, 0.72);
-  }
-  .card--cover:hover::before,
-  .card--cover:focus-visible::before {
-    opacity: 0.96;
-    transform: scale(1.04);
+  .stack {
+    min-width: 0;
   }
 
   /*
