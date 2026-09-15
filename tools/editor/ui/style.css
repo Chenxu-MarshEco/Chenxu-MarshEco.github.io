@@ -1249,6 +1249,26 @@ body[data-type="notes"] .field--posts-only {
   cursor: pointer;
 }
 
+/* 封面图：一个小缩略图 + 上传/去掉 */
+.boardedit__cover {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.boardedit__thumb {
+  width: 44px;
+  height: 33px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background-color: rgba(0, 0, 0, 0.15);
+  background-size: cover;
+  background-position: center;
+  flex: 0 0 auto;
+}
+.boardedit__thumb--empty {
+  background-image: linear-gradient(135deg, rgba(140, 110, 170, 0.5), rgba(60, 40, 80, 0.5));
+}
+
 .boardedit__mini {
   white-space: nowrap;
   padding: 5px 8px;

@@ -1095,6 +1095,66 @@ function boardInput(value, placeholder, onInput) {
   return el;
 }
 
+/**
+ * 版块封面图：缩略图 + 上传 + 去掉。
+ *
+ * 图传到 public/img/uploads/ 下，路径写进节点的 image 字段
+ * （服务端 cleanNode 会原样保留）。页面上这张图就是卡片左边那格；
+ * 没设的话用渐变兜底，不会是块空白。
+ */
+function boardCoverControl(node) {
+  const wrap = document.createElement('span');
+  wrap.className = 'boardedit__cover';
+
+  const thumb = document.createElement('span');
+  thumb.className = 'boardedit__thumb';
+  if (node.image) {
+    thumb.style.backgroundImage = `url(${node.image})`;
+    thumb.title = node.image;
+  } else {
+    thumb.classList.add('boardedit__thumb--empty');
+    thumb.title = '还没有封面图';
+  }
+
+  const file = document.createElement('input');
+  file.type = 'file';
+  file.accept = 'image/png,image/jpeg,image/gif,image/webp,image/svg+xml';
+  file.hidden = true;
+
+  const pick = document.createElement('button');
+  pick.type = 'button';
+  pick.className = 'btn btn--ghost boardedit__mini';
+  pick.textContent = node.image ? '换图' : '封面图';
+  pick.title = '给这个版块选一张封面（页面上卡片左边那张图）';
+  pick.addEventListener('click', () => file.click());
+
+  file.addEventListener('change', async () => {
+    const f = file.files && file.files[0];
+    file.value = '';
+    if (!f) return;
+    try {
+      node.image = await uploadImage(f);
+      renderBoardsEditor();
+      toast('封面图传好了，记得保存');
+    } catch (err) {
+      toast(`传图失败：${err.message}`, true);
+    }
+  });
+
+  const clear = document.createElement('button');
+  clear.type = 'button';
+  clear.className = 'btn btn--ghost boardedit__mini';
+  clear.textContent = '去掉图';
+  clear.hidden = !node.image;
+  clear.addEventListener('click', () => {
+    delete node.image;
+    renderBoardsEditor();
+  });
+
+  wrap.append(thumb, pick, clear, file);
+  return wrap;
+}
+
 function renderBoardsEditor() {
   els.boardsEditor.textContent = '';
   const idx = indexBoardNodes();
@@ -1213,6 +1273,7 @@ function renderBoardsEditor() {
         meta.appendChild(idLine);
       }
       meta.appendChild(moveSelect(node));
+      meta.appendChild(boardCoverControl(node));
       box.appendChild(meta);
 
       container.appendChild(box);
@@ -1252,6 +1313,12 @@ function renderBoardsEditor() {
       })
     );
     box.appendChild(top);
+
+    // 大板块也有封面图（首页那两张卡片用的就是它），单独一行放缩略图和按钮
+    const topCover = document.createElement('div');
+    topCover.className = 'boardedit__row2';
+    topCover.appendChild(boardCoverControl(board));
+    box.appendChild(topCover);
 
     const list = document.createElement('div');
     box.appendChild(list);

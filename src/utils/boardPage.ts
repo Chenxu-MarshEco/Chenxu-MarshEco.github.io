@@ -30,7 +30,7 @@ export interface BlockItem {
   /** 自己的封面图；没设就交给样式用渐变兜底（不要回落到大板块的图，会和 hero 重复） */
   image?: string;
   /** 它下面的子版块，用来在框里铺卡片 */
-  kids: { title: string; url: string; subtitle?: string }[];
+  kids: { title: string; url: string; subtitle?: string; image?: string }[];
 }
 
 export interface NodePageData {
@@ -98,6 +98,7 @@ export async function nodePageData(url: string): Promise<NodePageData | null> {
       kids: (c.children ?? []).map((g) => ({
         title: g.title,
         subtitle: g.subtitle,
+        image: g.image,
         url: all.find((x) => x.node === g)?.url ?? '/',
       })),
     })),

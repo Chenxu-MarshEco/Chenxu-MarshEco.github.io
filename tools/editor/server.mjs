@@ -34,6 +34,8 @@ const PROJECT_ROOT = path.resolve(__dirname, '..', '..');
 const UI_DIR = path.join(__dirname, 'ui');
 /** 上传图片的落盘目录：public/img/uploads */
 const UPLOAD_DIR = path.join(PROJECT_ROOT, 'public', 'img', 'uploads');
+/** 首页大板块 / 子版块的封面图目录：public/img/home */
+const HOME_IMG_DIR = path.join(PROJECT_ROOT, 'public', 'img', 'home');
 
 /** 请求体上限 12MB */
 const MAX_BODY_BYTES = 12 * 1024 * 1024;
@@ -1038,20 +1040,35 @@ async function writeBoards(payload) {
 }
 
 /**
- * 把 public/img/uploads 下的图片发给浏览器。
- * 只接受纯文件名：挡掉 ../ 和子目录，避免路径穿越读到仓库里别的东西。
+ * public/img 下这几个子目录对编辑器可见。
+ * uploads 是上传落盘的地方；home 是首页大板块/子版块的封面图，
+ * 编辑器里的封面缩略图要用到，不暴露的话缩略图全是 404。
  */
-async function serveUpload(res, pathname) {
-  const name = pathname.slice('/img/uploads/'.length);
-  if (!name || name.includes('/') || name.includes('\\') || name.includes('..')) {
+const IMG_DIRS = new Map([
+  ['uploads', UPLOAD_DIR],
+  ['home', HOME_IMG_DIR],
+]);
+
+/**
+ * 把 public/img/<子目录> 下的图片发给浏览器。
+ * 只接受「白名单子目录 + 纯文件名」：挡掉 ../ 和更深的路径，
+ * 避免路径穿越读到仓库里别的东西。
+ */
+async function serveImage(res, pathname) {
+  const rest = pathname.slice('/img/'.length);
+  const slash = rest.indexOf('/');
+  if (slash < 0) return false;
+
+  const dir = IMG_DIRS.get(rest.slice(0, slash));
+  const name = rest.slice(slash + 1);
+  if (!dir || !name || name.includes('/') || name.includes('\\') || name.includes('..')) {
     return false;
   }
-  const ext = path.extname(name).toLowerCase();
-  const type = EXT_MIME.get(ext);
+  const type = EXT_MIME.get(path.extname(name).toLowerCase());
   if (!type) return false;
 
   try {
-    const buf = await fs.readFile(path.join(UPLOAD_DIR, name));
+    const buf = await fs.readFile(path.join(dir, name));
     res.writeHead(200, {
       'Content-Type': type,
       'Content-Length': buf.length,
@@ -1114,8 +1131,8 @@ async function handle(req, res) {
     于是封面和正文里引用的图在编辑器里全是 404 ——
     文件明明在磁盘上，预览却显示不出来。
   */
-  if (pathname.startsWith('/img/uploads/')) {
-    if (await serveUpload(res, pathname)) return;
+  if (pathname.startsWith('/img/')) {
+    if (await serveImage(res, pathname)) return;
   }
 
   if (pathname.startsWith('/api/')) {
