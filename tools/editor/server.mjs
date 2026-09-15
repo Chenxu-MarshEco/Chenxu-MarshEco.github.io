@@ -432,6 +432,16 @@ function normalizeFrontmatter(type, raw) {
 
   if (!fm.title) throw httpError(400, 'title 不能为空');
   if (!fm.date) throw httpError(400, 'date 不能为空，且要写成 2026-09-14 或 2026-09-14 20:30');
+
+  /*
+    所属子版块（文章的归类关系）。
+    这是个字段白名单 —— 不在这里显式保留的字段会被整个丢掉。
+    早先就漏了这一个，于是编辑器里勾完保存、subs 在写文件时被扔掉，
+    重开勾选框全空，网页上对应的位置也永远找不到文章。
+    两种栏目都支持，所以放在分支外面。
+  */
+  fm.subs = toStringArray(src.subs);
+
   return fm;
 }
 
@@ -478,6 +488,11 @@ function serializeFrontmatter(type, fm) {
     if (fm.mood) lines.push(`mood: ${yamlScalar(fm.mood)}`);
     lines.push(`tags: ${yamlArray(fm.tags)}`);
     lines.push(`draft: ${fm.draft ? 'true' : 'false'}`);
+  }
+
+  // 所属子版块：空数组不写，免得每篇都挂一行没用的 subs: []
+  if (fm.subs && fm.subs.length) {
+    lines.push(`subs: ${yamlArray(fm.subs)}`);
   }
 
   return lines.join('\n');
@@ -595,6 +610,10 @@ function normalizeFrontmatterSafe(type, data) {
     date: normalizeDateValue(data.date),
     tags: toStringArray(data.tags),
     draft: toBoolean(data.draft),
+    // 所属子版块。这个白名单和写入路径那份是两处独立的名单，
+    // 改一处不够 —— 只加写入那份的话，文件里写了 subs 但读回来没有，
+    // 表现就是「保存后再打开，勾选又全没了」。
+    subs: toStringArray(data.subs),
   };
   if (type === 'posts') {
     fm.summary = data.summary === undefined || data.summary === null ? '' : String(data.summary);
