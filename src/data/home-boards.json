@@ -49,30 +49,21 @@
         },
         {
           "id": "huaya-r1",
-          "title": "花娅远位面",
-          "href": "/huaya/farland",
+          "title": "涣源溪记忆库",
+          "href": "/huaya/memory",
           "layout": "region",
           "children": [
             {
-              "id": "huaya-r1-1",
-              "title": "龙历院花娅支部",
-              "href": "/huaya/farland/monsterhunter",
-              "image": "/img/uploads/20260915-2002-0f00-2026_07_08_224708.jpg",
-              "cardShape": "square"
+              "id": "huaya-a-1",
+              "title": "肥鱼手册",
+              "href": "/huaya/mozhi/dssay",
+              "link": "/huaya/memory/deepseek"
             },
             {
-              "id": "huaya-r1-2",
-              "title": "星虹巢",
-              "image": "/img/uploads/20260915-2006-58d3-friendlink_hoshi.png",
-              "cardSize": "s",
-              "link": "https://arcarlight.github.io/BlogStand/"
-            },
-            {
-              "id": "huaya-r1-3",
-              "title": "毒毒糖果铺",
-              "image": "/img/uploads/20260915-2007-82c5-friendlink_doku.png",
-              "cardSize": "s",
-              "link": "https://shema-sunf.github.io/about/"
+              "id": "huaya-a-2",
+              "title": "测试性流质酶",
+              "href": "/huaya/mozhi/test",
+              "link": "/huaya/memory/test"
             }
           ]
         },
@@ -145,18 +136,30 @@
         },
         {
           "id": "huaya-r3",
-          "title": "陌质流记忆库",
-          "href": "/huaya/mozhi",
+          "title": "花娅远位面",
+          "href": "/huaya/farland",
           "children": [
             {
-              "id": "huaya-a-1",
-              "title": "肥鱼手册",
-              "href": "/huaya/mozhi/dssay"
+              "id": "huaya-r1-1",
+              "title": "龙历院花娅支部",
+              "href": "/huaya/farland/monsterhunter",
+              "image": "/img/uploads/20260915-2002-0f00-2026_07_08_224708.jpg",
+              "cardShape": "square",
+              "link": "/huaya/farland/monsterhunter"
             },
             {
-              "id": "huaya-a-2",
-              "title": "测试性流质酶",
-              "href": "/huaya/mozhi/test"
+              "id": "huaya-r1-2",
+              "title": "星虹巢",
+              "image": "/img/uploads/20260915-2006-58d3-friendlink_hoshi.png",
+              "cardSize": "s",
+              "link": "https://arcarlight.github.io/BlogStand/"
+            },
+            {
+              "id": "huaya-r1-3",
+              "title": "毒毒糖果铺",
+              "image": "/img/uploads/20260915-2007-82c5-friendlink_doku.png",
+              "cardSize": "s",
+              "link": "https://shema-sunf.github.io/about/"
             }
           ]
         }
