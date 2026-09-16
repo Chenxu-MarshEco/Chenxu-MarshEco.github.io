@@ -13,6 +13,8 @@ export interface SubPost {
   title: string;
   href: string;
   date: string;
+  /** 封面图：列表里先给个小图，让人点进去之前就看得到 */
+  cover?: string;
 }
 
 /**
@@ -80,6 +82,8 @@ async function articlesByNode(): Promise<Record<string, SubPost[]>> {
         title: entry.data.title,
         href: entry.collection === 'posts' ? `/posts/${entry.id}/` : `/notes/${entry.id}/`,
         date: toISODate(entry.data.date).slice(5),
+        // 只传作者自己设的封面；文章正文里的图片不拿来当缩略图
+        cover: (entry.data as { cover?: string }).cover,
       });
     }
   }

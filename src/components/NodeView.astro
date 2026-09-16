@@ -166,6 +166,10 @@ const layout = wantLayout === 'region' && children.length >= 4 ? 'region' : 'sta
       <ul class="subposts subposts--page">
         {posts.map((p) => (
           <li>
+            {/* 有封面的给个小图：点进去之前就看得到。正文里的图不当封面 */}
+            {p.cover && (
+              <img class="subposts__cover" src={withBase(p.cover)} alt="" loading="lazy" decoding="async" />
+            )}
             <a href={withBase(p.href)}>{p.title}</a>
             <em>{p.date}</em>
           </li>
@@ -491,12 +495,27 @@ const layout = wantLayout === 'region' && children.length >= 4 ? 'region' : 'sta
   }
   .subposts li {
     display: flex;
-    align-items: baseline;
+    align-items: center;
     justify-content: space-between;
     gap: 0.6rem;
     padding: 0.24rem 0;
   }
+  /*
+    文章行左边的小封面。有图的行高一点，没图的行还是原来那样。
+    用固定尺寸 + object-fit，任何比例的封面都不会把行撑变形。
+  */
+  .subposts__cover {
+    flex: 0 0 auto;
+    width: 62px;
+    height: 40px;
+    object-fit: cover;
+    border-radius: 7px;
+    border: 1px solid rgba(255, 120, 190, 0.35);
+    background: rgba(20, 0, 30, 0.5);
+  }
   .subposts a {
+    flex: 1 1 auto;
+    min-width: 0;
     color: #ffd9ef;
     text-decoration: none;
     font-size: 0.92rem;

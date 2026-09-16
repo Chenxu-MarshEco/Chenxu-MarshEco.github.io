@@ -817,7 +817,7 @@ body.is-board .site-footer a {
 }
 .archive-list__item {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: var(--sp-4);
   padding-block: var(--sp-2);
   border-bottom: 1px dashed var(--c-border);
@@ -828,6 +828,16 @@ body.is-board .site-footer a {
   font-size: var(--fs-xs);
   font-variant-numeric: tabular-nums;
   color: var(--c-text-faint);
+}
+/* 有封面的条目给个小图（只在作者自己设了 cover 时出现） */
+.archive-list__cover {
+  flex: none;
+  width: 46px;
+  height: 30px;
+  object-fit: cover;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--c-border);
+  background: var(--c-bg-raised);
 }
 .archive-list__title {
   color: var(--c-text);

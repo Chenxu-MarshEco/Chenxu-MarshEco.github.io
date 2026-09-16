@@ -48,6 +48,11 @@ const notes = defineCollection({
     /** 可选：当天心情或天气，纯粹显示用 */
     mood: z.string().optional(),
     tags: z.array(z.string()).default([]),
+    /**
+     * 封面图，和文章一样：填 public 下的路径，例如 /img/uploads/x.png。
+     * 手记以前没有这个字段，所以列表里永远看不到图。
+     */
+    cover: z.string().optional(),
     draft: z.boolean().default(false),
     /** 同 posts.subs：所属子版块 */
     subs: z.array(z.string()).default([]),

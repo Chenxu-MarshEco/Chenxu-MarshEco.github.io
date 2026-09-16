@@ -413,14 +413,17 @@ function normalizeFrontmatter(type, raw) {
     date: normalizeDateValue(src.date),
   };
 
+  // 封面图：文章和手记都支持（content.config.ts 里两边都有 cover），
+  // 所以放在分支外面 —— 忘了放就是「编辑器里传了图、保存后没了」。
+  const cover = String(src.cover ?? '').trim();
+  if (cover) fm.cover = cover;
+
   if (type === 'posts') {
     const updated = normalizeDateValue(src.updated);
     if (updated) fm.updated = updated;
     const summary = String(src.summary ?? '').trim();
     if (summary) fm.summary = summary;
     fm.tags = toStringArray(src.tags);
-    const cover = String(src.cover ?? '').trim();
-    if (cover) fm.cover = cover;
     fm.draft = toBoolean(src.draft);
     fm.pinned = toNumber(src.pinned, 0);
   } else {
@@ -489,6 +492,8 @@ function serializeFrontmatter(type, fm) {
     if (fm.week) lines.push(`week: ${yamlScalar(fm.week)}`);
     if (fm.mood) lines.push(`mood: ${yamlScalar(fm.mood)}`);
     lines.push(`tags: ${yamlArray(fm.tags)}`);
+    // 手记也能有封面（content.config.ts 里加了 cover）
+    if (fm.cover) lines.push(`cover: ${yamlScalar(fm.cover)}`);
     lines.push(`draft: ${fm.draft ? 'true' : 'false'}`);
   }
 

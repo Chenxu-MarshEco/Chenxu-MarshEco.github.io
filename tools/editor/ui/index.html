@@ -128,8 +128,9 @@
             </div>
 
             <div class="field-row">
-              <div class="field field--posts-only">
-                <label class="field__label">封面图</label>
+              <!-- 封面：文章和手记都能设（schema 里两边都有 cover） -->
+              <div class="field">
+                <label class="field__label">封面图 <span class="hint-inline">列表里显示的就是它</span></label>
                 <div class="cover">
                   <div class="cover__thumb" id="cover-thumb">
                     <img id="cover-img" alt="" hidden />
@@ -140,6 +141,10 @@
                     <button type="button" class="btn btn--sm btn--ghost" id="btn-cover-clear">清除</button>
                     <input type="text" id="f-cover" class="input input--sm" placeholder="/img/uploads/xxx.png" />
                   </div>
+                  <p class="hint">
+                    列表里显示的就是这张图；正文里插的图片<strong>不会</strong>自动当封面。
+                    上传时会自动压缩（长边最多 1600px、转成 jpg），不用自己先处理。
+                  </p>
                 </div>
               </div>
 

@@ -43,6 +43,9 @@ const years = [...byYear.entries()]
             {items.map((entry) => (
               <li class="archive-list__item">
                 <span class="archive-list__date">{toISODate(entry.data.date).slice(5)}</span>
+                {'cover' in entry.data && entry.data.cover && (
+                  <img class="archive-list__cover" src={withBase(entry.data.cover)} alt="" loading="lazy" decoding="async" />
+                )}
                 <a class="archive-list__title" href={withBase(entryUrl(entry))}>
                   {entry.data.title}
                 </a>

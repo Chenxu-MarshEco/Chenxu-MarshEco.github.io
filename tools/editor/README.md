@@ -33,7 +33,15 @@ node tools/editor/server.mjs --open   # 启动后自动打开系统默认浏览�
 - **中栏**：frontmatter 表单 + Markdown 正文。标题、日期（可选到分钟）、标签
   （回车或逗号变成 chip）、摘要、封面（可上传本地图片）、草稿开关、置顶（文章）；
   周次、心情（手记）。正文上面是一排 Markdown 工具按钮。
+  **封面图文章和手记都能设**（`content.config.ts` 里两边都有 `cover`），
+  它就是列表里显示的那张图；正文里插的图片不会被当封面。
 - **右栏**：Markdown 实时预览，输入停止 200ms 后刷新。
+
+上传图片时会**先在浏览器里压一道再传**（长边 ≤1600px、转 jpg q0.82；
+有透明的保持 png、gif/svg 不动、本来就小的原样传）。这样站点不会因为
+一张 8MB 截图变慢。压完会提示「图片已压缩后上传（小了约 xx）」。
+实现就在 `ui/app.js` 的 `shrinkImage()` 里 —— 不依赖任何服务端图像库
+（这台机器上 sharp / Pillow / ImageMagick / ffmpeg 一个都没有）。
 
 其他细节：
 
