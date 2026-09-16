@@ -336,6 +336,9 @@ const layout = wantLayout === 'region' && children.length >= 4 ? 'region' : 'sta
     滚动区。
     scrollbar-gutter: stable 让滚动条的位置一直留着，
     条目多起来时里面的宽度不会突然跳一下。
+
+    max-height 主要是给**竖排**页面用的：那种页面一块一块各占一行，
+    框高跟着内容走，封个顶就不至于十条子版块把整页撑到几千像素。
   */
   .block__scroll {
     overflow-y: auto;
@@ -344,6 +347,27 @@ const layout = wantLayout === 'region' && children.length >= 4 ? 'region' : 'sta
     padding: 0.65rem;
     scrollbar-width: thin;
     scrollbar-color: rgba(255, 120, 190, 0.85) rgba(255, 255, 255, 0.07);
+  }
+
+  /*
+    分区版式要另算：那里的框会被栅格**拉齐**（中、右两块跨两行，
+    比左列高出一大截），框高不是自己内容说了算的。
+    这时候清单必须把多出来的高度全吃掉 —— 否则框底下空一截，
+    本来放得下的卡片还得去滚（用户就是这么发现的）。
+
+    做法：flex-basis 给 0 + min-height 兜底。
+      · 没被拉长时高度 = min-height，看到的东西和以前封顶时一样多，不会塌；
+      · 被拉长多少，清单就跟着长多少，底下不再留白。
+    min-height 用的就是上面那个 clamp，保证「三张卡不用滚」这条底线不变。
+    窄屏（分区塌成一列，框不再被拉齐）在下面的媒体查询里还原成封顶模式，
+    不然一列排下去每个框都会撑到 min-height。
+  */
+  @media (min-width: 46.01rem) {
+    .blocks[data-layout='region'] .block__scroll {
+      flex: 1 1 0;
+      min-height: clamp(180px, 34vh, 360px);
+      max-height: none;
+    }
   }
 
   .block__list {

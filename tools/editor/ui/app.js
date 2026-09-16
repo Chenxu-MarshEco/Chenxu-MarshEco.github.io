@@ -1215,6 +1215,22 @@ function studioPages() {
   return flattenBoardNodes().filter((f) => !f.external);
 }
 
+/**
+ * 站内链接能不能落到一个真页面上。
+ *
+ * 只查 `/开头` 的：站外地址这边没联网查不了；带扩展名的（.pdf/.png…）
+ * 当静态文件，也交给服务器。返回 'external' | 'ok' | 'missing'。
+ */
+function siteLinkStatus(link) {
+  const s = String(link ?? '').trim();
+  if (!s.startsWith('/')) return 'external';
+  const clean = s.replace(/[?#].*$/, '');
+  if (/\.\w{2,4}$/.test(clean)) return 'external';
+  const pages = new Set();
+  for (const f of studioPages()) pages.add(f.url.endsWith('/') ? f.url : `${f.url}/`);
+  return pages.has(clean) || pages.has(`${clean}/`) ? 'ok' : 'missing';
+}
+
 /** 换到某一页：把它的内容读进草稿，然后整屏重画 */
 function selectStudioPage(node) {
   if (!node) return;
@@ -1506,6 +1522,17 @@ function renderStudioKids() {
       badge.className = 'pw-kid__badge';
       badge.textContent = '↗ 链接版块：点它直接跳走，页面上不显示这个地址';
       bar.appendChild(badge);
+
+      /*
+        站内链接顺手查一下：填了 `/xxx` 但站里没有这一页的话，
+        点下去就是 404 —— 与其等发布完才发现，不如现在就标出来。
+      */
+      if (siteLinkStatus(kid.link) === 'missing') {
+        const warn = document.createElement('span');
+        warn.className = 'pw-kid__warn';
+        warn.textContent = `⚠ 站内没有「${String(kid.link).trim()}」这一页，点它会 404`;
+        bar.appendChild(warn);
+      }
     }
 
     top.append(name, up, down, open, del);

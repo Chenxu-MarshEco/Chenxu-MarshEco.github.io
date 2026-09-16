@@ -1346,6 +1346,12 @@ body[data-type="notes"] .field--posts-only {
   line-height: 1.6;
   color: var(--text-muted);
 }
+/* 站内链接指向不存在的页面：标红，别等发布完才发现点下去是 404 */
+.pw-kid__warn {
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--danger, #b4443a);
+}
 .pw-addrow {
   display: flex;
   align-items: center;
