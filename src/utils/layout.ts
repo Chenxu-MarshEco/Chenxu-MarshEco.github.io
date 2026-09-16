@@ -16,6 +16,12 @@
  *   w/h    明确的像素宽高（"把这张卡改小一点"就用这个 —— 百分比位移配固定像素，
  *          比缩放在文字清晰度上更干净，也不会把里面的字一起缩小）
  *
+ * 关于 w/h 的权重：数据里也能给卡片填像素尺寸（home-boards.json 的 cardW/cardH），
+ * 那是「这张卡本来多大」。排版里改过的尺寸属于**事后微调**，理应压过数据里的 ——
+ * 数据那份是元素的内联 style，样式表里的 !important 正好能压住内联，
+ * 所以这里输出 `width:...px !important`。没设 w/h 的时候一条规则都不出，
+ * 不会去动别的元素的宽度。
+ *
  * 生效方式：全局 CSS 里有一条 [data-edit] { translate: var(--dx) ...; scale: var(--s) }，
  * 这里负责把每个元素对应的变量值输出成一小段 <style>。用 translate/scale 而不是
  * left/top，是因为它们是纯视觉变换、不参与布局，所以响应式断点照常生效。
@@ -50,8 +56,8 @@ export function editVars(page: PageKey, key: string): string | null {
   if (dx !== 0) parts.push(`--dx:${dx}%`);
   if (dy !== 0) parts.push(`--dy:${dy}%`);
   if (s !== 1) parts.push(`--s:${s}`);
-  if (w) parts.push(`--w:${w}px`);
-  if (h) parts.push(`--h:${h}px`);
+  if (w) parts.push(`--w:${w}px`, `width:${w}px !important`);
+  if (h) parts.push(`--h:${h}px`, `height:${h}px !important`);
   return parts.join(';');
 }
 
