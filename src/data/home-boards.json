@@ -55,7 +55,23 @@
             {
               "id": "huaya-r1-1",
               "title": "龙历院花娅支部",
-              "href": "/huaya/farland/monsterhunter"
+              "href": "/huaya/farland/monsterhunter",
+              "image": "/img/uploads/20260915-2002-0f00-2026_07_08_224708.jpg",
+              "cardShape": "square"
+            },
+            {
+              "id": "huaya-r1-2",
+              "title": "星虹巢",
+              "image": "/img/uploads/20260915-2006-58d3-friendlink_hoshi.png",
+              "cardSize": "s",
+              "link": "https://arcarlight.github.io/BlogStand/"
+            },
+            {
+              "id": "huaya-r1-3",
+              "title": "毒毒糖果铺",
+              "image": "/img/uploads/20260915-2007-82c5-friendlink_doku.png",
+              "cardSize": "s",
+              "link": "https://shema-sunf.github.io/about/"
             }
           ]
         },
