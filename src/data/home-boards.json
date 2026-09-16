@@ -52,6 +52,7 @@
           "title": "涣源溪记忆库",
           "href": "/huaya/memory",
           "layout": "region",
+          "cardSize": "m",
           "children": [
             {
               "id": "huaya-a-1",
