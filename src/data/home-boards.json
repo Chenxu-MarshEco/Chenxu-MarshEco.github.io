@@ -51,6 +51,7 @@
           "id": "huaya-r1",
           "title": "花娅远位面",
           "href": "/huaya/farland",
+          "layout": "region",
           "children": [
             {
               "id": "huaya-r1-1",
