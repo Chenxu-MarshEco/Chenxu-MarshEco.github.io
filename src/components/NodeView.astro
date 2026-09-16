@@ -75,6 +75,18 @@ const hasPostsBlock = blocks.some((b) => b.type === 'posts');
   另外 region 只在子版块够 4 个时才启用 —— 只有两块的话，
   三列里会有整整一列空着。
 */
+/*
+  这一项作为卡片出现时的比例和大小。
+  shape / size 是档位，cardW / cardH 是明确像素（填了就盖过档位）。
+  写在子节点上，所以卡片出现在哪一页、哪个块都跟着走。
+*/
+const cardSize = (n: { cardW?: number; cardH?: number }) => {
+  const parts: string[] = [];
+  if (Number(n.cardW) > 0) parts.push(`width:${Number(n.cardW)}px`);
+  if (Number(n.cardH) > 0) parts.push(`height:${Number(n.cardH)}px`);
+  return parts.join(';');
+};
+
 const layout = wantLayout === 'region' && children.length >= 4 ? 'region' : 'stack';
 ---
 
@@ -108,7 +120,12 @@ const layout = wantLayout === 'region' && children.length >= 4 ? 'region' : 'sta
     <div class="blocks" data-layout={layout} data-edit="children">
       {children.map((c) =>
         c.kids.length > 0 ? (
-          <section class="block" data-edit={`block-${c.id}`} data-href={withBase(c.url)}>
+          <section
+            class="block"
+            data-edit={`block-${c.id}`}
+            data-href={withBase(c.url)}
+            style={cardSize(c) || undefined}
+          >
             <header class="block__head">
               <a class="block__name" href={withBase(c.url)}>
                 {c.title}
@@ -122,8 +139,18 @@ const layout = wantLayout === 'region' && children.length >= 4 ? 'region' : 'sta
             <div class="block__scroll">
               <ul class="block__list">
                 {c.kids.map((k) => (
-                  <li>
-                    <SubCard title={k.title} url={k.url} image={k.image} external={k.external} />
+                  /* 每张卡自己一个排版锚点（kid-<id>）：排版模式里能单独拖它、改它大小 */
+                  <li data-edit={`kid-${k.id}`}>
+                    <SubCard
+                      title={k.title}
+                      url={k.url}
+                      image={k.image}
+                      external={k.external}
+                      shape={k.cardShape}
+                      size={k.cardSize}
+                      width={k.cardW}
+                      height={k.cardH}
+                    />
                   </li>
                 ))}
               </ul>
@@ -136,7 +163,9 @@ const layout = wantLayout === 'region' && children.length >= 4 ? 'region' : 'sta
             data-edit={`block-${c.id}`}
             href={c.external ? c.url : withBase(c.url)}
             {...c.external ? { target: '_blank', rel: 'noopener' } : {}}
-            style={c.image ? `--cover:url(${withBase(c.image)})` : undefined}
+            style={[cardSize(c), c.image ? `--cover:url(${withBase(c.image)})` : '']
+              .filter(Boolean)
+              .join(';') || undefined}
           >
             <span class="block__name">{c.title}</span>
             {c.subtitle && <span class="block__sub">{c.subtitle}</span>}
@@ -151,6 +180,8 @@ const layout = wantLayout === 'region' && children.length >= 4 ? 'region' : 'sta
               shape="wide"
               size="l"
               external={c.external}
+              width={c.cardW}
+              height={c.cardH}
             />
           </div>
         )

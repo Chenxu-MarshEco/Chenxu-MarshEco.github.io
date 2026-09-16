@@ -94,6 +94,12 @@ const els = {
   layoutReset: $('layout-reset'),
   layoutResetAll: $('layout-resetall'),
   layoutSave: $('layout-save'),
+  layoutNum: $('layout-num'),
+  lnX: $('ln-x'),
+  lnY: $('ln-y'),
+  lnW: $('ln-w'),
+  lnH: $('ln-h'),
+  lnS: $('ln-s'),
 
   toast: $('toast'),
 };
@@ -1549,7 +1555,32 @@ function renderStudioKids() {
       markStudioDirty();
     });
     shape.title = '这一项作为卡片出现时的横竖比例（空着就跟「子页面」块的默认值）';
-    size.title = '这一项作为卡片出现时的大小';
+    size.title = '这一项作为卡片出现时的大小档位（大/中/小）';
+
+    /*
+      具体像素宽高。档位（大中小）只是粗调，用户要的是「这张卡太大了，
+      改成 300×80」——那就得能填数字。填了就盖过档位。
+    */
+    const numInput = (key, ph) => {
+      const el = document.createElement('input');
+      el.type = 'number';
+      el.className = 'input pw-kid__px';
+      el.min = '20';
+      el.max = '2400';
+      el.step = '1';
+      el.placeholder = ph;
+      el.value = kid[key] ? String(kid[key]) : '';
+      el.title = key === 'cardW' ? '卡片宽度（像素），空着就自动' : '卡片高度（像素），空着就自动';
+      el.addEventListener('input', () => {
+        const n = Number(el.value);
+        if (el.value === '' || !Number.isFinite(n)) delete kid[key];
+        else kid[key] = Math.round(n);
+        markStudioDirty();
+      });
+      return el;
+    };
+    const pxW = numInput('cardW', '宽自动');
+    const pxH = numInput('cardH', '高自动');
 
     const up = document.createElement('button');
     up.type = 'button';
@@ -1606,7 +1637,7 @@ function renderStudioKids() {
       renderStudioKids();
     });
 
-    // 第二行：封面 + 单张卡的比例和大小
+    // 第二行：封面 + 单张卡的比例、档位、像素宽高
     const bar = document.createElement('div');
     bar.className = 'pw-kid__bar';
     const shapeLabel = document.createElement('label');
@@ -1615,7 +1646,10 @@ function renderStudioKids() {
     const sizeLabel = document.createElement('label');
     sizeLabel.className = 'pw-mini';
     sizeLabel.append('大小', size);
-    bar.append(cover, shapeLabel, sizeLabel);
+    const pxWrap = document.createElement('span');
+    pxWrap.className = 'pw-mini';
+    pxWrap.append('尺寸', pxW, '×', pxH, 'px');
+    bar.append(cover, shapeLabel, sizeLabel, pxWrap);
 
     if (isLink) {
       const badge = document.createElement('span');
@@ -2553,18 +2587,38 @@ async function resolveSample(page) {
 
 let layoutPage = 'home';
 
-/** 注入进 iframe 的编辑脚本。字符串拼接，避免和外层的模板字面量打架。 */
+/**
+ * 注入进 iframe 的编辑脚本。
+ *
+ * 三件事：
+ *   1. 选中：点谁选谁（最里面那个 [data-edit]）
+ *   2. 拖动 / 缩放：拖本体平移（存成相对自身尺寸的百分比），
+ *      拖右下角的小方块**自由改变宽高**（存成像素）——类似 PS 的自由变换，
+ *      而且缩放时左上角不动
+ *   3. 给外面的数字面板提供读写：中心点坐标（页面坐标 px）、宽高、缩放
+ *
+ * 为什么位置存百分比、尺寸存像素：
+ *   位置用百分比 → 和屏幕宽度无关，手机上仍按原版式排，不会跑到屏幕外；
+ *   尺寸用像素 → 用户说的是「改成 300 像素宽」，像素最直观，
+ *   而且不像 scale 那样把里面的字也一起缩小（字会糊）。
+ */
 const LAYOUT_SCRIPT = [
   '(function () {',
   '  var state = window.__layoutState = {};',
   '  var sel = null;',
   '  var nodes = [].slice.call(document.querySelectorAll("[data-edit]"));',
   '',
+  '  function elOf(key) {',
+  '    return nodes.filter(function (n) { return n.dataset.edit === key; })[0] || null;',
+  '  }',
+  '',
   '  function apply(el) {',
   '    var v = state[el.dataset.edit];',
-  '    el.style.setProperty("--dx", v.dx + "%");',
-  '    el.style.setProperty("--dy", v.dy + "%");',
-  '    el.style.setProperty("--s", v.s);',
+  '    if (v.dx) el.style.setProperty("--dx", v.dx + "%"); else el.style.removeProperty("--dx");',
+  '    if (v.dy) el.style.setProperty("--dy", v.dy + "%"); else el.style.removeProperty("--dy");',
+  '    el.style.setProperty("--s", v.s || 1);',
+  '    if (v.w) el.style.setProperty("--w", v.w + "px"); else el.style.removeProperty("--w");',
+  '    if (v.h) el.style.setProperty("--h", v.h + "px"); else el.style.removeProperty("--h");',
   '  }',
   '',
   '  // 初始值：先读构建时写进内联样式的，没有就取默认',
@@ -2573,7 +2627,9 @@ const LAYOUT_SCRIPT = [
   '    state[el.dataset.edit] = {',
   '      dx: parseFloat(cs.getPropertyValue("--dx")) || 0,',
   '      dy: parseFloat(cs.getPropertyValue("--dy")) || 0,',
-  '      s: parseFloat(cs.getPropertyValue("--s")) || 1',
+  '      s: parseFloat(cs.getPropertyValue("--s")) || 1,',
+  '      w: parseFloat(cs.getPropertyValue("--w")) || 0,',
+  '      h: parseFloat(cs.getPropertyValue("--h")) || 0',
   '    };',
   '    // 编辑期关掉过渡，不然拖动会拖泥带水',
   '    el.style.transition = "none";',
@@ -2586,17 +2642,69 @@ const LAYOUT_SCRIPT = [
   '  });',
   '',
   '  function select(el) {',
-  '    if (sel) sel.style.outlineColor = "rgba(255,80,170,.75)";',
+  '    if (sel && sel !== el) sel.style.outlineColor = "rgba(255,80,170,.75)";',
   '    sel = el;',
   '    el.style.outlineColor = "#5ff0ff";',
   '    window.parent.postMessage({ type: "layout-pick", key: el.dataset.edit }, "*");',
   '  }',
   '',
-  '  function handle(el) {',
+  '  /*',
+  '    量一个元素现在的状态。',
+  '    注意 rect 是**已经带了 translate/scale** 的视觉盒子，所以要反推出布局位置：',
+  '    scale 是绕中心缩放的（中心不动），translate 的百分比是相对布局尺寸的，',
+  '    所以 布局尺寸 = 视觉尺寸 / s，视觉中心 - 位移 = 布局中心。',
+  '  */',
+  '  function metrics(el) {',
+  '    var v = state[el.dataset.edit];',
+  '    var r = el.getBoundingClientRect();',
+  '    var s = v.s || 1;',
+  '    var layW = r.width / s;',
+  '    var layH = r.height / s;',
+  '    return {',
+  '      v: v, s: s, layW: layW, layH: layH,',
+  '      visualW: r.width, visualH: r.height,',
+  '      pageX: r.left + r.width / 2 + window.scrollX,',
+  '      pageY: r.top + r.height / 2 + window.scrollY',
+  '    };',
+  '  }',
+  '',
+  '  function notify() {',
+  '    window.parent.postMessage({ type: "layout-change", state: state }, "*");',
+  '    if (sel) window.parent.postMessage({ type: "layout-metrics", key: sel.dataset.edit, m: publicMetrics(sel) }, "*");',
+  '  }',
+  '',
+  '  function publicMetrics(el) {',
+  '    var m = metrics(el);',
+  '    return {',
+  '      x: Math.round(m.pageX), y: Math.round(m.pageY),',
+  '      w: Math.round(m.visualW), h: Math.round(m.visualH),',
+  '      s: Math.round(m.s * 100) / 100',
+  '    };',
+  '  }',
+  '',
+  '  /* 让元素保持左上角不动地改成指定像素尺寸 */',
+  '  function resizeFrom(el, w, h) {',
+  '    var before = el.getBoundingClientRect();',
+  '    var v = state[el.dataset.edit];',
+  '    v.w = Math.round(Math.max(20, w));',
+  '    v.h = Math.round(Math.max(16, h));',
+  '    apply(el);',
+  '    var after = el.getBoundingClientRect();',
+  '    var m = metrics(el);',
+  '    // 左上角被挪动了多少，就用位移补回去',
+  '    v.dx = (v.dx || 0) + (before.left - after.left) / Math.max(1, m.layW) * 100;',
+  '    v.dy = (v.dy || 0) + (before.top - after.top) / Math.max(1, m.layH) * 100;',
+  '    v.dx = Math.round(v.dx * 10) / 10;',
+  '    v.dy = Math.round(v.dy * 10) / 10;',
+  '    apply(el);',
+  '  }',
+  '',
+  '  function handle() {',
   '    var h = document.createElement("div");',
   '    h.style.cssText = "position:fixed;width:16px;height:16px;right:0;bottom:0;"',
   '      + "background:#5ff0ff;border:2px solid #06131a;border-radius:3px;"',
   '      + "cursor:nwse-resize;z-index:2147483647;display:none";',
+  '    h.title = "拖这里自由改宽高（左上角不动）";',
   '    document.body.appendChild(h);',
   '    return h;',
   '  }',
@@ -2616,8 +2724,8 @@ const LAYOUT_SCRIPT = [
   '',
   '  document.addEventListener("mousedown", function (e) {',
   '    if (e.target === grip) {',
-  '      drag = { mode: "scale", el: sel, x: e.clientX, y: e.clientY,',
-  '               s0: state[sel.dataset.edit].s, w: sel.getBoundingClientRect().width };',
+  '      var r0 = sel.getBoundingClientRect();',
+  '      drag = { mode: "resize", el: sel, x: e.clientX, y: e.clientY, w0: r0.width, h0: r0.height };',
   '      e.preventDefault();',
   '      return;',
   '    }',
@@ -2625,25 +2733,27 @@ const LAYOUT_SCRIPT = [
   '    if (!el) return;',
   '    select(el);',
   '    var v = state[el.dataset.edit];',
-  '    drag = { mode: "move", el: el, x: e.clientX, y: e.clientY, dx0: v.dx, dy0: v.dy,',
-  '             w: el.getBoundingClientRect().width, h: el.getBoundingClientRect().height };',
+  '    var r = el.getBoundingClientRect();',
+  '    drag = { mode: "move", el: el, x: e.clientX, y: e.clientY, dx0: v.dx || 0, dy0: v.dy || 0,',
+  '             w: r.width, h: r.height };',
+  '    window.parent.postMessage({ type: "layout-metrics", key: el.dataset.edit, m: publicMetrics(el) }, "*");',
   '    e.preventDefault();',
   '  });',
   '',
   '  document.addEventListener("mousemove", function (e) {',
   '    if (!drag) return;',
-  '    var v = state[drag.el.dataset.edit];',
   '    if (drag.mode === "move") {',
+  '      var v = state[drag.el.dataset.edit];',
   '      // 换算成「相对自身尺寸的百分比」，这样存下来的值和屏幕宽度无关',
   '      v.dx = Math.round((drag.dx0 + (e.clientX - drag.x) / drag.w * 100) * 10) / 10;',
   '      v.dy = Math.round((drag.dy0 + (e.clientY - drag.y) / drag.h * 100) * 10) / 10;',
+  '      apply(drag.el);',
   '    } else {',
-  '      var next = drag.s0 * (1 + (e.clientX - drag.x) / Math.max(60, drag.w));',
-  '      v.s = Math.round(Math.min(5, Math.max(0.2, next)) * 100) / 100;',
+  '      // 自由变换：往右往下拖就变大，宽高各自独立',
+  '      resizeFrom(drag.el, drag.w0 + (e.clientX - drag.x), drag.h0 + (e.clientY - drag.y));',
   '    }',
-  '    apply(drag.el);',
   '    placeGrip();',
-  '    window.parent.postMessage({ type: "layout-change", state: state }, "*");',
+  '    notify();',
   '  });',
   '',
   '  document.addEventListener("mouseup", function () { drag = null; });',
@@ -2651,21 +2761,51 @@ const LAYOUT_SCRIPT = [
   '',
   '  window.__layoutApi = {',
   '    state: state,',
+  '    metrics: function (key) { var el = elOf(key); return el ? publicMetrics(el) : null; },',
   '    applyKey: function (key, v) {',
-  '      state[key] = { dx: v.dx, dy: v.dy, s: v.s };',
-  '      var el = nodes.filter(function (n) { return n.dataset.edit === key; })[0];',
+  '      state[key] = { dx: v.dx || 0, dy: v.dy || 0, s: v.s || 1, w: v.w || 0, h: v.h || 0 };',
+  '      var el = elOf(key);',
   '      if (el) apply(el);',
   '      placeGrip();',
+  '      notify();',
+  '    },',
+  '    /* 把中心点挪到页面坐标 (x, y)：算差值再补到百分比位移上 */',
+  '    setCenter: function (key, x, y) {',
+  '      var el = elOf(key);',
+  '      if (!el) return;',
+  '      var m = metrics(el);',
+  '      var v = state[key];',
+  '      v.dx = Math.round(((v.dx || 0) + (x - m.pageX) / Math.max(1, m.layW) * 100) * 10) / 10;',
+  '      v.dy = Math.round(((v.dy || 0) + (y - m.pageY) / Math.max(1, m.layH) * 100) * 10) / 10;',
+  '      apply(el);',
+  '      placeGrip();',
+  '      notify();',
+  '    },',
+  '    setSize: function (key, w, h) {',
+  '      var el = elOf(key);',
+  '      if (!el) return;',
+  '      resizeFrom(el, w, h);',
+  '      placeGrip();',
+  '      notify();',
+  '    },',
+  '    setScale: function (key, s) {',
+  '      var el = elOf(key);',
+  '      if (!el) return;',
+  '      state[key].s = Math.min(5, Math.max(0.2, s));',
+  '      apply(el);',
+  '      placeGrip();',
+  '      notify();',
   '    },',
   '    reset: function (key) {',
-  '      state[key] = { dx: 0, dy: 0, s: 1 };',
-  '      var el = nodes.filter(function (n) { return n.dataset.edit === key; })[0];',
+  '      state[key] = { dx: 0, dy: 0, s: 1, w: 0, h: 0 };',
+  '      var el = elOf(key);',
   '      if (el) apply(el);',
   '      placeGrip();',
+  '      notify();',
   '    },',
   '    resetAll: function () { nodes.forEach(function (n) { window.__layoutApi.reset(n.dataset.edit); }); },',
   '    pick: function (key) {',
-  '      var el = nodes.filter(function (n) { return n.dataset.edit === key; })[0];',
+  '      var el = elOf(key);',
   '      if (el) { select(el); placeGrip(); }',
   '    }',
   '  };',
@@ -2676,6 +2816,78 @@ const LAYOUT_SCRIPT = [
 let layoutState = null;
 /** iframe 里当前选中的元素 key，重置按钮要用 */
 let layoutPicked = null;
+/** 数字面板是不是正在被用户输入（输入过程中别用拖动值覆盖他） */
+let layoutNumTyping = false;
+
+/** 当前选中元素的实际数字：中心点 / 宽高 / 缩放 */
+function layoutMetrics(key) {
+  const win = els.layoutFrame.contentWindow;
+  if (!win || !win.__layoutApi || !key) return null;
+  try {
+    return win.__layoutApi.metrics(key);
+  } catch {
+    return null;
+  }
+}
+
+/** 把数字回填到输入框（用户正在打字时不动他的框） */
+function fillLayoutNumbers(key) {
+  const m = layoutMetrics(key);
+  if (!m) {
+    els.layoutNum.hidden = true;
+    return;
+  }
+  els.layoutNum.hidden = false;
+  const set = (el, v) => {
+    if (document.activeElement === el || layoutNumTyping) return;
+    el.value = v;
+  };
+  set(els.lnX, m.x);
+  set(els.lnY, m.y);
+  set(els.lnW, m.w);
+  set(els.lnH, m.h);
+  set(els.lnS, m.s);
+}
+
+/** 数字面板 → iframe */
+function bindLayoutNumbers() {
+  const call = (fn, ...args) => {
+    const win = els.layoutFrame.contentWindow;
+    if (!win || !win.__layoutApi || !layoutPicked) return;
+    win.__layoutApi[fn](layoutPicked, ...args);
+    fillLayoutNumbers(layoutPicked);
+  };
+  const num = (el) => {
+    const n = Number(el.value);
+    return Number.isFinite(n) && el.value !== '' ? n : null;
+  };
+
+  // 一边打字一边应用，改完不用回车
+  for (const el of [els.lnX, els.lnY]) {
+    el.addEventListener('input', () => {
+      layoutNumTyping = true;
+      const x = num(els.lnX);
+      const y = num(els.lnY);
+      if (x !== null && y !== null) call('setCenter', x, y);
+      layoutNumTyping = false;
+    });
+  }
+  for (const el of [els.lnW, els.lnH]) {
+    el.addEventListener('input', () => {
+      layoutNumTyping = true;
+      const w = num(els.lnW) ?? layoutMetrics(layoutPicked)?.w ?? 100;
+      const h = num(els.lnH) ?? layoutMetrics(layoutPicked)?.h ?? 60;
+      call('setSize', w, h);
+      layoutNumTyping = false;
+    });
+  }
+  els.lnS.addEventListener('input', () => {
+    layoutNumTyping = true;
+    const s = num(els.lnS);
+    if (s !== null) call('setScale', s);
+    layoutNumTyping = false;
+  });
+}
 
 async function openLayoutModal() {
   els.layoutModal.hidden = false;
@@ -2739,7 +2951,10 @@ function mergeLayout(iframeState) {
   const merged = {};
   for (const [key, v] of Object.entries(iframeState)) {
     const saved = layoutState.home[key];
-    merged[key] = saved ? { dx: saved.dx, dy: saved.dy, s: saved.s } : v;
+    // w / h 也要带上：漏了的话「改过像素宽高」的元素一进来就被还原成自动尺寸
+    merged[key] = saved
+      ? { dx: saved.dx || 0, dy: saved.dy || 0, s: saved.s || 1, w: saved.w || 0, h: saved.h || 0 }
+      : v;
   }
   return merged;
 }
@@ -2770,6 +2985,8 @@ async function saveLayout() {
 function closeLayoutModal() {
   els.layoutModal.hidden = true;
   els.layoutFrame.srcdoc = '';
+  layoutPicked = null;
+  if (els.layoutNum) els.layoutNum.hidden = true;
 }
 
 /* ---------------------------------------------------------------
@@ -3105,6 +3322,7 @@ function bindEvents() {
   // 排版
   els.btnLayout.addEventListener('click', openLayoutModal);
   els.layoutPage.addEventListener('change', () => loadLayoutPage(els.layoutPage.value));
+  bindLayoutNumbers();
   if (els.layoutSample) {
     els.layoutSample.addEventListener('change', () => {
       if (layoutPage === 'board') loadLayoutPage('board');
@@ -3113,13 +3331,17 @@ function bindEvents() {
   els.layoutSave.addEventListener('click', saveLayout);
   els.layoutReset.addEventListener('click', () => {
     const win = els.layoutFrame.contentWindow;
-    if (win && win.__layoutApi && layoutPicked) win.__layoutApi.reset(layoutPicked);
+    if (win && win.__layoutApi && layoutPicked) {
+      win.__layoutApi.reset(layoutPicked);
+      fillLayoutNumbers(layoutPicked);
+    }
   });
   els.layoutResetAll.addEventListener('click', () => {
     const win = els.layoutFrame.contentWindow;
     if (win && win.__layoutApi) {
       win.__layoutApi.resetAll();
       els.layoutPick.textContent = '已全部重置（记得保存）';
+      fillLayoutNumbers(layoutPicked);
     }
   });
   els.layoutModal.addEventListener('click', (ev) => {
@@ -3134,10 +3356,17 @@ function bindEvents() {
     if (d.type === 'layout-pick') {
       layoutPicked = d.key;
       els.layoutPick.textContent = `已选中：${d.key}`;
+      fillLayoutNumbers(d.key);
+      return;
+    }
+    if (d.type === 'layout-metrics') {
+      if (d.key === layoutPicked) fillLayoutNumbers(d.key);
       return;
     }
     if (d.type === 'layout-change') {
       els.layoutPick.textContent = `已选中：${layoutPicked || ''}（有改动，记得保存）`;
+      // 拖动 / 缩放之后把数字回填，让「拖」和「填数字」始终对得上
+      if (layoutPicked) fillLayoutNumbers(layoutPicked);
       return;
     }
     if (d.type === 'layout-ready') {

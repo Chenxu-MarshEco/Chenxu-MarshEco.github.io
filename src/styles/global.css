@@ -739,6 +739,13 @@ body.is-board .site-footer a {
 [data-edit] {
   translate: var(--dx, 0) var(--dy, 0);
   scale: var(--s, 1);
+  /*
+    排版模式里能直接给像素宽高（--w / --h）。
+    有了明确宽度后，栅格里的元素不再被拉伸，会贴着自己格子的左上角 —— 
+    这正是「把这张卡改小」想要的效果，旁边的格子不会跟着动。
+  */
+  width: var(--w, auto);
+  height: var(--h, auto);
 }
 
 /* 代码高亮取色。

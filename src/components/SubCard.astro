@@ -37,9 +37,33 @@ interface Props {
    * 卡片样子完全一样 —— 地址本身不显示在页面上。
    */
   external?: boolean;
+  /**
+   * 明确的像素宽高（可选）。填了就盖过 shape/size 那套档位 ——
+   * 「这张卡改小一点」用具体数字最直接，也不像缩放那样把里面的字一起缩小。
+   */
+  width?: number;
+  height?: number;
 }
 
-const { title, url, image, shape = 'row', size = 'l', external = false } = Astro.props;
+const {
+  title,
+  url,
+  image,
+  shape = 'row',
+  size = 'l',
+  external = false,
+  width,
+  height,
+} = Astro.props;
+
+/** 像素宽高 + 封面图拼成一条内联样式 */
+const inlineStyle = [
+  Number(width) > 0 ? `width:${Number(width)}px` : null,
+  Number(height) > 0 ? `height:${Number(height)}px` : null,
+  image ? `--cover:url(${withBase(image)})` : null,
+]
+  .filter(Boolean)
+  .join(';');
 ---
 
 <a
@@ -51,7 +75,7 @@ const { title, url, image, shape = 'row', size = 'l', external = false } = Astro
   ]}
   href={external ? url : withBase(url)}
   {...external ? { target: '_blank', rel: 'noopener' } : {}}
-  style={image ? `--cover:url(${withBase(image)})` : undefined}
+  style={inlineStyle || undefined}
 >
   <span class="card__label">{title}</span>
 </a>

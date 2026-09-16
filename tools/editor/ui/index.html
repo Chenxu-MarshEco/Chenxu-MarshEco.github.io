@@ -352,11 +352,14 @@
       <div class="modal__panel modal__panel--full" role="dialog" aria-modal="true" aria-label="排版微调">
         <h3 class="modal__title">排版微调</h3>
         <p class="hint">
-          点一个元素选中它，<strong>拖动</strong>改位置，拖<strong>右下角的小方块</strong>缩放。
-          存下来的是<em>相对偏移和倍数</em>，不是绝对坐标 —— 所以手机上仍是正常布局，不会错位。
-          改完保存，重新构建才生效。
+          点一个元素选中它，<strong>拖动</strong>改位置，拖<strong>右下角的小方块</strong>自由改宽高
+          （左上角不动，像 PS 的变换框）。也可以直接在下面<strong>填数字</strong>：
+          中心点坐标、宽高、缩放，改完立刻生效。
+          存下来的是<em>相对位移</em>（百分比）和<em>像素宽高</em>，
+          所以手机上仍是正常布局，不会错位。改完保存，重新构建才生效。
           <br />
-          这里只能挪<strong>已经有</strong>的东西。<strong>想加新的字、图、子页面，用顶栏的「页面」</strong>。
+          每一块版块、每一张子页面卡都能<strong>单独选中单独拖</strong>。
+          <strong>想加新的字、图、子页面，用顶栏的「页面」</strong>。
         </p>
         <div class="layoutbar">
           <label class="layoutbar__pick">
@@ -377,6 +380,16 @@
           <button type="button" class="btn btn--ghost" id="layout-reset">重置选中</button>
           <button type="button" class="btn btn--ghost" id="layout-resetall">全部重置</button>
           <button type="button" class="btn btn--primary" id="layout-save">保存</button>
+        </div>
+
+        <!-- 选中一个元素后出现：数字和拖动都能改位置与大小 -->
+        <div class="layoutnum" id="layout-num" hidden>
+          <label class="layoutnum__item">中心点 X <input type="number" id="ln-x" step="1" /></label>
+          <label class="layoutnum__item">Y <input type="number" id="ln-y" step="1" /></label>
+          <label class="layoutnum__item">宽 <input type="number" id="ln-w" step="1" min="20" /></label>
+          <label class="layoutnum__item">高 <input type="number" id="ln-h" step="1" min="16" /></label>
+          <label class="layoutnum__item">缩放 <input type="number" id="ln-s" step="0.05" min="0.2" max="5" /></label>
+          <span class="layoutnum__hint">中心点是这一页左上角算起的像素坐标；宽高留空 = 跟着版式自动</span>
         </div>
         <div class="layoutframe">
           <iframe id="layout-frame" title="页面预览"></iframe>

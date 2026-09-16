@@ -184,6 +184,8 @@ const cardsOf = (b: Extract<PageBlock, { type: 'children' }>) => ({
                   shape={c.cardShape ?? cardsOf(b).shape}
                   size={c.cardSize ?? cardsOf(b).size}
                   external={c.external}
+                  width={c.cardW}
+                  height={c.cardH}
                 />
               ))}
             </div>

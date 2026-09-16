@@ -2,7 +2,7 @@
  * 排版微调的共用取数逻辑。
  *
  * 数据结构见 src/data/layout.json：
- *   { pages: { home: { sun: {dx,dy,s}, ... }, board: {...}, ... } }
+ *   { pages: { home: { sun: {dx,dy,s,w,h}, ... }, board: {...}, ... } }
  *
  * 页面类型（page key）：
  *   home   首页
@@ -10,10 +10,15 @@
  *   post   文章 / 手记详情页
  *   list   列表页（文章、手记、标签、归档、关于、友链）
  *
+ * 每个元素能存三种东西：
+ *   dx/dy  相对自身尺寸的百分比位移（纯视觉变换，不参与布局，手机上不会错位）
+ *   s      缩放倍数
+ *   w/h    明确的像素宽高（"把这张卡改小一点"就用这个 —— 百分比位移配固定像素，
+ *          比缩放在文字清晰度上更干净，也不会把里面的字一起缩小）
+ *
  * 生效方式：全局 CSS 里有一条 [data-edit] { translate: var(--dx) ...; scale: var(--s) }，
- * 这里负责把每个元素对应的变量值输出成一小段 <style>。
- * 用 translate/scale 而不是 left/top，是因为它是纯视觉变换、不参与布局，
- * 所以响应式断点照常生效，手机上不会错位。
+ * 这里负责把每个元素对应的变量值输出成一小段 <style>。用 translate/scale 而不是
+ * left/top，是因为它们是纯视觉变换、不参与布局，所以响应式断点照常生效。
  */
 import layout from '../data/layout.json';
 
@@ -23,6 +28,9 @@ interface Offset {
   dx?: number;
   dy?: number;
   s?: number;
+  /** 明确的像素宽高；不写就是跟着版式走 */
+  w?: number;
+  h?: number;
 }
 
 const PAGES = (layout as { pages?: Record<string, Record<string, Offset>> }).pages ?? {};
@@ -34,8 +42,17 @@ export function editVars(page: PageKey, key: string): string | null {
   const dx = v.dx ?? 0;
   const dy = v.dy ?? 0;
   const s = v.s ?? 1;
-  if (dx === 0 && dy === 0 && s === 1) return null;
-  return `--dx:${dx}%;--dy:${dy}%;--s:${s}`;
+  const w = Number(v.w) > 0 ? Number(v.w) : null;
+  const h = Number(v.h) > 0 ? Number(v.h) : null;
+  if (dx === 0 && dy === 0 && s === 1 && !w && !h) return null;
+
+  const parts: string[] = [];
+  if (dx !== 0) parts.push(`--dx:${dx}%`);
+  if (dy !== 0) parts.push(`--dy:${dy}%`);
+  if (s !== 1) parts.push(`--s:${s}`);
+  if (w) parts.push(`--w:${w}px`);
+  if (h) parts.push(`--h:${h}px`);
+  return parts.join(';');
 }
 
 /**

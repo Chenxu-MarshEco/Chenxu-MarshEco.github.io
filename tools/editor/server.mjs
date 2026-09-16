@@ -998,6 +998,7 @@ async function readLayout() {
  * 按页面类型分组（home / board / post / list），每组的键是元素锚点名。
  * 夹一下取值范围：偏移限制在 ±200%，缩放限制在 0.2~5 倍 ——
  * 没有这道闸，一次误拖就能把元素甩到屏幕外，而且很难找回来。
+ * w / h 是明确的像素宽高，20~3000 之内才收（0 表示「跟着版式自动」）。
  */
 async function writeLayout(payload) {
   if (!payload || typeof payload !== 'object' || !payload.pages) {
@@ -1027,11 +1028,17 @@ async function writeLayout(payload) {
     const merged = { ...(pages[page] || {}) };
     for (const [key, v] of Object.entries(group)) {
       const o = v && typeof v === 'object' ? v : {};
-      merged[key] = {
+      const entry = {
         dx: Math.round(clamp(o.dx, -200, 200, 0) * 10) / 10,
         dy: Math.round(clamp(o.dy, -200, 200, 0) * 10) / 10,
         s: Math.round(clamp(o.s, 0.2, 5, 1) * 100) / 100,
       };
+      // 像素宽高：不填（0）就不写这一项，等于「跟着版式自动」
+      const w = Number(o.w);
+      if (Number.isFinite(w) && w >= 20) entry.w = Math.round(clamp(w, 20, 3000, 0));
+      const h = Number(o.h);
+      if (Number.isFinite(h) && h >= 16) entry.h = Math.round(clamp(h, 16, 3000, 0));
+      merged[key] = entry;
     }
     pages[page] = merged;
   }
@@ -1085,6 +1092,15 @@ function cleanCardShape(v) {
 }
 function cleanCardSize(v) {
   return CARD_SIZES.has(v) ? v : undefined;
+}
+
+/** 卡片的像素宽高：20~2400 之内的整数才收，其它当没填 */
+function cleanCardPx(v, max = 2400) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return undefined;
+  const r = Math.round(n);
+  if (r < 20 || r > max) return undefined;
+  return r;
 }
 
 /**
@@ -1231,6 +1247,11 @@ function cleanNode(raw, parentId, used) {
   if (cardShape) out.cardShape = cardShape;
   const cardSize = cleanCardSize(raw.cardSize);
   if (cardSize) out.cardSize = cardSize;
+  // 卡片的像素宽高：填了就盖过上面的档位
+  const cardW = cleanCardPx(raw.cardW);
+  if (cardW) out.cardW = cardW;
+  const cardH = cleanCardPx(raw.cardH);
+  if (cardH) out.cardH = cardH;
 
   // 链接版块：填了就点它直接跳走，不再有自己的页面
   const link = cleanLink(raw.link);

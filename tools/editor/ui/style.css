@@ -1388,6 +1388,12 @@ body[data-type="notes"] .field--posts-only {
   padding: 4px 6px;
   font-size: 12px;
 }
+/* 卡片像素宽高：两个小数字框 */
+.pw-kid__px {
+  width: 4.6rem;
+  padding: 4px 6px;
+  font-size: 12px;
+}
 .pw-addkid {
   margin-top: 4px;
 }
@@ -1472,6 +1478,40 @@ body[data-type="notes"] .field--posts-only {
   overflow: hidden;
   background: #12000f;
   height: min(64vh, 620px);
+}
+
+/* ---------- 排版：数字面板（中心点 / 宽高 / 缩放） ---------- */
+.layoutnum {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+}
+.layoutnum[hidden] {
+  display: none;
+}
+.layoutnum__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.layoutnum__item .input {
+  width: 5.2rem;
+  padding: 4px 6px;
+  font-size: 12px;
+}
+.layoutnum__hint {
+  font-size: 11px;
+  color: var(--text-muted);
+  opacity: 0.85;
 }
 .layoutframe iframe {
   display: block;

@@ -39,13 +39,21 @@ export interface BlockItem {
   /** 这一项作为卡片出现时的横竖比例 / 大小（设了才盖过「子页面」块的默认值） */
   cardShape?: 'wide' | 'square' | 'tall';
   cardSize?: 'l' | 'm' | 's';
+  /** 卡片的像素宽高（盖过档位；不写就自动） */
+  cardW?: number;
+  cardH?: number;
   /** 它下面的子版块，用来在框里铺卡片 */
   kids: {
+    id: string;
     title: string;
     url: string;
     subtitle?: string;
     image?: string;
     external?: boolean;
+    cardShape?: 'wide' | 'square' | 'tall';
+    cardSize?: 'l' | 'm' | 's';
+    cardW?: number;
+    cardH?: number;
   }[];
 }
 
@@ -122,14 +130,21 @@ export async function nodePageData(url: string): Promise<NodePageData | null> {
         external: cf?.external,
         cardShape: c.cardShape,
         cardSize: c.cardSize,
+        cardW: c.cardW,
+        cardH: c.cardH,
         url: cf?.url ?? '/',
         kids: (c.children ?? []).map((g) => {
           const gf = all.find((x) => x.node === g);
           return {
+            id: g.id,
             title: g.title,
             subtitle: g.subtitle,
             image: g.image,
             external: gf?.external,
+            cardShape: g.cardShape,
+            cardSize: g.cardSize,
+            cardW: g.cardW,
+            cardH: g.cardH,
             url: gf?.url ?? '/',
           };
         }),

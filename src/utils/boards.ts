@@ -95,6 +95,13 @@ export interface BoardNode {
    */
   cardShape?: CardShape;
   cardSize?: CardSize;
+  /**
+   * 卡片的像素宽高（可选）。填了就**盖过** cardSize 的档位 ——
+   * 「这张卡太大了，想改成 300×80」这种要求只有具体数字能满足。
+   * 卡片出现在面板清单、竖排大卡、页面里的「子页面」块时都按这个来。
+   */
+  cardW?: number;
+  cardH?: number;
   children?: BoardNode[];
 }
 
