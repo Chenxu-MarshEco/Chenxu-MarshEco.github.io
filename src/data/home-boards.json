@@ -143,18 +143,52 @@
           "id": "huaya-r2",
           "title": "花娅编年史",
           "href": "/huaya/years",
+          "page": [
+            {
+              "id": "huaya-r2-pmu58fzz22",
+              "type": "text",
+              "text": "## 花娅\n在冰室中诞生的一个个位面，许多故事的发生地。"
+            },
+            {
+              "id": "huaya-r2-pmu58jp2g3",
+              "type": "children",
+              "shape": "wide",
+              "size": "l"
+            }
+          ],
           "children": [
             {
               "id": "huaya-r2-1",
               "title": "纷湖",
               "href": "/huaya/years/fenhu",
-              "image": "/img/uploads/20260915-1512-e633-QQ图片20260915151216.png.jpg"
+              "image": "/img/uploads/20260915-1512-e633-QQ图片20260915151216.png.jpg",
+              "page": [
+                {
+                  "id": "huaya-r2-1-pmu58ndun4",
+                  "type": "toc",
+                  "text": "来自纷鸟的记录"
+                },
+                {
+                  "id": "huaya-r2-1-pmu58ondb6",
+                  "type": "divider"
+                },
+                {
+                  "id": "huaya-r2-1-pmu58osby7",
+                  "type": "text",
+                  "text": "## 纷湖\n花娅一切故事的开始。"
+                },
+                {
+                  "id": "huaya-r2-1-pmu58wmgv8",
+                  "type": "video",
+                  "src": "https://www.bilibili.com/video/BV1Vj411Z76R/"
+                }
+              ]
             },
             {
               "id": "huaya-r2-2",
               "title": "花娅地",
               "href": "/huaya/years/huayadi",
-              "image": "/img/uploads/20260915-1513-6cb0-2024-02-02_23.19.27.jpg"
+              "image": "/img/uploads/20260917-1552-ca81-11A248BD7FEABB7D85253E0857E0D573.jpg"
             },
             {
               "id": "huaya-r2-3",
