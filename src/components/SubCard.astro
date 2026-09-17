@@ -96,6 +96,14 @@ const inlineStyle = [
     text-align: center;
     text-decoration: none;
     color: #ffe6f6;
+    /*
+      让下面的 @container 能按「这张卡自己有多宽」来定字号。
+      卡片是被栅格和面板摆布的：同一张卡在宽栏里占满一行、
+      在窄栏里只剩一百来像素，用 vw 根本对不上号，
+      只有容器查询问的是卡片本身的宽度。
+      卡片本来就是 width:100%，所以这条尺寸包含不会改变它的宽度。
+    */
+    container-type: inline-size;
     transition:
       background 0.16s ease,
       border-color 0.16s ease,
@@ -184,13 +192,47 @@ const inlineStyle = [
     max-width: 100%;
     font-size: 0.95rem;
     letter-spacing: 0.08em;
-    /* 名字太长就省略，别撑破格子 */
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    /*
+      名字放不下就换行，不再用省略号截断。
+      卡片名字本身就是导航 —— 「龙历院花娅…」等于没写，
+      点进去之前根本不知道是哪一张。
+      中文本来就能在任意字之间断行；overflow-wrap:anywhere 是给
+      一长串没有空格的英文/数字留的后路，不然那种会顶破卡片。
+      text-wrap:balance 让折成两行时断得均匀一点（老浏览器忽略即可）。
+      再窄就交给下面的容器查询缩字号，而不是把字裁掉。
+    */
+    overflow-wrap: anywhere;
+    text-wrap: balance;
     text-shadow:
       0 1px 6px rgba(10, 0, 18, 0.9),
       0 0 16px rgba(10, 0, 18, 0.7);
+  }
+
+  /*
+    「显示不下就缩小字号」。
+    按卡片自己的宽度分两档；用 .card .card__label（特异度 0,2,0）是为了
+    压过上面 .card--square .card__label 那一组同特异度的字号规则 ——
+    两边一样重，所以全靠写在后面取胜，这段必须留在它们下面。
+    浏览器不认 @container 时整段忽略，退回「换行 + 原字号」，依然不截断。
+
+    阈值取得偏小是故意的：@container 量的是**卡片的内容盒**，
+    分区版式里那种窄栏卡在桌面宽度下卡片本身 192px，减掉
+    .card--square 的左右内边距（各 1.2rem）只剩约 154px，
+    而「龙历院花娅支部」这种七个字在 154px 里本来就放得下 ——
+    阈值定高了会把本来放得下的字也缩小，白白改变观感。
+    所以只有小到确实挤不下时才缩：换行仍是主力手段，缩字号只是兜底。
+  */
+  @container (max-width: 150px) {
+    .card .card__label {
+      font-size: 0.86rem;
+      letter-spacing: 0.05em;
+    }
+  }
+  @container (max-width: 110px) {
+    .card .card__label {
+      font-size: 0.78rem;
+      letter-spacing: 0.02em;
+    }
   }
 
   .card:hover,

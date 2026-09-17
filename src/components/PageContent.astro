@@ -646,7 +646,12 @@ const cardsOf = (b: Extract<PageBlock, { type: 'children' }>) => ({
     font-size: 0.82rem;
     letter-spacing: 0.18em;
     color: rgba(255, 226, 244, 0.7);
-    white-space: nowrap;
+    /*
+      这里不能 nowrap：中间一句话长过一行时，两边的 flex:1 先缩到 0，
+      然后再没得缩，整句话就被顶出容器（不是被裁掉，是溢出）。
+      让它换行才是稳的。
+    */
+    overflow-wrap: anywhere;
   }
 
   /* ---------- 两栏 ---------- */
