@@ -1,6 +1,6 @@
 ---
 /**
- * 右上角的目录栏（三条杠）。
+ * 右上角的两个固定控件：目录抽屉（三条杠）+ 回到顶部（塔吊图标）。
  *
  * 数据就是首页那两棵大板块树，所以它天然反映「当前在哪个板块」。
  * 常见文档站的目录树：点章节名跳转，点箭头展开/收起下一层。
@@ -75,16 +75,42 @@ function renderNodes(nodes: BoardNode[]): string {
 }
 ---
 
-<button
-  type="button"
-  class="drawer__toggle"
-  id="drawer-toggle"
-  aria-label="打开目录"
-  aria-expanded="false"
-  aria-controls="drawer-panel"
->
-  <span class="drawer__bars" aria-hidden="true"><i></i><i></i><i></i></span>
-</button>
+<!--
+  右上角两个固定控件：回到顶部 + 目录。
+  套在同一个容器里，位置、间距、两个按钮的皮才好统一 ——
+  分开各自 fixed 的话，改一个尺寸另一个就对不齐了。
+-->
+<div class="corner">
+  <button type="button" class="corner__btn totop" id="totop" aria-label="回到顶部" title="回到顶部">
+    <!-- 简约化的塔吊（本站的记号），不是箭头 -->
+    <svg class="totop__crane" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <!-- 塔身两根主弦 + 腹杆 -->
+      <path d="M8.6 20.6V7.4M11.4 20.6V7.4" />
+      <path d="M8.6 12.4l2.8 3.6M11.4 12.4l-2.8 3.6M8.6 16h2.8" />
+      <!-- 底座 -->
+      <path d="M7 20.6h6" />
+      <!-- 塔尖、横臂、两侧拉杆 -->
+      <path d="M10 3.6v3.8M2 7.4h20" />
+      <path d="M10 3.6 2 7.4M10 3.6l12 3.8" />
+      <!-- 吊索 -->
+      <path d="M18 7.4v3.6" />
+      <!-- 配重（左）与吊钩（右） -->
+      <rect x="2.1" y="7.5" width="2.4" height="2.6" rx="0.5" fill="currentColor" stroke="none" />
+      <rect x="17.1" y="11" width="1.8" height="1.8" rx="0.4" fill="currentColor" stroke="none" />
+    </svg>
+  </button>
+
+  <button
+    type="button"
+    class="corner__btn drawer__toggle"
+    id="drawer-toggle"
+    aria-label="打开目录"
+    aria-expanded="false"
+    aria-controls="drawer-panel"
+  >
+    <span class="drawer__bars" aria-hidden="true"><i></i><i></i><i></i></span>
+  </button>
+</div>
 
 <div class="drawer__scrim" id="drawer-scrim" hidden></div>
 
@@ -103,6 +129,18 @@ function renderNodes(nodes: BoardNode[]): string {
 
 <script is:inline>
   (() => {
+    /*
+      回到顶部。
+      这里刻意不写 behavior：默认值 auto 会用元素的 scroll-behavior，
+      也就是 global.css 里那条 —— 它在「减少动效」偏好下已经是 auto，
+      所以不用在这儿再判断一次偏好，两边不会打架。
+      放在抽屉那套逻辑之前，抽屉元素缺失时它照样能用。
+    */
+    const totop = document.getElementById('totop');
+    if (totop) {
+      totop.addEventListener('click', () => window.scrollTo({ top: 0 }));
+    }
+
     const toggle = document.getElementById('drawer-toggle');
     const panel = document.getElementById('drawer-panel');
     const scrim = document.getElementById('drawer-scrim');
@@ -192,12 +230,19 @@ function renderNodes(nodes: BoardNode[]): string {
 </script>
 
 <style>
-  /* ---------- 三条杠按钮 ---------- */
-  .drawer__toggle {
+  /* ---------- 右上角两个固定控件 ---------- */
+  .corner {
     position: fixed;
     top: 0.85rem;
     right: clamp(0.9rem, 2.5vw, 1.8rem);
     z-index: 60;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  /* 两个按钮共用这一套皮：一样的方角、边框、底色 */
+  .corner__btn {
     width: 42px;
     height: 42px;
     display: grid;
@@ -206,8 +251,33 @@ function renderNodes(nodes: BoardNode[]): string {
     border-radius: 11px;
     border: 1px solid var(--c-border-strong);
     background: var(--c-bg-raised);
+    color: var(--c-text);
     cursor: pointer;
   }
+  .corner__btn:hover {
+    border-color: var(--c-accent);
+  }
+
+  .totop__crane {
+    width: 24px;
+    height: 24px;
+    stroke: currentColor;
+    stroke-width: 1.5;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  /*
+    抽屉拉开时把它藏掉：抽屉停在右边，这层 z-index 比抽屉高，
+    不藏的话这个按钮会浮在抽屉面板上，和抽屉自己的关闭按钮挤在一起。
+    用 visibility 而不是 display —— display:none 会让右边的目录按钮
+    往右跳一格，看着像抖了一下。
+  */
+  :global(.drawer-open) .totop {
+    visibility: hidden;
+  }
+
+  /* ---------- 三条杠按钮 ---------- */
   .drawer__bars {
     display: grid;
     gap: 4px;
@@ -232,10 +302,11 @@ function renderNodes(nodes: BoardNode[]): string {
   }
 
   /* 深色页面（首页、板块页）上的按钮要反过来配色 */
-  :global(body.is-home) .drawer__toggle,
-  :global(body.is-board) .drawer__toggle {
+  :global(body.is-home) .corner__btn,
+  :global(body.is-board) .corner__btn {
     background: rgba(38, 4, 52, 0.72);
     border-color: rgba(255, 120, 190, 0.5);
+    color: #ffd9ef;
     backdrop-filter: blur(4px);
   }
   :global(body.is-home) .drawer__bars i,

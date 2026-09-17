@@ -206,6 +206,13 @@ body.is-board .site-footer a {
   min-height: 3.75rem;
   flex-wrap: wrap;
   padding-block: var(--sp-3);
+  /*
+    页头不再套 .container（那层会把它压进居中的 68rem 里，
+    宽屏上徽记和站名就看着缩在中间），所以边距在这里自己给。
+    左右都取 clamp(0.9rem, 2.5vw, 1.8rem)，和右上角那两个固定按钮
+    用的是同一组值，视觉上左右对称。
+  */
+  padding-inline: clamp(0.9rem, 2.5vw, 1.8rem);
 }
 
 .site-title {

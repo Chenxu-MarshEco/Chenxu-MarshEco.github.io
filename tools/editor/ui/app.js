@@ -1245,7 +1245,8 @@ const BLOCK_LABEL = {
   toc: '目录',
   children: '子页面',
 };
-const TEXT_HINT = '支持 Markdown：**粗体**、[链接](地址)、- 列表、![图](/img/uploads/x.png)、## 小标题';
+const TEXT_HINT =
+  '支持 Markdown：**粗体**、[链接](地址)、- 列表、![图](/img/uploads/x.png)、## 小标题、[[文字|图片地址]]（悬停出图）、[[文字|图片地址|链接地址]]（悬停出图 + 点击跳转）';
 const IMG_WIDTHS = [['full', '全宽'], ['wide', '宽'], ['half', '半宽'], ['third', '窄']];
 const CARD_SHAPES = [['wide', '横（16:3）'], ['square', '方（1:1）'], ['tall', '竖（3:4）']];
 const CARD_SIZES = [['l', '大'], ['m', '中'], ['s', '小']];

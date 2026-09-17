@@ -3,7 +3,8 @@
  * 版块页里「自己写的那段内容」。
  *
  * 数据是节点上的 page 数组，九种块：
- *   text      介绍文字（Markdown：段落、粗体、列表、行内链接、行内图片都能写）
+ *   text      介绍文字（Markdown：段落、粗体、列表、行内链接、行内图片都能写；
+ *             还支持 [[文字|图片地址|链接地址]] 这种悬停出图的写法）
  *   image     一张图，宽度可分档
  *   link      一个链接
  *   divider   一条横线，中间可以带一句话
@@ -22,7 +23,7 @@ import { marked } from 'marked';
 import SubCard from './SubCard.astro';
 import { withBase } from '../utils/url';
 import type { BlockItem, SubPost } from '../utils/boardPage';
-import type { PageBlock } from '../utils/boards';
+import { isLinkUrl, type PageBlock } from '../utils/boards';
 
 interface Props {
   blocks: PageBlock[];
@@ -90,8 +91,77 @@ function uniqueSlug(raw: string): string {
 const hasToc = blocks.some((b) => b.type === 'toc');
 const tocEntries: TocEntry[] = [];
 
+/* ------------------------------------------------------------------
+   悬停图片（文字指上去，上方弹出一张图；可以顺带挂一个链接）
+
+   正文里直接写，两栏块里也一样：
+     [[文字|图片地址]]             鼠标指上去，文字上方弹出这张图
+     [[文字|图片地址|链接地址]]     同上，而且点文字会跳到这个地址
+
+   为什么不用现成的 Markdown 语法：
+   `[文字](地址)` 已经被链接占了，再往里面塞图片就没法区分
+   「这张图是拿来悬停看的」还是「点了要打开这张图」。
+   而 `[[ ]]` 在 Markdown 里本来就不是语法，以前是原样显示的，
+   拿来用正好，也完全不影响已经写好的内容。
+   ------------------------------------------------------------------ */
+
+/** 往 HTML 属性里塞内容前必须转义，否则一个引号就能把标签撑破 */
+const escAttr = (s: string) =>
+  s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+/** 站内路径补上 base，站外原样 */
+const asSrc = (raw: string) => (/^https?:\/\//i.test(raw) ? raw : withBase(raw));
+
+function hoverCardHtml(label: string, img: string, href: string): string {
+  const src = img.trim();
+  if (!src) return '';
+  // 文字里允许写 **粗体**、`代码` 这类行内标记，单独渲染一遍
+  const text = marked.parseInline(label.trim(), { async: false }) as string;
+  const picture = `<img class="phover__img" src="${escAttr(asSrc(src))}" alt="" loading="lazy" decoding="async" />`;
+
+  const url = href.trim();
+  /*
+    没写链接（或地址不安全）就是一段纯文字。
+    给它一个 tabindex：只认鼠标的话，键盘用户永远看不到这张图。
+  */
+  if (!url || !isLinkUrl(url)) {
+    return `<span class="phover" tabindex="0"><span class="phover__label">${text}</span><span class="phover__pop">${picture}</span></span>`;
+  }
+  const external = /^https?:/i.test(url);
+  const anchor = `<a class="phover__label" href="${escAttr(asSrc(url))}"${external ? ' target="_blank" rel="noopener"' : ''}>${text}</a>`;
+  return `<span class="phover">${anchor}<span class="phover__pop">${picture}</span></span>`;
+}
+
+/*
+  占位符用一对「私有区」字符包住序号：这俩码位是留给字体自定义的，
+  正常文字里不会出现，marked 也认不出、不会去动它。
+*/
+const PH_OPEN = '\uE000';
+const PH_CLOSE = '\uE001';
+const PH_RE = new RegExp(`${PH_OPEN}(\\d+)${PH_CLOSE}`, 'g');
+const HOVER_RE = /\[\[([^[\]|]+)\|([^[\]|]+)(?:\|([^[\]|]+))?\]\]/g;
+
 /**
- * 渲染一段 Markdown，顺手给里面的小标题补 id 并记进目录。
+ * 先把 [[...]] 抽出来换成占位符。
+ *
+ * 必须在交给 marked **之前**做：marked 的自动链接会把写在里面的
+ * `https://…` 变成 `<a>`，还顺手把后面的 `]]` 一起吞进链接文字里
+ * （实测：`[[文字|图.png|https://example.com]]` 会被拆得认不出来）。
+ * 先抽走、渲染完再换回来，才拿得到干净的结果。
+ */
+function takeHoverCards(text: string): { src: string; cards: string[] } {
+  const cards: string[] = [];
+  const src = (text ?? '').replace(HOVER_RE, (whole, label: string, img: string, href = '') => {
+    const html = hoverCardHtml(label, img, href);
+    if (!html) return whole;
+    cards.push(html);
+    return `${PH_OPEN}${cards.length - 1}${PH_CLOSE}`;
+  });
+  return { src, cards };
+}
+
+/**
+ * 渲染一段 Markdown：先还原悬停卡片，再（按需要）给里面的小标题补 id 并记进目录。
  *
  * 为什么用正则改 HTML，而不是让 marked 自己吐 id：
  * marked 从 8 开始就不再自动生成标题 id 了，要自己写 renderer / walkTokens。
@@ -99,10 +169,18 @@ const tocEntries: TocEntry[] = [];
  * （没有属性、不会嵌套），一次 replace 既够用，又不会误伤正文里别的标签；
  * 走 walkTokens 反而得把整段 HTML 重拼一遍，更容易出错。
  *
- * collect 为 false 时原样返回：没放目录块的页面，输出和以前逐字节一样。
+ * collect 为 false 时跳过补 id：没放目录块的页面，DOM 和以前一样。
  */
 function renderTracked(text: string, collect: boolean): string {
-  const html = renderText(text);
+  const { src, cards } = takeHoverCards(text);
+  let html = renderText(src);
+
+  if (cards.length) {
+    // 还原要在收集标题之前：标题里若写了悬停卡片，
+    // 目录取的是剥完标签的文字，不能把占位符漏进去
+    html = html.replace(PH_RE, (_, i: string) => cards[Number(i)] ?? '');
+  }
+
   if (!collect) return html;
 
   return html.replace(/<(h[1-4])>([\s\S]*?)<\/\1>/g, (whole, tag: string, inner: string) => {
@@ -660,6 +738,86 @@ const cardsOf = (b: Extract<PageBlock, { type: 'children' }>) => ({
     font-size: 0.9rem;
   }
 
+  /* ---------- 悬停图片 ---------- */
+  /*
+    ⚠ 这一组元素是 set:html 注入进来的，身上没有 Astro 的作用域标记
+    （data-astro-cid-…），所以每条都得写 :global()，否则编译出来的
+    选择器是 .phover[data-astro-cid-…]，一条都匹配不上 ——
+    表现是弹层永远摊在正文里、样式全无，而构建一点错都不报。
+    这和本文件里 .ptext :global(h2) 是同一个原因。
+
+    同时要锚在 .ptext / .pcols__col 下面：光写 :global(.phover)
+    就变成全站通配了，别的组件万一也叫这个名会被牵连。
+  */
+  .ptext :global(.phover),
+  .pcols__col :global(.phover) {
+    /* inline-block 是必须的：弹层要相对这段文字定位，
+       纯 inline 的话 absolute 的参照系会跑偏 */
+    position: relative;
+    display: inline-block;
+  }
+
+  /* 虚线在底下划一道：让人看出「这里指一下有东西」，和普通链接区分开 */
+  .ptext :global(.phover__label),
+  .pcols__col :global(.phover__label) {
+    color: #ffb3dd;
+    text-decoration: underline dashed;
+    text-decoration-color: rgba(255, 179, 221, 0.55);
+    text-underline-offset: 0.22em;
+    cursor: help;
+  }
+  .ptext :global(a.phover__label),
+  .pcols__col :global(a.phover__label) {
+    cursor: pointer;
+  }
+  .ptext :global(.phover__label:hover),
+  .pcols__col :global(.phover__label:hover) {
+    color: #fff;
+  }
+
+  /*
+    弹层在文字正上方。
+    只改 opacity / transform / visibility —— 不占布局，
+    所以指上去的时候底下的正文一个字都不会挪。
+    pointer-events:none 免得它自己把鼠标吸走，导致抖个不停。
+  */
+  .ptext :global(.phover__pop),
+  .pcols__col :global(.phover__pop) {
+    position: absolute;
+    left: 50%;
+    bottom: calc(100% + 0.55rem);
+    z-index: 30;
+    padding: 6px;
+    border: 1px solid rgba(255, 120, 190, 0.5);
+    border-radius: 12px;
+    background: rgba(24, 3, 38, 0.94);
+    box-shadow: 0 16px 40px rgba(8, 0, 16, 0.6);
+    opacity: 0;
+    visibility: hidden;
+    transform: translate(-50%, 4px);
+    transition: opacity 0.16s ease, transform 0.16s ease, visibility 0.16s;
+    pointer-events: none;
+  }
+  /* focus-within 一起管上：键盘 Tab 过来也能看到图 */
+  .ptext :global(.phover:hover .phover__pop),
+  .ptext :global(.phover:focus-within .phover__pop),
+  .pcols__col :global(.phover:hover .phover__pop),
+  .pcols__col :global(.phover:focus-within .phover__pop) {
+    opacity: 1;
+    visibility: visible;
+    transform: translate(-50%, 0);
+  }
+
+  .ptext :global(.phover__img),
+  .pcols__col :global(.phover__img) {
+    display: block;
+    width: auto;
+    /* 窄屏上别把弹层撑出屏幕 */
+    max-width: min(320px, 70vw);
+    max-height: 260px;
+    border-radius: 8px;
+  }
+
   /* ---------- 目录 ---------- */
   .ptoc {
     margin: 0;
@@ -787,6 +945,12 @@ const cardsOf = (b: Extract<PageBlock, { type: 'children' }>) => ({
     }
     .plink:hover {
       transform: none;
+    }
+    /* 直接出现 / 直接消失，不做那个 4px 的位移和淡入 */
+    .ptext :global(.phover__pop),
+    .pcols__col :global(.phover__pop) {
+      transition: none;
+      transform: translate(-50%, 0);
     }
   }
 </style>

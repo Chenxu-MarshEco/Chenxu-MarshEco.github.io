@@ -2,17 +2,60 @@
 /**
  * 全站页头。
  *
- * 导航链接和日夜模式切换都已按用户要求移除，只留左上角的站点名
- * （点它回首页）。栏目入口统一在首页「花娅陌域 → 花娅陌质流」里。
+ * 导航链接和日夜模式切换都已按用户要求移除，只留左上角的
+ * 「徽记 + 站点名」，点哪一块都是回首页。
+ * 栏目入口统一在首页「花娅陌域 → 花娅陌质流」里。
  */
 import site from '../site.config';
 import { withBase } from '../utils/url';
 
 const base = withBase('/');
+/** 和首页 .brand__logo 用的是同一张图 */
+const logo = withBase('/img/home/logo.png');
 ---
 
 <header class="site-header">
-  <div class="container site-header__inner">
-    <a class="site-title" href={base}>{site.title}</a>
+  {/*
+    这里不再套 .container：那一层的意思是「整站内容居中、最宽 68rem」，
+    页头跟着它走的话，宽屏上站名会缩在中间偏左，而不是贴着屏幕左上角。
+    边距改由 .site-header__inner 自己的 padding-inline 给（见 global.css）。
+  */}
+  <div class="site-header__inner">
+    <a class="site-brand" href={base}>
+      {/* 紧挨着就是「花涧堂」三个字，徽记算装饰，alt 留空免得读屏念两遍 */}
+      <img class="site-brand__logo" src={logo} alt="" width="384" height="384" decoding="async" />
+      <span class="site-title">{site.title}</span>
+    </a>
   </div>
 </header>
+
+<style>
+  .site-brand {
+    display: inline-flex;
+    align-items: center;
+    gap: clamp(0.5rem, 1.2vw, 0.85rem);
+    text-decoration: none;
+  }
+
+  /*
+    和首页 .brand__logo 一个处理：一圈品红辉光。
+    徽记是半透明底的彩色图，辉光让它在浅色页头和蒸汽波深色页头上都立得住。
+  */
+  .site-brand__logo {
+    width: clamp(30px, 3.2vw, 38px);
+    height: auto;
+    flex: 0 0 auto;
+    filter: drop-shadow(0 0 10px rgba(255, 90, 170, 0.55));
+  }
+
+  /*
+    指徽记的时候文字也跟着亮一下 —— 整块是一颗链接，反馈要一致。
+    这里只加辉光、不改颜色：global.css 里 .site-title:hover 把颜色改成
+    --c-accent（深琥珀），那是给浅色页头配的，压在蒸汽波深色页头上几乎看不见。
+    辉光在两种底色上都成立。
+  */
+  .site-brand:hover .site-title,
+  .site-brand:focus-visible .site-title {
+    text-shadow: 0 0 12px rgba(255, 90, 170, 0.9);
+  }
+</style>
