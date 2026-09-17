@@ -161,7 +161,7 @@ shiki 输出的 `--shiki-light` / `--shiki-dark` 变量。如果换了主题名�
 | --- | --- | --- |
 | 天空 | 色带缓慢上下流动、染色慢慢明灭 | `@keyframes sky-flow` / `sky-tint` |
 | 落日 | 条纹微微上下游移、辉光呼吸、整体缓缓浮动 | `sun-stripes` / `sun-halo` / `sun-float` |
-| 扫描线 | 按一个条纹周期往下滚（CRT） | `scan-roll` |
+| 扫描线 | 8×32 硬边贴图按一个周期往下滚（CRT） | `scan-roll`；线宽/快慢改 `.vapor` 里的 `--scan-period` / `--scan-speed` |
 | 塔吊 | 三台各自缓慢回转横臂 | `crane-slew`；快慢改每台的 `--dur` |
 | 水面 | 倒影被切成横向条带左右错动、碎金闪、岸线明灭 | `reflect-chop` / `glitter-a` `glitter-b` / `shore-glow` |
 | 天际线 | 页面滚动时整片轻微上移（CSS 滚动驱动，无 JS） | `.vapor__horizon` 那段 `is:inline` 样式 |
@@ -170,6 +170,10 @@ shiki 输出的 `--shiki-light` / `--shiki-dark` 变量。如果换了主题名�
 
 1. **动效只碰 `transform` 和 `opacity`。** 这两个属性走合成层，不重绘画面。
    换成动 `background-position`、`filter`、`width` 这类，整屏就会每帧重画。
+   唯一的例外是扫描线，它必须动 `background-position`：那层靠
+   `image-rendering: pixelated` 才有硬边，而位移一旦交给合成层，
+   贴图会被按双线性重采样，硬边当场糊掉。所以宁愿每帧重画那张
+   153 字节的贴图，也别把它改回 `translateY`。
 2. **「减少动效」偏好下所有背景动画会整体停掉**（`prefers-reduced-motion`）。
    新加的动画请一并放进 `index.astro` 末尾那段 `@media (prefers-reduced-motion: reduce)`，
    组件里的放在组件自己的 `<style>` 里 —— Astro 的作用域选择器跨不进组件内部。

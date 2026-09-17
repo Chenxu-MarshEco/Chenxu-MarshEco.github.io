@@ -1242,6 +1242,7 @@ const BLOCK_LABEL = {
   columns: '两栏',
   video: '视频',
   posts: '文章',
+  toc: '目录',
   children: '子页面',
 };
 const TEXT_HINT = '支持 Markdown：**粗体**、[链接](地址)、- 列表、![图](/img/uploads/x.png)、## 小标题';
@@ -1927,6 +1928,22 @@ function blockFields(block) {
     return wrap;
   }
 
+  if (block.type === 'toc') {
+    const row = document.createElement('div');
+    row.className = 'pblock-edit__row';
+    row.append(
+      boardInput(block.text ?? '', '目录的标题（可留空，默认就叫「目录」）', (v) => {
+        block.text = v;
+      })
+    );
+    const hint = document.createElement('p');
+    hint.className = 'pblock-edit__hint';
+    hint.textContent =
+      '自动把这一页里所有「## 小标题」和「### 子标题」收集成一份带序号的目录，点一条就跳到那里。它自己不产生正文，放在开头最像目录。页面里还没有小标题时，先在上面加个文字块写 ## 标题。';
+    wrap.append(row, hint);
+    return wrap;
+  }
+
   // children：把这一层的子页面铺在这里
   const row = document.createElement('div');
   row.className = 'pblock-edit__row';
@@ -2040,6 +2057,7 @@ function renderPageEditor() {
     ['columns', '两栏', () => ({ id: newBlockId(pageNode.id), type: 'columns', left: '', right: '' })],
     ['video', '视频', () => ({ id: newBlockId(pageNode.id), type: 'video', src: '', caption: '' })],
     ['posts', '文章', () => ({ id: newBlockId(pageNode.id), type: 'posts', text: '' })],
+    ['toc', '目录', () => ({ id: newBlockId(pageNode.id), type: 'toc', text: '' })],
   ];
   for (const [, label, make] of adders) {
     const btn = document.createElement('button');
@@ -2062,8 +2080,9 @@ function commitPageBlocks() {
     if (b.type === 'text') return String(b.text ?? '').trim();
     if (b.type === 'image') return String(b.src ?? '').trim();
     if (b.type === 'link') return String(b.text ?? '').trim() && String(b.href ?? '').trim();
-    // 分隔线和「文章」块本身就有意义（一个只要一条线，一个列这一页的文章）
-    if (b.type === 'divider' || b.type === 'posts') return true;
+    // 分隔线、目录和「文章」块本身就有意义
+    // （一条线、一份自动生成的目录、一列这一页的文章），不因为它「空」就删掉
+    if (b.type === 'divider' || b.type === 'posts' || b.type === 'toc') return true;
     if (b.type === 'columns') return String(b.left ?? '').trim() || String(b.right ?? '').trim();
     if (b.type === 'video') return String(b.src ?? '').trim();
     return true;

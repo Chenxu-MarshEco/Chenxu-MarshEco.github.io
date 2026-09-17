@@ -1199,6 +1199,16 @@ function cleanBlocks(raw, ownerId) {
       return;
     }
 
+    if (type === 'toc') {
+      // 目录块自己不写内容（标题是从别处的「## 小标题」收集来的），
+      // 只有「目录」这两个字本身可以改，所以 text 可选
+      const block = { id, type };
+      const text = String(b.text || '').trim();
+      if (text) block.text = text;
+      out.push(block);
+      return;
+    }
+
     if (type === 'children') {
       out.push({
         id,

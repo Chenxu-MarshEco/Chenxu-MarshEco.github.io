@@ -198,9 +198,9 @@ const styleOf = (key: string) => editVars('home', key) ?? undefined;
      蒸汽波背景
      每一层都是独立的元素 / 独立的重绘属性，各自加自己的动效
 
-     动效都只碰 transform / opacity —— 这两个属性走合成层，
-     不会每帧重算整屏渐变或重新布局。唯一的例外是扫描线的
-     multiply 混合，那是这层本来就要的。
+     动效基本只碰 transform / opacity —— 这两个属性走合成层，
+     不会每帧重算整屏渐变或重新布局。唯一的例外是扫描线，
+     它动的是 background-position，理由写在下面「扫描线」那一节。
      ============================================================ */
 
   .vapor {
@@ -219,6 +219,11 @@ const styleOf = (key: string) => editVars('home', key) ?? undefined;
     /* 剪影的墨色，取自 skyline.png 的实测像素（见 _setup/skyline-survey.ps1）。
        塔吊用同一个值，才会和楼群糊成同一片剪影，而不是浮在上面的一层黑 */
     --ink: #08020c;
+    /* 扫描线的一个条纹周期。贴图里暗线只占 1/4，线宽 = 周期 / 4；
+       换周期就等于换条纹粗细，但等宽这件事不受影响（见「扫描线」一节） */
+    --scan-period: 16px;
+    /* 扫描线滚过一个周期的时间，越小越快 */
+    --scan-speed: 1.1s;
   }
 
   /* ------------------------------------------------------------
@@ -383,31 +388,50 @@ const styleOf = (key: string) => editVars('home', key) ?? undefined;
      ------------------------------------------------------------ */
 
   /*
-    【动效】CRT 扫描。
-    多留一个条纹周期的余量，向下平移正好一个周期（3px），
-    首尾接得上，看不出接缝。
+    一块 8×32 的无缝贴图：暗线占前 8 行 = 恰好 1/4，其余全透明。
+    贴图高度给一个周期（16px），暗线就是 16 / 4 = 4 CSS px。
+
+    等宽是怎么保证的：在 1x / 1.25x / 1.5x / 2x / 2.5x / 3x 屏上，
+    4 × DPR = 4 / 5 / 6 / 8 / 10 / 12，全是整数 —— 暗线永远落在
+    整数个设备像素上，不会出现「有的 2px 有的 3px」那种粗细混排。
+
+    为什么不再用 repeating-linear-gradient（原先那版）：
+    渐变在非整数 DPR 下会被抗锯齿，边缘发灰；而原先周期取 3px，
+    在 125% 缩放的屏上正好排成 2px / 3px 交错，看着就不干净。
+    位图贴图配 image-rendering:pixelated 是硬边，线宽只由周期决定。
+
+    贴图内联成 base64（153 字节的 PNG）：不产生额外请求，也没有路径问题。
+    暗线本身是 rgba(0,0,0,0.22)，浓度烘焙在贴图里，所以不再需要
+    mix-blend-mode —— 纯黑先 multiply 再按 alpha 合成，结果就是
+    base × (1 - 0.22)，和直接叠一层半透明黑逐像素相同，
+    反倒省掉了一次混合，这层画起来就只是一次普通的贴图覆盖。
   */
   .vapor__scan {
     position: absolute;
-    left: 0;
-    right: 0;
-    top: 0;
-    height: calc(100% + 6px);
-    background: repeating-linear-gradient(
-      180deg,
-      rgba(0, 0, 0, 0.22) 0 1px,
-      rgba(0, 0, 0, 0) 1px 3px
-    );
-    mix-blend-mode: multiply;
-    animation: scan-roll 1.15s linear infinite;
+    inset: 0;
+    background-image: url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAgAAAAgCAYAAAAv8DnQAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAAuSURBVDhP7cjBCQAwDMNAj9X9J0ufCgiygAX3UX7voJN0kk7SSTpJJ+mk1toqGXoODgG0rk4hAAAAAElFTkSuQmCC');
+    background-repeat: repeat;
+    background-size: 8px var(--scan-period);
+    image-rendering: pixelated;
+    animation: scan-roll var(--scan-speed) linear infinite;
+    will-change: background-position;
   }
 
+  /*
+    【动效】CRT 扫描：向下走一个周期。
+    位移正好等于一个周期 → 结束帧与起始帧的像素完全重合，循环点看不出来。
+
+    这里动 background-position 而不是 translateY 是刻意的：
+    位移若交给合成层，贴图会被合成器按双线性重采样，硬边当场糊掉，
+    pixelated 也救不回来（它只管光栅化那一步，管不到合成）。
+    宁可让这 153 字节的贴图每帧重绘一次，也要保住硬边。
+  */
   @keyframes scan-roll {
     from {
-      transform: translateY(0);
+      background-position-y: 0;
     }
     to {
-      transform: translateY(3px);
+      background-position-y: var(--scan-period);
     }
   }
 

@@ -2,7 +2,7 @@
 /**
  * 版块页里「自己写的那段内容」。
  *
- * 数据是节点上的 page 数组，八种块：
+ * 数据是节点上的 page 数组，九种块：
  *   text      介绍文字（Markdown：段落、粗体、列表、行内链接、行内图片都能写）
  *   image     一张图，宽度可分档
  *   link      一个链接
@@ -10,6 +10,7 @@
  *   columns   左右两栏（各写一段 Markdown，窄屏自动叠起来）
  *   video     视频：视频文件直链，或 B 站 / YouTube 链接（自动变成播放器）
  *   posts     把归到这一页的文章列出来
+ *   toc       这一页的目录：自动收集上面的小标题，做成可跳转的列表
  *   children  把这一层的子页面铺在这里，卡片的横竖比例和大小可分档
  *
  * 每个块外面都包了一层 [data-edit="pg-<id>"]：
@@ -41,6 +42,108 @@ const { blocks, children, posts } = Astro.props;
   而 CI 用的是 --frozen-lockfile，改不干净会直接把部署卡死。
 */
 const renderText = (text: string) => marked.parse(text ?? '', { async: false }) as string;
+
+/* ------------------------------------------------------------------
+   目录（toc 块）
+
+   它自己不写内容：把这一页里所有文字块 / 两栏块的小标题收集起来，
+   编上号，做成一份能跳的列表。所以下面要先把整页渲染一遍再输出。
+   ------------------------------------------------------------------ */
+
+/** 目录里的一条 */
+interface TocEntry {
+  /** 2 = 一级，3 = 二级；目录只分两层，再深就看不清了 */
+  depth: 2 | 3;
+  slug: string;
+  text: string;
+}
+
+/**
+ * 标题文字 -> 锚点 id。
+ * 中文原样留着（`## 常规行动` → `#常规行动`），空格变连字符，其余符号去掉。
+ * 标题里可能写了 `**粗体**`，那会被渲染成标签，所以先剥一遍标签再算。
+ */
+function slugify(raw: string): string {
+  const base = raw
+    .replace(/<[^>]*>/g, '')
+    .normalize('NFKC')
+    .trim()
+    .toLowerCase()
+    .replace(/[\s\u3000]+/g, '-')
+    .replace(/[^\p{L}\p{N}_-]+/gu, '')
+    .replace(/-{2,}/g, '-')
+    .replace(/^-+|-+$/g, '');
+  return base || 'section';
+}
+
+/** 同一页里标题重名时依次加 -2、-3，保证 id 不撞 */
+const usedSlugs = new Set<string>();
+function uniqueSlug(raw: string): string {
+  const base = slugify(raw);
+  let slug = base;
+  let n = 2;
+  while (usedSlugs.has(slug)) slug = `${base}-${n++}`;
+  usedSlugs.add(slug);
+  return slug;
+}
+
+const hasToc = blocks.some((b) => b.type === 'toc');
+const tocEntries: TocEntry[] = [];
+
+/**
+ * 渲染一段 Markdown，顺手给里面的小标题补 id 并记进目录。
+ *
+ * 为什么用正则改 HTML，而不是让 marked 自己吐 id：
+ * marked 从 8 开始就不再自动生成标题 id 了，要自己写 renderer / walkTokens。
+ * 而这里要的非常窄 —— 实测它输出的标题就是干干净净的 `<h2>…</h2>`
+ * （没有属性、不会嵌套），一次 replace 既够用，又不会误伤正文里别的标签；
+ * 走 walkTokens 反而得把整段 HTML 重拼一遍，更容易出错。
+ *
+ * collect 为 false 时原样返回：没放目录块的页面，输出和以前逐字节一样。
+ */
+function renderTracked(text: string, collect: boolean): string {
+  const html = renderText(text);
+  if (!collect) return html;
+
+  return html.replace(/<(h[1-4])>([\s\S]*?)<\/\1>/g, (whole, tag: string, inner: string) => {
+    const plain = inner.replace(/<[^>]*>/g, '').trim();
+    if (!plain) return whole;
+    const slug = uniqueSlug(plain);
+    // h1/h2 当一级，h3/h4 当二级
+    tocEntries.push({ depth: Number(tag[1]) <= 2 ? 2 : 3, slug, text: plain });
+    return `<${tag} id="${slug}">${inner}</${tag}>`;
+  });
+}
+
+/*
+  两趟渲染。
+
+  必须先把整页的文字过一遍：目录块经常排在正文开头，如果按顺序边渲染边收集，
+  轮到它的时候标题还一条都没收到，目录就是空的。
+  渲染结果按块的下标存下来，下面真正输出时直接取，不重复渲染。
+
+  两栏块按「先左后右」收集 —— 那就是它们在页面上的先后顺序。
+*/
+const textHtml = new Map<number, string>();
+const columnsHtml = new Map<number, { left: string; right: string }>();
+blocks.forEach((b, i) => {
+  if (b.type === 'text') {
+    textHtml.set(i, renderTracked(b.text, hasToc));
+  } else if (b.type === 'columns') {
+    columnsHtml.set(i, {
+      left: renderTracked(b.left, hasToc),
+      right: renderTracked(b.right, hasToc),
+    });
+  }
+});
+
+/** 目录按「一级 + 它底下的二级」分好组，输出时不用再套一层嵌套循环 */
+const tocGroups: { entry: TocEntry; children: TocEntry[] }[] = [];
+for (const e of tocEntries) {
+  // 第一个标题就是 h3 的话也让它当一级，免得整份目录被丢掉
+  if (e.depth === 2 || tocGroups.length === 0) tocGroups.push({ entry: e, children: [] });
+  else tocGroups[tocGroups.length - 1].children.push(e);
+}
 
 /**
  * 视频地址 -> 怎么播。
@@ -86,14 +189,14 @@ const cardsOf = (b: Extract<PageBlock, { type: 'children' }>) => ({
 
 <div class="page">
   {
-    blocks.map((b) => {
+    blocks.map((b, bi) => {
       /* 单张卡自己的设置优先：子版块上设了 cardShape/cardSize 就用它，
          没设才用「子页面」块上的默认值 */
       const video = b.type === 'video' ? videoOf(b.src) : null;
 
       return (
         <div class="pblock" data-edit={`pg-${b.id}`} data-block-type={b.type}>
-          {b.type === 'text' && <div class="ptext" set:html={renderText(b.text)} />}
+          {b.type === 'text' && <div class="ptext" set:html={textHtml.get(bi) ?? ''} />}
 
           {b.type === 'image' && (
             <figure class:list={['pfigure', `pfigure--${b.width ?? 'wide'}`]}>
@@ -120,8 +223,8 @@ const cardsOf = (b: Extract<PageBlock, { type: 'children' }>) => ({
 
           {b.type === 'columns' && (
             <div class="pcols">
-              <div class="pcols__col" set:html={renderText(b.left)} />
-              <div class="pcols__col" set:html={renderText(b.right)} />
+              <div class="pcols__col" set:html={columnsHtml.get(bi)?.left ?? ''} />
+              <div class="pcols__col" set:html={columnsHtml.get(bi)?.right ?? ''} />
             </div>
           )}
 
@@ -172,6 +275,43 @@ const cardsOf = (b: Extract<PageBlock, { type: 'children' }>) => ({
               )}
             </section>
           )}
+
+          {b.type === 'toc' &&
+            (tocGroups.length === 0 ? (
+              <p class="ptoc__empty">
+                这一页还没有小标题。在上面加一个「文字」块，用 <code>## 小标题</code> 写一行，
+                这里就会自动列出来。
+              </p>
+            ) : (
+              <nav class="ptoc" aria-label={b.text || '目录'} data-toc>
+                <p class="ptoc__title">
+                  <span class="ptoc__label">{b.text || '目录'}</span>
+                  <button class="ptoc__toggle" type="button" data-toc-toggle aria-expanded="true">
+                    [隐藏]
+                  </button>
+                </p>
+                <ol class="ptoc__list">
+                  {tocGroups.map((g) => (
+                    <li class="ptoc__item">
+                      <a class="ptoc__link" href={`#${g.entry.slug}`} data-ptoc-slug={g.entry.slug}>
+                        {g.entry.text}
+                      </a>
+                      {g.children.length > 0 && (
+                        <ol class="ptoc__sub">
+                          {g.children.map((c) => (
+                            <li class="ptoc__subitem">
+                              <a class="ptoc__link" href={`#${c.slug}`} data-ptoc-slug={c.slug}>
+                                {c.text}
+                              </a>
+                            </li>
+                          ))}
+                        </ol>
+                      )}
+                    </li>
+                  ))}
+                </ol>
+              </nav>
+            ))}
 
           {b.type === 'children' && (
             <div class="pcards" data-shape={cardsOf(b).shape} data-size={cardsOf(b).size}>
@@ -237,6 +377,22 @@ const cardsOf = (b: Extract<PageBlock, { type: 'children' }>) => ({
   }
   .ptext :global(h3) {
     font-size: 1.1rem;
+  }
+
+  /*
+    目录点一条会跳到这里，跳过去时得给吸顶页头让出位置，
+    不然标题正好被页头压住，看起来像「跳歪了」。
+    5.5rem 和 global.css 里 .prose 用的是同一个值。
+  */
+  .ptext :global(h1),
+  .ptext :global(h2),
+  .ptext :global(h3),
+  .ptext :global(h4),
+  .pcols__col :global(h1),
+  .pcols__col :global(h2),
+  .pcols__col :global(h3),
+  .pcols__col :global(h4) {
+    scroll-margin-top: 5.5rem;
   }
   .ptext :global(a) {
     color: #ffb3dd;
@@ -504,6 +660,117 @@ const cardsOf = (b: Extract<PageBlock, { type: 'children' }>) => ({
     font-size: 0.9rem;
   }
 
+  /* ---------- 目录 ---------- */
+  .ptoc {
+    margin: 0;
+    padding: clamp(0.9rem, 2vw, 1.3rem) clamp(1rem, 2.4vw, 1.5rem);
+    border: 1px solid rgba(255, 120, 190, 0.42);
+    border-radius: 14px;
+    background: linear-gradient(180deg, rgba(46, 8, 70, 0.78), rgba(20, 3, 34, 0.78));
+    box-shadow: 0 14px 40px rgba(10, 0, 20, 0.45);
+  }
+
+  .ptoc__title {
+    display: flex;
+    align-items: baseline;
+    gap: 0.6rem;
+    margin: 0 0 0.6rem;
+    color: #fff;
+    font-family: var(--font-display);
+    font-size: 1.02rem;
+    letter-spacing: 0.14em;
+    text-shadow: 0 0 12px rgba(255, 79, 163, 0.6);
+  }
+
+  /* [隐藏] / [显示] 就是个朴素的小按钮，别抢标题的注意力 */
+  .ptoc__toggle {
+    padding: 0;
+    border: 0;
+    background: none;
+    color: rgba(255, 179, 221, 0.78);
+    font: inherit;
+    font-size: 0.78rem;
+    letter-spacing: 0.04em;
+    cursor: pointer;
+  }
+  .ptoc__toggle:hover {
+    color: #fff;
+  }
+
+  /*
+    序号用 CSS 计数器，而不是 <ol> 自带的编号：
+    只有计数器才做得出「一级 1 2 3、二级跟着一级走成 4.1 4.2」这种编号，
+    嵌套 <ol> 只会各数各的（一级 4、二级 1）。
+  */
+  .ptoc__list,
+  .ptoc__sub {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .ptoc__list {
+    counter-reset: ptoc-l1;
+  }
+  .ptoc__item {
+    counter-increment: ptoc-l1;
+  }
+  .ptoc__sub {
+    margin: 0.1rem 0 0.3rem 1.4rem;
+    counter-reset: ptoc-l2;
+  }
+  .ptoc__subitem {
+    counter-increment: ptoc-l2;
+  }
+
+  /* hidden 属性是 UA 样式里的 display:none，优先级很低，
+     不显式写一条就会被下面的 display:block 盖掉、收起失效 */
+  .ptoc__list[hidden] {
+    display: none;
+  }
+
+  .ptoc__link {
+    display: block;
+    padding: 0.16rem 0;
+    color: rgba(255, 226, 244, 0.86);
+    font-size: 0.94rem;
+    line-height: 1.6;
+    text-decoration: none;
+  }
+  .ptoc__item > .ptoc__link::before {
+    content: counter(ptoc-l1) ' ';
+    color: rgba(255, 140, 200, 0.9);
+  }
+  .ptoc__subitem > .ptoc__link::before {
+    content: counter(ptoc-l1) '.' counter(ptoc-l2) ' ';
+    color: rgba(255, 140, 200, 0.72);
+  }
+  .ptoc__sub .ptoc__link {
+    font-size: 0.86rem;
+  }
+  .ptoc__link:hover,
+  .ptoc__link.is-active {
+    color: #fff;
+  }
+  .ptoc__link.is-active {
+    text-shadow: 0 0 10px rgba(255, 79, 163, 0.85);
+  }
+
+  /* 插了目录块但页面里还没有小标题时，给编辑的人一句提示 */
+  .ptoc__empty {
+    margin: 0;
+    padding: 0.7rem 0.95rem;
+    border: 1px dashed rgba(255, 120, 190, 0.4);
+    border-radius: 10px;
+    color: rgba(255, 226, 244, 0.62);
+    font-size: 0.88rem;
+  }
+  .ptoc__empty code {
+    padding: 0.1em 0.35em;
+    border-radius: 4px;
+    background: rgba(0, 0, 0, 0.3);
+    font-size: 0.92em;
+  }
+
   /* 窄屏：两栏叠起来、卡片一律占满 */
   @media (max-width: 46rem) {
     .pcols {
@@ -523,3 +790,67 @@ const cardsOf = (b: Extract<PageBlock, { type: 'children' }>) => ({
     }
   }
 </style>
+
+<script>
+  /*
+    目录：[隐藏 / 显示] 开关 + 滚动时高亮当前所在的那一条。
+
+    跳转本身不用脚本 —— 就是普通锚点（href="#slug"），
+    交给浏览器原生处理，中键新开、右键复制链接都能用。
+    平滑滚动也是 global.css 里 html{scroll-behavior:smooth} 管的。
+
+    一个页面可能没有目录，也可能有不止一个块，所以整段按 [data-toc] 逐个处理；
+    没有目录时下面这个循环一次都不进，等于没加载过。
+  */
+  for (const nav of document.querySelectorAll<HTMLElement>('[data-toc]')) {
+    const toggle = nav.querySelector<HTMLButtonElement>('[data-toc-toggle]');
+    const list = nav.querySelector<HTMLElement>('.ptoc__list');
+
+    if (toggle && list) {
+      toggle.addEventListener('click', () => {
+        const collapsed = !list.hidden;
+        list.hidden = collapsed;
+        toggle.textContent = collapsed ? '[显示]' : '[隐藏]';
+        toggle.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+      });
+    }
+
+    const links = Array.from(nav.querySelectorAll<HTMLAnchorElement>('.ptoc__link'));
+    /*
+      锚点 id 从 data-ptoc-slug 上读，不去解析 href。
+      标题是中文，href 里的 hash 会被浏览器按 URL 编码成 %E5%B8%B8…，
+      再解码回来纯属绕远路，直接存一份原样的 slug 最省事。
+    */
+    const targets = links
+      .map((link) => document.getElementById(link.dataset.ptocSlug ?? ''))
+      .filter((el): el is HTMLElement => el !== null);
+    if (targets.length === 0) continue;
+
+    const setActive = (id: string) => {
+      for (const link of links) {
+        link.classList.toggle('is-active', link.dataset.ptocSlug === id);
+      }
+    };
+
+    /*
+      注意 rootMargin 的单位：IntersectionObserver 只认 px 和 %，
+      写 rem 会当场抛 SyntaxError，整段脚本挂掉、高亮永远不生效，
+      而且只在控制台留一行错，页面上完全看不出异常。
+      所以按根字号把 5rem 换算成 px —— 顺手也跟着用户的字号设置走。
+      5rem 是为了压过顶部吸顶页头那一段，和上面的 scroll-margin-top 一个用意见。
+    */
+    const remPx = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const visible = entries
+          .filter((e) => e.isIntersecting)
+          .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
+        if (visible[0]) setActive(visible[0].target.id);
+      },
+      { rootMargin: `-${Math.round(remPx * 5)}px 0px -70% 0px`, threshold: 0 }
+    );
+
+    for (const target of targets) observer.observe(target);
+  }
+</script>

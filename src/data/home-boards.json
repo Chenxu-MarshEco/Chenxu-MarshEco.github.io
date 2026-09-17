@@ -41,9 +41,14 @@
           "image": "/img/uploads/20260915-1928-c3f0-粉色动漫风-方图.jpg",
           "page": [
             {
+              "id": "huaya-hishitsu-pmu4uiqon1",
+              "type": "toc",
+              "text": "冰室前庭"
+            },
+            {
               "id": "huaya-hishitsu-pmu2l5iyf1",
               "type": "text",
-              "text": "花娅的混沌位面。花娅诞生于冰室，冰室也无法离开花娅。"
+              "text": "## 冰室\n[花娅](https://chenxu-marsheco.github.io/huaya/years/)的混沌位面。花娅诞生于冰室，冰室的发展也离不开花娅。"
             }
           ]
         },
@@ -56,13 +61,43 @@
           "children": [
             {
               "id": "huaya-a-1",
-              "title": "肥鱼手册",
+              "title": "鱼乐国",
               "href": "/huaya/memory/dssay"
             },
             {
               "id": "huaya-a-2",
               "title": "测试性流质酶",
               "href": "/huaya/memory/test"
+            },
+            {
+              "id": "huaya-r1-1",
+              "title": "更新日志",
+              "href": "/huaya/memory/update",
+              "page": [
+                {
+                  "id": "huaya-r1-1-pmu4t7kxx2",
+                  "type": "text",
+                  "text": "2026.9.14\n使用dsh搭建了基本的网站框架。"
+                },
+                {
+                  "id": "huaya-r1-1-pmu4t8mol3",
+                  "type": "divider"
+                },
+                {
+                  "id": "huaya-r1-1-pmu4t8xx14",
+                  "type": "text",
+                  "text": "2026.9.15\n确定和完善了基本的网页风格，功能分区。"
+                },
+                {
+                  "id": "huaya-r1-1-pmu4tb2c65",
+                  "type": "divider"
+                },
+                {
+                  "id": "huaya-r1-1-pmu4tbcct6",
+                  "type": "text",
+                  "text": "2026.9.16\n火力全开对编辑器进行了各种测试和优化，现在基本满足所有的编辑需求。"
+                }
+              ]
             }
           ]
         },
@@ -139,11 +174,12 @@
           "href": "/huaya/farland",
           "children": [
             {
-              "id": "huaya-r1-1",
+              "id": "huaya-r3-1",
               "title": "龙历院花娅支部",
               "href": "/huaya/farland/monsterhunter",
               "image": "/img/uploads/20260916-1112-791d-2026_07_08_224708.jpg",
-              "cardShape": "square"
+              "cardShape": "square",
+              "cardSize": "m"
             },
             {
               "id": "huaya-r1-2",
