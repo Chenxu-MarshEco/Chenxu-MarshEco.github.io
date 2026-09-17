@@ -58,6 +58,24 @@
               "id": "huaya-hishitsu-pmu4wwwoq6",
               "type": "text",
               "text": "## 冰室会员\n冰室的活跃成员们，冰室模因滋长的源动力。\n### Raw\n### 虹星\n### 小石吉吉\n### 隰辰煦\n### 桑芙\n### SSW\n### Airo\n### 沃伊德\n### 澄净羽之颂\n### WQ与ta的朋友们\n### 马斯\n### 灵空\n### 皮丝\n### 茸明\n### OWQ\n### 盾返\n### 希尔\n### 艾林森"
+            },
+            {
+              "id": "huaya-hishitsu-pmu54lotu1",
+              "type": "divider"
+            },
+            {
+              "id": "huaya-hishitsu-pmu54lpyy2",
+              "type": "text",
+              "text": "## 冰室文化"
+            },
+            {
+              "id": "huaya-hishitsu-pmu54m5bu3",
+              "type": "divider"
+            },
+            {
+              "id": "huaya-hishitsu-pmu54m63e4",
+              "type": "text",
+              "text": "## 冰室年代记"
             }
           ]
         },
@@ -197,8 +215,7 @@
               "id": "huaya-r3-1",
               "title": "龙历院花娅支部",
               "href": "/huaya/farland/monsterhunter",
-              "image": "/img/uploads/20260916-1112-791d-2026_07_08_224708.jpg",
-              "cardShape": "square"
+              "image": "/img/uploads/20260916-1112-791d-2026_07_08_224708.jpg"
             },
             {
               "id": "huaya-r1-2",
