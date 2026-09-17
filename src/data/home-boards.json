@@ -175,12 +175,77 @@
                 {
                   "id": "huaya-r2-1-pmu58osby7",
                   "type": "text",
-                  "text": "## 纷湖\n花娅一切故事的开始。"
+                  "text": "## 纷湖\n虹星的1.20纯净服。花娅一切故事的开始。"
                 },
                 {
                   "id": "huaya-r2-1-pmu58wmgv8",
                   "type": "video",
                   "src": "https://www.bilibili.com/video/BV1Vj411Z76R/"
+                },
+                {
+                  "id": "huaya-r2-1-pmu5a63201",
+                  "type": "divider"
+                },
+                {
+                  "id": "huaya-r2-1-pmu5a644w2",
+                  "type": "text",
+                  "text": "## 地图勘探"
+                },
+                {
+                  "id": "huaya-r2-1-pmu5a6gq03",
+                  "type": "map",
+                  "src": "/img/uploads/20260917-1643-702a-541988EB4CE871473A615CF90156632E.jpg",
+                  "markers": [
+                    {
+                      "id": "huaya-r2-1-pmu5a6gq03-mmu5a9wxd0",
+                      "x": 52.58,
+                      "y": 71.84,
+                      "title": "虹星家"
+                    },
+                    {
+                      "id": "huaya-r2-1-pmu5a6gq03-mmu5aaez51",
+                      "x": 62.96,
+                      "y": 29.24,
+                      "title": "隰辰煦家"
+                    },
+                    {
+                      "id": "huaya-r2-1-pmu5a6gq03-mmu5aap1d2",
+                      "x": 53.94,
+                      "y": 17.34,
+                      "title": "吉吉家"
+                    },
+                    {
+                      "id": "huaya-r2-1-pmu5a6gq03-mmu5abj953",
+                      "x": 48.66,
+                      "y": 34.38,
+                      "title": "村民集中营"
+                    },
+                    {
+                      "id": "huaya-r2-1-pmu5a6gq03-mmu5ac5ld5",
+                      "x": 21.08,
+                      "y": 54.62,
+                      "title": "光子家"
+                    },
+                    {
+                      "id": "huaya-r2-1-pmu5a6gq03-mmu5ac9wo6",
+                      "x": 26.53,
+                      "y": 65.53,
+                      "title": "SSW家"
+                    },
+                    {
+                      "id": "huaya-r2-1-pmu5a6gq03-mmu5acgk87",
+                      "x": 36.23,
+                      "y": 69.26,
+                      "title": "桑芙家"
+                    },
+                    {
+                      "id": "huaya-r2-1-pmu5a6gq03-mmu5adcaw7",
+                      "x": 45.09,
+                      "y": 13.26,
+                      "title": "Raw家"
+                    }
+                  ],
+                  "alt": "纷湖中后期的地图。很遗憾因为过于古早，服务器结档时的地图样貌已经遗失。"
                 }
               ]
             },

@@ -2,7 +2,7 @@
 /**
  * 版块页里「自己写的那段内容」。
  *
- * 数据是节点上的 page 数组，九种块：
+ * 数据是节点上的 page 数组，十种块：
  *   text      介绍文字（Markdown：段落、粗体、列表、行内链接、行内图片都能写；
  *             还支持 [[文字|图片地址|链接地址]] 这种悬停出图的写法）
  *   image     一张图，宽度可分档
@@ -12,6 +12,8 @@
  *   video     视频：视频文件直链，或 B 站 / YouTube 链接（自动变成播放器）
  *   posts     把归到这一页的文章列出来
  *   toc       这一页的目录：自动收集上面的小标题，做成可跳转的列表
+ *   map       一张能缩放、能拖的地图，上面钉着若干塔吊地标：
+ *             鼠标移上去显示建筑名，点它跳到那一页；旁边还有开关可以把地标全藏起来
  *   children  把这一层的子页面铺在这里，卡片的横竖比例和大小可分档
  *
  * 每个块外面都包了一层 [data-edit="pg-<id>"]：
@@ -431,6 +433,68 @@ const cardsOf = (b: Extract<PageBlock, { type: 'children' }>) => ({
               </nav>
             ))}
 
+          {b.type === 'map' && (
+            <div class="pmap" data-pmap>
+              {/*
+                框里的东西分三层：
+                  frame  固定大小的取景框，overflow:hidden，拖拽和滚轮都作用在它上面
+                  stage  跟着 transform 走的那一层：图片和地标都在里面
+                  pin    用百分比钉在图上；外面的缩放会由反向缩放抵消掉，
+                         所以不管地图放多大，图钉在屏幕上始终是同样大小
+              */}
+              <div class="pmap__frame" data-pmap-frame>
+                <div class="pmap__stage" data-pmap-stage>
+                  <img
+                    class="pmap__img"
+                    src={withBase(b.src)}
+                    alt={b.alt ?? ''}
+                    draggable="false"
+                    decoding="async"
+                  />
+                  {b.markers.map((m) => {
+                    const external = /^https?:/i.test(m.href ?? '');
+                    const Tag = m.href ? 'a' : 'span';
+                    return (
+                      <Tag
+                        class="pmap__pin"
+                        data-pmap-pin
+                        style={`left:${m.x}%;top:${m.y}%`}
+                        href={m.href ? (external || m.href.startsWith('#') ? m.href : withBase(m.href)) : undefined}
+                        {...external ? { target: '_blank', rel: 'noopener' } : {}}
+                        {...m.href ? {} : { tabindex: '0' }}
+                      >
+                        <span class="pmap__pinBox">
+                          <span class="pmap__pinArt" aria-hidden="true" />
+                          <span class="pmap__pinName">{m.title}</span>
+                        </span>
+                      </Tag>
+                    );
+                  })}
+                </div>
+
+                {/* 拖过之后想回到「整张图都看得见」就点它 */}
+                <button class="pmap__reset" type="button" data-pmap-reset title="回到全图">
+                  复位
+                </button>
+              </div>
+
+              {/* 竖着贴在框右边的三个按钮：放大、缩小、开关地标 */}
+              <div class="pmap__rail">
+                <button class="pmap__btn" type="button" data-pmap-zoom="in" aria-label="放大">＋</button>
+                <button class="pmap__btn" type="button" data-pmap-zoom="out" aria-label="缩小">－</button>
+                <button
+                  class="pmap__btn pmap__btn--wide"
+                  type="button"
+                  data-pmap-toggle
+                  aria-pressed="false"
+                  title="把地标藏起来，方便看地图"
+                >
+                  隐藏地标
+                </button>
+              </div>
+            </div>
+          )}
+
           {b.type === 'children' && (
             <div class="pcards" data-shape={cardsOf(b).shape} data-size={cardsOf(b).size}>
               {children.length === 0 && <p class="pcards__empty">这一层还没有子页面。</p>}
@@ -780,6 +844,229 @@ const cardsOf = (b: Extract<PageBlock, { type: 'children' }>) => ({
     white-space: nowrap;
   }
 
+  /* ---------- 地图 ---------- */
+  /*
+    左边是取景框，右边竖着一条按钮栏。
+    地图本身不用 aspect-ratio 定高，用一个高度档 —— 地图多半是宽图，
+    框矮一点才看得见全貌，剩下的交给缩放和拖动。
+  */
+  .pmap {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0.6rem;
+    align-items: start;
+  }
+
+  .pmap__frame {
+    position: relative;
+    overflow: hidden;
+    height: clamp(300px, 54vh, 620px);
+    border: 1px solid rgba(255, 120, 190, 0.42);
+    border-radius: 14px;
+    background: rgba(12, 1, 22, 0.72);
+    cursor: grab;
+    /*
+      touch-action 只留纵向：手机上在图里竖着划仍然滚页面，
+      横着划才是拖地图。全禁掉的话整页就没法滚了。
+    */
+    touch-action: pan-y;
+  }
+  .pmap.is-dragging .pmap__frame {
+    cursor: grabbing;
+  }
+
+  .pmap__stage {
+    position: absolute;
+    top: 0;
+    left: 0;
+    /* 缩放的原点放在左上角：平移量是按「左上角挪了多少」算的，这样最好推 */
+    transform-origin: 0 0;
+    transform: translate(var(--tx, 0px), var(--ty, 0px)) scale(var(--z, 1));
+    will-change: transform;
+  }
+  .pmap__img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    /* 拖动时别让浏览器顺手把图拖走 */
+    user-select: none;
+    -webkit-user-drag: none;
+  }
+
+  /*
+    地标。
+    外层是零尺寸的一个「锚点」，left/top 的百分比把它钉在图上那一点；
+    真正看得见的是里面那层，它反向缩放（--zi）抵消掉地图的放大，
+    这样地图放到 5 倍，图钉在屏幕上还是原来那么大。
+    反向缩放的原点放在底边中点、再左移自身一半宽 —— 于是图钉的尖端
+    永远正好落在锚点上（缩放是绕底边中点做的，那个点不动）。
+  */
+  .pmap__pin {
+    position: absolute;
+    width: 0;
+    height: 0;
+    text-decoration: none;
+  }
+  .pmap__pinBox {
+    position: absolute;
+    left: 0;
+    bottom: 0;
+    display: block;
+    transform: translateX(-50%) scale(var(--zi, 1));
+    transform-origin: bottom center;
+  }
+
+  .pmap__pinArt {
+    position: relative;
+    display: block;
+    width: 22px;
+    height: 30px;
+    margin: 0 auto;
+    filter: drop-shadow(0 2px 5px rgba(255, 40, 130, 0.55));
+    transition: transform 0.14s ease;
+  }
+  /* 头：粉色落日渐变 + 横向格栅，和目录那个箭头是同一套语汇 */
+  .pmap__pinArt::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 22px;
+    height: 22px;
+    border-radius: 7px;
+    /*
+      渐变顶端特意不用接近纯白的粉：地图往往浅一块深一块，
+      顶端太淡的话图钉压到浅色区域就糊没了。现在最淡的一档
+      也仍然明显是粉的，压在什么底色上都认得出。
+    */
+    background: linear-gradient(180deg, #ffd9ef 0%, #ff9ad5 34%, #ff4fa3 68%, #a80058 100%);
+    -webkit-mask: repeating-linear-gradient(180deg, #000 0 2px, transparent 2px 3.2px);
+    mask: repeating-linear-gradient(180deg, #000 0 2px, transparent 2px 3.2px);
+  }
+  /* 下面那个小箭头：尖头朝下，指向图上那一点 */
+  .pmap__pinArt::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 19px;
+    margin-left: -4px;
+    width: 0;
+    height: 0;
+    border-left: 4px solid transparent;
+    border-right: 4px solid transparent;
+    border-top: 9px solid #ff4fa3;
+  }
+
+  /* 名字：默认藏着，指上去（或键盘聚焦）才出来 */
+  .pmap__pinName {
+    position: absolute;
+    left: 50%;
+    bottom: calc(100% + 1px);
+    transform: translateX(-50%);
+    padding: 0.15rem 0.5rem;
+    border-radius: 7px;
+    border: 1px solid rgba(255, 120, 190, 0.55);
+    background: rgba(22, 3, 36, 0.94);
+    color: #ffe6f6;
+    font-size: 0.78rem;
+    line-height: 1.5;
+    white-space: nowrap;
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity 0.14s ease, visibility 0.14s ease;
+  }
+  .pmap__pin:hover .pmap__pinName,
+  .pmap__pin:focus-visible .pmap__pinName {
+    opacity: 1;
+    visibility: visible;
+  }
+  .pmap__pin:hover .pmap__pinArt,
+  .pmap__pin:focus-visible .pmap__pinArt {
+    transform: scale(1.12);
+  }
+  .pmap__pin:focus-visible {
+    outline: none;
+  }
+  .pmap__pin:focus-visible .pmap__pinArt::before {
+    box-shadow: 0 0 0 2px #5ff0ff;
+  }
+
+  /* 左边的开关：整层地标一起藏起来，方便看地图 */
+  .pmap.is-pins-off .pmap__pin {
+    display: none;
+  }
+
+  .pmap__reset {
+    position: absolute;
+    left: 0.6rem;
+    bottom: 0.6rem;
+    padding: 0.2rem 0.6rem;
+    border: 1px solid rgba(255, 120, 190, 0.45);
+    border-radius: 8px;
+    background: rgba(22, 3, 36, 0.8);
+    color: #ffd9ef;
+    font-size: 0.76rem;
+    cursor: pointer;
+    backdrop-filter: blur(3px);
+  }
+  .pmap__reset:hover {
+    color: #fff;
+    border-color: #ffb3dd;
+  }
+
+  .pmap__rail {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+  }
+  .pmap__btn {
+    width: 40px;
+    height: 40px;
+    display: grid;
+    place-items: center;
+    padding: 0;
+    border: 1px solid rgba(255, 120, 190, 0.45);
+    border-radius: 10px;
+    background: rgba(38, 4, 52, 0.72);
+    color: #ffd9ef;
+    font-size: 1.05rem;
+    line-height: 1;
+    cursor: pointer;
+  }
+  .pmap__btn:hover {
+    border-color: #ffb3dd;
+    color: #fff;
+    background: rgba(212, 0, 123, 0.5);
+  }
+  /* 「隐藏地标」四个字塞不进 40px 的方按钮，让它竖着排 */
+  .pmap__btn--wide {
+    width: 40px;
+    height: auto;
+    padding: 0.5rem 0.35rem;
+    font-size: 0.78rem;
+    line-height: 1.25;
+    writing-mode: vertical-rl;
+    letter-spacing: 0.1em;
+  }
+
+  /* 窄屏：按钮栏移到地图下面横着排 */
+  @media (max-width: 46rem) {
+    .pmap {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .pmap__rail {
+      flex-direction: row;
+      flex-wrap: wrap;
+    }
+    .pmap__btn--wide {
+      width: auto;
+      height: 40px;
+      writing-mode: horizontal-tb;
+      padding: 0 0.7rem;
+    }
+  }
+
   /* ---------- 子页面 ---------- */
   /*
     六列栅格：卡片的「大小」档就是占几列（见 SubCard 的 .card--sz-*）。
@@ -1103,6 +1390,169 @@ const cardsOf = (b: Extract<PageBlock, { type: 'children' }>) => ({
 </style>
 
 <script>
+  /* ============================================================
+     地图：缩放 / 拖动 / 开关地标
+
+     为什么手写而不用现成的地图库：这边只是「一张图 + 几个钉在百分比
+     坐标上的图钉」，库（几百 KB）能做的多得多，但这里一样也用不上，
+     而整站一直是零运行时依赖的（见 README「依赖说明」）。
+
+     坐标怎么算：图片先按「整张都看得见」放进框里，得到一个基准尺寸
+     fitW/fitH；缩放 z 和平移 tx/ty 都是在这个基准上做。
+     地标不用重算 —— 它们钉在图片的百分比位置上，跟着 stage 一起动，
+     再各自反向缩放（--zi）把大小还原。
+     ============================================================ */
+  const MIN_Z = 1;
+  const MAX_Z = 6;
+
+  for (const root of document.querySelectorAll<HTMLElement>('[data-pmap]')) {
+    const frame = root.querySelector<HTMLElement>('[data-pmap-frame]');
+    const stage = root.querySelector<HTMLElement>('[data-pmap-stage]');
+    const img = stage?.querySelector<HTMLImageElement>('img');
+    if (!frame || !stage || !img) continue;
+
+    const state = { z: 1, tx: 0, ty: 0, fitW: 0, fitH: 0 };
+
+    /**
+     * 一根轴上的平移量该怎么夹。
+     * 内容比框小 → 固定居中（拖不动，也不该拖得动）；
+     * 比框大 → 卡在 [框 - 内容, 0]，也就是「边缘不许拖进框里」。
+     */
+    const clampAxis = (f, s, t) => (s <= f ? (f - s) / 2 : Math.min(0, Math.max(f - s, t)));
+
+    function clampPan() {
+      const fw = frame!.clientWidth;
+      const fh = frame!.clientHeight;
+      state.tx = clampAxis(fw, state.fitW * state.z, state.tx);
+      state.ty = clampAxis(fh, state.fitH * state.z, state.ty);
+    }
+
+    function apply() {
+      stage!.style.setProperty('--tx', `${state.tx}px`);
+      stage!.style.setProperty('--ty', `${state.ty}px`);
+      stage!.style.setProperty('--z', String(state.z));
+      // 地标反向缩放，地图放大多少它就缩回多少，屏幕上始终一样大
+      root!.style.setProperty('--zi', String(1 / state.z));
+    }
+
+    /** 按「整张图都看得见」量一次基准尺寸，然后重新夹一次平移 */
+    function layout() {
+      const fw = frame!.clientWidth;
+      const fh = frame!.clientHeight;
+      const nw = img!.naturalWidth || 1;
+      const nh = img!.naturalHeight || 1;
+      const ratio = nw / nh;
+      let w = fw;
+      let h = w / ratio;
+      if (h > fh) {
+        h = fh;
+        w = h * ratio;
+      }
+      state.fitW = w;
+      state.fitH = h;
+      stage!.style.width = `${w}px`;
+      stage!.style.height = `${h}px`;
+      clampPan();
+      apply();
+    }
+
+    /** 以框内某一点为锚点缩放：那个点在缩放前后停在原地 */
+    function zoomAt(px: number, py: number, factor: number) {
+      const old = state.z;
+      const next = Math.min(MAX_Z, Math.max(MIN_Z, old * factor));
+      if (next === old) return;
+      const k = next / old;
+      state.tx = px - (px - state.tx) * k;
+      state.ty = py - (py - state.ty) * k;
+      state.z = next;
+      clampPan();
+      apply();
+    }
+
+    const zoomFromCenter = (factor: number) =>
+      zoomAt(frame.clientWidth / 2, frame.clientHeight / 2, factor);
+
+    for (const btn of root.querySelectorAll<HTMLButtonElement>('[data-pmap-zoom]')) {
+      btn.addEventListener('click', () => {
+        zoomFromCenter(btn.dataset.pmapZoom === 'in' ? 1.4 : 1 / 1.4);
+      });
+    }
+
+    root.querySelector<HTMLButtonElement>('[data-pmap-reset]')?.addEventListener('click', () => {
+      state.z = 1;
+      clampPan();
+      apply();
+    });
+
+    const toggle = root.querySelector<HTMLButtonElement>('[data-pmap-toggle]');
+    toggle?.addEventListener('click', () => {
+      const off = root.classList.toggle('is-pins-off');
+      toggle.textContent = off ? '显示地标' : '隐藏地标';
+      toggle.setAttribute('aria-pressed', off ? 'true' : 'false');
+    });
+
+    /*
+      滚轮缩放要按着 Ctrl / Cmd。
+      直接抢滚轮的话，鼠标从地图上划过就被它吞掉，长页面根本滚不下去 ——
+      内嵌地图（谷歌、高德那些）也都是这么处理的。不按修饰键时
+      交给浏览器，页面照常滚。
+    */
+    frame.addEventListener(
+      'wheel',
+      (e) => {
+        if (!e.ctrlKey && !e.metaKey) return;
+        e.preventDefault();
+        const rect = frame.getBoundingClientRect();
+        // deltaY 换算成缩放倍数，用 exp 是为了往上滚和往下滚对称
+        zoomAt(e.clientX - rect.left, e.clientY - rect.top, Math.exp(-e.deltaY * 0.0016));
+      },
+      { passive: false }
+    );
+
+    let drag: { id: number; x: number; y: number; tx: number; ty: number } | null = null;
+
+    frame.addEventListener('pointerdown', (e) => {
+      if (e.pointerType === 'mouse' && e.button !== 0) return;
+      // 按在地标上就别开始拖了，那一下是给它自己点的
+      if ((e.target as HTMLElement).closest('[data-pmap-pin]')) return;
+      drag = { id: e.pointerId, x: e.clientX, y: e.clientY, tx: state.tx, ty: state.ty };
+      root.classList.add('is-dragging');
+      frame.setPointerCapture(e.pointerId);
+    });
+
+    frame.addEventListener('pointermove', (e) => {
+      if (!drag || e.pointerId !== drag.id) return;
+      state.tx = drag.tx + (e.clientX - drag.x);
+      state.ty = drag.ty + (e.clientY - drag.y);
+      clampPan();
+      apply();
+    });
+
+    const endDrag = (e: PointerEvent) => {
+      if (!drag || e.pointerId !== drag.id) return;
+      drag = null;
+      root.classList.remove('is-dragging');
+      try {
+        frame.releasePointerCapture(e.pointerId);
+      } catch {
+        /* 指针已经没了，忽略 */
+      }
+    };
+    frame.addEventListener('pointerup', endDrag);
+    frame.addEventListener('pointercancel', endDrag);
+
+    // 图没量到尺寸之前 layout 算不出来，等它 load；已经缓存过就直接算
+    if (img.complete && img.naturalWidth) layout();
+    else img.addEventListener('load', layout, { once: true });
+
+    /*
+      框的大小变了（转屏、拉窗口、字体加载完）要重新量。
+      量的是 frame 而不是 stage —— stage 的尺寸是 layout 自己写的，
+      盯着它会被自己的改动反复触发。
+    */
+    if (typeof ResizeObserver !== 'undefined') new ResizeObserver(layout).observe(frame);
+  }
+
   /*
     目录：[隐藏 / 显示] 开关 + 滚动时高亮当前所在的那一条。
 

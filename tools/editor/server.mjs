@@ -1209,6 +1209,49 @@ function cleanBlocks(raw, ownerId) {
       return;
     }
 
+    if (type === 'map') {
+      const src = String(b.src || '').trim();
+      if (!src) return;
+      const block = { id, type, src, markers: [] };
+      const alt = String(b.alt || '').trim();
+      if (alt) block.alt = alt;
+
+      /*
+        地标一个个收：坐标必须是 0~100 的数字（百分比），
+        名字不能空，地址走 cleanLink 那道（javascript: 之类会被丢掉）。
+        名字空的地标直接扔 —— 一个没有名字的图钉，鼠标移上去什么都不显示，
+        点也不知道去哪，留着只是碍事。
+      */
+      const usedM = new Set();
+      const rawMarkers = Array.isArray(b.markers) ? b.markers : [];
+      rawMarkers.forEach((m, mi) => {
+        if (!m || typeof m !== 'object') return;
+        const title = String(m.title || '').trim();
+        if (!title) return;
+        const x = Number(m.x);
+        const y = Number(m.y);
+        if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+
+        let mid = String(m.id || '').trim();
+        if (!mid || usedM.has(mid)) mid = `${id}-m${mi + 1}`;
+        usedM.add(mid);
+
+        // 留两位小数就够了，省得 JSON 里一长串浮点尾巴
+        const marker = {
+          id: mid,
+          x: Math.round(Math.min(100, Math.max(0, x)) * 100) / 100,
+          y: Math.round(Math.min(100, Math.max(0, y)) * 100) / 100,
+          title,
+        };
+        const href = cleanLink(m.href);
+        if (href) marker.href = href;
+        block.markers.push(marker);
+      });
+
+      out.push(block);
+      return;
+    }
+
     if (type === 'children') {
       out.push({
         id,

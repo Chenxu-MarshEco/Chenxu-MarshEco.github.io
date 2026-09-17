@@ -1810,3 +1810,77 @@ body[data-type="notes"] .field--posts-only {
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+/* ---------------------------------------------------------------
+   地图块：可点的预览图 + 地标清单
+
+   预览图就按图片本身的宽高铺开，不另加取景框 —— 这样画布上的
+   百分比坐标和图上的百分比坐标是同一个，点在哪儿就是哪儿，
+   不用再去换算 offset。图很高时让这一栏自己滚。
+---------------------------------------------------------------- */
+.pmap-edit__canvas {
+  position: relative;
+  margin: 8px 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+  cursor: crosshair;
+  /* 图还没加载完时先占个位，免得画布塌成一条线没法点 */
+  min-height: 120px;
+  background: rgba(0, 0, 0, 0.2);
+}
+.pmap-edit__canvas img {
+  display: block;
+  width: 100%;
+  height: auto;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+/* 图上的地标：和页面上那个粉色格栅塔吊同一套配色，缩小一点 */
+.pmap-edit__pin {
+  position: absolute;
+  width: 20px;
+  height: 20px;
+  margin: -10px 0 0 -10px;
+  border-radius: 6px;
+  background: repeating-linear-gradient(180deg, #ff9ad5 0 3px, #c2006a 3px 4.6px);
+  box-shadow: 0 0 0 1.5px rgba(255, 255, 255, 0.85), 0 2px 6px rgba(0, 0, 0, 0.5);
+  display: grid;
+  place-items: center;
+  font-size: 11px;
+  font-weight: 700;
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
+  pointer-events: none;
+}
+
+.pmap-edit__list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+.pmap-edit__item {
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr) minmax(0, 1.2fr) auto;
+  gap: 6px;
+  align-items: center;
+}
+.pmap-edit__no {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  background: rgba(255, 79, 163, 0.22);
+  border: 1px solid rgba(255, 120, 190, 0.5);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+@media (max-width: 640px) {
+  .pmap-edit__item {
+    grid-template-columns: 26px minmax(0, 1fr);
+  }
+}

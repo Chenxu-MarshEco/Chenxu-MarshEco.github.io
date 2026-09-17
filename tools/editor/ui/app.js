@@ -1243,6 +1243,7 @@ const BLOCK_LABEL = {
   video: '视频',
   posts: '文章',
   toc: '目录',
+  map: '地图',
   children: '子页面',
 };
 const TEXT_HINT =
@@ -1767,6 +1768,200 @@ function pageSelect(options, value, onChange) {
   return sel;
 }
 
+/**
+ * 地图块的编辑区。
+ *
+ * 三部分：
+ *   1. 选地图图（复用图片块那套上传 / 压缩）
+ *   2. 一张可以点的预览图 —— **在图上点一下就钉一个塔吊地标**
+ *   3. 地标清单：每一行填名字和跳转地址，或者删掉
+ *
+ * 位置存的是百分比（0~100），所以预览图和页面上显示的大小不一样也没关系，
+ * 只要按图的宽高算比例，钉出来的点就是同一个地方。
+ */
+function mapFields(block) {
+  const wrap = document.createElement('div');
+  wrap.className = 'pmap-edit';
+  if (!Array.isArray(block.markers)) block.markers = [];
+
+  const newMarkerId = () => `${block.id}-m${Date.now().toString(36)}${block.markers.length}`;
+
+  /** 预览 + 清单整体重画（钉一个点、删一个点之后要重来一遍） */
+  const redraw = () => {
+    wrap.textContent = '';
+
+    /* ---- 1. 选图 ---- */
+    const row = document.createElement('div');
+    row.className = 'pblock-edit__row';
+
+    const thumb = document.createElement('span');
+    thumb.className = 'boardedit__thumb';
+    const paintThumb = () => {
+      if (block.src) {
+        thumb.style.backgroundImage = `url(${block.src})`;
+        thumb.classList.remove('boardedit__thumb--empty');
+        thumb.title = block.src;
+      } else {
+        thumb.style.backgroundImage = '';
+        thumb.classList.add('boardedit__thumb--empty');
+        thumb.title = '还没选图';
+      }
+    };
+    paintThumb();
+
+    const file = document.createElement('input');
+    file.type = 'file';
+    file.accept = 'image/png,image/jpeg,image/gif,image/webp,image/svg+xml';
+    file.hidden = true;
+
+    const pick = document.createElement('button');
+    pick.type = 'button';
+    pick.className = 'btn btn--ghost boardedit__mini';
+    pick.textContent = block.src ? '换一张地图' : '选地图图';
+    pick.addEventListener('click', () => file.click());
+    file.addEventListener('change', async () => {
+      const f = file.files && file.files[0];
+      file.value = '';
+      if (!f) return;
+      try {
+        block.src = await uploadImage(f);
+        toast('地图传好了');
+        redraw();
+      } catch (err) {
+        toast(`传图失败：${err.message}`, true);
+      }
+    });
+
+    const alt = boardInput(block.alt ?? '', '地图说明（可留空）', (v) => {
+      block.alt = v;
+    });
+
+    row.append(thumb, pick, alt, file);
+    wrap.appendChild(row);
+
+    if (!block.src) {
+      const hint = document.createElement('p');
+      hint.className = 'pblock-edit__hint';
+      hint.textContent = '先选一张地图图，选好之后在图上点一下就能钉一个塔吊地标。';
+      wrap.appendChild(hint);
+      return;
+    }
+
+    /* ---- 2. 点图钉点 ---- */
+    const tip = document.createElement('p');
+    tip.className = 'pblock-edit__hint';
+    tip.textContent = '在图上点一下 = 在那个位置钉一个地标（钉完在下面填名字和地址）。';
+    wrap.appendChild(tip);
+
+    const canvas = document.createElement('div');
+    canvas.className = 'pmap-edit__canvas';
+
+    const img = document.createElement('img');
+    img.src = block.src;
+    img.alt = '';
+    img.draggable = false;
+    canvas.appendChild(img);
+
+    block.markers.forEach((m, i) => {
+      const pin = document.createElement('span');
+      pin.className = 'pmap-edit__pin';
+      pin.style.left = `${m.x}%`;
+      pin.style.top = `${m.y}%`;
+      pin.title = m.title || '（还没起名）';
+      const n = document.createElement('i');
+      n.textContent = String(i + 1);
+      pin.appendChild(n);
+      canvas.appendChild(pin);
+    });
+
+    canvas.addEventListener('click', (e) => {
+      // 点在地标上是想删或者只是想看看，不当作「在这个位置加一个」
+      if (e.target.closest('.pmap-edit__pin')) return;
+      const rect = img.getBoundingClientRect();
+      if (!rect.width || !rect.height) return;
+      // 相对**图片**算百分比，不是相对整个画布 —— 图没铺满时两者不一样
+      const x = ((e.clientX - rect.left) / rect.width) * 100;
+      const y = ((e.clientY - rect.top) / rect.height) * 100;
+      if (x < 0 || x > 100 || y < 0 || y > 100) return;
+      block.markers.push({
+        id: newMarkerId(),
+        x: Math.round(x * 100) / 100,
+        y: Math.round(y * 100) / 100,
+        title: '',
+        href: '',
+      });
+      markStudioDirty();
+      redraw();
+    });
+
+    wrap.appendChild(canvas);
+
+    /* ---- 3. 地标清单 ---- */
+    const list = document.createElement('div');
+    list.className = 'pmap-edit__list';
+
+    // 地址输入给一份候选：整棵版块树上的每一页，敲两个字就能补全
+    const dlId = `pmap-pages-${block.id}`;
+    const dl = document.createElement('datalist');
+    dl.id = dlId;
+    for (const p of studioPages()) {
+      const o = document.createElement('option');
+      o.value = p.url;
+      o.label = p.node.title || p.url;
+      dl.appendChild(o);
+    }
+    wrap.appendChild(dl);
+
+    if (!block.markers.length) {
+      const none = document.createElement('p');
+      none.className = 'pblock-edit__hint';
+      none.textContent = '还没有地标。在上面那张图上点几下就有了。';
+      list.appendChild(none);
+    }
+
+    block.markers.forEach((m, i) => {
+      const item = document.createElement('div');
+      item.className = 'pmap-edit__item';
+
+      const no = document.createElement('span');
+      no.className = 'pmap-edit__no';
+      no.textContent = String(i + 1);
+
+      const name = boardInput(m.title ?? '', '建筑名（鼠标移上去显示这个）', (v) => {
+        m.title = v;
+        markStudioDirty();
+        // 只更新图钉上的提示，别整块重画 —— 重画会把正在输入的焦点弄丢
+        const pin = canvas.querySelectorAll('.pmap-edit__pin')[i];
+        if (pin) pin.title = v || '（还没起名）';
+      });
+
+      const link = boardInput(m.href ?? '', '点它跳去 /huaya/xxx（可留空）', (v) => {
+        m.href = v.trim();
+        markStudioDirty();
+      });
+      link.setAttribute('list', dlId);
+
+      const del = document.createElement('button');
+      del.type = 'button';
+      del.className = 'btn btn--ghost boardedit__mini boardedit__del';
+      del.textContent = '删除';
+      del.addEventListener('click', () => {
+        block.markers.splice(i, 1);
+        markStudioDirty();
+        redraw();
+      });
+
+      item.append(no, name, link, del);
+      list.appendChild(item);
+    });
+
+    wrap.appendChild(list);
+  };
+
+  redraw();
+  return wrap;
+}
+
 /** 一个块的字段区 */
 function blockFields(block) {
   const wrap = document.createElement('div');
@@ -1945,6 +2140,11 @@ function blockFields(block) {
     return wrap;
   }
 
+  if (block.type === 'map') {
+    wrap.appendChild(mapFields(block));
+    return wrap;
+  }
+
   // children：把这一层的子页面铺在这里
   const row = document.createElement('div');
   row.className = 'pblock-edit__row';
@@ -2059,6 +2259,7 @@ function renderPageEditor() {
     ['video', '视频', () => ({ id: newBlockId(pageNode.id), type: 'video', src: '', caption: '' })],
     ['posts', '文章', () => ({ id: newBlockId(pageNode.id), type: 'posts', text: '' })],
     ['toc', '目录', () => ({ id: newBlockId(pageNode.id), type: 'toc', text: '' })],
+    ['map', '地图', () => ({ id: newBlockId(pageNode.id), type: 'map', src: '', markers: [] })],
   ];
   for (const [, label, make] of adders) {
     const btn = document.createElement('button');
@@ -2086,6 +2287,8 @@ function commitPageBlocks() {
     if (b.type === 'divider' || b.type === 'posts' || b.type === 'toc') return true;
     if (b.type === 'columns') return String(b.left ?? '').trim() || String(b.right ?? '').trim();
     if (b.type === 'video') return String(b.src ?? '').trim();
+    // 地图没选图就等于没内容；选了图，哪怕一个地标都没钉也可以留着
+    if (b.type === 'map') return String(b.src ?? '').trim();
     return true;
   });
   pageNode.page = pageDraft;

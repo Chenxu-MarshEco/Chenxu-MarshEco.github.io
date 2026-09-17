@@ -16,7 +16,8 @@
  * 页面内容块。
  *
  * 一个版块页除了「子版块自动铺开」，还可以自己写一段内容：
- * 介绍文字、图片、链接、分隔线、两栏、视频、目录，以及把子页面插到任意位置。
+ * 介绍文字、图片、链接、分隔线、两栏、视频、目录、地图，
+ * 以及把子页面插到任意位置。
  * 每种块都带一个 id —— 排版模式就是拿它当锚点（data-edit="pg-<id>"），
  * 所以 id 要**全站唯一**（同一块内容在不同页面之间不能撞），
  * 编辑器新建块时用「节点 id + 序号」来保证这点。
@@ -44,11 +45,35 @@ export type PageBlock =
    */
   | { id: string; type: 'toc'; text?: string }
   /**
+   * 一张地图 + 钉在上面的塔吊地标。
+   *
+   * 位置一律存**百分比**而不是像素：地图能放大缩小、能拖，框的宽度还随
+   * 屏幕变，只有「相对图片的百分之几」这套坐标在任何情况下都还指着同一个点。
+   */
+  | { id: string; type: 'map'; src: string; alt?: string; markers: MapMarker[] }
+  /**
    * 把这一层的子页面铺在这里。
    * shape / size 是整块的默认值，单张卡想不一样就在那个子版块上设
    * cardShape / cardSize（见 BoardNode），单个永远压过整块。
    */
   | { id: string; type: 'children'; shape?: CardShape; size?: CardSize };
+
+/**
+ * 地图上的一个塔吊地标。
+ *
+ * x / y 是相对地图图片的百分比（0~100），原点在图片左上角。
+ * 存百分比是为了让地标跟着图走：放大、缩小、拖动、换屏幕宽度，
+ * 它都还钉在图上同一个位置。存像素的话一缩放就全跑偏了。
+ */
+export interface MapMarker {
+  id: string;
+  x: number;
+  y: number;
+  /** 鼠标移到图标上显示的建筑名 */
+  title: string;
+  /** 点它跳去哪。站内写 `/huaya/xxx`，站外写 `https://…`；留空就只是看看名字 */
+  href?: string;
+}
 
 /** 图片宽度档位 */
 export type ImageWidth = 'full' | 'wide' | 'half' | 'third';
