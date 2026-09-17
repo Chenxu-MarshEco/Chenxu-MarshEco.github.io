@@ -381,42 +381,49 @@ const cardsOf = (b: Extract<PageBlock, { type: 'children' }>) => ({
                 <ol class="ptoc__list">
                   {tocGroups.map((g) => (
                     <li class="ptoc__item">
+                      {/*
+                        展开 / 收起这一组底下的子标题，摆在小标题**左边**。
+                        刻意用 button 而不是链接：点它只开合、不跳转，
+                        和小标题本身（点了是跳过去）互不干扰。
+                        展开状态在 HTML 里就写死了，脚本没跑起来之前不会闪一下。
+
+                        没有子标题的条目也要占住这一格（一个空 span），
+                        否则下面那一列编号会左右参差。
+                      */}
+                      {g.children.length > 0 ? (
+                        <button
+                          class:list={['ptoc__caret', TOC_SUB_OPEN && 'is-open']}
+                          type="button"
+                          data-ptoc-caret
+                          aria-expanded={TOC_SUB_OPEN ? 'true' : 'false'}
+                          aria-controls={`ptoc-sub-${g.entry.slug}`}
+                          aria-label={`展开或收起「${g.entry.text}」的子标题`}
+                          title="展开 / 收起子标题"
+                        >
+                          <span class="ptoc__caretArt" aria-hidden="true" />
+                        </button>
+                      ) : (
+                        <span class="ptoc__caretGap" aria-hidden="true" />
+                      )}
+
                       <a class="ptoc__link" href={`#${g.entry.slug}`} data-ptoc-slug={g.entry.slug}>
                         {g.entry.text}
                       </a>
+
                       {g.children.length > 0 && (
-                        <>
-                          {/*
-                            展开 / 收起这一组底下的子标题。
-                            刻意用 button 而不是链接：点它只开合、不跳转，
-                            和小标题本身（点了是跳过去）互不干扰。
-                            展开状态在 HTML 里就写死了，脚本没跑起来之前不会闪一下。
-                          */}
-                          <button
-                            class:list={['ptoc__caret', TOC_SUB_OPEN && 'is-open']}
-                            type="button"
-                            data-ptoc-caret
-                            aria-expanded={TOC_SUB_OPEN ? 'true' : 'false'}
-                            aria-controls={`ptoc-sub-${g.entry.slug}`}
-                            aria-label={`展开或收起「${g.entry.text}」的子标题`}
-                            title="展开 / 收起子标题"
-                          >
-                            ▸
-                          </button>
-                          <ol
-                            class="ptoc__sub"
-                            id={`ptoc-sub-${g.entry.slug}`}
-                            hidden={!TOC_SUB_OPEN}
-                          >
-                            {g.children.map((c) => (
-                              <li class="ptoc__subitem">
-                                <a class="ptoc__link" href={`#${c.slug}`} data-ptoc-slug={c.slug}>
-                                  {c.text}
-                                </a>
-                              </li>
-                            ))}
-                          </ol>
-                        </>
+                        <ol
+                          class="ptoc__sub"
+                          id={`ptoc-sub-${g.entry.slug}`}
+                          hidden={!TOC_SUB_OPEN}
+                        >
+                          {g.children.map((c) => (
+                            <li class="ptoc__subitem">
+                              <a class="ptoc__link" href={`#${c.slug}`} data-ptoc-slug={c.slug}>
+                                {c.text}
+                              </a>
+                            </li>
+                          ))}
+                        </ol>
                       )}
                     </li>
                   ))}
@@ -925,19 +932,22 @@ const cardsOf = (b: Extract<PageBlock, { type: 'children' }>) => ({
   .ptoc__item {
     counter-increment: ptoc-l1;
     /*
-      两列网格：小标题在第一列，展开 / 收起的小三角在第二列（靠右）。
+      两列网格：展开箭头（或占位）在第一列，小标题在第二列。
+      箭头必须紧挨着标题 —— 推到整行最右边的话，眼睛根本扫不到，
+      看不出这一组还能展开（之前就是那么摆的，等于白做）。
       用 grid 而不是中间插一层 div，是为了让上面那条
       `.ptoc__item > .ptoc__link::before` 继续成立 ——
       套了 wrapper 就得再多写一层选择器。
     */
     display: grid;
-    grid-template-columns: 1fr auto;
+    grid-template-columns: auto 1fr;
     align-items: center;
+    column-gap: 0.35rem;
   }
   .ptoc__sub {
-    margin: 0.1rem 0 0.3rem 1.4rem;
+    margin: 0.1rem 0 0.3rem 1.6rem;
     counter-reset: ptoc-l2;
-    /* 子列表自己占一行、横跨两列，别挤到小三角那一列去 */
+    /* 子列表自己占一行、横跨两列，别挤到箭头那一列去 */
     grid-column: 1 / -1;
   }
   .ptoc__subitem {
@@ -945,28 +955,56 @@ const cardsOf = (b: Extract<PageBlock, { type: 'children' }>) => ({
   }
 
   /*
-    展开 / 收起的小三角。只有这一组真带子标题时才渲染出来。
-    展开状态就是把三角转 90 度朝下 —— 和右上角目录抽屉里的箭头一个手感。
+    箭头的「可点范围」画得比图形本身大一圈，好按；
+    图形在里面的 .ptoc__caretArt 上。
+    没有子标题的条目用 .ptoc__caretGap 占同样大的位置，
+    这样下面那一列编号才对得齐。
   */
+  .ptoc__caret,
+  .ptoc__caretGap {
+    width: 20px;
+    height: 20px;
+  }
   .ptoc__caret {
-    width: 22px;
-    height: 22px;
     display: grid;
     place-items: center;
     padding: 0;
     border: 0;
     background: none;
-    color: rgba(255, 140, 200, 0.85);
-    font-size: 0.72rem;
-    line-height: 1;
     cursor: pointer;
-    transition: transform 0.15s ease, color 0.15s ease;
   }
-  .ptoc__caret:hover {
-    color: #fff;
+
+  /*
+    蒸汽波落日箭头：用落日那套配色（浅黄 → 金 → 橙 → 砖红）填满一个三角，
+    再横着切出栅格条纹 —— 和首页那个被横条切开的落日是同一个语汇。
+
+    用 clip-path + mask 画，不引 SVG：SVG 的渐变和遮罩都要靠 id 引用，
+    一个页面放两个目录块就会撞 id。mask 的条纹是「透明处挖空」，
+    所以 #000 那段留下、transparent 那段切掉。
+  */
+  .ptoc__caretArt {
+    width: 13px;
+    height: 13px;
+    /* 收起时朝右 */
+    clip-path: polygon(14% 0%, 100% 50%, 14% 100%);
+    background: linear-gradient(180deg, #fff6b0 0%, #ffd23f 26%, #ff9d2e 60%, #ff5200 100%);
+    -webkit-mask: repeating-linear-gradient(180deg, #000 0 1.6px, transparent 1.6px 2.7px);
+    mask: repeating-linear-gradient(180deg, #000 0 1.6px, transparent 1.6px 2.7px);
+    filter: drop-shadow(0 0 3px rgba(255, 130, 60, 0.6));
+    transition: clip-path 0.15s ease, filter 0.15s ease;
   }
-  .ptoc__caret.is-open {
-    transform: rotate(90deg);
+  /*
+    展开时改成朝下。
+    这里换 clip-path 而不是把整个图形转 90 度 —— 一转，那条纵向的
+    落日渐变会跟着躺倒，配色就不再是「落日」了。
+    两个多边形的顶点数一样，所以还能补间过去。
+  */
+  .ptoc__caret.is-open .ptoc__caretArt {
+    clip-path: polygon(0% 14%, 100% 14%, 50% 100%);
+  }
+  .ptoc__caret:hover .ptoc__caretArt,
+  .ptoc__caret:focus-visible .ptoc__caretArt {
+    filter: drop-shadow(0 0 7px rgba(255, 160, 70, 0.95));
   }
 
   /* hidden 属性是 UA 样式里的 display:none，优先级很低，
@@ -986,6 +1024,15 @@ const cardsOf = (b: Extract<PageBlock, { type: 'children' }>) => ({
   .ptoc__item > .ptoc__link::before {
     content: counter(ptoc-l1) ' ';
     color: rgba(255, 140, 200, 0.9);
+    /*
+      编号占一个固定宽度。这套字体里「1」比「3」窄几个像素，不固定的话
+      第一条的标题会往左错开，整列标题就参差不齐（实测差 4px）。
+      试过 font-variant-numeric: tabular-nums —— 对这个字体没用，
+      它没有等宽数字那个 OpenType 特性，只能自己给个盒子。
+      1.15em 刚好够两位数字，所以 1~99 的编号都能对齐。
+    */
+    display: inline-block;
+    min-width: 1.15em;
   }
   .ptoc__subitem > .ptoc__link::before {
     content: counter(ptoc-l1) '.' counter(ptoc-l2) ' ';
@@ -1041,8 +1088,8 @@ const cardsOf = (b: Extract<PageBlock, { type: 'children' }>) => ({
       transition: none;
       transform: translate(-50%, 0);
     }
-    /* 小三角开合时不要转，直接就位 */
-    .ptoc__caret {
+    /* 箭头开合时不要补间，直接就位 */
+    .ptoc__caretArt {
       transition: none;
     }
   }
