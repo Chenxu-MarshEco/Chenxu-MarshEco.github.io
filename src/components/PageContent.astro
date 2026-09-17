@@ -224,6 +224,16 @@ for (const e of tocEntries) {
 }
 
 /**
+ * 带子标题的那些组，一进来是展开还是收起。
+ *
+ * 默认收起：只要有一个小标题底下挂着一长串子标题，整份目录立刻长得没法看
+ * （冰室那页就是「冰室会员」一个 ## 下面挂了 18 条 ###）。
+ * 收起来之后目录只列小标题，点它右边的小三角才把它铺开。
+ * 想让所有分组一进来就是展开的，把这里改成 true 即可。
+ */
+const TOC_SUB_OPEN = false;
+
+/**
  * 视频地址 -> 怎么播。
  *
  * 三种情况：
@@ -375,15 +385,38 @@ const cardsOf = (b: Extract<PageBlock, { type: 'children' }>) => ({
                         {g.entry.text}
                       </a>
                       {g.children.length > 0 && (
-                        <ol class="ptoc__sub">
-                          {g.children.map((c) => (
-                            <li class="ptoc__subitem">
-                              <a class="ptoc__link" href={`#${c.slug}`} data-ptoc-slug={c.slug}>
-                                {c.text}
-                              </a>
-                            </li>
-                          ))}
-                        </ol>
+                        <>
+                          {/*
+                            展开 / 收起这一组底下的子标题。
+                            刻意用 button 而不是链接：点它只开合、不跳转，
+                            和小标题本身（点了是跳过去）互不干扰。
+                            展开状态在 HTML 里就写死了，脚本没跑起来之前不会闪一下。
+                          */}
+                          <button
+                            class:list={['ptoc__caret', TOC_SUB_OPEN && 'is-open']}
+                            type="button"
+                            data-ptoc-caret
+                            aria-expanded={TOC_SUB_OPEN ? 'true' : 'false'}
+                            aria-controls={`ptoc-sub-${g.entry.slug}`}
+                            aria-label={`展开或收起「${g.entry.text}」的子标题`}
+                            title="展开 / 收起子标题"
+                          >
+                            ▸
+                          </button>
+                          <ol
+                            class="ptoc__sub"
+                            id={`ptoc-sub-${g.entry.slug}`}
+                            hidden={!TOC_SUB_OPEN}
+                          >
+                            {g.children.map((c) => (
+                              <li class="ptoc__subitem">
+                                <a class="ptoc__link" href={`#${c.slug}`} data-ptoc-slug={c.slug}>
+                                  {c.text}
+                                </a>
+                              </li>
+                            ))}
+                          </ol>
+                        </>
                       )}
                     </li>
                   ))}
@@ -412,6 +445,21 @@ const cardsOf = (b: Extract<PageBlock, { type: 'children' }>) => ({
       );
     })
   }
+
+  {/*
+    没有 JS 时把子标题重新铺开。
+    默认是收起的（见 TOC_SUB_OPEN），靠脚本展开；脚本要是不来，
+    这些子标题就永远点不到了，所以这里补一段「强制显示」的样式。
+
+    为什么用 set:html 而不是直接写 <style>：Astro 会把模板里普通的
+    <style> 抽走、打包进样式表，那样这个 <noscript> 里就什么都不剩了。
+    小三角也一并藏掉 —— 没有脚本时它按下去不会有任何反应。
+  */}
+  {hasToc && (
+    <noscript
+      set:html={'<style>.ptoc__sub[hidden]{display:block}.ptoc__caret{display:none}</style>'}
+    />
+  )}
 </div>
 
 <style>
@@ -871,13 +919,49 @@ const cardsOf = (b: Extract<PageBlock, { type: 'children' }>) => ({
   }
   .ptoc__item {
     counter-increment: ptoc-l1;
+    /*
+      两列网格：小标题在第一列，展开 / 收起的小三角在第二列（靠右）。
+      用 grid 而不是中间插一层 div，是为了让上面那条
+      `.ptoc__item > .ptoc__link::before` 继续成立 ——
+      套了 wrapper 就得再多写一层选择器。
+    */
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: center;
   }
   .ptoc__sub {
     margin: 0.1rem 0 0.3rem 1.4rem;
     counter-reset: ptoc-l2;
+    /* 子列表自己占一行、横跨两列，别挤到小三角那一列去 */
+    grid-column: 1 / -1;
   }
   .ptoc__subitem {
     counter-increment: ptoc-l2;
+  }
+
+  /*
+    展开 / 收起的小三角。只有这一组真带子标题时才渲染出来。
+    展开状态就是把三角转 90 度朝下 —— 和右上角目录抽屉里的箭头一个手感。
+  */
+  .ptoc__caret {
+    width: 22px;
+    height: 22px;
+    display: grid;
+    place-items: center;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: rgba(255, 140, 200, 0.85);
+    font-size: 0.72rem;
+    line-height: 1;
+    cursor: pointer;
+    transition: transform 0.15s ease, color 0.15s ease;
+  }
+  .ptoc__caret:hover {
+    color: #fff;
+  }
+  .ptoc__caret.is-open {
+    transform: rotate(90deg);
   }
 
   /* hidden 属性是 UA 样式里的 display:none，优先级很低，
@@ -952,6 +1036,10 @@ const cardsOf = (b: Extract<PageBlock, { type: 'children' }>) => ({
       transition: none;
       transform: translate(-50%, 0);
     }
+    /* 小三角开合时不要转，直接就位 */
+    .ptoc__caret {
+      transition: none;
+    }
   }
 </style>
 
@@ -976,6 +1064,26 @@ const cardsOf = (b: Extract<PageBlock, { type: 'children' }>) => ({
         list.hidden = collapsed;
         toggle.textContent = collapsed ? '[显示]' : '[隐藏]';
         toggle.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+      });
+    }
+
+    /*
+      子标题的展开 / 收起：每个带子标题的小标题右边那个小三角。
+      点它只开合自己这一组；小标题本身是链接，点了照旧跳转，两件事互不干扰。
+
+      这段必须放在下面「一个锚点都找不到就 continue」之前 ——
+      滚动高亮那边没活干时，开合也得照常能用。
+    */
+    for (const caret of nav.querySelectorAll<HTMLButtonElement>('[data-ptoc-caret]')) {
+      // 小三角和它管的子列表同在一个 li 里，就地找，不必额外编 id
+      const sub = caret.parentElement?.querySelector<HTMLElement>('.ptoc__sub');
+      if (!sub) continue;
+      caret.addEventListener('click', () => {
+        // 现在藏着 = 这次要展开
+        const open = sub.hidden;
+        sub.hidden = !open;
+        caret.classList.toggle('is-open', open);
+        caret.setAttribute('aria-expanded', open ? 'true' : 'false');
       });
     }
 
