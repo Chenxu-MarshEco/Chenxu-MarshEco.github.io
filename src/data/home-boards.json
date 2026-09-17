@@ -48,7 +48,16 @@
             {
               "id": "huaya-hishitsu-pmu2l5iyf1",
               "type": "text",
-              "text": "## 冰室\n[花娅](https://chenxu-marsheco.github.io/huaya/years/)的混沌位面。花娅诞生于冰室，冰室的发展也离不开花娅。"
+              "text": "## 冰室\n[花娅](https://chenxu-marsheco.github.io/huaya/years/)的原初混沌位面。花娅诞生于冰室，冰室的发展也离不开花娅。"
+            },
+            {
+              "id": "huaya-hishitsu-pmu4wj2091",
+              "type": "divider"
+            },
+            {
+              "id": "huaya-hishitsu-pmu4wwwoq6",
+              "type": "text",
+              "text": "## 冰室会员\n冰室的活跃成员们，冰室模因滋长的源动力。\n### Raw\n### 虹星\n### 小石吉吉\n### 隰辰煦\n### 桑芙\n### SSW\n### Airo\n### 沃伊德\n### 澄净羽之颂\n### WQ与ta的朋友们\n### 马斯\n### 灵空\n### 皮丝\n### 茸明\n### OWQ\n### 盾返\n### 希尔\n### 艾林森"
             }
           ]
         },
@@ -62,7 +71,18 @@
             {
               "id": "huaya-a-1",
               "title": "鱼乐国",
-              "href": "/huaya/memory/dssay"
+              "href": "/huaya/memory/dssay",
+              "page": [
+                {
+                  "id": "huaya-a-1-pmu4wrvyx4",
+                  "type": "text",
+                  "text": "这里是DSH建站初期为我写下的一些网页编辑教程。因为文字风格过于奇趣，且老鱼有恩于我，所以特意保留下来供后世欣赏。"
+                },
+                {
+                  "id": "huaya-a-1-pmu4wuakh5",
+                  "type": "divider"
+                }
+              ]
             },
             {
               "id": "huaya-a-2",
@@ -178,8 +198,7 @@
               "title": "龙历院花娅支部",
               "href": "/huaya/farland/monsterhunter",
               "image": "/img/uploads/20260916-1112-791d-2026_07_08_224708.jpg",
-              "cardShape": "square",
-              "cardSize": "m"
+              "cardShape": "square"
             },
             {
               "id": "huaya-r1-2",
