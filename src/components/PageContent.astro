@@ -945,7 +945,14 @@ const cardsOf = (b: Extract<PageBlock, { type: 'children' }>) => ({
     column-gap: 0.35rem;
   }
   .ptoc__sub {
-    margin: 0.1rem 0 0.3rem 1.6rem;
+    /*
+      子标题往里缩，缩到跟小标题的**文字**对齐为止。
+      原来是 1.6rem，那正好是「跟小标题的编号对齐」—— 于是
+      2.1、2.2 和 2 看着是同一级，从属关系读不出来。
+      现在再让出编号那一格：箭头列 20px + 列间距 0.35rem + 编号盒 1.15em，
+      加起来差不多 2.7rem，子标题就落在小标题文字的正下方。
+    */
+    margin: 0.1rem 0 0.35rem 2.7rem;
     counter-reset: ptoc-l2;
     /* 子列表自己占一行、横跨两列，别挤到箭头那一列去 */
     grid-column: 1 / -1;
