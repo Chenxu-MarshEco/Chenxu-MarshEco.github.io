@@ -57,6 +57,17 @@
   var seq = 0; // 淡入淡出的代次：新的一次开始，旧的立刻作废
   var raf = 0;
   var needsGesture = false;
+  /**
+   * 「静音自动播放」中：某些浏览器允许静音播放（于是先静音放着，用户一动手就出声）。
+   * **实测（Chromium 153）**：有声、静音、新建 <audio> 再静音播放，一律
+   * `NotAllowedError: play() failed because the user didn't interact with the document first`
+   * —— 也就是说新版的 Chrome 连静音自动播放也拦；而且 `element.click()` /
+   * `dispatchEvent` 这种**合成假点击拿不到 user activation**，点了也没用
+   * （实测假点击之后 play() 仍然被拒，真鼠标点击之后才成功）。
+   * 所以这里保留静音播放这条路（Firefox 等浏览器放行，用户一动手就有声音），
+   * 但在 Chrome 上它注定起不来 —— 唯一可靠的办法还是"真实手势 + 明确提示"。
+   */
+  var silentStart = false;
   /** 长淡出到静音、正在离场：这时任何「顺手存一下」都不许再写存档 */
   var leaving = false;
 
@@ -205,6 +216,15 @@
    * 「点了音量键反而更没声音」（起播那一下被顺手静音了，最像坏了）。
    */
   function ensureSound() {
+    // 静音自动播放中：这一下只要把声音放出来（别再把刚起播的歌静音了）
+    if (silentStart) {
+      silentStart = false;
+      needsGesture = false;
+      audio.muted = false;
+      applyVol();
+      paint();
+      return;
+    }
     if (!audio.paused && !needsGesture) return;
     var wasPlaying = !audio.paused && audio.currentTime > 0.2;
     needsGesture = false;
@@ -214,11 +234,38 @@
     playWith(wasPlaying ? IN_RESUME : IN_FRESH);
   }
 
+  /**
+   * 静音自动播放（浏览器允许的那一种）。
+   * 等页面自己的东西下完再起，别跟页面抢带宽。
+   * 连静音播放都被拒（极少见）就退回"等用户点"那条路。
+   */
+  function startSilentWhenIdle() {
+    if (silentStart) return;
+    var go = function () {
+      if (silentStart) return;
+      audio.muted = true;
+      silentStart = true;
+      var p = audio.play();
+      if (p && typeof p.catch === 'function') {
+        p.catch(function () {
+          silentStart = false;
+          audio.muted = false;
+          paint();
+        });
+      }
+      paint();
+    };
+    if (document.readyState === 'complete') setTimeout(go, 400);
+    else window.addEventListener('load', function () { setTimeout(go, 400); }, { once: true });
+  }
+
   /** 浏览器不让自动出声：等用户第一次动手再补 */
   function armGesture() {
     if (needsGesture) return;
     needsGesture = true;
     paint();
+    // 先安排"静音先放起来"，用户一动手就能立刻出声（不用等它现下载）
+    startSilentWhenIdle();
     var kick = function (e) {
       /*
         按在音量键自己身上时**不要抢着补 play()**：那一下点击是"开始播放"，
@@ -292,16 +339,22 @@
       btn.setAttribute('aria-pressed', muted ? 'true' : 'false');
       var name = cur ? cur.t : '';
       var label;
-      if (needsGesture) label = '点一下开始播放';
+      if (silentStart) label = '点一下就有声音';
+      else if (needsGesture) label = '点一下开始播放';
       else if (lvl <= 0.001) label = '已静音';
       else label = '音量 ' + Math.round(lvl * 100) + '%';
       btn.title = cur ? label + ' · ' + name : label;
-      btn.setAttribute('aria-label', needsGesture ? '点一下开始播放' : '音量');
+      btn.setAttribute('aria-label', silentStart ? '点一下就有声音' : needsGesture ? '点一下开始播放' : '音量');
     }
-    // 提示条：还没出声就一直亮着（"待很久才开始放"就是没人告诉用户要点一下）；
-    // 点了之后如果还在缓冲，就改说"缓冲中" —— 8MB 一首，慢网下这段等待是真的。
+    /*
+      提示条：还没出声就一直亮着（"待很久才开始放"就是没人告诉用户要点一下）；
+      静音自动播放中说的是"点一下就有声音"（歌其实已经在走了）；
+      点了之后还在等数据就改说"缓冲中" —— 一首 3MB，慢网下这段等待是真的。
+    */
     if (hint) {
-      if (needsGesture) {
+      if (silentStart) {
+        setHint('点一下就有声音');
+      } else if (needsGesture) {
         setHint('点一下播放');
       } else if (buffering) {
         setHint('缓冲中…');
@@ -356,7 +409,8 @@
     box.addEventListener(
       'pointerdown',
       function () {
-        downWasPlaying = !audio.paused && !audio.ended;
+        // 静音自动播放中：这一下按下的意思是"放出声来"，不是"静音开关"
+        downWasPlaying = !silentStart && !audio.paused && !audio.ended;
         ensureSound();
       },
       true

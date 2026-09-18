@@ -2073,6 +2073,33 @@ async function handleAudioUpload(req, res, url) {
   const abs = path.join(AUDIO_DIR, filename);
   const bytes = await receiveAudio(req, abs);
 
+  /*
+    压缩：落地后立刻转成 128kbps（逻辑在 tools/audio/optimize.mjs）。
+    原盘 320kbps 一首 8MB，压完约 3MB —— 手机上这一下差得很明显；
+    已经压过的（≤150kbps）会自动跳过，不会二次损伤音质。
+    压缩失败不影响上传：压不动就原样留着，只是体积大一点。
+  */
+  let compression = null;
+  try {
+    const { compressAudio } = await import('../../tools/audio/optimize.mjs');
+    compression = await compressAudio(abs);
+  } catch (err) {
+    compression = {
+      ok: false,
+      skipped: true,
+      reason: `压缩失败（原样保存）：${err.message}`,
+      before: bytes,
+      after: bytes
+    };
+  }
+  // 注意：这里的 fs 是 node:fs/promises，没有 existsSync —— 压缩后重新取一次大小
+  let finalBytes = bytes;
+  try {
+    finalBytes = (await fs.stat(abs)).size;
+  } catch {
+    finalBytes = bytes;
+  }
+
   const current = await readMusic();
   const validKeys = new Set((await musicPages()).map((p) => p.key));
   // 先按同一套规则把盘上那份洗干净，再往后追加 —— 手改坏了的条目顺手收掉
@@ -2080,7 +2107,13 @@ async function handleAudioUpload(req, res, url) {
 
   const id = `tr_${Date.now()}-${randomBytes(2).toString('hex')}`;
   const title = path.basename(rawName).replace(/\.[^.]*$/, '').trim().slice(0, 120) || filename;
-  const track = { id, title, src: `/audio/uploads/${filename}`, bytes, addedAt: new Date().toISOString() };
+  const track = {
+    id,
+    title,
+    src: `/audio/uploads/${filename}`,
+    bytes: finalBytes,
+    addedAt: new Date().toISOString()
+  };
   clean.tracks.push(track);
 
   // key 为空或不是合法页面：只进曲库，不进任何歌单（之后在面板里手动加）
@@ -2094,6 +2127,7 @@ async function handleAudioUpload(req, res, url) {
   return sendJson(res, 200, {
     ok: true,
     track,
+    compression,
     music: { tracks: clean.tracks, pages: clean.pages },
     pages: await musicPages(),
   });

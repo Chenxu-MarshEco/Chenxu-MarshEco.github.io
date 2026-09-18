@@ -5500,7 +5500,18 @@ async function uploadMusicFiles(files) {
         }
         if (Array.isArray(data.pages)) musicPagesList = data.pages;
         okCount++;
-        toast(`第 ${i + 1}/${list.length} 首好了：${track?.title ?? file.name}`);
+        /*
+          服务端上传时会顺手压成 128kbps（原盘 320kbps 一首 8MB，压完约 3MB）。
+          这里把压前压后报给用户看，和图片那边一样是真实数字；跳过/失败也说明原因。
+        */
+        const c = data.compression;
+        const note =
+          c && c.before && c.after && c.after < c.before
+            ? `（已压缩 ${fmt(c.before)} → ${fmt(c.after)}）`
+            : c && c.reason
+              ? `（${c.reason}）`
+              : '';
+        toast(`第 ${i + 1}/${list.length} 首好了：${track?.title ?? file.name}${note}`);
         renderMusic();
       } catch (err) {
         toast(`第 ${i + 1}/${list.length} 首（${file.name}）失败：${err.message}`, true);

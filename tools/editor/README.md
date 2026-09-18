@@ -152,6 +152,8 @@ webp 重编 q80；gif / svg 原样不动（动图和矢量图不该重编码）�
   到 `/api/music/upload?key=<页面key>`；每个文件一条提示，失败显示服务端原文。
   上传会**立刻**把文件写进 `public/audio/uploads/` 并记进数据文件，但**要点
   「保存并重新构建」才会出现在网站上**（连续传十几首时不必每首都等一次构建）。
+  **服务端会顺手把音频压成 128kbps**（`tools/audio/optimize.mjs`：320kbps 的 8MB
+  原盘 → 约 3MB），提示里报的是真实的前后体积；已经压过的会跳过，不会二次损伤音质。
 - **歌单行**：标题可就地改；`↑`/`↓` 调顺序；`▶` 用面板底部的试听器放一下；
   「设为第一首」是 radio（外加一个「不指定（随机）」）；「移出本页歌单」。
   这些改动都只改本地草稿，**保存并重新构建**才落盘。
@@ -164,8 +166,12 @@ webp 重编 q80；gif / svg 原样不动（动图和矢量图不该重编码）�
 
 ## 依赖说明
 
-服务端是零依赖的，只用 Node 内置模块（`node:http` / `node:fs/promises` /
+服务端主体是零依赖的，只用 Node 内置模块（`node:http` / `node:fs/promises` /
 `node:path` / `node:url` / `node:crypto` / `node:child_process`），Node 20 以上都能跑。
+唯一的例外是**音乐压缩**：上传音频时会动态 `import` 两个纯 JS/WASM 小包
+（`mpg123-decoder` 解码、`@breezystack/lamejs` 编码，见 `tools/audio/optimize.mjs`）——
+用的是动态 import + try/catch，所以没装（或没网装）也不会影响编辑器其它功能，
+只是上传的音频不压缩，提示里会写明原因。
 
 Markdown 预览用的是项目里的 `marked`（如果装了的话）。装了就用，没装也不会报错——
 预览区会显示「未安装 marked，预览不可用」，编辑和保存一切照常。想要预览就：
@@ -217,6 +223,7 @@ pnpm add -D marked
   （流式写入，超限会把半截文件删掉）；落盘名是 `日期-随机-清洗过的原名`，
   路径分隔符、`..`、控制字符都会被清掉；歌单里的 `src` 只收 `/audio/uploads/...`
   这种站内路径。静态放行也只开 `public/audio/` 下 `uploads` 这一层、只放行音频扩展名。
+  mp3 / wav 落盘后会压成 128kbps（压不动就原样留着，不影响上传）。
 - 静态资源是白名单映射，不做目录遍历。
 
 ## 目录结构

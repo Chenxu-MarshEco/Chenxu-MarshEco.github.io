@@ -16,7 +16,9 @@
     "astro": "^7.3.2"
   },
   "devDependencies": {
+    "@breezystack/lamejs": "^1.2.7",
     "marked": "^18.0.13",
+    "mpg123-decoder": "^1.0.3",
     "sharp": "0.35.4"
   }
 }
