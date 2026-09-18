@@ -3242,26 +3242,549 @@ function currentTimeline() {
   return timelinesDraft.timelines.find((t) => t.id === id) ?? null;
 }
 
-/** 日期选择：只收 yyyy-mm-dd */
-function dateInput(value, onInput) {
+/* ---------------------------------------------------------------
+   日期输入
+
+   原来只有一个 <input type="date">：想填日期就得点开日历一层层翻，
+   一条轴十个时间点就要翻十次，很烦。改成「打字为主、日历为辅」：
+   一个能直接敲数字的文本框 + 右边一个开日历的小按钮。
+--------------------------------------------------------------- */
+
+/** 全角数字 → 半角（中文输入法下很容易敲出全角） */
+const toHalfWidthDigits = (s) => String(s ?? '').replace(/[０-９]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0));
+
+/**
+ * 把用户敲进来的各种写法读成 `yyyy-mm-dd`。
+ *
+ * 认这些：`20230110` / `2023-01-10` / `2023-1-10` / `2023/1/10` /
+ * `2023.1.10` / `2023年1月10日`，全角数字也认。
+ * 读不出来（或者日子根本不存在，比如 2023-02-30）返回空串 ——
+ * 调用方据此把框标红，而不是悄悄存一个坏日期进去。
+ */
+function parseDateText(raw) {
+  const s = toHalfWidthDigits(raw)
+    .replace(/[年月]/g, '-')
+    .replace(/日/g, '')
+    .replace(/[./\\\s]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .trim();
+
+  let y;
+  let m;
+  let d;
+  const parts = s.split('-').filter((x) => x !== '');
+  if (parts.length === 3) {
+    [y, m, d] = parts;
+  } else if (parts.length === 1) {
+    // 没有分隔符就按 yyyymmdd 读
+    const digits = parts[0].replace(/\D/g, '');
+    if (digits.length !== 8) return '';
+    y = digits.slice(0, 4);
+    m = digits.slice(4, 6);
+    d = digits.slice(6, 8);
+  } else {
+    // 两段或四段以上（2023-1、2023-1-1-1）都不认，免得瞎猜
+    return '';
+  }
+  if (!/^\d{4}$/.test(y) || !/^\d{1,2}$/.test(m) || !/^\d{1,2}$/.test(d)) return '';
+
+  const yi = Number(y);
+  const mi = Number(m);
+  const di = Number(d);
+  // 2023-02-30 这种「格式对但日子不存在」的会被 Date 顺延到下个月，
+  // 存回去再读出来比一比就知道有没有这回事
+  const dt = new Date(Date.UTC(yi, mi - 1, di));
+  if (dt.getUTCFullYear() !== yi || dt.getUTCMonth() !== mi - 1 || dt.getUTCDate() !== di) return '';
+
+  const p = (n) => String(n).padStart(2, '0');
+  return `${y}-${p(mi)}-${p(di)}`;
+}
+
+/** 边打边补横杠：2023 → 2023-0 → 2023-01-1 → 2023-01-10 */
+function formatDateAsYouType(raw) {
+  const digits = toHalfWidthDigits(raw).replace(/\D/g, '').slice(0, 8);
+  if (digits.length <= 4) return digits;
+  if (digits.length <= 6) return `${digits.slice(0, 4)}-${digits.slice(4)}`;
+  return `${digits.slice(0, 4)}-${digits.slice(4, 6)}-${digits.slice(6)}`;
+}
+
+/**
+ * 日期控件：左边能直接打数字，右边那个 📅 把系统日历叫出来。
+ * 两边改的是同一个值，`onInput` 只在拿到合法日期（或清空）时才回调。
+ */
+function dateField(value, onInput) {
+  const wrap = document.createElement('span');
+  wrap.className = 'datefield';
+
   const el = document.createElement('input');
-  el.type = 'date';
-  el.className = 'input';
+  el.type = 'text';
+  el.inputMode = 'numeric';
+  el.autocomplete = 'off';
+  el.spellcheck = false;
+  el.className = 'input datefield__text';
+  el.placeholder = '20230110';
   el.value = value ?? '';
-  el.addEventListener('change', () => onInput(el.value));
+  el.title = '直接敲数字就行：20230110，或者 2023-1-10 / 2023/1/10。右边按钮开日历。';
+  let lastLen = el.value.length;
+
+  el.addEventListener('input', () => {
+    const raw = el.value;
+    /*
+      粘贴进来的整条日期（2023/1/10、2023年1月10日…）先直接认下来，
+      别丢给下面的「按数字重排」—— 那会把 1 和 10 粘成 110。
+      一个一个敲的情况下这里认不出来，自然落到下面的分支。
+    */
+    if (/[./\\年月日]/.test(raw)) {
+      const iso = parseDateText(raw);
+      if (iso) {
+        el.value = iso;
+        lastLen = iso.length;
+        el.classList.remove('is-bad');
+        onInput(iso);
+        return;
+      }
+    }
+    /*
+      只有「越打越长」的时候才自动补横杠。退格时别自作聪明，
+      否则删掉「2023-0」里那个 0 会连横杠一起吃，手感很别扭。
+    */
+    const next = raw.length >= lastLen ? formatDateAsYouType(raw) : raw.replace(/[^\d-]/g, '');
+    lastLen = next.length;
+    if (next !== raw) el.value = next;
+    el.classList.remove('is-bad');
+  });
+
+  /** 把框里的字落成数据；读不出来就标红、不写 */
+  const commit = () => {
+    const raw = el.value.trim();
+    if (!raw) {
+      el.classList.remove('is-bad');
+      onInput('');
+      return;
+    }
+    const iso = parseDateText(raw);
+    if (!iso) {
+      el.classList.add('is-bad');
+      el.title = `「${raw}」读不出日期。写成 20230110 或 2023-01-10 都行。`;
+      return;
+    }
+    el.classList.remove('is-bad');
+    el.value = iso;
+    lastLen = iso.length;
+    onInput(iso);
+  };
+
+  el.addEventListener('change', commit);
+  el.addEventListener('blur', commit);
+  el.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      commit();
+    }
+  });
+
+  /*
+    隐藏的原生日期输入：日历挑完把值抄回文本框。
+    不能用 display:none —— showPicker() 要求元素「正在被渲染」，
+    藏起来会直接抛错。所以让它 1×1、opacity 0 地待在这儿。
+  */
+  const cal = document.createElement('input');
+  cal.type = 'date';
+  cal.className = 'datefield__cal';
+  cal.tabIndex = -1;
+  cal.setAttribute('aria-hidden', 'true');
+  cal.value = value ?? '';
+  cal.addEventListener('change', () => {
+    el.value = cal.value;
+    lastLen = el.value.length;
+    el.classList.remove('is-bad');
+    onInput(cal.value);
+  });
+
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'datefield__btn';
+  btn.textContent = '📅';
+  btn.title = '打开日历挑日期';
+  btn.addEventListener('click', () => {
+    cal.value = el.value;
+    if (typeof cal.showPicker === 'function') {
+      try {
+        cal.showPicker();
+        return;
+      } catch {
+        /* 有些情况下浏览器不让直接开（比如不是用户手势），退回下面那条 */
+      }
+    }
+    cal.focus();
+    cal.click();
+  });
+
+  wrap.append(el, btn, cal);
+  return wrap;
+}
+
+/* ===============================================================
+   时间轴预览
+
+   把正在编辑的这条轴按**页面上的规则**画一遍，改一个字段就跟着变，
+   不用先存盘、重新构建、再打开页面看。
+
+   和 src/components/Timeline.astro 里的那段脚本是同一套规则：
+   弧线几何、26px 一格刻度、同一侧挤在一起的点合并成一个塔吊、
+   塔吊垂直于弧线朝外长、文字离弧线 40px、合并后组内文字错开 18px。
+   唯一的区别是**这里一次把整条轴画完** —— 编辑的时候要的是「全貌」，
+   页面上那种滚一屏看一段的节奏不适合校对日期和名字。
+   因为位置全是相对的，所以「谁和谁合并」「文字间距」跟页面默认比例尺下
+   一模一样，只是不分屏而已。
+
+   改这里的常量时，记得对着 Timeline.astro 一起改。
+   =============================================================== */
+
+const TL_PV = {
+  BULGE: 30, // 弧顶比两端往左凸出多少
+  APEX: 0.5, // 弧顶在画布横向的位置（预览列比较窄，取中间两边都放得下文字）
+  TICK_STEP: 26, // 刻度间隔
+  TICK: 7, // 刻度线多长
+  MERGE_GAP: 22, // 同一侧离这么近的点合并成一个塔吊
+  LABEL_GAP: 18, // 合并后组内文字上下错开多少
+  GAP: 40, // 文字离弧线多远
+  MIN_DAYS: 1, // 比例尺最左：一刻度一天
+  MAX_DAYS: 365, // 比例尺最右：一刻度一年
+  SCALE: 0.5, // 预览按页面打开时的默认比例尺画（正中间）
+  WIDTH: 360, // 量不到宽度时的兜底画布宽（正常按预览列的实际宽度算）
+  PAD: 14, // 画布上下各留一点，首尾两端的文字才不会被裁掉半行
+};
+
+/** 塔吊图形的路径，和页面右上角那颗是同一份 */
+const TL_PV_CRANE = 'M10.5 20.5V6.5M13.5 20.5V6.5M8.5 20.5h7M12 4v2.5M3.5 9h17M12 4 3.5 9M12 4l8.5 5M17.5 9v4';
+
+const SVG_NS = 'http://www.w3.org/2000/svg';
+
+/** 造一个 SVG 元素（预览专用） */
+function svgEl(tag, attrs = {}) {
+  const el = document.createElementNS(SVG_NS, tag);
+  for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, String(v));
   return el;
 }
 
+/** `yyyy-mm-dd` → 天数（和 src/utils/timelines.ts 的 dayOf 一致） */
+function tlDay(date) {
+  const m = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(String(date ?? '').trim());
+  if (!m) return NaN;
+  return Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])) / 86400000;
+}
+
+/**
+ * 这条轴的时间范围和「某一天落在 0~1 的哪儿」。
+ * 规则照抄 src/utils/timelines.ts 的 rangeOf/paramOf：上下各留 6% 余量；
+ * 所有点挤在同一天时人为撑开一天，免得除数为 0。
+ */
+function tlRange(tl) {
+  const days = (tl?.points ?? []).map((p) => tlDay(p.date)).filter((d) => Number.isFinite(d));
+  if (!days.length) return { min: 0, max: 1, total: 1, of: () => 0.5 };
+  let min = Math.min(...days);
+  let max = Math.max(...days);
+  if (max - min < 1) {
+    min -= 0.5;
+    max += 0.5;
+  }
+  const pad = (max - min) * 0.06;
+  min -= pad;
+  max += pad;
+  const total = max - min || 1;
+  return { min, max, total, of: (d) => (Number.isFinite(d) ? (d - min) / total : 0.5) };
+}
+
+/** 预览是「改一下就重画」，同一帧里连着改几个字段只画一次 */
+let tlPreviewQueued = false;
+function scheduleTlPreview() {
+  if (tlPreviewQueued) return;
+  tlPreviewQueued = true;
+  requestAnimationFrame(() => {
+    tlPreviewQueued = false;
+    const host = els.tlEditor?.querySelector('.tl-pv');
+    if (host instanceof HTMLElement) paintTimelinePreview(host);
+  });
+}
+
+/**
+ * 把这条轴画进 `host`。
+ *
+ * 整块重建，但把滚动位置记在 host 上带着走 —— 轴长的时候
+ * 每敲一个字就跳回顶部会没法用。
+ */
+function paintTimelinePreview(host) {
+  const keepScroll = Number(host.dataset.scrollTop) || 0;
+  host.textContent = '';
+
+  const head = document.createElement('div');
+  head.className = 'tl-pv__head';
+  const title = document.createElement('span');
+  title.className = 'tl-pv__title';
+  title.textContent = '预览';
+  const meta = document.createElement('span');
+  meta.className = 'tl-pv__meta';
+  head.append(title, meta);
+  host.appendChild(head);
+
+  const note = document.createElement('p');
+  note.className = 'tl-pv__note';
+
+  const stage = document.createElement('div');
+  stage.className = 'tl-pv__stage';
+
+  // 先挂上去再量宽度：画布宽度按预览列的实际宽度算，箭头和文字才不会被切
+  host.append(stage, note);
+
+  const tl = timelinesDraft?.timelines?.[tlIndex];
+  const points = (tl?.points ?? []).filter((p) => Number.isFinite(tlDay(p.date)));
+
+  if (!tl || !points.length) {
+    meta.textContent = '还没有时间点';
+    const empty = document.createElement('p');
+    empty.className = 'tl-pv__empty';
+    empty.append('加一个填了日期的时间点，', document.createElement('br'), '这里就会画出它在轴上的样子。');
+    stage.appendChild(empty);
+    note.textContent = '页面上那根轴是「落日色的弧 + 粉色外框」，这里按同一套规则画。';
+    return;
+  }
+
+  const range = tlRange(tl);
+  const daysPerTick = TL_PV.MIN_DAYS * Math.pow(TL_PV.MAX_DAYS / TL_PV.MIN_DAYS, TL_PV.SCALE);
+  // 整条轴有多高：一刻度 26px，一共 V/26 格，每格 daysPerTick 天
+  const V = Math.max(160, (TL_PV.TICK_STEP * range.total) / daysPerTick);
+  const W = Math.max(240, stage.clientWidth || TL_PV.WIDTH);
+  const apexX = W * TL_PV.APEX;
+  const cy = V / 2;
+  const R = ((V / 2) * (V / 2) + TL_PV.BULGE * TL_PV.BULGE) / (2 * TL_PV.BULGE);
+  const cx = apexX + R;
+  /** 弧上高度 y 处的横坐标 */
+  const arcX = (y) => {
+    const d = Math.abs(y - cy);
+    const inside = R * R - d * d;
+    return cx - Math.sqrt(inside > 0 ? inside : 0);
+  };
+
+  const canvas = document.createElement('div');
+  canvas.className = 'tl-pv__canvas';
+  canvas.style.width = `${W}px`;
+  // 上下各留一点：首尾两端的文字是按弧上位置居中的，贴边会被画布裁掉半行
+  canvas.style.height = `${V + TL_PV.PAD * 2}px`;
+
+  // 真正画轴的那块，坐标原点在这里；所有 y 都相对它算
+  const inner = document.createElement('div');
+  inner.className = 'tl-pv__inner';
+  inner.style.height = `${V}px`;
+  inner.style.marginTop = `${TL_PV.PAD}px`;
+
+  const gid = 'tl-pv-grad';
+  const svg = svgEl('svg', { class: 'tl-pv__svg', width: W, height: V, viewBox: `0 0 ${W} ${V}` });
+  const defs = svgEl('defs');
+  const grad = svgEl('linearGradient', { id: gid, x1: 0, y1: 0, x2: 0, y2: 1 });
+  for (const [off, col] of [
+    [0, '#fff2b8'],
+    [30, '#ffd447'],
+    [66, '#ff9d2e'],
+    [100, '#e04a08'],
+  ]) {
+    grad.appendChild(svgEl('stop', { offset: `${off}%`, 'stop-color': col }));
+  }
+  defs.appendChild(grad);
+  svg.appendChild(defs);
+
+  /** 沿弧线从 t0 到 t1 的一段（时间段带子用） */
+  const arcSeg = (t0, t1, steps = 24) => {
+    let d = '';
+    for (let i = 0; i <= steps; i++) {
+      const y = (t0 + (t1 - t0) * (i / steps)) * V;
+      d += `${i ? 'L' : 'M'}${arcX(y).toFixed(1)} ${y.toFixed(1)}`;
+    }
+    return d;
+  };
+
+  /* ---- 时间段的带子 ---- */
+  const spanMarks = [];
+  for (const s of tl.spans ?? []) {
+    const a = tl.points.find((p) => p.id === s.from);
+    const b = tl.points.find((p) => p.id === s.to);
+    const da = tlDay(a?.date);
+    const db = tlDay(b?.date);
+    if (!Number.isFinite(da) || !Number.isFinite(db)) continue;
+    const lo = range.of(Math.min(da, db));
+    const hi = range.of(Math.max(da, db));
+    svg.appendChild(svgEl('path', { class: 'tl-pv__band', d: arcSeg(lo, hi), stroke: `url(#${gid})` }));
+    spanMarks.push({ el: s, y: ((lo + hi) / 2) * V, side: a?.side === 'left' ? 'left' : 'right' });
+  }
+
+  /* ---- 主弧线（每 8px 一个点，够顺） ---- */
+  const ys = [];
+  for (let y = 0; y < V; y += 8) ys.push(y);
+  ys.push(V);
+  svg.appendChild(
+    svgEl('path', {
+      class: 'tl-pv__arc',
+      d: ys.map((y, i) => `${i ? 'L' : 'M'}${arcX(y).toFixed(1)} ${y.toFixed(1)}`).join(''),
+      stroke: `url(#${gid})`,
+    })
+  );
+
+  /* ---- 刻度尺 ---- */
+  let ticks = '';
+  for (let y = 0; y <= V; y += TL_PV.TICK_STEP) {
+    const x = arcX(y);
+    const nx = (x - cx) / R;
+    const ny = (y - cy) / R;
+    ticks += `M${x.toFixed(1)} ${y.toFixed(1)}L${(x + nx * TL_PV.TICK).toFixed(1)} ${(y + ny * TL_PV.TICK).toFixed(1)}`;
+  }
+  svg.appendChild(svgEl('path', { class: 'tl-pv__ruler', d: ticks, stroke: `url(#${gid})` }));
+  inner.appendChild(svg);
+
+  /* ---- 时间点：同一侧挤在一起的合并成一个塔吊（和页面同一套判据） ---- */
+  const groups = { left: [], right: [] };
+  for (const side of ['left', 'right']) {
+    const list = points
+      .map((p) => ({ p, y: range.of(tlDay(p.date)) * V }))
+      .filter((o) => (o.p.side === 'right' ? 'right' : 'left') === side)
+      .sort((a, b) => a.y - b.y);
+    let run = [];
+    let lastY = Number.NEGATIVE_INFINITY;
+    const flush = () => {
+      if (run.length) groups[side].push(run);
+      run = [];
+    };
+    for (const o of list) {
+      if (run.length && o.y - lastY > TL_PV.MERGE_GAP) flush();
+      run.push(o);
+      lastY = o.y;
+    }
+    flush();
+  }
+
+  /** 一侧的文字占掉的纵向区间，「时间段名」要靠这个让位 */
+  const taken = { left: [], right: [] };
+  const HALF_TEXT = 8;
+
+  for (const side of ['left', 'right']) {
+    for (const group of groups[side]) {
+      // 整组共用一个锚点（组里第一个点），和页面一致
+      const y = group[0].y;
+      const x = arcX(y);
+      const half = ((group.length - 1) / 2) * TL_PV.LABEL_GAP + HALF_TEXT;
+      taken[side].push([y - half, y + half]);
+
+      group.forEach((o, i) => {
+        const off = (i - (group.length - 1) / 2) * TL_PV.LABEL_GAP;
+        const item = document.createElement('div');
+        item.className = 'tl-pv__item';
+        item.dataset.side = side;
+        item.style.left = `${x}px`;
+        item.style.top = `${y}px`;
+
+        if (i === 0) {
+          // 一组只画一个塔吊，方向是那一点的径向（朝外）
+          const nx = (x - cx) / R;
+          const ny = (y - cy) / R;
+          const rot = side === 'right' ? Math.atan2(-nx, ny) : Math.atan2(nx, -ny);
+          const crane = document.createElement('span');
+          crane.className = 'tl-pv__crane';
+          crane.style.transform = `rotate(${rot}rad)`;
+          const cs = svgEl('svg', { viewBox: '0 0 24 24' });
+          cs.appendChild(svgEl('path', { d: TL_PV_CRANE }));
+          crane.appendChild(cs);
+          item.appendChild(crane);
+        }
+
+        const name = document.createElement('span');
+        name.className = 'tl-pv__name';
+        name.textContent = o.p.label || '（还没起名）';
+        name.title = `${o.p.date}　${o.p.label || '（还没起名）'}`;
+        name.style.transform = `translateY(calc(-50% + ${off}px))`;
+        item.appendChild(name);
+        inner.appendChild(item);
+      });
+    }
+  }
+
+  /* ---- 时间段的名字：撞上事件文字就翻到另一侧 / 上下挪一格 ---- */
+  for (const mark of spanMarks) {
+    const free = (side, y) => !taken[side].some((b) => y + HALF_TEXT > b[0] && y - HALF_TEXT < b[1]);
+    let side = mark.side;
+    let y = mark.y;
+    if (!free(side, y)) {
+      const other = side === 'left' ? 'right' : 'left';
+      const spots = [
+        [other, y],
+        [side, y + 16],
+        [side, y - 16],
+        [other, y + 16],
+        [other, y - 16],
+        [side, y + 32],
+        [side, y - 32],
+      ];
+      const hit = spots.find(([s, yy]) => free(s, yy));
+      if (hit) {
+        side = hit[0];
+        y = hit[1];
+      }
+    }
+    taken[side].push([y - HALF_TEXT, y + HALF_TEXT]);
+
+    const el = document.createElement('div');
+    el.className = 'tl-pv__span';
+    el.textContent = mark.el.name || '（这段还没起名）';
+    const x = arcX(y);
+    /*
+      和页面上一样：右侧直接写 left；左侧写 left 再 translateX(-100%)
+      把文字右对齐过去 —— 用 right 的话会被行内 left 顶掉。
+    */
+    el.style.left = `${side === 'right' ? x + TL_PV.GAP : x - TL_PV.GAP}px`;
+    el.style.top = `${y}px`;
+    el.style.transform = side === 'left' ? 'translate(-100%, -50%)' : 'translateY(-50%)';
+    inner.appendChild(el);
+  }
+
+  canvas.appendChild(inner);
+  stage.appendChild(canvas);
+
+  const first = points.reduce((a, b) => (tlDay(a.date) <= tlDay(b.date) ? a : b));
+  const lastP = points.reduce((a, b) => (tlDay(a.date) >= tlDay(b.date) ? a : b));
+  const days = Math.round(tlDay(lastP.date) - tlDay(first.date));
+  const merged = [...groups.left, ...groups.right].filter((g) => g.length > 1).length;
+  meta.textContent = `${first.date} → ${lastP.date} · ${points.length} 个点 · 跨 ${days} 天${merged ? ` · ${merged} 处合并` : ''}`;
+  note.textContent = `按页面打开时的默认比例尺画（1 格 ≈ ${Math.round(daysPerTick)} 天），合并和文字间距跟页面上一致；页面上那一屏能滚，这里一次画完整条轴。`;
+
+  stage.scrollTop = keepScroll;
+  stage.addEventListener('scroll', () => {
+    host.dataset.scrollTop = String(stage.scrollTop);
+  });
+}
+
+/**
+ * 时间轴编辑区：左边一列表单，右边一列实时预览。
+ * 表单里改任何东西都只重画预览（`scheduleTlPreview`），
+ * 只有增删行、换轴这种结构变化才整块重建 —— 否则输入框会一直丢焦点。
+ */
 function renderTimelineEditor() {
   const box = els.tlEditor;
   box.textContent = '';
   const list = timelinesDraft?.timelines ?? [];
 
+  // 表单这一列；预览那一列在函数末尾按当前数据现画
+  const form = document.createElement('div');
+  form.className = 'tl-edit__form';
+  const pv = document.createElement('div');
+  pv.className = 'tl-pv';
+  const grid = document.createElement('div');
+  grid.className = 'tl-edit';
+  grid.append(form, pv);
+  box.appendChild(grid);
+
   if (!list.length) {
     const p = document.createElement('p');
     p.className = 'hint';
     p.textContent = '还没有时间轴。点下面的「＋ 新建时间轴」开始。';
-    box.appendChild(p);
+    form.appendChild(p);
   }
 
   /* ---- 选哪一条 + 新建 / 删除 ---- */
@@ -3315,10 +3838,14 @@ function renderTimelineEditor() {
     });
     bar.appendChild(del);
   }
-  box.appendChild(bar);
+  form.appendChild(bar);
 
   const tl = list[tlIndex];
-  if (!tl) return;
+  if (!tl) {
+    // 一条轴都没有：只留提示和「新建」，预览那边自己会说「还没有时间点」
+    paintTimelinePreview(pv);
+    return;
+  }
   if (!Array.isArray(tl.points)) tl.points = [];
   if (!Array.isArray(tl.spans)) tl.spans = [];
 
@@ -3326,17 +3853,39 @@ function renderTimelineEditor() {
   const row = document.createElement('div');
   row.className = 'tl-edit__row';
   row.append(
-    pwField('名称', boardInput(tl.title ?? '', '这条轴叫什么', (v) => { tl.title = v; })),
-    pwField('左侧叫什么历', boardInput(tl.leftName ?? '', '比如 花娅历', (v) => { tl.leftName = v; })),
-    pwField('右侧叫什么历', boardInput(tl.rightName ?? '', '比如 冰室历', (v) => { tl.rightName = v; }))
+    pwField(
+      '名称',
+      boardInput(tl.title ?? '', '这条轴叫什么', (v) => {
+        tl.title = v;
+      })
+    ),
+    pwField(
+      '左侧叫什么历',
+      boardInput(tl.leftName ?? '', '比如 花娅历', (v) => {
+        tl.leftName = v;
+      })
+    ),
+    pwField(
+      '右侧叫什么历',
+      boardInput(tl.rightName ?? '', '比如 冰室历', (v) => {
+        tl.rightName = v;
+      })
+    )
   );
-  box.appendChild(row);
+  form.appendChild(row);
+
+  /*
+    时间段那两个下拉里写的是「日期　事件名」。日期或者名字改过之后
+    得把选项文字刷新一遍，否则下拉里还挂着改之前的旧值。
+    真函数在下面 slist 建好之后才赋上（时间点在前面先建）。
+  */
+  let refreshSpanOptions = () => {};
 
   /* ---- 时间点 ---- */
   const pHead = document.createElement('h4');
   pHead.className = 'tl-edit__h';
   pHead.textContent = '时间点';
-  box.appendChild(pHead);
+  form.appendChild(pHead);
 
   const plist = document.createElement('div');
   plist.className = 'tl-edit__list';
@@ -3347,12 +3896,23 @@ function renderTimelineEditor() {
     const side = pageSelect(
       [['left', tl.leftName || '左侧'], ['right', tl.rightName || '右侧']],
       p.side === 'right' ? 'right' : 'left',
-      (v) => { p.side = v; }
+      (v) => {
+        p.side = v;
+        scheduleTlPreview();
+      }
     );
     side.className = 'input tl-edit__side';
 
-    const date = dateInput(p.date, (v) => { p.date = v; });
-    const label = boardInput(p.label ?? '', '事件名（常驻显示在轴旁边）', (v) => { p.label = v; });
+    const date = dateField(p.date, (v) => {
+      p.date = v;
+      refreshSpanOptions();
+      scheduleTlPreview();
+    });
+    const label = boardInput(p.label ?? '', '事件名（常驻显示在轴旁边）', (v) => {
+      p.label = v;
+      refreshSpanOptions();
+      scheduleTlPreview();
+    });
 
     const del = document.createElement('button');
     del.type = 'button';
@@ -3369,7 +3929,7 @@ function renderTimelineEditor() {
     item.append(side, date, label, del);
     plist.appendChild(item);
   });
-  box.appendChild(plist);
+  form.appendChild(plist);
 
   const addP = document.createElement('button');
   addP.type = 'button';
@@ -3384,27 +3944,45 @@ function renderTimelineEditor() {
     });
     renderTimelineEditor();
   });
-  box.appendChild(addP);
+  form.appendChild(addP);
 
   /* ---- 时间段 ---- */
   const sHead = document.createElement('h4');
   sHead.className = 'tl-edit__h';
   sHead.textContent = '时间段（两个时间点之间命名）';
-  box.appendChild(sHead);
+  form.appendChild(sHead);
 
   const slist = document.createElement('div');
   slist.className = 'tl-edit__list';
+  /** 下拉里那条「2023-01-10　冰室成立」的文案 */
+  const optText = (p) => `${p.date || '（没填日期）'}　${p.label || '（没填名字）'}`;
+
   tl.spans.forEach((s, i) => {
     const item = document.createElement('div');
     item.className = 'tl-edit__item tl-edit__item--span';
 
-    const name = boardInput(s.name ?? '', '这段叫什么（比如 XX年代）', (v) => { s.name = v; });
+    const name = boardInput(s.name ?? '', '这段叫什么（比如 XX年代）', (v) => {
+      s.name = v;
+      scheduleTlPreview();
+    });
 
-    const opts = tl.points.map((p) => [p.id, `${p.date || '（没填日期）'}　${p.label || '（没填名字）'}`]);
-    const from = pageSelect([['', '起点…'], ...opts], s.from, (v) => { s.from = v; });
+    const opts = tl.points.map((p) => ({ id: p.id, text: optText(p) }));
+    const from = pageSelect([['', '起点…'], ...opts.map((o) => [o.id, o.text])], s.from, (v) => {
+      s.from = v;
+      scheduleTlPreview();
+    });
     from.className = 'input';
-    const to = pageSelect([['', '终点…'], ...opts], s.to, (v) => { s.to = v; });
+    const to = pageSelect([['', '终点…'], ...opts.map((o) => [o.id, o.text])], s.to, (v) => {
+      s.to = v;
+      scheduleTlPreview();
+    });
     to.className = 'input';
+    // 每个选项挂上点 id，日期/名字改了就地改文案，不用整块重画
+    for (const sel of [from, to]) {
+      Array.from(sel.options).forEach((o) => {
+        if (o.value) o.dataset.pointId = o.value;
+      });
+    }
 
     const del = document.createElement('button');
     del.type = 'button';
@@ -3418,7 +3996,14 @@ function renderTimelineEditor() {
     item.append(name, from, to, del);
     slist.appendChild(item);
   });
-  box.appendChild(slist);
+  form.appendChild(slist);
+
+  refreshSpanOptions = () => {
+    for (const o of slist.querySelectorAll('option[data-point-id]')) {
+      const p = tl.points.find((x) => x.id === o.dataset.pointId);
+      if (p) o.textContent = optText(p);
+    }
+  };
 
   const addS = document.createElement('button');
   addS.type = 'button';
@@ -3430,7 +4015,10 @@ function renderTimelineEditor() {
   });
   // 时间点少于两个就没得连
   addS.disabled = tl.points.length < 2;
-  box.appendChild(addS);
+  form.appendChild(addS);
+
+  // 表单建完了，按当前数据把预览画出来
+  paintTimelinePreview(pv);
 }
 
 async function saveTimelines() {

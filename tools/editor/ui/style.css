@@ -2027,6 +2027,24 @@ body[data-type="notes"] .field--posts-only {
   width: auto;
   min-width: 12rem;
 }
+
+/* ---------- 时间轴弹窗：左表单 / 右预览 ---------- */
+
+.tl-edit {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 360px;
+  gap: 18px;
+  align-items: start;
+}
+.tl-edit__form {
+  min-width: 0;
+}
+/* 窄屏放不下两列，预览落到表单下面 */
+@media (max-width: 900px) {
+  .tl-edit {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
 .tl-edit__row {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -2059,8 +2077,218 @@ body[data-type="notes"] .field--posts-only {
   font-size: 12px;
 }
 
-/* 页面工作台里「对应时间」那一行 */
-.pblock-edit__row--time {
+/* ---------------------------------------------------------------
+   时间轴日期输入：一个能直接打数字的框 + 一个开日历的按钮
+--------------------------------------------------------------- */
+.datefield {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.datefield__text {
+  width: 100%;
+  min-width: 0;
+  padding: 5px 6px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+}
+.datefield__text.is-bad {
+  border-color: var(--danger);
+  background: var(--danger-soft);
+}
+.datefield__btn {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+.datefield__btn:hover {
+  border-color: var(--border-strong);
+  background: var(--surface-3);
+}
+/*
+  藏起来的原生日期输入（showPicker 要用它）。
+  不能用 display:none —— 规范要求元素「正在被渲染」，藏没了会直接抛错。
+  所以让它 1×1 且透明地待在这儿。
+*/
+.datefield__cal {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* ---------------------------------------------------------------
+   时间轴预览
+   （配色照着页面上的那条轴来：深紫底 + 粉边 + 落日的弧）
+--------------------------------------------------------------- */
+.tl-pv {
+  position: sticky;
+  top: 0;
+}
+.tl-pv__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.tl-pv__title {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+}
+.tl-pv__meta {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.tl-pv__stage {
+  position: relative;
+  height: min(60vh, 540px);
+  overflow-y: auto;
+  overflow-x: hidden;
+  border: 1px solid rgba(255, 120, 190, 0.42);
+  border-radius: var(--r);
+  background: linear-gradient(180deg, #260636, #14031f);
+  box-shadow: inset 0 0 40px rgba(0, 0, 0, 0.45);
+}
+.tl-pv__canvas {
+  position: relative;
+  margin: 0 auto;
+}
+/* 画轴的那一块：坐标原点在它左上角（外面那层只是上下留白） */
+.tl-pv__inner {
+  position: relative;
+}
+.tl-pv__svg {
+  position: absolute;
+  inset: 0;
+  display: block;
+}
+.tl-pv__arc {
+  fill: none;
+  stroke-width: 2.5;
+  filter: drop-shadow(0 0 6px rgba(255, 170, 60, 0.85));
+}
+.tl-pv__ruler {
+  fill: none;
+  stroke-width: 1.4;
+  opacity: 0.75;
+}
+.tl-pv__band {
+  fill: none;
+  stroke-width: 9;
+  opacity: 0.28;
+  stroke-linecap: round;
+}
+
+/* 事件：外层是零尺寸锚点，塔吊以底边中点为原点旋转，根长在轴上 */
+.tl-pv__item {
+  position: absolute;
+  width: 0;
+  height: 0;
+}
+.tl-pv__crane {
+  position: absolute;
+  left: -13px;
+  bottom: 0;
+  width: 26px;
+  height: 26px;
+  transform-origin: bottom center;
+  color: #ffc857;
+  filter: drop-shadow(0 0 4px rgba(255, 150, 40, 0.8));
+}
+.tl-pv__crane svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.tl-pv__name {
+  position: absolute;
+  top: 0;
+  transform: translateY(-50%);
+  max-width: 8.5rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.72rem;
+  letter-spacing: 0.03em;
+  color: #ffd9ef;
+  text-shadow: 0 1px 5px rgba(20, 0, 10, 0.9);
+}
+.tl-pv__item[data-side='left'] .tl-pv__name {
+  right: 40px;
+}
+.tl-pv__item[data-side='right'] .tl-pv__name {
+  left: 40px;
+}
+.tl-pv__span {
+  position: absolute;
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  color: rgba(255, 190, 220, 0.85);
+  white-space: nowrap;
+  pointer-events: none;
+}
+.tl-pv__empty {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  margin: 0;
+  text-align: center;
+  font-size: 12px;
+  line-height: 1.9;
+  color: rgba(255, 217, 239, 0.6);
+}
+.tl-pv__note {
+  margin: 6px 0 0;
+  font-size: 11px;
+  line-height: 1.7;
+  color: var(--text-muted);
+}
+
+/* 时间轴那个弹窗要放下两列。
+   注意得写 width 而不是只写 max-width —— 基础 .modal__panel 的
+   width 是 min(420px, …)，只加 max-width 的话根本撑不开（后面那条
+   .modal__panel--wide 就是这么失效的）。 */
+.modal__panel--tl {
+  width: min(1060px, calc(100vw - 32px));
+  max-width: 1060px;
+  max-height: 86vh;
+  overflow-y: auto;
+}
+/* 内容比一屏高，把「取消 / 保存」钉在底部，不用滚到底才点得到 */
+.modal__panel--tl .modal__actions {
+  position: sticky;
+  bottom: -18px;
+  margin: 0 -18px -18px;
+  padding: 12px 18px;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+}
+
+/* 页面工作台里「对应时间」那一行 */.pblock-edit__row--time {
   margin-top: 6px;
   padding-top: 6px;
   border-top: 1px dashed var(--border);
