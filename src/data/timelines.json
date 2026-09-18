@@ -355,6 +355,12 @@
           "date": "2026-09-03",
           "label": "Raw重返北大",
           "kind": "event"
+        },
+        {
+          "id": "tl-mu6e19cb793-pmu6p6djx56",
+          "side": "right",
+          "date": "today",
+          "label": "迄今为止的冰室"
         }
       ],
       "spans": [
@@ -451,8 +457,19 @@
           "from": "tl-mu6e19cb793-pmu6mpkz248",
           "to": "tl-mu6e19cb793-pmu6nx8q755",
           "side": "right"
+        },
+        {
+          "id": "tl-mu6e19cb793-smu6p6mfq15",
+          "name": "后冰室时代",
+          "from": "tl-mu6e19cb793-pmu6occ3a56",
+          "to": "tl-mu6e19cb793-pmu6p6djx56"
         }
       ]
     }
-  ]
+  ],
+  "dropped": {
+    "timelines": 0,
+    "points": 0,
+    "spans": 0
+  }
 }
