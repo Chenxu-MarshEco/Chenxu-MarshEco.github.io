@@ -242,7 +242,7 @@
     startTrack(pick(cur));
   }
 
-  // ---- 右上角那颗古筝音量键 -----------------------------------------
+  // ---- 右上角那颗音箱音量键 -----------------------------------------
   function paint() {
     var playing = !audio.paused && !audio.ended;
     var lvl = muted ? 0 : vol;

@@ -1,9 +1,12 @@
 ---
 /**
- * 右上角的两个固定控件：目录抽屉（三条杠）+ 回到顶部（塔吊图标）。
+ * 右上角的三个固定控件：目录抽屉（三条杠）+ 回到顶部（塔吊图标）+ 音量（音箱）。
  *
  * 数据就是首页那两棵大板块树，所以它天然反映「当前在哪个板块」。
  * 常见文档站的目录树：点章节名跳转，点箭头展开/收起下一层。
+ *
+ * 音量键默认是 hidden 的，只有「这一页有歌单」时才由播放器脚本摘掉（见 MusicPlayer.astro）；
+ * 没歌单的页面上那颗按钮根本不出现。
  *
  * 树是**递归**生成的，层数不设上限 —— 版块树本身能无限嵌套，
  * 早先这里手写了三层，树再深一层下面的节点就整个露不出来。
@@ -101,7 +104,7 @@ function renderNodes(nodes: BoardNode[]): string {
   </button>
 
   <!--
-    音量键（古筝造型），挨着回到顶部那颗按钮。
+    音量键（音箱 = 网页上最常见的那只音量图标），挨着回到顶部那颗按钮。
     默认 hidden：只有「这一页有歌单」时播放器脚本才会摘掉它 ——
     没歌单的页面上那段脚本根本不跑，这颗按钮就一直藏着。
   -->
@@ -115,13 +118,11 @@ function renderNodes(nodes: BoardNode[]): string {
       title="音量"
     >
       <svg class="vol__ico" viewBox="0 0 24 24" aria-hidden="true">
-        <!-- 筝身：一头窄一头宽的斜板 -->
-        <path d="M2.6 8.4h13l1.2 8.4H1.4z"></path>
-        <!-- 弦 -->
-        <path class="vol__str" d="M5.4 8.4v8.4M8.2 8.4v8.4M11 8.4v8.4M13.8 8.4v8.4"></path>
+        <!-- 音箱：左边箱体 + 朝右张开的锥口 -->
+        <path d="M3.3 9.5h3.1l5.3-3.8v12.6l-5.3-3.8H3.3z"></path>
         <!-- 音量弧线：越大声露得越多 -->
-        <path class="vol__wave vol__wave--1" d="M18 9.6a4.4 4.4 0 0 1 0 4.8"></path>
-        <path class="vol__wave vol__wave--2" d="M20.3 7.3a7.6 7.6 0 0 1 0 9.4"></path>
+        <path class="vol__wave vol__wave--1" d="M15 9.6a4.3 4.3 0 0 1 0 4.8"></path>
+        <path class="vol__wave vol__wave--2" d="M17.6 7.2a7.7 7.7 0 0 1 0 9.6"></path>
         <!-- 静音斜杠 -->
         <path class="vol__slash" d="M3.4 20.4 20.8 3.6"></path>
       </svg>
@@ -320,7 +321,7 @@ function renderNodes(nodes: BoardNode[]): string {
     visibility: hidden;
   }
 
-  /* ---------- 音量键（古筝造型） ---------- */
+  /* ---------- 音量键（音箱） ---------- */
   .vol {
     position: relative;
     display: flex;
@@ -335,12 +336,6 @@ function renderNodes(nodes: BoardNode[]): string {
     stroke-width: 1.4;
     stroke-linecap: round;
     stroke-linejoin: round;
-  }
-
-  /* 弦比筝身细一些，不然 24px 里糊成一坨 */
-  .vol__str {
-    stroke-width: 0.85;
-    opacity: 0.7;
   }
 
   /* 两条音量弧线：默认只露一条淡淡的，音量大时两条都点亮 */
