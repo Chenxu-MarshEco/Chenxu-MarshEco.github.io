@@ -82,7 +82,7 @@ const gradId = `tl-arc-${tl.id}`;
 ---
 
 <div
-  class="tl"
+  class:list={['tl', 'is-off-left-moments', 'is-off-right-moments']}
   data-tl
   data-tl-id={tl.id}
   data-tl-min={spanMin}
@@ -217,6 +217,11 @@ const gradId = `tl-arc-${tl.id}`;
         上方的横杠上面（页脚的上边框），而不是飘在整个 UI 的偏上位置。
         只管**文字** —— 塔吊、带子的颜色、刻度、弧线一概不动，
         目的是翻年代的时候别让成堆的文字把轴糊住。
+
+        默认：**「时刻」是关着的**（轴上一大堆大字最碍眼的就是它们），
+        年代和事件开着；想看见时刻名，点一下下面那两个「时刻」。
+        aria-pressed 这里就先写成 false / true，和脚本里的默认值对上 ——
+        免得脚本还没跑起来的那一瞬间闪一下。用户自己点过之后按存下来的来。
       */}
       <div class="tl__toggles">
         <div class="tl__togglesGroup">
@@ -231,8 +236,8 @@ const gradId = `tl-arc-${tl.id}`;
             class="tl__tg"
             type="button"
             data-tl-toggle-labels="left-moments"
-            aria-pressed="true"
-            title={`显示 / 隐藏左侧（${tl.leftName}）的时刻名 —— 塔吊还在`}
+            aria-pressed="false"
+            title={`显示 / 隐藏左侧（${tl.leftName}）的时刻名 —— 塔吊还在（默认关着）`}
           >时刻</button>
           <button
             class="tl__tg"
@@ -254,8 +259,8 @@ const gradId = `tl-arc-${tl.id}`;
             class="tl__tg"
             type="button"
             data-tl-toggle-labels="right-moments"
-            aria-pressed="true"
-            title={`显示 / 隐藏右侧（${tl.rightName}）的时刻名 —— 塔吊还在`}
+            aria-pressed="false"
+            title={`显示 / 隐藏右侧（${tl.rightName}）的时刻名 —— 塔吊还在（默认关着）`}
           >时刻</button>
           <button
             class="tl__tg"
@@ -498,17 +503,18 @@ const gradId = `tl-arc-${tl.id}`;
     filter: drop-shadow(0 0 4px rgba(255, 150, 40, 0.8));
   }
   /*
-    「事件」那颗塔吊：**小一号、换成粉色**。它和「时刻」共用同一套位置、
+    「事件」那颗塔吊：**小一号、樱花粉**。它和「时刻」共用同一套位置、
     旋转、合并、链接逻辑，差别只在这里 —— 一眼就能把「同一天里那些零碎的记录」
     和「真正的大事」分开，也不至于把轴铺满。
-    （粉色和地图上的建筑图钉是同一个色系。）
+    （一开始用的 #ff4fa3 太扎眼，一屏小粉箭头比大字还抢戏；换成樱花粉，
+    淡淡的、像飘在轴上的一片花瓣，光晕也跟着调浅。）
   */
   .tl__item[data-kind='event'] .tl__crane {
     left: -9px;
     width: 18px;
     height: 18px;
-    color: #ff4fa3;
-    filter: drop-shadow(0 0 4px rgba(255, 40, 130, 0.85));
+    color: #ffb7c5;
+    filter: drop-shadow(0 0 4px rgba(255, 170, 205, 0.8));
   }
   .tl__crane svg {
     display: block;
@@ -1072,6 +1078,10 @@ const gradId = `tl-arc-${tl.id}`;
      * 关掉的只是**文字**：大塔吊（时刻）、小塔吊（事件）都还在 ——
      * 它们标着那天在轴上的位置；时间段带子和它的颜色也还在 ——
      * 它标着那段年月有多长。
+     *
+     * **默认把「时刻」那两路关掉**：轴上一大堆大字最碍眼的就是它们，
+     * 打开时间轴先看到的是干净的轴 + 年代 + 事件，想看见时刻名再点下面那两个「时刻」。
+     * 用户点过之后就以存下来的为准（包括「把时刻打开」这个状态）。
      */
     const LABELS_KEY = 'tl-marks';
     const CHANNELS = [
@@ -1082,12 +1092,15 @@ const gradId = `tl-arc-${tl.id}`;
       'right-moments',
       'right-events',
     ];
-    const offLabels = new Set<string>();
+    const DEFAULT_OFF = ['left-moments', 'right-moments'];
+    const offLabels = new Set<string>(DEFAULT_OFF);
     try {
       const raw = sessionStorage.getItem(LABELS_KEY);
       if (raw) {
         const saved = JSON.parse(raw) as { id?: string; off?: string[] };
         if (saved && saved.id === tlId && Array.isArray(saved.off)) {
+          // 存过就整份以存下来的为准（先清掉默认值，否则「把时刻打开」永远打不开）
+          offLabels.clear();
           for (const c of saved.off) if (CHANNELS.includes(c)) offLabels.add(c);
         }
       }
