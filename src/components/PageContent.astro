@@ -1187,6 +1187,14 @@ const cardsOf = (b: Extract<PageBlock, { type: 'children' }>) => ({
     opacity: 1;
     visibility: visible;
   }
+  /*
+    贴着地图上边缘的钉子：名字翻到钉子下方。
+    （哪颗需要翻由脚本量出来，见那边 flipNameIfClipped 的说明。）
+  */
+  .pmap__pin.is-name-below .pmap__pinName {
+    bottom: auto;
+    top: calc(100% + 2px);
+  }
   .pmap__pin:hover .pmap__pinArt,
   .pmap__pin:focus-visible .pmap__pinArt {
     transform: scale(1.12);
@@ -1303,13 +1311,18 @@ const cardsOf = (b: Extract<PageBlock, { type: 'children' }>) => ({
     font-variant-numeric: tabular-nums;
   }
 
-  /* 每页自己的简介 */
+  /*
+    每页自己的简介：地图**下方**那行小字（网格最后一行，横跨整行）。
+    比正文小一号、颜色稍淡，左边加一道粉线，一眼看出它是给上面那张图做注的。
+  */
   .pmap__intro {
     grid-column: 1 / -1;
     margin: 0;
-    color: rgba(255, 226, 244, 0.78);
-    font-size: 0.88rem;
-    line-height: 1.75;
+    padding-left: 0.6rem;
+    border-left: 2px solid rgba(255, 120, 190, 0.45);
+    color: rgba(255, 226, 244, 0.72);
+    font-size: 0.82rem;
+    line-height: 1.7;
   }
 
   /* 窄屏：按钮栏移到地图下面横着排 */
@@ -1854,6 +1867,33 @@ const cardsOf = (b: Extract<PageBlock, { type: 'children' }>) => ({
     };
     frame.addEventListener('pointerup', endDrag);
     frame.addEventListener('pointercancel', endDrag);
+
+    /*
+      图钉名字默认浮在钉子上方。但贴着地图**上边缘**的那些钉子（比如纷湖的
+      「Raw家」），名字会被 .pmap__frame 的 overflow:hidden 裁掉 —— 鼠标移上去
+      什么都看不见，还以为这个钉子没名字。
+
+      所以真正指上去（或键盘聚焦）的时候量一下：名字的顶边越过框顶了，
+      就给这颗钉子加个 is-name-below，CSS 里把它翻到钉子下方去。
+      每次都先把那个类摘掉再量（不摘的话翻下去之后就永远量不出「越界」了，
+      而缩放/拖动都会改变钉子在屏幕上的高度，必须现算）。
+      visibility:hidden 的元素照样有盒子，量得到，不用先让它显形。
+    */
+    const flipNameIfClipped = (pin: HTMLElement) => {
+      const name = pin.querySelector<HTMLElement>('.pmap__pinName');
+      if (!name) return;
+      pin.classList.remove('is-name-below');
+      const nr = name.getBoundingClientRect();
+      if (!nr.height) return; // 名字是空的，没什么好让的
+      const fr = frame!.getBoundingClientRect();
+      if (nr.top < fr.top + 2) pin.classList.add('is-name-below');
+    };
+    const onPinFocus = (e: Event) => {
+      const pin = (e.target as HTMLElement | null)?.closest?.('[data-pmap-pin]');
+      if (pin instanceof HTMLElement) flipNameIfClipped(pin);
+    };
+    root.addEventListener('pointerover', onPinFocus);
+    root.addEventListener('focusin', onPinFocus);
 
     /*
       图没量到尺寸之前 layout 算不出来，等它 load。

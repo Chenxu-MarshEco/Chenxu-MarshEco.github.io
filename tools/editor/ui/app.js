@@ -2069,7 +2069,12 @@ function mapFields(block) {
       }
     });
 
-    const alt = boardInput(page.alt ?? '', '地图说明（可留空）', (v) => {
+    /*
+      这一格是 <img alt>，只在图加载失败或者读屏时用，**页面上不显示**。
+      以前它叫「地图说明」，很容易和下面那个「简介」搞混 —— 明明填了东西
+      页面上却什么都没有。所以名字里就把这件事说清楚。
+    */
+    const alt = boardInput(page.alt ?? '', '图片说明（给读屏 / 图挂了时用，页面上不显示）', (v) => {
       page.alt = v;
       markStudioDirty();
     });
@@ -2077,15 +2082,25 @@ function mapFields(block) {
     row.append(thumb, pick, alt, file);
     wrap.appendChild(row);
 
-    /* ---------- 2. 简介 ---------- */
+    /* ---------- 2. 简介（真会显示在地图下方的那句话） ---------- */
     const textRow = document.createElement('div');
-    textRow.className = 'pblock-edit__row';
-    textRow.appendChild(
-      boardInput(page.text ?? '', '这一页的简介（可留空，显示在地图下面）', (v) => {
-        page.text = v;
-        markStudioDirty();
-      })
-    );
+    textRow.className = 'pblock-edit__introRow';
+
+    const introLabel = document.createElement('span');
+    introLabel.className = 'pblock-edit__hint';
+    introLabel.textContent = '简介 —— 会以小一号的字显示在地图下方，留空就不显示';
+
+    const intro = document.createElement('textarea');
+    intro.className = 'input pblock-edit__intro';
+    intro.rows = 2;
+    intro.placeholder = '这一页的简介，比如这张图是什么时候、什么地方的地图';
+    intro.value = page.text ?? '';
+    intro.addEventListener('input', () => {
+      page.text = intro.value;
+      markStudioDirty();
+    });
+
+    textRow.append(introLabel, intro);
     wrap.appendChild(textRow);
 
     if (!page.src) {

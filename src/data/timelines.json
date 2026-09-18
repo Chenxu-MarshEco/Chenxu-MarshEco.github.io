@@ -20,9 +20,9 @@
         },
         {
           "id": "tl-mu6e19cb793-pmu6e6hkz2",
-          "side": "right",
+          "side": "left",
           "date": "2023-07-08",
-          "label": "虹星的1.20原版开服"
+          "label": "虹星的1.20原版服开服"
         },
         {
           "id": "tl-mu6e19cb793-pmu6e833n3",
@@ -35,6 +35,120 @@
           "side": "right",
           "date": "2023-07-15",
           "label": "SSW加入冰室"
+        },
+        {
+          "id": "tl-mu6e19cb793-pmu6j15w85",
+          "side": "right",
+          "date": "2023-12-29",
+          "label": "Airo加入冰室"
+        },
+        {
+          "id": "tl-mu6e19cb793-pmu6j1wc06",
+          "side": "right",
+          "date": "2023-12-31",
+          "label": "沃伊德加入冰室"
+        },
+        {
+          "id": "tl-mu6e19cb793-pmu6j34xk7",
+          "side": "right",
+          "date": "2024-02-13",
+          "label": "WQ加入冰室"
+        },
+        {
+          "id": "tl-mu6e19cb793-pmu6j3m4h8",
+          "side": "right",
+          "date": "2024-02-27",
+          "label": "羽之颂加入冰室"
+        },
+        {
+          "id": "tl-mu6e19cb793-pmu6j41q09",
+          "side": "right",
+          "date": "2024-05-24",
+          "label": "马斯加入冰室"
+        },
+        {
+          "id": "tl-mu6e19cb793-pmu6j4ckw10",
+          "side": "right",
+          "date": "2023-07-15",
+          "label": "光子加入冰室"
+        },
+        {
+          "id": "tl-mu6e19cb793-pmu6j54qo11",
+          "side": "right",
+          "date": "2023-07-15",
+          "label": "伤感统领加入冰室"
+        },
+        {
+          "id": "tl-mu6e19cb793-pmu6j5jqo12",
+          "side": "right",
+          "date": "2024-06-05",
+          "label": "Hina加入冰室"
+        },
+        {
+          "id": "tl-mu6e19cb793-pmu6j5xe113",
+          "side": "right",
+          "date": "2024-06-08",
+          "label": "灵空加入冰室"
+        },
+        {
+          "id": "tl-mu6e19cb793-pmu6j6r4814",
+          "side": "right",
+          "date": "2024-07-22",
+          "label": "WQ的伙伴-萝卜加入冰室"
+        },
+        {
+          "id": "tl-mu6e19cb793-pmu6j799c15",
+          "side": "right",
+          "date": "2024-09-21",
+          "label": "WQ的伙伴-LittleCat加入冰室"
+        },
+        {
+          "id": "tl-mu6e19cb793-pmu6j7v9c16",
+          "side": "right",
+          "date": "2024-11-25",
+          "label": "繁星加入冰室"
+        },
+        {
+          "id": "tl-mu6e19cb793-pmu6j8zq117",
+          "side": "right",
+          "date": "2024-11-28",
+          "label": "皮丝加入冰室"
+        },
+        {
+          "id": "tl-mu6e19cb793-pmu6j9ay918",
+          "side": "right",
+          "date": "2025-06-11",
+          "label": "茸明加入冰室"
+        },
+        {
+          "id": "tl-mu6e19cb793-pmu6j9ky819",
+          "side": "right",
+          "date": "2025-09-24",
+          "label": "OWQ加入冰室"
+        },
+        {
+          "id": "tl-mu6e19cb793-pmu6j9u8g20",
+          "side": "right",
+          "date": "2025-10-31",
+          "label": "盾返加入冰室"
+        },
+        {
+          "id": "tl-mu6e19cb793-pmu6ja3oo21",
+          "side": "right",
+          "date": "2026-04-29",
+          "label": "希尔加入冰室"
+        },
+        {
+          "id": "tl-mu6e19cb793-pmu6jajzs22",
+          "side": "right",
+          "date": "2026-07-13",
+          "label": "艾林森加入冰室"
+        },
+        {
+          "id": "tl-mu6e19cb793-pmu6jb9o823",
+          "side": "left",
+          "date": "2023-08-03",
+          "label": "虹星的1.20原版服结档"
         }
       ],
       "spans": [
@@ -43,6 +157,12 @@
           "name": "冰室元年",
           "from": "tl-mu6e19cb793-pmu6e1xnf0",
           "to": "tl-mu6e19cb793-pmu6e6hkz2"
+        },
+        {
+          "id": "tl-mu6e19cb793-smu6jdtdc1",
+          "name": "纷湖",
+          "from": "tl-mu6e19cb793-pmu6e6hkz2",
+          "to": "tl-mu6e19cb793-pmu6jb9o823"
         }
       ]
     }
