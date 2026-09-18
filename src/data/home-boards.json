@@ -156,7 +156,12 @@
                 {
                   "id": "undefined-pmu6pz7n83",
                   "type": "text",
-                  "text": "这是我在平日里写下的一些有关冰室，花娅，还有甬神Project相关的随手小创意。"
+                  "text": "存放在此的都是我在平日里写下的一些有关冰室，花娅，还有甬神Project相关的随手小创意。为了不让他们被溪水冲走，就暂时都保存在这里，作为日后的灵感来源。"
+                },
+                {
+                  "id": "huaya-r1-2-pmu6x21fz2",
+                  "type": "divider",
+                  "text": "此处的文章时间都是文本现实里被创作出来的时间"
                 }
               ]
             }
@@ -179,6 +184,8 @@
               "size": "l"
             }
           ],
+          "timeline": "tl-mu6e19cb793",
+          "timeSpan": "tl-mu6e19cb793-smu6kf0r34",
           "children": [
             {
               "id": "huaya-r2-1",
