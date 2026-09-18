@@ -206,6 +206,47 @@ const gradId = `tl-arc-${tl.id}`;
           </div>
         );
       })}
+
+      {/*
+        左上 / 右上的四个开关：各自管这一侧的「事件名」和「年代名」。
+        只管**文字** —— 塔吊、带子的颜色、刻度、弧线一概不动，
+        目的是翻年代的时候别让成堆的事件名把轴糊住。
+        分左右是因为两侧的拥挤程度是各管各的：常见的是右边挤、左边空。
+      */}
+      <div class="tl__toggles">
+        <div class="tl__togglesGroup">
+          <button
+            class="tl__tg"
+            type="button"
+            data-tl-toggle-labels="left-events"
+            aria-pressed="true"
+            title={`显示 / 隐藏左侧（${tl.leftName}）的事件名 —— 塔吊还在`}
+          >事件</button>
+          <button
+            class="tl__tg"
+            type="button"
+            data-tl-toggle-labels="left-spans"
+            aria-pressed="true"
+            title={`显示 / 隐藏左侧（${tl.leftName}）的年代名 —— 带子还在`}
+          >年代</button>
+        </div>
+        <div class="tl__togglesGroup">
+          <button
+            class="tl__tg"
+            type="button"
+            data-tl-toggle-labels="right-events"
+            aria-pressed="true"
+            title={`显示 / 隐藏右侧（${tl.rightName}）的事件名 —— 塔吊还在`}
+          >事件</button>
+          <button
+            class="tl__tg"
+            type="button"
+            data-tl-toggle-labels="right-spans"
+            aria-pressed="true"
+            title={`显示 / 隐藏右侧（${tl.rightName}）的年代名 —— 带子还在`}
+          >年代</button>
+        </div>
+      </div>
     </div>
 
     <div class="tl__foot">
@@ -561,6 +602,72 @@ const gradId = `tl-arc-${tl.id}`;
     text-underline-offset: 0.2em;
   }
 
+  /* ---------------- 左上 / 右上那四个文字开关 ---------------- */
+  /*
+    位置固定在弧线区的最上面：左边一组压在左列文字上方，右边一组压在右列上方。
+    整条 bar 是 pointer-events:none 的（空白处不挡下面的拖动和点击），
+    只有按钮本身收事件。
+  */
+  .tl__toggles {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    z-index: 2;
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.4rem;
+    padding: 0.4rem 0.5rem 0;
+    pointer-events: none;
+  }
+  .tl__togglesGroup {
+    display: flex;
+    gap: 0.3rem;
+    pointer-events: auto;
+  }
+  .tl__tg {
+    padding: 0.05rem 0.42rem;
+    border: 1px solid rgba(255, 120, 190, 0.45);
+    border-radius: 999px;
+    background: rgba(24, 3, 36, 0.86);
+    color: #ffd9ef;
+    font-family: inherit;
+    font-size: 0.72rem;
+    line-height: 1.65;
+    letter-spacing: 0.08em;
+    cursor: pointer;
+    backdrop-filter: blur(3px);
+    transition: opacity 0.14s ease, border-color 0.14s ease, color 0.14s ease;
+  }
+  .tl__tg:hover {
+    border-color: #ffb3dd;
+    color: #fff;
+  }
+  .tl__tg:focus-visible {
+    outline: 2px solid #5ff0ff;
+    outline-offset: 2px;
+  }
+  /* 关掉的那一类：压暗 + 虚线边，和地图上「建筑 / 区域 / 划线」几个开关一个语言 */
+  .tl__tg[aria-pressed='false'] {
+    opacity: 0.45;
+    border-style: dashed;
+    background: rgba(38, 4, 52, 0.5);
+    color: rgba(255, 217, 239, 0.7);
+  }
+
+  /*
+    关掉的就是**文字**：
+    事件名藏起来，塔吊照旧（它标着事件在轴上的位置）；
+    年代名藏起来，带子和它的颜色照旧（它标着那段年月有多长）。
+  */
+  .tl.is-off-left-events .tl__item[data-side='left'] .tl__name,
+  .tl.is-off-right-events .tl__item[data-side='right'] .tl__name,
+  .tl.is-off-left-spans .tl__spanName[data-side='left'],
+  .tl.is-off-right-spans .tl__spanName[data-side='right'] {
+    display: none;
+  }
+
   .tl__foot {
     display: flex;
     flex-direction: column;
@@ -897,6 +1004,61 @@ const gradId = `tl-arc-${tl.id}`;
       measure();
       paint();
       if (save) rememberScale();
+    }
+
+    /* ---------------- 文字开关（左上 / 右上各两个） ---------------- */
+
+    /**
+     * 四路文字，各有一个开关：左侧事件名 / 左侧年代名 / 右侧事件名 / 右侧年代名。
+     *
+     * 关掉的只是**文字**：塔吊还在（它标着事件在轴上的位置），
+     * 时间段带子和它的颜色也还在（它标着那段年月有多长）。
+     * 分左右是必要的 —— 两侧的拥挤程度各管各的，常见的是右边挤、左边空。
+     */
+    const LABELS_KEY = 'tl-labels';
+    const CHANNELS = ['left-events', 'left-spans', 'right-events', 'right-spans'];
+    const offLabels = new Set<string>();
+    try {
+      const raw = sessionStorage.getItem(LABELS_KEY);
+      if (raw) {
+        const saved = JSON.parse(raw) as { id?: string; off?: string[] };
+        if (saved && saved.id === tlId && Array.isArray(saved.off)) {
+          for (const c of saved.off) if (CHANNELS.includes(c)) offLabels.add(c);
+        }
+      }
+    } catch {
+      /* 私密模式等场景下不可用，忽略 */
+    }
+
+    const labelBtns = Array.from(root.querySelectorAll<HTMLButtonElement>('[data-tl-toggle-labels]'));
+
+    function paintLabels() {
+      for (const ch of CHANNELS) root.classList.toggle(`is-off-${ch}`, offLabels.has(ch));
+      for (const b of labelBtns) {
+        const ch = b.dataset.tlToggleLabels ?? '';
+        // aria-pressed 表示「现在显示着吗」，关掉就是 false
+        b.setAttribute('aria-pressed', offLabels.has(ch) ? 'false' : 'true');
+      }
+    }
+
+    /** 和开合状态、比例尺一个规矩：记的时候带上是哪条时间轴 */
+    function rememberLabels() {
+      try {
+        sessionStorage.setItem(LABELS_KEY, JSON.stringify({ id: tlId, off: [...offLabels] }));
+      } catch {
+        /* 忽略 */
+      }
+    }
+
+    for (const b of labelBtns) {
+      b.addEventListener('click', () => {
+        const ch = b.dataset.tlToggleLabels ?? '';
+        if (!CHANNELS.includes(ch)) return;
+        if (offLabels.has(ch)) offLabels.delete(ch);
+        else offLabels.add(ch);
+        paintLabels();
+        rememberLabels();
+      });
     }
 
     /* 合并结果：每次 measure 之后重算一次 */
@@ -1287,7 +1449,7 @@ const gradId = `tl-arc-${tl.id}`;
         那一下是给它自己点的。指针捕获一旦落到 body 上，
         随后的 click 就不会再发给那个链接了，点了等于没点。
       */
-      if ((e.target as HTMLElement | null)?.closest?.('a[href]')) return;
+      if ((e.target as HTMLElement | null)?.closest?.('a[href], button')) return;
       drag = { id: e.pointerId, y: e.clientY, cur };
       body.setPointerCapture(e.pointerId);
     });
@@ -1378,6 +1540,7 @@ const gradId = `tl-arc-${tl.id}`;
     }
 
     paintScale();
+    paintLabels();
     measure();
     setOpen(recall, false);
     if (!recall) paint(); // 关着也先排一次，打开时不用等
