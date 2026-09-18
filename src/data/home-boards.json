@@ -190,6 +190,360 @@
                   "id": "huaya-r2-1-pmu5a644w2",
                   "type": "text",
                   "text": "## 地图勘探"
+                },
+                {
+                  "id": "huaya-r2-1-pmu5a6gq03",
+                  "type": "map",
+                  "pages": [
+                    {
+                      "id": "huaya-r2-1-pmu5a6gq03-p1",
+                      "src": "/img/uploads/20260917-1643-702a-541988EB4CE871473A615CF90156632E.jpg",
+                      "markers": [
+                        {
+                          "id": "huaya-r2-1-pmu5a6gq03-mmu5a9wxd0",
+                          "kind": "building",
+                          "x": 52.58,
+                          "y": 71.84,
+                          "title": "虹星家"
+                        },
+                        {
+                          "id": "huaya-r2-1-pmu5a6gq03-mmu5aaez51",
+                          "kind": "building",
+                          "x": 64.21,
+                          "y": 29.37,
+                          "title": "隰辰煦家"
+                        },
+                        {
+                          "id": "huaya-r2-1-pmu5a6gq03-mmu5aap1d2",
+                          "kind": "building",
+                          "x": 53.94,
+                          "y": 17.34,
+                          "title": "吉吉家"
+                        },
+                        {
+                          "id": "huaya-r2-1-pmu5a6gq03-mmu5abj953",
+                          "kind": "building",
+                          "x": 48.66,
+                          "y": 36.84,
+                          "title": "村民集中营"
+                        },
+                        {
+                          "id": "huaya-r2-1-pmu5a6gq03-mmu5ac5ld5",
+                          "kind": "building",
+                          "x": 21.08,
+                          "y": 54.62,
+                          "title": "光子家"
+                        },
+                        {
+                          "id": "huaya-r2-1-pmu5a6gq03-mmu5ac9wo6",
+                          "kind": "building",
+                          "x": 26.53,
+                          "y": 65.53,
+                          "title": "SSW家"
+                        },
+                        {
+                          "id": "huaya-r2-1-pmu5a6gq03-mmu5acgk87",
+                          "kind": "building",
+                          "x": 36.23,
+                          "y": 69.26,
+                          "title": "桑芙家"
+                        },
+                        {
+                          "id": "huaya-r2-1-pmu5a6gq03-mmu5adcaw7",
+                          "kind": "building",
+                          "x": 46.5,
+                          "y": 11.8,
+                          "title": "Raw家"
+                        },
+                        {
+                          "id": "huaya-r2-1-pmu5a6gq03-mmu6ecefg3011",
+                          "kind": "region",
+                          "x": 44.35,
+                          "y": 54.05,
+                          "title": "纷湖"
+                        },
+                        {
+                          "id": "huaya-r2-1-pmu5a6gq03-mmu6eenxw1049",
+                          "kind": "building",
+                          "x": 52.52,
+                          "y": 53.16,
+                          "title": "■■家"
+                        },
+                        {
+                          "id": "huaya-r2-1-pmu5a6gq03-mmu6ig09l8616",
+                          "kind": "building",
+                          "x": 37.2,
+                          "y": 43.01,
+                          "title": "公共刷铁机"
+                        },
+                        {
+                          "id": "huaya-r2-1-pmu5a6gq03-mmu6ig2yy6271",
+                          "kind": "building",
+                          "x": 42.65,
+                          "y": 67.5,
+                          "title": "■■家"
+                        },
+                        {
+                          "id": "huaya-r2-1-pmu5a6gq03-mmu6ig4ch2242",
+                          "kind": "building",
+                          "x": 60.46,
+                          "y": 49.22,
+                          "title": "冰道船地铁"
+                        }
+                      ],
+                      "lines": [
+                        {
+                          "id": "huaya-r2-1-pmu5a6gq03-lmu6ieakx1660",
+                          "x1": 42.87,
+                          "y1": 32.11,
+                          "x2": 39.13,
+                          "y2": 24.48,
+                          "color": "#3dd8ff"
+                        },
+                        {
+                          "id": "huaya-r2-1-pmu5a6gq03-lmu6ieb1t3800",
+                          "x1": 39.13,
+                          "y1": 24.48,
+                          "x2": 36.29,
+                          "y2": 24.12,
+                          "color": "#3dd8ff"
+                        },
+                        {
+                          "id": "huaya-r2-1-pmu5a6gq03-lmu6iebyx7826",
+                          "x1": 36.29,
+                          "y1": 24.12,
+                          "x2": 38.22,
+                          "y2": 20.04,
+                          "color": "#3dd8ff"
+                        },
+                        {
+                          "id": "huaya-r2-1-pmu5a6gq03-lmu6iedap4771",
+                          "x1": 38.22,
+                          "y1": 19.86,
+                          "x2": 36.4,
+                          "y2": 17.56,
+                          "color": "#3dd8ff"
+                        },
+                        {
+                          "id": "huaya-r2-1-pmu5a6gq03-lmu6ieek91296",
+                          "x1": 36.4,
+                          "y1": 17.73,
+                          "x2": 33.34,
+                          "y2": 20.57,
+                          "color": "#3dd8ff"
+                        },
+                        {
+                          "id": "huaya-r2-1-pmu5a6gq03-lmu6iefl54627",
+                          "x1": 33.34,
+                          "y1": 20.57,
+                          "x2": 29.59,
+                          "y2": 22.17,
+                          "color": "#3dd8ff"
+                        },
+                        {
+                          "id": "huaya-r2-1-pmu5a6gq03-lmu6ieh4g4002",
+                          "x1": 29.59,
+                          "y1": 22.17,
+                          "x2": 28.01,
+                          "y2": 20.93,
+                          "color": "#3dd8ff"
+                        },
+                        {
+                          "id": "huaya-r2-1-pmu5a6gq03-lmu6iehyp7476",
+                          "x1": 28.01,
+                          "y1": 20.93,
+                          "x2": 23.35,
+                          "y2": 21.46,
+                          "color": "#3dd8ff"
+                        },
+                        {
+                          "id": "huaya-r2-1-pmu5a6gq03-lmu6iej549010",
+                          "x1": 23.35,
+                          "y1": 21.46,
+                          "x2": 20.74,
+                          "y2": 27.67,
+                          "color": "#3dd8ff"
+                        },
+                        {
+                          "id": "huaya-r2-1-pmu5a6gq03-lmu6iekh57689",
+                          "x1": 20.74,
+                          "y1": 28.03,
+                          "x2": 18.13,
+                          "y2": 37.61,
+                          "color": "#3dd8ff"
+                        },
+                        {
+                          "id": "huaya-r2-1-pmu5a6gq03-lmu6ields6364",
+                          "x1": 18.02,
+                          "y1": 37.79,
+                          "x2": 19.27,
+                          "y2": 49.68,
+                          "color": "#3dd8ff"
+                        },
+                        {
+                          "id": "huaya-r2-1-pmu5a6gq03-lmu6iemch5173",
+                          "x1": 19.27,
+                          "y1": 49.68,
+                          "x2": 26.98,
+                          "y2": 56.07,
+                          "color": "#3dd8ff"
+                        },
+                        {
+                          "id": "huaya-r2-1-pmu5a6gq03-lmu6ien7d1251",
+                          "x1": 26.98,
+                          "y1": 56.07,
+                          "x2": 30.96,
+                          "y2": 58.03,
+                          "color": "#3dd8ff"
+                        },
+                        {
+                          "id": "huaya-r2-1-pmu5a6gq03-lmu6iennl5891",
+                          "x1": 30.96,
+                          "y1": 58.03,
+                          "x2": 31.18,
+                          "y2": 59.98,
+                          "color": "#3dd8ff"
+                        },
+                        {
+                          "id": "huaya-r2-1-pmu5a6gq03-lmu6ieo2p3511",
+                          "x1": 31.18,
+                          "y1": 59.98,
+                          "x2": 33.45,
+                          "y2": 59.98,
+                          "color": "#3dd8ff"
+                        },
+                        {
+                          "id": "huaya-r2-1-pmu5a6gq03-lmu6ieopt9480",
+                          "x1": 33.45,
+                          "y1": 59.98,
+                          "x2": 36.29,
+                          "y2": 61.93,
+                          "color": "#3dd8ff"
+                        },
+                        {
+                          "id": "huaya-r2-1-pmu5a6gq03-lmu6iepdk8065",
+                          "x1": 36.29,
+                          "y1": 61.93,
+                          "x2": 38.11,
+                          "y2": 67.26,
+                          "color": "#3dd8ff"
+                        },
+                        {
+                          "id": "huaya-r2-1-pmu5a6gq03-lmu6ieqfl7197",
+                          "x1": 38.11,
+                          "y1": 67.26,
+                          "x2": 42.76,
+                          "y2": 72.58,
+                          "color": "#3dd8ff"
+                        },
+                        {
+                          "id": "huaya-r2-1-pmu5a6gq03-lmu6ieqy93388",
+                          "x1": 42.76,
+                          "y1": 72.58,
+                          "x2": 45.71,
+                          "y2": 71.69,
+                          "color": "#3dd8ff"
+                        },
+                        {
+                          "id": "huaya-r2-1-pmu5a6gq03-lmu6ierqp1430",
+                          "x1": 45.71,
+                          "y1": 71.69,
+                          "x2": 50.48,
+                          "y2": 70.45,
+                          "color": "#3dd8ff"
+                        },
+                        {
+                          "id": "huaya-r2-1-pmu5a6gq03-lmu6iesjk5069",
+                          "x1": 50.48,
+                          "y1": 70.45,
+                          "x2": 55.81,
+                          "y2": 67.26,
+                          "color": "#3dd8ff"
+                        },
+                        {
+                          "id": "huaya-r2-1-pmu5a6gq03-lmu6iet4h5557",
+                          "x1": 55.92,
+                          "y1": 67.08,
+                          "x2": 57.85,
+                          "y2": 61.22,
+                          "color": "#3dd8ff"
+                        },
+                        {
+                          "id": "huaya-r2-1-pmu5a6gq03-lmu6ietsw4948",
+                          "x1": 57.85,
+                          "y1": 61.04,
+                          "x2": 54.33,
+                          "y2": 55.54,
+                          "color": "#3dd8ff"
+                        },
+                        {
+                          "id": "huaya-r2-1-pmu5a6gq03-lmu6ieuls7261",
+                          "x1": 54.33,
+                          "y1": 55.54,
+                          "x2": 49.8,
+                          "y2": 46.13,
+                          "color": "#3dd8ff"
+                        },
+                        {
+                          "id": "huaya-r2-1-pmu5a6gq03-lmu6ievld1834",
+                          "x1": 49.8,
+                          "y1": 46.13,
+                          "x2": 51.04,
+                          "y2": 40.63,
+                          "color": "#3dd8ff"
+                        },
+                        {
+                          "id": "huaya-r2-1-pmu5a6gq03-lmu6iewg18116",
+                          "x1": 51.04,
+                          "y1": 40.63,
+                          "x2": 49.91,
+                          "y2": 33.53,
+                          "color": "#3dd8ff"
+                        },
+                        {
+                          "id": "huaya-r2-1-pmu5a6gq03-lmu6iexfk1829",
+                          "x1": 49.68,
+                          "y1": 33.53,
+                          "x2": 43.33,
+                          "y2": 32.11,
+                          "color": "#3dd8ff"
+                        },
+                        {
+                          "id": "huaya-r2-1-pmu5a6gq03-lmu6iffrk823",
+                          "x1": 38.79,
+                          "y1": 68.5,
+                          "x2": 38.79,
+                          "y2": 72.94,
+                          "color": "#ffbdf9"
+                        },
+                        {
+                          "id": "huaya-r2-1-pmu5a6gq03-lmu6ifll58446",
+                          "x1": 38.9,
+                          "y1": 72.23,
+                          "x2": 60.58,
+                          "y2": 72.23,
+                          "color": "#ffbdf9"
+                        },
+                        {
+                          "id": "huaya-r2-1-pmu5a6gq03-lmu6ift0x7102",
+                          "x1": 60.58,
+                          "y1": 72.23,
+                          "x2": 60.12,
+                          "y2": 16.14,
+                          "color": "#ffbdf9"
+                        },
+                        {
+                          "id": "huaya-r2-1-pmu5a6gq03-lmu6ifuh06005",
+                          "x1": 60.12,
+                          "y1": 16.14,
+                          "x2": 47.64,
+                          "y2": 16.67,
+                          "color": "#ffbdf9"
+                        }
+                      ],
+                      "alt": "纷湖中后期的地图。很遗憾因为过于古早，服务器结档时的高清地图已经遗失。"
+                    }
+                  ]
                 }
               ],
               "timeline": "tl-mu6e19cb793"

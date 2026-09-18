@@ -2790,7 +2790,8 @@ function renderPageEditor() {
     ['video', '视频', () => ({ id: newBlockId(pageNode.id), type: 'video', src: '', caption: '' })],
     ['posts', '文章', () => ({ id: newBlockId(pageNode.id), type: 'posts', text: '' })],
     ['toc', '目录', () => ({ id: newBlockId(pageNode.id), type: 'toc', text: '' })],
-    ['map', '地图', () => ({ id: newBlockId(pageNode.id), type: 'map', src: '', markers: [] })],
+    // 地图是分页的，新建时就直接建成分页形状（别再造老那种 src+markers 挂在块上的了）
+    ['map', '地图', () => ({ id: newBlockId(pageNode.id), type: 'map', pages: [] })],
   ];
   for (const [, label, make] of adders) {
     const btn = document.createElement('button');
@@ -2818,8 +2819,18 @@ function commitPageBlocks() {
     if (b.type === 'divider' || b.type === 'posts' || b.type === 'toc') return true;
     if (b.type === 'columns') return String(b.left ?? '').trim() || String(b.right ?? '').trim();
     if (b.type === 'video') return String(b.src ?? '').trim();
-    // 地图没选图就等于没内容；选了图，哪怕一个地标都没钉也可以留着
-    if (b.type === 'map') return String(b.src ?? '').trim();
+    /*
+      地图是**分页**的：图片挂在每一页自己的 src 上（b.pages[i].src），
+      块自己身上那个 b.src 只属于最早那版「只有一页」的老写法。
+      这里以前只看 b.src，于是分页结构的地图一存就整块没了 ——
+      纷湖那张地图就是这么丢的。两种形状都得认。
+      一页图都没选才算空；选了图，哪怕一个地标都没钉也可以留着。
+    */
+    if (b.type === 'map') {
+      const pages =
+        Array.isArray(b.pages) && b.pages.length ? b.pages : String(b.src ?? '').trim() ? [{ src: b.src }] : [];
+      return pages.some((pg) => String(pg?.src ?? '').trim());
+    }
     return true;
   });
   pageNode.page = pageDraft;
