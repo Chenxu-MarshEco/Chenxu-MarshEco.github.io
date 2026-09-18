@@ -16,6 +16,16 @@ import raw from '../data/timelines.json';
 
 export type TimelineSide = 'left' | 'right';
 
+/**
+ * 时间段挂在哪一侧。
+ *
+ * `both` 是给「同一段年月，两边各有各的叫法」准备的：比如纷湖那几年，
+ * 花娅历管它叫「纷湖年代」、冰室历管它叫「纯良年代」—— 那是同一段区间、
+ * 两个名字，就在左边挂一条、右边挂一条。
+ * （想要两个不同的名字，就加两条时间段、起点终点填一样的，各自选一侧。）
+ */
+export type TimelineSpanSide = TimelineSide | 'both';
+
 export interface TimelinePoint {
   id: string;
   side: TimelineSide;
@@ -23,6 +33,8 @@ export interface TimelinePoint {
   date: string;
   /** 事件名，常驻显示在轴旁边 */
   label: string;
+  /** 点它跳去哪：站内写 `/huaya/xxx`，站外写 `https://…`；留空就只是看看名字 */
+  href?: string;
 }
 
 export interface TimelineSpan {
@@ -32,6 +44,10 @@ export interface TimelineSpan {
   /** 两端各是一个时间点的 id。先后无所谓，用的时候按日期排 */
   from: string;
   to: string;
+  /** 挂在哪一侧；老数据没这一项，按起点那个时间点的侧算 */
+  side?: TimelineSpanSide;
+  /** 点它跳去哪，和 TimePoint.href 一样的规矩 */
+  href?: string;
 }
 
 export interface Timeline {
@@ -126,6 +142,19 @@ export function spanEdges(tl: Timeline, s: TimelineSpan): { from: number; to: nu
   const lo = paramOf(tl, Math.min(da, db));
   const hi = paramOf(tl, Math.max(da, db));
   return { from: lo, to: hi };
+}
+
+/**
+ * 这段时间段要画在哪几侧。
+ *
+ * 数据里写了 `side` 就听数据的；老数据没有这一项，就跟着**起点那个时间点**
+ * 的侧走（这是这一版之前的行为，不能因为加了字段就让老数据变样）。
+ */
+export function spanSides(tl: Timeline, s: TimelineSpan): TimelineSide[] {
+  if (s.side === 'both') return ['left', 'right'];
+  if (s.side === 'left' || s.side === 'right') return [s.side];
+  const from = tl.points.find((p) => p.id === s.from);
+  return [from?.side === 'right' ? 'right' : 'left'];
 }
 
 /**

@@ -3450,6 +3450,34 @@ function dateField(value, onInput) {
   return wrap;
 }
 
+/**
+ * 这个地址存下去会不会被服务端丢掉。
+ *
+ * 规则照抄 tools/editor/server.mjs 的 cleanLink：只留 http(s) / mailto / tel /
+ * 站内 /路径 / #锚点；只写 example.com 这种会自动补 https://。
+ * 认不出来的（比如 javascript:）当场把框标红，省得存完发现点了没反应。
+ */
+function linkLooksOk(raw) {
+  const s = String(raw ?? '').trim();
+  if (!s) return true;
+  if (s.startsWith('/') || s.startsWith('#')) return true;
+  if (/^(https?:|mailto:|tel:)/i.test(s)) return true;
+  return /^[\w-]+(\.[\w-]+)+([/?#][^\s]*)?$/.test(s);
+}
+
+/**
+ * 链接输入框（时间点 / 时间段里那个「跳去哪」）。
+ * 就是普通文本框，只是顺手把不合规的地址标红。
+ */
+function linkField(value, placeholder, onInput) {
+  const el = boardInput(value, placeholder, (v) => {
+    el.classList.toggle('is-bad', !linkLooksOk(v));
+    onInput(v);
+  });
+  el.classList.toggle('is-bad', !linkLooksOk(value));
+  return el;
+}
+
 /* ===============================================================
    时间轴预览
 
@@ -3480,6 +3508,7 @@ const TL_PV = {
   SCALE: 0.5, // 预览按页面打开时的默认比例尺画（正中间）
   WIDTH: 360, // 量不到宽度时的兜底画布宽（正常按预览列的实际宽度算）
   PAD: 14, // 画布上下各留一点，首尾两端的文字才不会被裁掉半行
+  BAND_OFFSET: 8, // 时间段带子往自己那一侧让开多少（和页面上的 translateX 对齐）
 };
 
 /** 塔吊图形的路径，和页面右上角那颗是同一份 */
@@ -3629,7 +3658,7 @@ function paintTimelinePreview(host) {
     return d;
   };
 
-  /* ---- 时间段的带子 ---- */
+  /* ---- 时间段的带子：一个时间段 × 一侧一条（和页面上一样） ---- */
   const spanMarks = [];
   for (const s of tl.spans ?? []) {
     const a = tl.points.find((p) => p.id === s.from);
@@ -3639,8 +3668,25 @@ function paintTimelinePreview(host) {
     if (!Number.isFinite(da) || !Number.isFinite(db)) continue;
     const lo = range.of(Math.min(da, db));
     const hi = range.of(Math.max(da, db));
-    svg.appendChild(svgEl('path', { class: 'tl-pv__band', d: arcSeg(lo, hi), stroke: `url(#${gid})` }));
-    spanMarks.push({ el: s, y: ((lo + hi) / 2) * V, side: a?.side === 'left' ? 'left' : 'right' });
+    // 挂哪几侧：数据说了算；老数据没写就按起点那侧（和 spanSides 一个规矩）
+    const sides =
+      s.side === 'both'
+        ? ['left', 'right']
+        : s.side === 'left' || s.side === 'right'
+          ? [s.side]
+          : [a?.side === 'left' ? 'left' : 'right'];
+    const d = arcSeg(lo, hi);
+    for (const side of sides) {
+      svg.appendChild(
+        svgEl('path', {
+          class: 'tl-pv__band',
+          d,
+          stroke: `url(#${gid})`,
+          transform: `translate(${side === 'left' ? -TL_PV.BAND_OFFSET : TL_PV.BAND_OFFSET},0)`,
+        })
+      );
+      spanMarks.push({ el: s, y: ((lo + hi) / 2) * V, side });
+    }
   }
 
   /* ---- 主弧线（每 8px 一个点，够顺） ---- */
@@ -3724,7 +3770,9 @@ function paintTimelinePreview(host) {
         const name = document.createElement('span');
         name.className = 'tl-pv__name';
         name.textContent = o.p.label || '（还没起名）';
-        name.title = `${o.p.date}　${o.p.label || '（还没起名）'}`;
+        name.title = `${o.p.date}　${o.p.label || '（还没起名）'}${o.p.href ? `　→ ${o.p.href}` : ''}`;
+        // 有链接的在预览里加条虚下划线，一眼看出哪几个点能点
+        if (o.p.href) name.classList.add('is-link');
         name.style.transform = `translateY(calc(-50% + ${off}px))`;
         item.appendChild(name);
         inner.appendChild(item);
@@ -3732,33 +3780,25 @@ function paintTimelinePreview(host) {
     }
   }
 
-  /* ---- 时间段的名字：撞上事件文字就翻到另一侧 / 上下挪一格 ---- */
+  /*
+    时间段的名字：一侧一个。
+    挂哪一侧是数据定的，所以撞上事件文字时只在本侧上下让，不翻到对面
+    （翻过去就等于挂错历法了）—— 和页面上的规矩一样。
+  */
   for (const mark of spanMarks) {
     const free = (side, y) => !taken[side].some((b) => y + HALF_TEXT > b[0] && y - HALF_TEXT < b[1]);
-    let side = mark.side;
+    const side = mark.side;
     let y = mark.y;
     if (!free(side, y)) {
-      const other = side === 'left' ? 'right' : 'left';
-      const spots = [
-        [other, y],
-        [side, y + 16],
-        [side, y - 16],
-        [other, y + 16],
-        [other, y - 16],
-        [side, y + 32],
-        [side, y - 32],
-      ];
-      const hit = spots.find(([s, yy]) => free(s, yy));
-      if (hit) {
-        side = hit[0];
-        y = hit[1];
-      }
+      const hit = [16, -16, 32, -32, 48, -48].map((off) => y + off).find((yy) => free(side, yy));
+      if (hit !== undefined) y = hit;
     }
     taken[side].push([y - HALF_TEXT, y + HALF_TEXT]);
 
     const el = document.createElement('div');
-    el.className = 'tl-pv__span';
+    el.className = 'tl-pv__span' + (mark.el.href ? ' is-link' : '');
     el.textContent = mark.el.name || '（这段还没起名）';
+    el.title = mark.el.href ? `${mark.el.name}　→ ${mark.el.href}` : mark.el.name || '';
     const x = arcX(y);
     /*
       和页面上一样：右侧直接写 left；左侧写 left 再 translateX(-100%)
@@ -3939,6 +3979,10 @@ function renderTimelineEditor() {
       refreshSpanOptions();
       scheduleTlPreview();
     });
+    const href = linkField(p.href ?? '', '点它跳去哪（/huaya/xxx，留空就点不动）', (v) => {
+      p.href = v;
+      scheduleTlPreview();
+    });
 
     const del = document.createElement('button');
     del.type = 'button';
@@ -3952,7 +3996,7 @@ function renderTimelineEditor() {
       renderTimelineEditor();
     });
 
-    item.append(side, date, label, del);
+    item.append(side, date, label, href, del);
     plist.appendChild(item);
   });
   form.appendChild(plist);
@@ -3987,6 +4031,29 @@ function renderTimelineEditor() {
     const item = document.createElement('div');
     item.className = 'tl-edit__item tl-edit__item--span';
 
+    /*
+      挂哪一侧。数据里没写这一项（老数据）就按起点那个时间点的侧算 ——
+      和页面上的规则一致，所以下拉里直接预选算出来的那一侧，
+      用户不动它，存下去也不会多出字段。
+    */
+    const sideOf = (v) => (v === 'left' || v === 'right' || v === 'both' ? v : '');
+    const fromPoint = tl.points.find((p) => p.id === s.from);
+    const effSide = sideOf(s.side) || (fromPoint?.side === 'right' ? 'right' : 'left');
+    const spanSide = pageSelect(
+      [
+        ['left', tl.leftName || '左侧'],
+        ['right', tl.rightName || '右侧'],
+        ['both', '两侧都有'],
+      ],
+      effSide,
+      (v) => {
+        s.side = v;
+        scheduleTlPreview();
+      }
+    );
+    spanSide.className = 'input tl-edit__side';
+    spanSide.title = '这段年月挂在哪本历上；两边各有各的叫法就加两条，起点终点填一样、各选一侧';
+
     const name = boardInput(s.name ?? '', '这段叫什么（比如 XX年代）', (v) => {
       s.name = v;
       scheduleTlPreview();
@@ -3995,7 +4062,8 @@ function renderTimelineEditor() {
     const opts = tl.points.map((p) => ({ id: p.id, text: optText(p) }));
     const from = pageSelect([['', '起点…'], ...opts.map((o) => [o.id, o.text])], s.from, (v) => {
       s.from = v;
-      scheduleTlPreview();
+      // 换端点可能连「默认挂哪一侧」都变了，整块重画一次让下拉跟着对上
+      renderTimelineEditor();
     });
     from.className = 'input';
     const to = pageSelect([['', '终点…'], ...opts.map((o) => [o.id, o.text])], s.to, (v) => {
@@ -4010,6 +4078,11 @@ function renderTimelineEditor() {
       });
     }
 
+    const href = linkField(s.href ?? '', '点它跳去哪（/huaya/xxx，留空就点不动）', (v) => {
+      s.href = v;
+      scheduleTlPreview();
+    });
+
     const del = document.createElement('button');
     del.type = 'button';
     del.className = 'btn btn--ghost boardedit__mini boardedit__del';
@@ -4019,7 +4092,7 @@ function renderTimelineEditor() {
       renderTimelineEditor();
     });
 
-    item.append(name, from, to, del);
+    item.append(spanSide, name, from, to, href, del);
     slist.appendChild(item);
   });
   form.appendChild(slist);

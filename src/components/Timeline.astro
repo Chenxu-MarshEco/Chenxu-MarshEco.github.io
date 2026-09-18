@@ -19,7 +19,8 @@
  *    进了用别的轴（或没有轴）的页面，自然就是关着的。
  */
 import type { Timeline as TimelineData } from '../utils/timelines';
-import { pointParam, spanEdges, spanParam, rangeOf, dayOf } from '../utils/timelines';
+import { pointParam, spanEdges, spanParam, spanSides, rangeOf, dayOf } from '../utils/timelines';
+import { withBase } from '../utils/url';
 
 interface Props {
   timeline: TimelineData;
@@ -32,9 +33,15 @@ interface Props {
 
 const { timeline: tl, defaultParam = null } = Astro.props;
 
+/** 站内链接补上 base；站外原样（外链开新窗口，见下面的标记） */
+const linkHref = (href: string) =>
+  /^https?:/i.test(href) || href.startsWith('#') ? href : withBase(href);
+/** 站外链接要开新窗口 */
+const isExternal = (href: string) => /^https?:/i.test(href);
+
 const range = rangeOf(tl);
 const spanMin = Math.min(range.min, range.max);
-const spanMax = Math.max(range.min, range.max);
+const spanMax = Math.max(range.max, range.min);
 
 /** 时间点：位置、左右、名字、日期都写进 data-*，脚本照着摆 */
 const points = tl.points
@@ -42,20 +49,31 @@ const points = tl.points
   .sort((a, b) => a.t - b.t);
 
 /**
- * 时间段：带子画在哪一侧，跟它起点那个时间点走
- * （两端通常在同一个历法上，不同侧的话按起点算）。
+ * 时间段：一段区间可以同时挂在两侧。
+ *
+ * 挂哪几侧由数据里的 `side` 决定（left / right / both）；老数据没这一项，
+ * 就按它起点那个时间点的侧算 —— 那是加这个字段之前的行为。
+ *
+ * 每一侧各自有一条带子（贴着弧线往那一侧让开几像素，看得出归属）和一个名字，
+ * 所以「同一段年月，花娅历叫纷湖年代、冰室历叫纯良年代」就是加两条时间段、
+ * 起点终点填一样、各选一侧；也可以一条 `both` 两边同名。
  */
 const spans = tl.spans.map((s) => {
-  const from = tl.points.find((p) => p.id === s.from);
   const edges = spanEdges(tl, s);
   return {
     ...s,
     t: spanParam(tl, s),
     fromT: Math.min(edges.from, edges.to),
     toT: Math.max(edges.from, edges.to),
-    side: from?.side ?? 'left',
+    sides: spanSides(tl, s),
   };
 });
+
+/** 带子和名字都是「一个时间段 × 一侧」一条，摊平了渲染 */
+const spanBands = spans.flatMap((s) => s.sides.map((side) => ({ id: s.id, side, fromT: s.fromT, toT: s.toT })));
+const spanLabels = spans.flatMap((s) =>
+  s.sides.map((side) => ({ id: s.id, side, name: s.name, href: s.href, fromT: s.fromT, toT: s.toT }))
+);
 
 const gradId = `tl-arc-${tl.id}`;
 ---
@@ -100,9 +118,20 @@ const gradId = `tl-arc-${tl.id}`;
             <stop offset="100%" stop-color="#e04a08"></stop>
           </linearGradient>
         </defs>
-        {/* 时间段的带子：脚本按弧线生成，一个时间段一条 */}
-        {spans.map((s) => (
-          <path class="tl__band" data-tl-band={s.id} stroke={`url(#${gradId})`}></path>
+        {/*
+          时间段的带子：脚本按弧线生成，**一个时间段 × 一侧**一条。
+          data-tl-off 是这条带子往哪边让开（-1 左 / 1 右），
+          两端的位置直接写在自己身上，脚本不用再去别处查。
+        */}
+        {spanBands.map((b) => (
+          <path
+            class="tl__band"
+            data-tl-band
+            data-side={b.side}
+            data-tl-from={b.fromT}
+            data-tl-to={b.toT}
+            stroke={`url(#${gradId})`}
+          ></path>
         ))}
         {/* 主弧线 */}
         <path class="tl__arcLine" data-tl-arc stroke={`url(#${gradId})`}></path>
@@ -116,41 +145,67 @@ const gradId = `tl-arc-${tl.id}`;
         <span class="tl__nowDate" data-tl-nowdate></span>
       </div>
 
-      {spans.map((s) => (
-        <div
-          class="tl__spanName"
-          data-tl-spanName={s.id}
-          data-side={s.side}
-          data-tl-from={s.fromT}
-          data-tl-to={s.toT}
-        >
-          {s.name}
-        </div>
-      ))}
+      {/* 时间段的名字：同样的，一侧一个；有链接就整条可以点 */}
+      {spanLabels.map((l) => {
+        const Tag = l.href ? 'a' : 'span';
+        return (
+          <Tag
+            class="tl__spanName"
+            data-tl-spanName={l.id}
+            data-side={l.side}
+            data-tl-from={l.fromT}
+            data-tl-to={l.toT}
+            href={l.href ? linkHref(l.href) : undefined}
+            {...l.href && isExternal(l.href) ? { target: '_blank', rel: 'noopener' } : {}}
+            {...l.href ? { title: `${l.name}（点开看这一段）` } : {}}
+          >
+            {l.name}
+          </Tag>
+        );
+      })}
 
-      {points.map((p) => (
-        <div
-          class="tl__item"
-          data-tl-item
-          data-side={p.side}
-          data-param={p.t}
-          data-label={p.label}
-          data-date={p.date}
-          data-point={p.id}
-        >
-          <span class="tl__crane" aria-hidden="true">
-            <svg viewBox="0 0 24 24">
-              <path d="M10.5 20.5V6.5M13.5 20.5V6.5M8.5 20.5h7M12 4v2.5M3.5 9h17M12 4 3.5 9M12 4l8.5 5M17.5 9v4"></path>
-            </svg>
-          </span>
-          {/* 名字常驻显示；鼠标移上去再补一个日期 */}
-          <span class="tl__name">{p.label}</span>
-          <span class="tl__tip" role="tooltip">
-            <b>{p.label}</b>
-            <em>{p.date}</em>
-          </span>
-        </div>
-      ))}
+      {points.map((p) => {
+        /*
+          有链接就把**塔吊和名字**都做成真链接（而不是加个点击事件）：
+          这样中键开新窗口、键盘 Tab、右键复制地址都照常能用。
+          塔吊那一个是装饰（aria-hidden），所以 tabindex=-1，别多一个 tab 停靠点。
+        */
+        const NameTag = p.href ? 'a' : 'span';
+        const CraneTag = p.href ? 'a' : 'span';
+        const ext = p.href && isExternal(p.href) ? { target: '_blank', rel: 'noopener' } : {};
+        const href = p.href ? linkHref(p.href) : undefined;
+        return (
+          <div
+            class="tl__item"
+            data-tl-item
+            data-side={p.side}
+            data-param={p.t}
+            data-label={p.label}
+            data-date={p.date}
+            data-point={p.id}
+            data-href={p.href ? '1' : undefined}
+          >
+            <CraneTag
+              class="tl__crane"
+              aria-hidden="true"
+              tabindex={p.href ? '-1' : undefined}
+              href={href}
+              {...ext}
+            >
+              <svg viewBox="0 0 24 24">
+                <path d="M10.5 20.5V6.5M13.5 20.5V6.5M8.5 20.5h7M12 4v2.5M3.5 9h17M12 4 3.5 9M12 4l8.5 5M17.5 9v4"></path>
+              </svg>
+            </CraneTag>
+            {/* 名字常驻显示；鼠标移上去再补一个日期 */}
+            <NameTag class="tl__name" href={href} {...ext}>{p.label}</NameTag>
+            <span class="tl__tip" role="tooltip">
+              <b>{p.label}</b>
+              <em>{p.date}</em>
+              {p.href && <i>点开看看 ›</i>}
+            </span>
+          </div>
+        );
+      })}
     </div>
 
     <div class="tl__foot">
@@ -316,6 +371,17 @@ const gradId = `tl-arc-${tl.id}`;
     opacity: 0.28;
     stroke-linecap: round;
   }
+  /*
+    带子贴着弧线往自己那一侧让开一点，才看得出这段年月属于哪一边。
+    往左的往左平移，往右的往右平移（弧线在这一段几乎是竖直的，
+    横着挪就等于顺着法线挪）。
+  */
+  .tl__band[data-side='left'] {
+    transform: translateX(-8px);
+  }
+  .tl__band[data-side='right'] {
+    transform: translateX(8px);
+  }
 
   /*
     弧顶那一点：一个小圆点 + 当前日期。
@@ -399,7 +465,17 @@ const gradId = `tl-arc-${tl.id}`;
     font-size: 0.8rem;
     letter-spacing: 0.04em;
     color: #ffd9ef;
+    text-decoration: none;
     text-shadow: 0 1px 5px rgba(20, 0, 10, 0.9);
+  }
+  /* 带链接的名字：指上去给条下划线，让人知道能点 */
+  a.tl__name {
+    cursor: pointer;
+  }
+  a.tl__name:hover {
+    color: #fff;
+    text-decoration: underline;
+    text-underline-offset: 0.2em;
   }
   .tl__item[data-side='left'] .tl__name {
     right: 40px;
@@ -437,6 +513,12 @@ const gradId = `tl-arc-${tl.id}`;
     color: rgba(255, 190, 220, 0.85);
     font-variant-numeric: tabular-nums;
   }
+  /* 有链接的时间点，悬停卡片末尾提示一句 */
+  .tl__tip i {
+    font-style: normal;
+    font-size: 0.72rem;
+    color: #ff9ad5;
+  }
   .tl__item:hover .tl__tip {
     opacity: 1;
     visibility: visible;
@@ -448,6 +530,9 @@ const gradId = `tl-arc-${tl.id}`;
   /*
     时间段的名字，跟着带子一起走（同样算面板上的字，用粉色）。
 
+    比事件名（0.8rem）还大一档：事件是「点」，年代是「段」，
+    一段的名字站得比一个点更靠前才合理。
+
     注意它**没有** [data-side] 的左右列规则：这几个字的横坐标是脚本按
     「贴着弧线往两边让开 40px」直接写进 left 的（右边那列用
     translateX(-100%) 把文字右对齐过去）。以前这里另外写过 left/right
@@ -458,11 +543,22 @@ const gradId = `tl-arc-${tl.id}`;
     position: absolute;
     top: 0;
     transform: translateY(-50%);
-    font-size: 0.72rem;
+    font-size: 0.92rem;
     letter-spacing: 0.1em;
-    color: rgba(255, 190, 220, 0.8);
+    color: rgba(255, 205, 230, 0.92);
+    text-decoration: none;
     white-space: nowrap;
     pointer-events: none;
+  }
+  /* 有链接的那几个才收鼠标，也才有下划线和手型 */
+  a.tl__spanName {
+    pointer-events: auto;
+    cursor: pointer;
+  }
+  a.tl__spanName:hover {
+    color: #fff;
+    text-decoration: underline;
+    text-underline-offset: 0.2em;
   }
 
   .tl__foot {
@@ -940,12 +1036,14 @@ const gradId = `tl-arc-${tl.id}`;
       }
       rulerPath!.setAttribute('d', d);
 
-      // 时间段的带子：沿弧线走一段
+      /*
+        时间段的带子：沿弧线走一段。
+        两端位置就写在这条带子自己身上（一个时间段可能两侧各有一条，
+        所以不能再按时间段 id 去找「那个」名字节点）。
+      */
       for (const el of bands) {
-        const id = el.dataset.tlBand;
-        const host = root.querySelector<HTMLElement>(`[data-tl-spanName="${id}"]`);
-        const t0 = Number(host?.dataset.tlFrom ?? 'NaN');
-        const t1 = Number(host?.dataset.tlTo ?? 'NaN');
+        const t0 = Number(el.dataset.tlFrom ?? 'NaN');
+        const t1 = Number(el.dataset.tlTo ?? 'NaN');
         el.setAttribute('d', Number.isFinite(t0) && Number.isFinite(t1) ? arcD(t0, t1) : '');
       }
 
@@ -1011,7 +1109,7 @@ const gradId = `tl-arc-${tl.id}`;
       }
       /*
         弧顶那个「当前日期」也算一行的占用：它就在轴左边贴着弧顶，
-        时间段名翻到左侧时正撞在它身上（会读成「2022-12-30冰室元年」）。
+        时间段名正好落在那一行会撞在它身上（会读成「2022-12-30冰室元年」）。
       */
       if (nowBox) takenBySide.left.push([H / 2 - HALF_TEXT - 1, H / 2 + HALF_TEXT + 1]);
       const isFree = (side: string, y: number) =>
@@ -1033,35 +1131,18 @@ const gradId = `tl-arc-${tl.id}`;
         }
         el.style.visibility = '';
 
-        // 这条带子原本挂在哪一侧（翻过侧也要记住，下次从原侧重新算）
-        const remembered = el.dataset.tlSide;
-        const own: string =
-          remembered === 'left' || remembered === 'right'
-            ? remembered
-            : el.dataset.side === 'left'
-              ? 'left'
-              : 'right';
-        el.dataset.tlSide = own;
-        let side = own;
-        if (!isFree(own, y)) {
-          const other = own === 'left' ? 'right' : 'left';
-          const spots: Array<[string, number]> = [
-            [other, y],
-            [own, y + 16],
-            [own, y - 16],
-            [other, y + 16],
-            [other, y - 16],
-            [own, y + 32],
-            [own, y - 32],
-          ];
-          const hit = spots.find(([s, yy]) => isFree(s, yy));
-          if (hit) {
-            side = hit[0];
-            y = hit[1];
-          }
+        /*
+          这一段挂在哪一侧是**数据说了算**的（它就是「这一侧的历法管这段叫什么」），
+          所以撞上事件文字时只在本侧上下让，绝不翻到对面去 ——
+          翻过去就等于把它挂在了错的那本历上。
+        */
+        const side = el.dataset.side === 'left' ? 'left' : 'right';
+        if (!isFree(side, y)) {
+          const spots = [16, -16, 32, -32, 48, -48].map((off) => y + off);
+          const hit = spots.find((yy) => isFree(side, yy));
+          if (hit !== undefined) y = hit;
         }
         claim(side, y);
-        el.dataset.side = side;
         /*
           贴着弧线往两边让开 SPAN_GAP。右侧那列直接写 left；
           左侧那列写 left 再 translateX(-100%) 把文字右对齐过去 ——
@@ -1201,6 +1282,12 @@ const gradId = `tl-arc-${tl.id}`;
     // 拖也能滚：手机上没滚轮
     let drag: { id: number; y: number; cur: number } | null = null;
     body.addEventListener('pointerdown', (e) => {
+      /*
+        按在链接（时间点/时间段那些名字）上就别开始拖了 ——
+        那一下是给它自己点的。指针捕获一旦落到 body 上，
+        随后的 click 就不会再发给那个链接了，点了等于没点。
+      */
+      if ((e.target as HTMLElement | null)?.closest?.('a[href]')) return;
       drag = { id: e.pointerId, y: e.clientY, cur };
       body.setPointerCapture(e.pointerId);
     });

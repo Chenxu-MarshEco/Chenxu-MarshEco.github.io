@@ -2082,14 +2082,23 @@ body[data-type="notes"] .field--posts-only {
   gap: 6px;
   margin-bottom: 8px;
 }
+/*
+  时间点一行：侧 / 日期 / 事件名 / 跳转地址 / 删除。
+  时间段一行：侧 / 名字 / 起点 / 终点 / 跳转地址 / 删除。
+  弹窗宽 1180，表单那一列约 766px，这些宽度分得开。
+*/
 .tl-edit__item {
   display: grid;
-  grid-template-columns: 110px 160px minmax(0, 1fr) auto;
+  grid-template-columns: 92px 152px minmax(0, 1fr) minmax(0, 1fr) auto;
   gap: 6px;
   align-items: center;
 }
 .tl-edit__item--span {
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) auto;
+  grid-template-columns: 92px minmax(0, 1fr) minmax(0, 1.15fr) minmax(0, 1.15fr) minmax(0, 1.1fr) auto;
+}
+.tl-edit__item .input.is-bad {
+  border-color: var(--danger);
+  background: var(--danger-soft);
 }
 .tl-edit__side {
   padding: 5px 6px;
@@ -2263,11 +2272,18 @@ body[data-type="notes"] .field--posts-only {
 }
 .tl-pv__span {
   position: absolute;
-  font-size: 0.68rem;
+  /* 比事件名大一档，和页面上保持一致的大小关系（页面 0.8 / 0.92rem） */
+  font-size: 0.78rem;
   letter-spacing: 0.08em;
-  color: rgba(255, 190, 220, 0.85);
+  color: rgba(255, 205, 230, 0.92);
   white-space: nowrap;
   pointer-events: none;
+}
+/* 有链接的：加条虚下划线，一眼看出哪几个点/段能点开 */
+.tl-pv__name.is-link,
+.tl-pv__span.is-link {
+  text-decoration: underline dotted rgba(255, 154, 213, 0.9);
+  text-underline-offset: 0.18em;
 }
 .tl-pv__empty {
   position: absolute;
@@ -2292,8 +2308,8 @@ body[data-type="notes"] .field--posts-only {
    width 是 min(420px, …)，只加 max-width 的话根本撑不开（后面那条
    .modal__panel--wide 就是这么失效的）。 */
 .modal__panel--tl {
-  width: min(1060px, calc(100vw - 32px));
-  max-width: 1060px;
+  width: min(1180px, calc(100vw - 32px));
+  max-width: 1180px;
   max-height: 86vh;
   overflow-y: auto;
 }

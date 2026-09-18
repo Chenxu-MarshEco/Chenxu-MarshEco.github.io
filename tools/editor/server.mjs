@@ -1142,7 +1142,11 @@ function cleanTimelines(payload) {
       let pid = String(pt.id || '').trim();
       if (!pid || usedP.has(pid)) pid = `${id}-p${pi + 1}`;
       usedP.add(pid);
-      tl.points.push({ id: pid, side: pt.side === 'right' ? 'right' : 'left', date, label });
+      const point = { id: pid, side: pt.side === 'right' ? 'right' : 'left', date, label };
+      // 点一下跳去哪：和地图图钉同一套链接规则（javascript: / data: 一律丢掉）
+      const href = cleanLink(pt.href);
+      if (href) point.href = href;
+      tl.points.push(point);
     });
 
     const ids = new Set(tl.points.map((p) => p.id));
@@ -1158,7 +1162,12 @@ function cleanTimelines(payload) {
       let sid = String(sp.id || '').trim();
       if (!sid || usedS.has(sid)) sid = `${id}-s${si + 1}`;
       usedS.add(sid);
-      tl.spans.push({ id: sid, name, from, to });
+      const span = { id: sid, name, from, to };
+      // 挂哪一侧：left / right / both，认不出来就不写（渲染时按起点那侧算）
+      if (sp.side === 'left' || sp.side === 'right' || sp.side === 'both') span.side = sp.side;
+      const shref = cleanLink(sp.href);
+      if (shref) span.href = shref;
+      tl.spans.push(span);
     });
 
     timelines.push(tl);
