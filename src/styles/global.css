@@ -67,6 +67,16 @@ svg {
   height: auto;
 }
 
+/*
+ * <picture> 是个纯包装（为了给浏览器挑 AVIF/WebP），不该参与布局。
+ * display:contents 让它的盒子从布局里消失，里面的 <img> 就还是原来的
+ * 那个直接子节点 —— 外面那些 `.card > img`、flex 子项、grid 轨道的算法
+ * 全都跟没包这一层一样，不会因为「多包了一层」而错位。
+ */
+picture {
+  display: contents;
+}
+
 input,
 button,
 textarea,

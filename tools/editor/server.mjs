@@ -737,15 +737,49 @@ async function handleUpload(payload) {
     throw httpError(415, `不支持的图片类型 ${mime}，只允许 png / jpeg / gif / webp / svg`);
   }
 
-  const buf = Buffer.from(m[2].replace(/\s+/g, ''), 'base64');
-  if (!buf.length) throw httpError(400, '图片内容是空的');
-  if (buf.length > MAX_UPLOAD_BYTES) throw httpError(413, '单张图片不能超过 10MB');
+  const raw = Buffer.from(m[2].replace(/\s+/g, ''), 'base64');
+  if (!raw.length) throw httpError(400, '图片内容是空的');
+  if (raw.length > MAX_UPLOAD_BYTES) throw httpError(413, '单张图片不能超过 10MB');
 
-  const filename = sanitizeUploadName(name, UPLOAD_MIME.get(mime));
+  const ext = UPLOAD_MIME.get(mime);
+
+  /*
+   * 落盘之前先压一遍（tools/images/optimize.mjs 里的 compressUpload）。
+   * 以前这里是把上传的字节原样写进去的 —— 手机拍的 4MB 照片进了仓库就是 4MB，
+   * 页面也就真的去下 4MB。现在：JPEG 走 mozjpeg q82、限宽 1920、按 EXIF 摆正、
+   * 去掉元数据；PNG 走最高压缩级别；GIF/SVG 原样不碰（动图和矢量图不该重编码）。
+   *
+   * 压完顺手跑一次图片管线，这张新图立刻就有 WebP/AVIF 多尺寸和模糊占位，
+   * 编辑器里马上插入引用也不会漏掉优化。压缩失败绝不让上传失败：退回原图。
+   */
+  let out = { buf: raw, ext, before: raw.length, after: raw.length, note: '未压缩' };
+  try {
+    const mod = await import('../../tools/images/optimize.mjs');
+    out = await mod.compressUpload(raw, ext, mime);
+  } catch (err) {
+    out = { buf: raw, ext, before: raw.length, after: raw.length, note: `压缩模块没起来（${err.message}）` };
+  }
+
+  const filename = sanitizeUploadName(name, out.ext);
   await fs.mkdir(UPLOAD_DIR, { recursive: true });
-  await fs.writeFile(path.join(UPLOAD_DIR, filename), buf);
+  await fs.writeFile(path.join(UPLOAD_DIR, filename), out.buf);
 
-  return { ok: true, path: `/img/uploads/${filename}`, size: buf.length };
+  // 让这张新图立刻进清单（管线是增量的，只会编这一张）
+  try {
+    const mod = await import('../../tools/images/optimize.mjs');
+    await mod.optimizeOne(`/img/uploads/${filename}`);
+  } catch {
+    /* 清单没更新也只是这一张暂时按原图发，不影响上传成功 */
+  }
+
+  return {
+    ok: true,
+    path: `/img/uploads/${filename}`,
+    size: out.buf.length,
+    before: out.before,
+    after: out.after,
+    note: out.note,
+  };
 }
 
 // ---------------------------------------------------------------
@@ -920,13 +954,31 @@ function runBuild() {
     }
 
     const started = Date.now();
+
+    /*
+     * 先跑图片管线再构建 —— package.json 里的 `build` 脚本也是这个顺序。
+     * 编辑器这里不能改走 `pnpm build`（Windows 上 pnpm 是个 .cmd，起它要过 shell），
+     * 所以直接 import 那个模块来跑。
+     * 管线是增量的：没换过的图直接跳过，通常几十毫秒；只有第一次（或换了配置）
+     * 才需要几十秒重编，所以它**不算进下面 astro 的超时**。
+     * 它失败也不拦构建：站点照常出，只是图片退回原图。
+     */
+    let imageNote = '';
+    try {
+      const mod = await import('../../tools/images/optimize.mjs');
+      const { stats } = await mod.optimizeAll({ quiet: true });
+      imageNote = `图片管线：复用 ${stats.reused} / 新编 ${stats.encoded} / 小图跳过 ${stats.skipped}`;
+    } catch (err) {
+      imageNote = `图片管线没跑起来（${err.message}），这次按原图发`;
+    }
+
     return await new Promise((resolve, reject) => {
       const child = spawn(process.execPath, [entry, 'build'], {
         cwd: PROJECT_ROOT,
         stdio: ['ignore', 'pipe', 'pipe'],
       });
 
-      let out = '';
+      let out = imageNote ? `${imageNote}\n` : '';
       const keep = (buf) => {
         out += buf.toString('utf8');
         // 只留尾巴：够看报错就行，别把整个构建日志塞进浏览器
@@ -937,8 +989,8 @@ function runBuild() {
 
       const timer = setTimeout(() => {
         child.kill();
-        reject(httpError(500, '构建超时（120 秒），看看终端里是不是卡住了'));
-      }, 120000);
+        reject(httpError(500, '构建超时（180 秒），看看终端里是不是卡住了'));
+      }, 180000);
 
       child.on('error', (err) => {
         clearTimeout(timer);

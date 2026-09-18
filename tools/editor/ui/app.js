@@ -813,108 +813,33 @@ function readFileAsDataURL(file) {
 }
 
 /* ---------------------------------------------------------------
-   上传前先压缩
+   上传图片
 
-   站点的图直接就是这些文件本身（没过任何构建期图像管线），所以一张 8MB 的
-   PNG 截图会让整页等很久。这里在**浏览器里**先压一道：canvas 缩放 + 重新编码，
-   再上传。为什么不在服务端压：这台机器上 sharp / Pillow / ImageMagick / ffmpeg
-   一个都没有，而编辑器是「零依赖」的，为了压图去拉一个原生库不划算；
-   浏览器本来就带解码器和编码器，顺手就做了。
-
-   规则（都是「尽量看不出差别」的保守值）：
-     · 长边超过 1600px 才缩（封面显示宽度最多一千出头，1600 足够看清）
-     · 转 jpeg，质量 0.82
-     · 有透明通道的（logo 之类）保持 png，只缩尺寸
-     · gif / svg 不动（gif 会丢动画帧，svg 是矢量）
-     · 本来就小的（< 350KB 且尺寸不超）原样上传
+   **不在浏览器里预压缩了。**
+   以前这里是先用 canvas 缩放 + 转 JPEG(q0.82) 再上传，服务端又原样存下；
+   现在服务端有一条真正的图像管线（tools/images/optimize.mjs，用 sharp），
+   所以浏览器这一道不但多余，还有害：canvas 的编码器比 mozjpeg 差一截，
+   两遍 JPEG 等于「画质掉两回、体积还更大」。
+   现在原图直接传（localhost 上多传几 MB 无所谓），压缩统一在服务端做：
+   mozjpeg q82 + 限宽 1920 + 按 EXIF 摆正 + 去元数据，顺手生成
+   WebP/AVIF 多尺寸和模糊占位。接口会把压前/压后的字节数回给前端，
+   下面提示里报的就是真实数字，不是估算。
    --------------------------------------------------------------- */
-
-const MAX_EDGE = 1600;
-const JPEG_QUALITY = 0.82;
-const KEEP_AS_IS_BYTES = 350 * 1024;
-
-/** 读成 <img>，顺便拿到原始尺寸 */
-function loadImage(file) {
-  return new Promise((resolve, reject) => {
-    const url = URL.createObjectURL(file);
-    const img = new Image();
-    img.onload = () => resolve({ img, revoke: () => URL.revokeObjectURL(url) });
-    img.onerror = () => {
-      URL.revokeObjectURL(url);
-      reject(new Error('这个文件读不出图像'));
-    };
-    img.src = url;
-  });
-}
-
-/** 图上有没有真的用到透明（全不透明的 png 可以放心转 jpeg） */
-function hasAlpha(ctx, w, h) {
-  try {
-    const d = ctx.getImageData(0, 0, w, h).data;
-    // 抽稀看：每 37 个像素看一个，够发现大片透明了
-    for (let i = 3; i < d.length; i += 4 * 37) if (d[i] < 250) return true;
-  } catch {
-    return true; // 读不出来就当有透明，保守一点
-  }
-  return false;
-}
-
-/**
- * 压缩一张图。返回 { dataUrl, name, saved }（没压的话 saved = 0）。
- * 任何一步出问题都退回原图 —— 宁可传大的，也不能让用户传不上去。
- */
-async function shrinkImage(file) {
-  const raw = { dataUrl: await readFileAsDataURL(file), name: file.name, saved: 0 };
-  const type = file.type || '';
-  if (!/^image\/(png|jpeg|jpg|webp)$/i.test(type)) return raw;
-
-  let loaded;
-  try {
-    loaded = await loadImage(file);
-  } catch {
-    return raw;
-  }
-
-  try {
-    const { img } = loaded;
-    const long = Math.max(img.naturalWidth, img.naturalHeight);
-    const scale = long > MAX_EDGE ? MAX_EDGE / long : 1;
-    if (scale === 1 && file.size < KEEP_AS_IS_BYTES) return raw; // 本来就小，不动
-
-    const w = Math.max(1, Math.round(img.naturalWidth * scale));
-    const h = Math.max(1, Math.round(img.naturalHeight * scale));
-    const cv = document.createElement('canvas');
-    cv.width = w;
-    cv.height = h;
-    const ctx = cv.getContext('2d', { willReadFrequently: true });
-    ctx.imageSmoothingEnabled = true;
-    ctx.imageSmoothingQuality = 'high';
-    ctx.drawImage(img, 0, 0, w, h);
-
-    const keepPng = /png/i.test(type) && hasAlpha(ctx, w, h);
-    const outType = keepPng ? 'image/png' : 'image/jpeg';
-    const outName = keepPng
-      ? file.name.replace(/\.[^.]+$/, '') + '.png'
-      : file.name.replace(/\.[^.]+$/, '') + '.jpg';
-
-    const dataUrl = cv.toDataURL(outType, keepPng ? undefined : JPEG_QUALITY);
-    // 压完反而更大就用原来的（小图转 jpeg 偶尔会这样）
-    if (dataUrl.length >= raw.dataUrl.length) return raw;
-    return { dataUrl, name: outName, saved: raw.dataUrl.length - dataUrl.length };
-  } finally {
-    loaded.revoke();
-  }
-}
 
 async function uploadImage(file) {
   if (!file) throw new Error('没有选择文件');
   if (file.size > 20 * 1024 * 1024) throw new Error('图片超过 20MB，先裁一下再传');
 
-  const { dataUrl, name, saved } = await shrinkImage(file);
-  const res = await apiPost('/api/upload', { name, dataUrl });
-  if (saved > 0) {
-    const kb = Math.round(saved / 1024);
-    toast(`图片已压缩后上传（小了约 ${kb >= 1024 ? `${(kb / 1024).toFixed(1)}MB` : `${kb}KB`}）`);
+  const dataUrl = await readFileAsDataURL(file);
+  const res = await apiPost('/api/upload', { name: file.name, dataUrl });
+
+  const before = Number(res.before ?? file.size);
+  const after = Number(res.after ?? res.size ?? 0);
+  if (after > 0 && before > after) {
+    const fmt = (n) => (n >= 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)}MB` : `${Math.round(n / 1024)}KB`);
+    toast(`图片已压缩后上传：${fmt(before)} → ${fmt(after)}${res.note ? `（${res.note}）` : ''}`);
+  } else if (res.note) {
+    toast(`图片已上传（${res.note}）`);
   }
   return res.path;
 }

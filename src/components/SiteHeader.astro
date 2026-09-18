@@ -7,11 +7,11 @@
  * 栏目入口统一在首页「花娅陌域 → 花娅陌质流」里。
  */
 import site from '../site.config';
+import Img from './Img.astro';
 import { withBase } from '../utils/url';
 
 const base = withBase('/');
-/** 和首页 .brand__logo 用的是同一张图 */
-const logo = withBase('/img/home/logo.png');
+/** 徽记和首页 .brand__logo 用的是同一张图（/img/home/logo.png，走图片管线发小图） */
 ---
 
 <header class="site-header">
@@ -23,7 +23,14 @@ const logo = withBase('/img/home/logo.png');
   <div class="site-header__inner">
     <a class="site-brand" href={base}>
       {/* 紧挨着就是「花涧堂」三个字，徽记算装饰，alt 留空免得读屏念两遍 */}
-      <img class="site-brand__logo" src={logo} alt="" width="384" height="384" decoding="async" />
+      <Img
+        class="site-brand__logo"
+        src="/img/home/logo.png"
+        alt=""
+        sizes="48px"
+        loading="eager"
+        decoding="async"
+      />
       <span class="site-title">{site.title}</span>
     </a>
   </div>

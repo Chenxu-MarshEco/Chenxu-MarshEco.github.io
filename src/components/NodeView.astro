@@ -26,6 +26,8 @@
  * 推导逻辑只有一处（utils/boards.ts），放两处迟早对不上。
  */
 import { withBase } from '../utils/url';
+import { coverUrl } from '../utils/images';
+import Img from './Img.astro';
 import SubCard from './SubCard.astro';
 import PageContent from './PageContent.astro';
 import type { BlockItem } from '../utils/boardPage';
@@ -186,7 +188,7 @@ const layout = wantLayout === 'region' && children.length >= 4 ? 'region' : 'sta
             data-edit={`block-${c.id}`}
             href={c.external ? c.url : withBase(c.url)}
             {...c.external ? { target: '_blank', rel: 'noopener' } : {}}
-            style={[cardSize(c), c.image ? `--cover:url(${withBase(c.image)})` : '']
+            style={[cardSize(c), c.image ? `--cover:${coverUrl(c.image, 800)}` : '']
               .filter(Boolean)
               .join(';') || undefined}
             data-tl-param={paramOf(c) === null ? undefined : String(paramOf(c))}
@@ -224,7 +226,7 @@ const layout = wantLayout === 'region' && children.length >= 4 ? 'region' : 'sta
           <li>
             {/* 有封面的给个小图：点进去之前就看得到。正文里的图不当封面 */}
             {p.cover && (
-              <img class="subposts__cover" src={withBase(p.cover)} alt="" loading="lazy" decoding="async" />
+              <Img class="subposts__cover" src={p.cover} alt="" sizes="132px" loading="lazy" />
             )}
             <a href={withBase(p.href)}>{p.title}</a>
             <em>{p.date}</em>

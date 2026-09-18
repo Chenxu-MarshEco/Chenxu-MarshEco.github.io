@@ -17,6 +17,7 @@
  *   没传封面图 → 不摆空图位，就是一条扁平的名字条
  * 都不放右箭头 —— 整块本来就是链接。
  */
+import { coverUrl, coverUrlHd } from '../utils/images';
 import { withBase } from '../utils/url';
 
 interface Props {
@@ -63,11 +64,22 @@ const {
   tlParam = null,
 } = Astro.props;
 
-/** 像素宽高 + 封面图拼成一条内联样式 */
+/**
+ * 像素宽高 + 封面图拼成一条内联样式。
+ *
+ * 封面给两条：
+ *   --cover     单张 WebP（按 800 档），所有浏览器都认，是兜底
+ *   --cover-hd  image-set 的 1x/2x（400 / 800），只有认 image-set 的浏览器用得上
+ * 卡片在桌面上大概三百多 CSS px 宽，DPR1 的屏用 400 档就够（约 11KB），
+ * 手机 DPR2 才需要 800 档。认不出 image-set 的浏览器拿 --cover 那张，照样有图。
+ */
+const cover = image ? coverUrl(image, 800) : null;
+const coverHd = image ? coverUrlHd(image, 400, 800) : null;
 const inlineStyle = [
   Number(width) > 0 ? `width:${Number(width)}px` : null,
   Number(height) > 0 ? `height:${Number(height)}px` : null,
-  image ? `--cover:url(${withBase(image)})` : null,
+  cover ? `--cover:${cover}` : null,
+  coverHd ? `--cover-hd:${coverHd}` : null,
 ]
   .filter(Boolean)
   .join(';');
@@ -135,6 +147,18 @@ const inlineStyle = [
     transition:
       opacity 0.18s ease,
       transform 0.4s ease;
+  }
+  /*
+    认 image-set 的浏览器走这一条：按 DPR 在 400 / 800 两档里挑，
+    桌面上就不用为了手机上那一份清晰度白白多下一倍。
+    @supports 是必须的：--cover-hd 里是 image-set，浏览器不认它的话，
+    直接写 `background-image: var(--cover-hd)` 会变成 IACVT 整条作废，
+    连上面那条 --cover 兜底也一起没了（自定义属性不校验值，这是坑）。
+  */
+  @supports (background-image: image-set(url(a.png) 1x)) {
+    .card--cover::before {
+      background-image: var(--cover-hd);
+    }
   }
   /* 再压一层很淡的暗底：名字要压在任意一张图上都读得清 */
   .card--cover::after {

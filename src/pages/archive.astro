@@ -1,5 +1,6 @@
 ---
 import BaseLayout from '../layouts/BaseLayout.astro';
+import Img from '../components/Img.astro';
 import { entryUrl, getNotes, getPosts } from '../utils/content';
 import { toISODate } from '../utils/date';
 import { withBase } from '../utils/url';
@@ -44,7 +45,13 @@ const years = [...byYear.entries()]
               <li class="archive-list__item">
                 <span class="archive-list__date">{toISODate(entry.data.date).slice(5)}</span>
                 {'cover' in entry.data && entry.data.cover && (
-                  <img class="archive-list__cover" src={withBase(entry.data.cover)} alt="" loading="lazy" decoding="async" />
+                  <Img
+                    class="archive-list__cover"
+                    src={String(entry.data.cover)}
+                    alt=""
+                    sizes="120px"
+                    loading="lazy"
+                  />
                 )}
                 <a class="archive-list__title" href={withBase(entryUrl(entry))}>
                   {entry.data.title}

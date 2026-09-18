@@ -1,12 +1,19 @@
 ---
 import BaseLayout from '../layouts/BaseLayout.astro';
 import HomeCranes from '../components/HomeCranes.astro';
+import Img from '../components/Img.astro';
 import site from '../site.config';
 import { withBase } from '../utils/url';
 import { flattenBoards, type BoardNode } from '../utils/boards';
 import { editVars } from '../utils/layout';
+import { bgStyle, coverUrl } from '../utils/images';
 
-const skyline = withBase('/img/home/skyline.png');
+/*
+  天际线换成图片管线出的**无损 WebP**：颜色逐位不变（塔吊的 --ink #08020c
+  和剪影图的墨色严丝合缝，这点不能有损），体积 30.2KB → 3.1KB。
+  用原始宽度那一档：这一层是 background-size:100% 100% 铺满整屏的。
+*/
+const skyline = coverUrl('/img/home/skyline.png', 1773);
 
 /*
   大板块的地址由数据推导（用户选了「自动生成页面」），
@@ -40,13 +47,20 @@ const styleOf = (key: string) => editVars('home', key) ?? undefined;
     那栋楼的标志，提取时特意保住了。
   */}
   {/*
-    天际线的滚动视差：页面滚动时整片天际线（连塔吊一起）轻微上移，
+    天际线的滚动视差：页面滚动时整片「城市 + 倒影 + 水天分界线」一起轻微下沉，
     用 CSS 滚动驱动动画做，不需要 JS。浏览器不支持时整块不生效，
     天际线就还是钉在底部 —— 页面本身完全不受影响。
 
+    ⚠ 视差必须挂在 .vapor__sea（整片水陆）上，不能挂在 .vapor__horizon 上。
+    倒影和水天分界线（.vapor__shore）是 horizon 的**兄弟节点**，不跟着它动：
+    只动 horizon 的话，城市会从自己的倒影和水线上「飘走」—— 滚一下就是两个图层，
+    倒影对不上楼、楼底也对不上水面。挂在共同祖先上，三者才是刚性的一块。
+    另外 translateY 的百分比是按**元素自身高度**算的，所以也不能把三个节点
+    写进同一个选择器列表里（72px 的倒影带和 2px 的水线算出来完全不是同一个位移）。
+
     ⚠ 这段必须写在 is:inline 里，不能并进下面的 <style>。
     构建时 Lightning CSS 会把 animation-timeline 合并进 animation 简写
-    （animation: linear both horizon-parallax scroll(root)），
+    （animation: linear both coast-parallax scroll(root)），
     而 Chrome 到现在还不接受简写里的时间线 —— 那条声明会被整条判为无效，
     动画静默失效：不报错、也不动，事后极难查。
     is:inline 的样式不经过压缩器，长写形式能原样送到浏览器。
@@ -54,17 +68,19 @@ const styleOf = (key: string) => editVars('home', key) ?? undefined;
   <style is:inline>
     @supports (animation-timeline: scroll()) {
       @media (prefers-reduced-motion: no-preference) {
-        .vapor__horizon {
-          animation-name: horizon-parallax;
+        .vapor__sea {
+          animation-name: coast-parallax;
           animation-timing-function: linear;
           animation-fill-mode: both;
           animation-timeline: scroll(root block);
         }
-        @keyframes horizon-parallax {
+        @keyframes coast-parallax {
           from {
             transform: translateY(0);
           }
           to {
+            /* 2.4% × 这片的自身高度 ≈ 11px。往下沉，水面的下缘出画，
+               不会在屏幕底部露出缝 */
             transform: translateY(2.4%);
           }
         }
@@ -134,11 +150,11 @@ const styleOf = (key: string) => editVars('home', key) ?? undefined;
       */}
       <div class="vapor__horizon">
         <HomeCranes />
-        <div class="vapor__skyline" style={`background-image:url(${skyline})`}></div>
+        <div class="vapor__skyline" style={`background-image:${skyline}`}></div>
       </div>
 
       <div class="vapor__reflectWrap">
-        <div class="vapor__reflect" style={`background-image:url(${skyline})`}></div>
+        <div class="vapor__reflect" style={`background-image:${skyline}`}></div>
         {/* 水面上的横向微光 */}
         <div class="vapor__shimmer"></div>
         {/* 落日正下方的碎金 */}
@@ -155,15 +171,14 @@ const styleOf = (key: string) => editVars('home', key) ?? undefined;
 
   <div class="home">
     <header class="brand">
-      <img
+      <Img
         class="brand__logo"
         data-edit="logo"
         style={styleOf('logo')}
-        src={withBase('/img/home/logo.png')}
+        src="/img/home/logo.png"
         alt="花涧堂徽记：龙环与塔吊艺术字"
-        width="512"
-        height="512"
-        decoding="async"
+        sizes="(max-width: 760px) 42vw, 240px"
+        loading="eager"
       />
       <div class="brand__text">
         <h1 class="brand__title" data-text="花涧堂" data-edit="title" style={styleOf('title')}>
@@ -179,7 +194,7 @@ const styleOf = (key: string) => editVars('home', key) ?? undefined;
           <a class="board" href={withBase(boardUrl(board.id))} id={board.id}>
             <div
               class="board__bg"
-              style={`background-image:url(${withBase(board.image)})`}
+              style={bgStyle(board.image, { w: 800, w2: 1600 })}
             />
             <div class="board__veil" />
             <div class="board__body">

@@ -3,6 +3,10 @@ node_modules/
 dist/
 .astro/
 
+# 图片优化产物：每次构建由 tools/images/optimize.mjs 现生成，不进仓库
+# （不放进来的话每张图都要多存四五份，仓库会翻好几倍）
+public/img/opt/
+
 # 本地环境
 .env
 .env.*

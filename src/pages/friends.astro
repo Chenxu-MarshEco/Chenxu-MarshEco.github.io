@@ -1,5 +1,6 @@
 ---
 import BaseLayout from '../layouts/BaseLayout.astro';
+import Img from '../components/Img.astro';
 import site from '../site.config';
 import { withBase } from '../utils/url';
 ---
@@ -23,7 +24,7 @@ import { withBase } from '../utils/url';
         {site.friends.map((f) => (
           <li>
             <a class="friend-card" href={f.href} target="_blank" rel="noopener noreferrer">
-              {f.image && <img class="friend-card__img" src={withBase(f.image)} alt="" />}
+              {f.image && <Img class="friend-card__img" src={f.image} alt="" sizes="88px" />}
               <span>
                 <span class="friend-card__name">{f.name}</span>
                 {f.description && <span class="friend-card__desc">{f.description}</span>}

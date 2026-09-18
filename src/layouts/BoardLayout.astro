@@ -6,6 +6,7 @@
  * 背景沿用该板块在首页的那张蒸汽波调色图，保持连续感。
  */
 import BaseLayout from './BaseLayout.astro';
+import { bgStyle } from '../utils/images';
 import { withBase } from '../utils/url';
 import type { Timeline as TimelineData } from '../utils/timelines';
 
@@ -43,7 +44,7 @@ const {
   <div class="bp">
     {/* data-edit 是排版模式的锚点，配合 layout.json 的 board 组生效 */}
     <header class="bp__hero" data-edit="hero">
-      {image && <div class="bp__bg" style={`background-image:url(${withBase(image)})`} />}
+      {image && <div class="bp__bg" style={bgStyle(image, { w: 1200, w2: 1600 })} />}
       <div class="bp__veil"></div>
       <div class="bp__heroInner">
         <a class="bp__back" href={withBase(backHref)}>← {backLabel}</a>

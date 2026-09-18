@@ -22,8 +22,10 @@
  * 没写 page 的页面不走这里 —— 它们仍然沿用老的「子版块自动铺开」。
  */
 import { marked } from 'marked';
+import Img from './Img.astro';
 import SubCard from './SubCard.astro';
 import { withBase } from '../utils/url';
+import { enhanceHtml } from '../utils/images';
 import type { BlockItem, SubPost } from '../utils/boardPage';
 import { DEFAULT_LINE_COLOR, isLinkUrl, mapPages, type PageBlock } from '../utils/boards';
 import { refParam, type Timeline } from '../utils/timelines';
@@ -47,7 +49,7 @@ const { blocks, children, posts, timeline } = Astro.props;
   所以这里不用把它挪进 dependencies —— 挪了就得同步改 lockfile，
   而 CI 用的是 --frozen-lockfile，改不干净会直接把部署卡死。
 */
-const renderText = (text: string) => marked.parse(text ?? '', { async: false }) as string;
+const renderText = (text: string) => enhanceHtml(marked.parse(text ?? '', { async: false }) as string);
 
 /* ------------------------------------------------------------------
    目录（toc 块）
@@ -122,7 +124,10 @@ function hoverCardHtml(label: string, img: string, href: string): string {
   if (!src) return '';
   // 文字里允许写 **粗体**、`代码` 这类行内标记，单独渲染一遍
   const text = marked.parseInline(label.trim(), { async: false }) as string;
-  const picture = `<img class="phover__img" src="${escAttr(asSrc(src))}" alt="" loading="lazy" decoding="async" />`;
+  const picture = enhanceHtml(
+    `<img class="phover__img" src="${escAttr(asSrc(src))}" alt="" loading="lazy" decoding="async" />`,
+    { sizes: '320px' }
+  );
 
   const url = href.trim();
   /*
@@ -304,7 +309,7 @@ const cardsOf = (b: Extract<PageBlock, { type: 'children' }>) => ({
 
           {b.type === 'image' && (
             <figure class:list={['pfigure', `pfigure--${b.width ?? 'wide'}`]}>
-              <img src={withBase(b.src)} alt={b.alt ?? ''} loading="lazy" decoding="async" />
+              <Img src={b.src} alt={b.alt ?? ''} sizes="(max-width: 760px) 100vw, 760px" loading="lazy" />
               {b.alt && <figcaption>{b.alt}</figcaption>}
             </figure>
           )}
@@ -369,7 +374,7 @@ const cardsOf = (b: Extract<PageBlock, { type: 'children' }>) => ({
                     <li>
                       {/* 有封面的给个小图（正文里的图不当封面） */}
                       {p.cover && (
-                        <img class="pposts__cover" src={withBase(p.cover)} alt="" loading="lazy" decoding="async" />
+                        <Img class="pposts__cover" src={p.cover} alt="" sizes="132px" loading="lazy" />
                       )}
                       <a href={withBase(p.href)}>{p.title}</a>
                       <em>{p.date}</em>
@@ -461,12 +466,13 @@ const cardsOf = (b: Extract<PageBlock, { type: 'children' }>) => ({
                 {pages.map((pg, pi) => (
                   <div class="pmap__page" data-pmap-page hidden={pi !== 0}>
                     <div class="pmap__stage" data-pmap-stage>
-                      <img
+                      <Img
                         class="pmap__img"
-                        src={withBase(pg.src)}
+                        src={pg.src}
                         alt={pg.alt ?? ''}
+                        sizes="(max-width: 760px) 100vw, 900px"
+                        loading="eager"
                         draggable="false"
-                        decoding="async"
                       />
 
                       {/*

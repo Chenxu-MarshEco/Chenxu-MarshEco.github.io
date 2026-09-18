@@ -1,5 +1,6 @@
 ---
 import type { AnyEntry } from '../utils/content';
+import Img from './Img.astro';
 import { excerpt, readingTime } from '../utils/content';
 import { formatDateShort, toISODate } from '../utils/date';
 import { withBase } from '../utils/url';
@@ -35,7 +36,13 @@ const minutes = readingTime((entry as { body?: string }).body);
 
     {
       'cover' in data && data.cover && (
-        <img class="post-item__cover" src={withBase(data.cover)} alt="" loading="lazy" />
+        <Img
+          class="post-item__cover"
+          src={String(data.cover)}
+          alt=""
+          sizes="(max-width: 760px) 100vw, 620px"
+          loading="lazy"
+        />
       )
     }
 

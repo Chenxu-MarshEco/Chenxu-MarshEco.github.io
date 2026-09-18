@@ -1,0 +1,92 @@
+---
+/**
+ * 图片组件：给一张站内图片路径，自动发最省流量的那一版。
+ *
+ *   有清单（跑过 tools/images/optimize.mjs）时：
+ *     <picture>
+ *       <source type="image/avif" srcset="… 400w, … 800w, …" sizes="…">
+ *       <source type="image/webp" srcset="… 400w, … 800w, …" sizes="…">
+ *       <img src="原图" width height style="模糊占位做背景">
+ *     </picture>
+ *   没有清单时：原样一个 <img>，什么都不变。
+ *
+ * width/height 一定带上：浏览器据此提前把位置留出来，图到之前布局不跳（CLS）。
+ * 模糊占位（LQIP）是 20px 宽的极小图 inline 成 data URL，一百多字节，
+ * 当 <img> 自己的背景 —— 真图没到时先显示它，到了直接盖上去，不需要 JS。
+ *
+ * 注意 `picture { display: contents }` 是配套写在 global.css 里的，
+ * 这样包一层 <picture> 不会影响外面那些 `.card > img` 之类的布局选择器。
+ */
+import { fallbackSrc, hasAvif, imageItem, lqipStyle, srcsetFor } from '../utils/images';
+import { withBase } from '../utils/url';
+
+interface Props {
+  src: string;
+  alt?: string;
+  /** 告诉浏览器这张图在版面上大概多宽，srcset 的档位就是按它挑的 */
+  sizes?: string;
+  class?: string;
+  style?: string;
+  loading?: 'lazy' | 'eager';
+  decoding?: 'async' | 'sync' | 'auto';
+  fetchpriority?: 'high' | 'low' | 'auto';
+  width?: number | string;
+  height?: number | string;
+  id?: string;
+  'data-edit'?: string;
+}
+
+const {
+  src,
+  alt = '',
+  sizes = '100vw',
+  class: className,
+  style,
+  loading = 'lazy',
+  decoding = 'async',
+  fetchpriority,
+  width,
+  height,
+  ...rest
+} = Astro.props;
+
+const item = imageItem(src);
+const dims = {
+  width: width ?? item?.w ?? undefined,
+  height: height ?? item?.h ?? undefined,
+};
+const lqip = lqipStyle(item);
+const mergedStyle = [lqip, style].filter(Boolean).join('') || undefined;
+---
+
+{
+  item ? (
+    <picture>
+      {hasAvif(item) && <source type="image/avif" srcset={srcsetFor(item, 'avif')} sizes={sizes} />}
+      <source type="image/webp" srcset={srcsetFor(item, 'webp')} sizes={sizes} />
+      <img
+        src={fallbackSrc(item, src)}
+        {...dims}
+        class={className}
+        style={mergedStyle}
+        alt={alt}
+        loading={loading}
+        decoding={decoding}
+        fetchpriority={fetchpriority}
+        {...rest}
+      />
+    </picture>
+  ) : (
+    <img
+      src={withBase(src)}
+      {...dims}
+      class={className}
+      style={style}
+      alt={alt}
+      loading={loading}
+      decoding={decoding}
+      fetchpriority={fetchpriority}
+      {...rest}
+    />
+  )
+}

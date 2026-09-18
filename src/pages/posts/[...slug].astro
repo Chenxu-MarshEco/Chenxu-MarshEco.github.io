@@ -1,6 +1,7 @@
 ---
 import { render } from 'astro:content';
 import BaseLayout from '../../layouts/BaseLayout.astro';
+import Img from '../../components/Img.astro';
 import PostTrail from '../../components/PostTrail.astro';
 import TableOfContents from '../../components/TableOfContents.astro';
 import { entryUrl, getPosts, neighbors, readingTime } from '../../utils/content';
@@ -35,6 +36,8 @@ const trails = trailsOf(site.homeBoards as BoardNode[], data.subs);
   updatedTime={data.updated}
   narrow
   layoutPage="post"
+  preloadImage={data.cover}
+  preloadImageSizes="(max-width: 760px) 100vw, 760px"
 >
   <article class="post-layout" class:list={[hasToc && 'post-layout--with-toc']}>
     <div>
@@ -71,7 +74,14 @@ const trails = trailsOf(site.homeBoards as BoardNode[], data.subs);
 
       {
         data.cover && (
-          <img class="post-cover" src={withBase(data.cover)} alt="" loading="eager" />
+          <Img
+            class="post-cover"
+            src={data.cover}
+            alt=""
+            sizes="(max-width: 760px) 100vw, 760px"
+            loading="eager"
+            fetchpriority="high"
+          />
         )
       }
 

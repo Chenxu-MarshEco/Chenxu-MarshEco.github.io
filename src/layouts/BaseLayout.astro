@@ -7,6 +7,7 @@ import BoardDrawer from '../components/BoardDrawer.astro';
 import Timeline from '../components/Timeline.astro';
 import site from '../site.config';
 import { absoluteUrl, withBase } from '../utils/url';
+import { preloadFor } from '../utils/images';
 import { editStyleBlock, type PageKey } from '../utils/layout';
 import { refParam, type Timeline as TimelineData } from '../utils/timelines';
 
@@ -34,6 +35,14 @@ interface Props {
    */
   timeline?: TimelineData;
   timelineDefault?: number | null;
+  /**
+   * 首屏最大的那张图（文章封面这类）。给了就在这里发一条 preload，
+   * 让浏览器在解析 body 之前就开始拉它 —— 这是 LCP 最直接的一刀。
+   * imagesrcset + imagesizes 必须跟 <img> 上那套一致，
+   * 否则会下两份（preload 一份、img 自己再挑一份）。
+   */
+  preloadImage?: string;
+  preloadImageSizes?: string;
 }
 
 const {
@@ -48,7 +57,12 @@ const {
   layoutPage,
   timeline,
   timelineDefault = null,
+  preloadImage,
+  preloadImageSizes = '100vw',
 } = Astro.props;
+
+/** 首屏大图的 preload（图片管线里查得到才发） */
+const preload = preloadImage ? preloadFor(preloadImage, preloadImageSizes) : null;
 
 /** 这一页的排版微调样式；全是默认值时为 null，不输出 */
 const layoutCss = layoutPage ? editStyleBlock(layoutPage) : null;
@@ -81,12 +95,35 @@ const currentPath = withoutBase.length > 1 ? withoutBase.replace(/\/+$/, '') : '
 
     <link rel="canonical" href={canonical} />
     <link rel="icon" type="image/svg+xml" href={withBase('/favicon.svg')} />
-    {/* 站点字体 565 KB，提前拉起来，否则首屏会闪一下系统字体 */}
+    {/*
+      首屏大图提前拉：imagesrcset/imagesizes 要跟下面 <img> 上的完全一致，
+      不一致的话浏览器会当成两张不同的图，各下一份。
+      type 写上，浏览器不支持这种格式时这条 preload 直接跳过（不会白下）。
+    */}
+    {preload && (
+      <link
+        rel="preload"
+        as="image"
+        type={preload.type}
+        imagesrcset={preload.srcset}
+        imagesizes={preload.sizes}
+        fetchpriority="high"
+      />
+    )}
+    {/*
+      字体分片之后，只需要预拉「第 01 片」——切片脚本按站点真实用字频率排的，
+      第 01 片永远是最高频的那 300 字，任何一页都用得到，约 40KB。
+      以前这里预拉的是 1040KB 的母本整份：页面其实只需要其中三四片，
+      这一条 preload 等于把省下来的又全下回来了（实测首页总下载 1306KB，
+      其中 1040KB 就是它）。
+      preload 字体的 crossorigin 不能省：字体走 CORS 模式取，少了这个属性
+      浏览器会当成两份不同的资源，白白下两遍。
+    */}
     <link
       rel="preload"
       as="font"
       type="font/woff2"
-      href={withBase('/fonts/huajiantang.woff2')}
+      href={withBase('/fonts/huajiantang-01.woff2')}
       crossorigin
     />
     <link
