@@ -348,6 +348,13 @@
           "date": "2026-05-21",
           "label": "Raw梦碎黑龙",
           "kind": "event"
+        },
+        {
+          "id": "tl-mu6e19cb793-pmu6occ3a56",
+          "side": "right",
+          "date": "2026-09-03",
+          "label": "Raw重返北大",
+          "kind": "event"
         }
       ],
       "spans": [
