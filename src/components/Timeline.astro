@@ -154,9 +154,39 @@ const gradId = `tl-arc-${tl.id}`;
     </div>
 
     <div class="tl__foot">
-      <span class="tl__side tl__side--left">{tl.leftName}</span>
-      <span class="tl__hint">滚轮滚刻度</span>
-      <span class="tl__side tl__side--right">{tl.rightName}</span>
+      <div class="tl__footNames">
+        <span class="tl__side tl__side--left">{tl.leftName}</span>
+        <span class="tl__side tl__side--right">{tl.rightName}</span>
+      </div>
+
+      {/*
+        时间轴比例：一根横着的刻度尺，上面的塔吊当滑块，左右拖就改比例尺。
+        往左 = 放大（一刻度代表的天数变少，最左是一天一格），
+        往右 = 缩小（最右是一年一格）。位置记在 sessionStorage 里，见脚本。
+      */}
+      <div class="tl__scale">
+        <span class="tl__scaleLabel" id={`tl-scale-label-${tl.id}`}>时间轴比例</span>
+        <div class="tl__scaleTrack" data-tl-track>
+          <span class="tl__scaleRail" data-tl-rail>
+            <span
+              class="tl__scaleKnob"
+              data-tl-knob
+              role="slider"
+              tabindex="0"
+              aria-labelledby={`tl-scale-label-${tl.id}`}
+              aria-valuemin="0"
+              aria-valuemax="100"
+              aria-valuenow="50"
+              aria-valuetext="一刻度约 19 天"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M10.5 20.5V6.5M13.5 20.5V6.5M8.5 20.5h7M12 4v2.5M3.5 9h17M12 4 3.5 9M12 4l8.5 5M17.5 9v4"></path>
+              </svg>
+            </span>
+          </span>
+        </div>
+        <span class="tl__scaleValue" data-tl-scaleval aria-hidden="true"></span>
+      </div>
     </div>
   </aside>
 </div>
@@ -415,7 +445,15 @@ const gradId = `tl-arc-${tl.id}`;
     color: #fff2b8;
   }
 
-  /* 时间段的名字，跟着带子一起走（同样算面板上的字，用粉色） */
+  /*
+    时间段的名字，跟着带子一起走（同样算面板上的字，用粉色）。
+
+    注意它**没有** [data-side] 的左右列规则：这几个字的横坐标是脚本按
+    「贴着弧线往两边让开 40px」直接写进 left 的（右边那列用
+    translateX(-100%) 把文字右对齐过去）。以前这里另外写过 left/right
+    两条 CSS，结果脚本一写行内 left 就把 CSS 的 right 顶掉了，名字其实是
+    压在轴上起步的 —— 一挪到另一侧就露馅。
+  */
   .tl__spanName {
     position: absolute;
     top: 0;
@@ -426,29 +464,126 @@ const gradId = `tl-arc-${tl.id}`;
     white-space: nowrap;
     pointer-events: none;
   }
-  .tl__spanName[data-side='left'] {
-    right: 40px;
-  }
-  .tl__spanName[data-side='right'] {
-    left: 40px;
-  }
 
   .tl__foot {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    padding: 0.6rem 1rem 0.65rem;
+    border-top: 1px solid rgba(255, 120, 190, 0.3);
+    font-size: 0.76rem;
+  }
+  .tl__footNames {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 0.5rem;
-    padding: 0.6rem 1rem;
-    border-top: 1px solid rgba(255, 120, 190, 0.3);
-    font-size: 0.76rem;
   }
   .tl__side {
     letter-spacing: 0.1em;
     color: #ffd9ef;
   }
-  .tl__hint {
-    color: rgba(255, 217, 239, 0.55);
-    font-size: 0.7rem;
+
+  /* ---------------- 时间轴比例 ---------------- */
+  .tl__scale {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  .tl__scaleLabel {
+    flex: none;
+    color: rgba(255, 217, 239, 0.72);
+    letter-spacing: 0.04em;
+  }
+  /*
+    轨道本身不画东西，只是给「左右各留半个滑块」留出位置：
+    尺子（rail）左右各缩进 13px，滑块就永远不会跑出面板。
+  */
+  .tl__scaleTrack {
+    position: relative;
+    flex: 1 1 auto;
+    min-width: 0;
+    height: 26px;
+  }
+  .tl__scaleRail {
+    --p: 0.5;
+    position: absolute;
+    left: 13px;
+    right: 13px;
+    top: 50%;
+    height: 4px;
+    margin-top: -2px;
+    border-radius: 999px;
+    background: rgba(255, 120, 190, 0.26);
+    cursor: pointer;
+    /* 手机上手指按着横拖是改比例尺，不要变成滚页面 */
+    touch-action: none;
+  }
+  /* 横着的刻度：一道道上下的细线铺过去，看着就是把尺子 */
+  .tl__scaleRail::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 50%;
+    height: 12px;
+    transform: translateY(-50%);
+    background: repeating-linear-gradient(
+      90deg,
+      rgba(255, 120, 190, 0.5) 0 1px,
+      transparent 1px 9px
+    );
+    pointer-events: none;
+  }
+  /*
+    滑块：一颗塔吊，和轴上的塔吊同一个图形。
+    底盘和读数走粉色（它属于面板外框），塔吊本身保持落日色（塔吊就是塔吊）。
+  */
+  .tl__scaleKnob {
+    position: absolute;
+    left: calc(var(--p, 0.5) * 100%);
+    top: 50%;
+    width: 26px;
+    height: 26px;
+    transform: translate(-50%, -50%);
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    border: 1px solid rgba(255, 120, 190, 0.55);
+    background: rgba(24, 3, 36, 0.95);
+    color: #ffc857;
+    cursor: grab;
+    touch-action: none;
+    transition: border-color 0.14s ease, color 0.14s ease;
+  }
+  .tl__scaleKnob svg {
+    display: block;
+    width: 16px;
+    height: 16px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2.2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    filter: drop-shadow(0 0 3px rgba(255, 150, 40, 0.75));
+  }
+  .tl__scaleKnob:hover {
+    color: #fff2b8;
+    border-color: rgba(255, 120, 190, 0.9);
+  }
+  .tl__scaleKnob:active {
+    cursor: grabbing;
+  }
+  .tl__scaleKnob:focus-visible {
+    outline: 2px solid #5ff0ff;
+    outline-offset: 2px;
+  }
+  .tl__scaleValue {
+    flex: none;
+    min-width: 5.6em;
+    text-align: right;
+    color: rgba(255, 217, 239, 0.72);
+    font-variant-numeric: tabular-nums;
   }
 
   /* 窄屏：面板占满，字小一档 */
@@ -485,6 +620,12 @@ const gradId = `tl-arc-${tl.id}`;
        屏幕上纵坐标 = H/2 + (t - cur) · V
        其中 cur 是弧顶对应的参数，V 是整条轴的像素长度。
        滚轮滚的就是 cur —— 刻度、事件、时间段一起动。
+
+     比例尺（面板底部那根横尺）改的是 V：
+       一刻度固定 26px，整条轴 V = 26 × 总天数 ÷ 一刻度多少天。
+       所以「一刻度 = 一天」时 V 很大（放得开），「一刻度 = 一年」时 V 很小
+       （缩到能一眼看完）。缩放以**弧顶那天**为轴心 —— 改 V 不动 cur，
+       当前日期就钉在弧顶上，前后的事件向两边散开或收拢。
      ============================================================ */
   const KEY = 'tl-open-id';
 
@@ -496,6 +637,18 @@ const gradId = `tl-arc-${tl.id}`;
   const TICK = 7;
   /** 刻度间隔（px，沿轴） */
   const TICK_STEP = 26;
+
+  /** 比例尺的两个端点：最左一刻度 = 一天，最右一刻度 = 一年 */
+  const SCALE_MIN_DAYS = 1;
+  const SCALE_MAX_DAYS = 365;
+  /** 打开时的默认位置：正中间 */
+  const SCALE_MID = 0.5;
+  /**
+   * 存滑块位置用的 key。内容和开合状态一样要带上是「哪条时间轴」：
+   * 翻到用别的轴（或没有轴）的页面时，这份记录就对不上了，自然回到默认；
+   * 但只要还在用同一条轴的页面上，**不管面板开过还是关过**，位置都留着。
+   */
+  const SCALE_KEY = 'tl-scale';
 
   /**
    * 同一侧、在轴上相距不到这么多像素的两个时间点，算「挤在一起」，合并成一个塔吊。
@@ -513,6 +666,9 @@ const gradId = `tl-arc-${tl.id}`;
 
   /** 合并后组内相邻两条文字上下错开多少像素（「旁边稍微上下间隔」） */
   const LABEL_GAP = 18;
+
+  /** 文字（事件名、时间段名）离弧线让开多少像素 —— 和 .tl__name 的 40px 对齐 */
+  const SPAN_GAP = 40;
 
   /**
    * 一组合并事件。
@@ -536,6 +692,8 @@ const gradId = `tl-arc-${tl.id}`;
     const tlId = root.dataset.tlId ?? '';
     const dayMin = Number(root.dataset.tlMin) || 0;
     const dayMax = Number(root.dataset.tlMax) || 1;
+    /** 这条轴一共跨多少天（带 padding 的完整范围）；比例尺算 V 要用 */
+    const totalDays = Math.max(1e-6, dayMax - dayMin);
 
     const items = Array.from(root.querySelectorAll<HTMLElement>('[data-tl-item]'));
     const bands = Array.from(root.querySelectorAll<SVGPathElement>('[data-tl-band]'));
@@ -565,6 +723,85 @@ const gradId = `tl-arc-${tl.id}`;
     let cx = 0;
     let cy = 0;
     let V = 0;
+
+    /* ---------------- 比例尺（面板底部那根横尺） ---------------- */
+
+    /**
+     * 滑块位置（0~1）→ 一刻度代表多少天。
+     *
+     * 用**等比**插值（也就是「先取对数，再线性插值」），不是直接线性。
+     * 直接线性的话，一天 → 一年这条行程里，前 10% 就走完了所有看得出
+     * 区别的档位，剩下 90% 全是「什么都糊成一团」；等比插值下，滑块每走
+     * 同样一格，比例尺乘同样的倍数 —— 这才是比例尺该有的手感，
+     * 也是从一天到一年这段处处都用得上的唯一分法。
+     * 两端仍然是用户要的那两个点：最左一天一格，最右一年一格，中间连续无级。
+     */
+    const daysPerTick = (s: number) => {
+      const t = Math.max(0, Math.min(1, s));
+      return SCALE_MIN_DAYS * Math.pow(SCALE_MAX_DAYS / SCALE_MIN_DAYS, t);
+    };
+
+    /** 一刻度多少天 → 给人看的读数 */
+    const scaleText = (s: number) => {
+      const d = daysPerTick(s);
+      return d < 10 ? `1 格 ≈ ${d.toFixed(1)} 天` : `1 格 ≈ ${Math.round(d)} 天`;
+    };
+
+    /*
+      从 sessionStorage 里捞上一次拖到的位置。
+      记录里带着「是哪条时间轴」，对不上就当没存过 —— 于是换了一条轴（或
+      进了没挂轴的页面）会回到默认的正中间；还在同一条轴的页面上时，
+      不管面板开过还是关过，位置都还在。
+    */
+    let scale = SCALE_MID;
+    try {
+      const raw = sessionStorage.getItem(SCALE_KEY);
+      if (raw) {
+        const saved = JSON.parse(raw) as { id?: string; v?: number };
+        if (saved && saved.id === tlId && Number.isFinite(saved.v)) {
+          scale = Math.max(0, Math.min(1, saved.v as number));
+        }
+      }
+    } catch {
+      /* 私密模式等场景下不可用，忽略 */
+    }
+
+    const rail = root.querySelector<HTMLElement>('[data-tl-rail]');
+    const knob = root.querySelector<HTMLElement>('[data-tl-knob]');
+    const scaleVal = root.querySelector<HTMLElement>('[data-tl-scaleval]');
+    /** 正在拖滑块的指针 id（没有就是 null） */
+    let scaleDrag: number | null = null;
+
+    /** 只刷滑块的外观和读数，不重排 */
+    function paintScale() {
+      rail?.style.setProperty('--p', String(scale));
+      if (scaleVal) scaleVal.textContent = scaleText(scale);
+      if (knob) {
+        knob.setAttribute('aria-valuenow', String(Math.round(scale * 100)));
+        knob.setAttribute('aria-valuetext', scaleText(scale));
+      }
+    }
+
+    function rememberScale() {
+      try {
+        sessionStorage.setItem(SCALE_KEY, JSON.stringify({ id: tlId, v: scale }));
+      } catch {
+        /* 忽略 */
+      }
+    }
+
+    /**
+     * 改比例尺。
+     * 缩放以弧顶那天为轴心：只重算 V（每刻度多少像素），不动 cur ——
+     * 于是「当前日期」还钉在弧顶上，前后的事件向两边散开或收拢。
+     */
+    function setScale(v: number, save = true) {
+      scale = Math.max(0, Math.min(1, v));
+      paintScale();
+      measure();
+      paint();
+      if (save) rememberScale();
+    }
 
     /* 合并结果：每次 measure 之后重算一次 */
     let groups: ItemGroup[] = [];
@@ -645,23 +882,33 @@ const gradId = `tl-arc-${tl.id}`;
       cx = apexX + R;
 
       /*
-        整条轴的像素长度：至少 1.6 屏，且每个事件分到不少于 96px ——
-        事件多了挤在一起就分不清谁是谁了。
-        （合并之后实际占位会比 items 少，这里宁可留宽一点，
-        反正合并是把挤在一起的并掉，不会因为松了就散开。）
+        整条轴的像素长度完全由底部的比例尺决定：
+          刻度固定 26px 一个，整条轴一共 V/26 个刻度，
+          每个刻度代表 daysPerTick 天，乘起来要等于这条轴的总天数。
+        于是「一刻度 = 一天」时 V 大得能铺开好几十屏，「一刻度 = 一年」时
+        整个范围缩进几百像素、一眼看完。两种极端都不会算坏：弧线、刻度尺
+        都是按「一屏对应多少参数」现推的，V 多大都自己适配。
       */
-      const n = items.length + bands.length;
-      V = Math.max(H * 1.6, (n + 1) * 96);
+      V = Math.max(1, (TICK_STEP * totalDays) / daysPerTick(scale));
 
       // V 定了才能按屏幕距离判断谁和谁挤在一起，所以分组放在最后
       groupItems();
     }
 
-    /** 一段圆弧的 path */
-    function arcD(t0: number, t1: number, steps = 20) {
+    /**
+     * 一段圆弧的 path。
+     *
+     * 采样点数是按**屏幕像素**定的（每 26px 一个点），不能写死：
+     * 比例尺拉到「一天一格」时整条轴有好几千像素，固定 20 个点的话
+     * 一屏里只落得下两三个点，弧线就成折线了；拉到「一年一格」时
+     * 反过来，固定点数又全浪费在屏幕外面。上下都留个保险：
+     * 至少 8 个点，最多 200 个（26px 一个点，弦切误差远小于一个像素）。
+     */
+    function arcD(t0: number, t1: number) {
+      const n = Math.max(8, Math.min(200, Math.ceil((Math.abs(t1 - t0) * V) / 26)));
       let d = '';
-      for (let i = 0; i <= steps; i++) {
-        const t = t0 + (t1 - t0) * (i / steps);
+      for (let i = 0; i <= n; i++) {
+        const t = t0 + (t1 - t0) * (i / n);
         const y = H / 2 + (t - cur) * V;
         const x = arcX(y);
         d += `${i ? 'L' : 'M'}${x.toFixed(1)} ${y.toFixed(1)}`;
@@ -674,7 +921,7 @@ const gradId = `tl-arc-${tl.id}`;
 
       // 主弧线：盖住整屏还多一截，滚到两头也不会露出断口
       const over = (H * 0.6) / V;
-      arcPath!.setAttribute('d', arcD(-over, 1 + over, 28));
+      arcPath!.setAttribute('d', arcD(-over, 1 + over));
 
       /*
         刻度：等参数间距铺满整屏。滚轮滚的是 cur，刻度跟着一起走 ——
@@ -699,7 +946,7 @@ const gradId = `tl-arc-${tl.id}`;
         const host = root.querySelector<HTMLElement>(`[data-tl-spanName="${id}"]`);
         const t0 = Number(host?.dataset.tlFrom ?? 'NaN');
         const t1 = Number(host?.dataset.tlTo ?? 'NaN');
-        el.setAttribute('d', Number.isFinite(t0) && Number.isFinite(t1) ? arcD(t0, t1, 12) : '');
+        el.setAttribute('d', Number.isFinite(t0) && Number.isFinite(t1) ? arcD(t0, t1) : '');
       }
 
       /*
@@ -744,7 +991,33 @@ const gradId = `tl-arc-${tl.id}`;
         }
       }
 
-      // 时间段名字摆在带子中点
+      /*
+        时间段名字摆在带子中点。
+        但缩到「一刻度 = 一年」那种程度时，整条轴才十几像素高，所有事件文字
+        会叠成一摞，年代名很容易正好落进那一摞里 —— 两串字会连成一句读。
+        所以这里让它找位：本侧这一行空着就照常摆；占了就翻到轴的另一侧
+        （另一侧一般空着，名字照样贴着那条带子）；再不行才在本侧上下挪。
+        位置算出来以后 left 用的是**挪完那个高度**在弧上的横坐标，
+        所以名字始终落在弧线上，不会飘出去。
+      */
+      const HALF_TEXT = 8;
+      const takenBySide: Record<string, Array<[number, number]>> = { left: [], right: [] };
+      for (const g of groups) {
+        const el = g.anchor;
+        const y = Number.parseFloat(el.style.top);
+        if (el.style.visibility === 'hidden' || !Number.isFinite(y)) continue;
+        const half = ((g.members.length - 1) / 2) * LABEL_GAP + HALF_TEXT;
+        (el.dataset.side === 'left' ? takenBySide.left : takenBySide.right).push([y - half, y + half]);
+      }
+      /*
+        弧顶那个「当前日期」也算一行的占用：它就在轴左边贴着弧顶，
+        时间段名翻到左侧时正撞在它身上（会读成「2022-12-30冰室元年」）。
+      */
+      if (nowBox) takenBySide.left.push([H / 2 - HALF_TEXT - 1, H / 2 + HALF_TEXT + 1]);
+      const isFree = (side: string, y: number) =>
+        !takenBySide[side].some((b) => y + HALF_TEXT > b[0] && y - HALF_TEXT < b[1]);
+      const claim = (side: string, y: number) => takenBySide[side].push([y - HALF_TEXT, y + HALF_TEXT]);
+
       for (const el of spanNames) {
         const t0 = Number(el.dataset.tlFrom ?? 'NaN');
         const t1 = Number(el.dataset.tlTo ?? 'NaN');
@@ -753,9 +1026,55 @@ const gradId = `tl-arc-${tl.id}`;
           continue;
         }
         const mid = (t0 + t1) / 2;
-        const y = H / 2 + (mid - cur) * V;
-        el.style.visibility = y < -40 || y > H + 40 ? 'hidden' : '';
-        el.style.left = `${arcX(y)}px`;
+        let y = H / 2 + (mid - cur) * V;
+        if (y < -40 || y > H + 40) {
+          el.style.visibility = 'hidden';
+          continue;
+        }
+        el.style.visibility = '';
+
+        // 这条带子原本挂在哪一侧（翻过侧也要记住，下次从原侧重新算）
+        const remembered = el.dataset.tlSide;
+        const own: string =
+          remembered === 'left' || remembered === 'right'
+            ? remembered
+            : el.dataset.side === 'left'
+              ? 'left'
+              : 'right';
+        el.dataset.tlSide = own;
+        let side = own;
+        if (!isFree(own, y)) {
+          const other = own === 'left' ? 'right' : 'left';
+          const spots: Array<[string, number]> = [
+            [other, y],
+            [own, y + 16],
+            [own, y - 16],
+            [other, y + 16],
+            [other, y - 16],
+            [own, y + 32],
+            [own, y - 32],
+          ];
+          const hit = spots.find(([s, yy]) => isFree(s, yy));
+          if (hit) {
+            side = hit[0];
+            y = hit[1];
+          }
+        }
+        claim(side, y);
+        el.dataset.side = side;
+        /*
+          贴着弧线往两边让开 SPAN_GAP。右侧那列直接写 left；
+          左侧那列写 left 再 translateX(-100%) 把文字右对齐过去 ——
+          因为名字多长只有浏览器知道，用 right 会和行内 left 打架。
+        */
+        const x = arcX(y);
+        if (side === 'right') {
+          el.style.left = `${x + SPAN_GAP}px`;
+          el.style.transform = 'translateY(-50%)';
+        } else {
+          el.style.left = `${x - SPAN_GAP}px`;
+          el.style.transform = 'translate(-100%, -50%)';
+        }
         el.style.top = `${y}px`;
       }
 
@@ -903,9 +1222,66 @@ const gradId = `tl-arc-${tl.id}`;
     body.addEventListener('pointercancel', endDrag);
 
     /*
+      比例尺：按在尺子上（或那颗塔吊上）横着拖。
+      点哪儿就跳到哪儿，再接着拖 —— 和普通滑块一个手感。
+      它不在 .tl__body 里，所以和上面那套「拖了滚刻度」不会打架。
+    */
+    if (rail && knob) {
+      /** 手指/鼠标落在尺子宽度的百分之几上 */
+      const fromPointer = (e: PointerEvent) => {
+        const r = rail.getBoundingClientRect();
+        if (!r.width) return;
+        setScale((e.clientX - r.left) / r.width, false);
+      };
+
+      rail.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        scaleDrag = e.pointerId;
+        rail.setPointerCapture(e.pointerId);
+        fromPointer(e);
+      });
+      rail.addEventListener('pointermove', (e) => {
+        if (scaleDrag !== e.pointerId) return;
+        fromPointer(e);
+      });
+      const endScaleDrag = (e: PointerEvent) => {
+        if (scaleDrag !== e.pointerId) return;
+        scaleDrag = null;
+        try {
+          rail.releasePointerCapture(e.pointerId);
+        } catch {
+          /* 指针没了，忽略 */
+        }
+        // 松手才落盘：拖的过程中每帧都写一次 sessionStorage 没必要
+        rememberScale();
+      };
+      rail.addEventListener('pointerup', endScaleDrag);
+      rail.addEventListener('pointercancel', endScaleDrag);
+
+      // 键盘也得能用（它是个 role=slider）；按住 Shift 步子大一点
+      knob.addEventListener('keydown', (e: KeyboardEvent) => {
+        const step = e.shiftKey ? 0.1 : 0.02;
+        if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') {
+          e.preventDefault();
+          setScale(scale - step);
+        } else if (e.key === 'ArrowRight' || e.key === 'ArrowUp') {
+          e.preventDefault();
+          setScale(scale + step);
+        } else if (e.key === 'Home') {
+          e.preventDefault();
+          setScale(0);
+        } else if (e.key === 'End') {
+          e.preventDefault();
+          setScale(1);
+        }
+      });
+    }
+
+    /*
       进页面时要不要开着：看 sessionStorage 里记的是不是**这一条**时间轴。
       连着翻几个用同一条轴的页面，它就一直开着；
       换成别的轴（或没有轴的页面）自然就是关的。
+      （比例尺的位置在 setScale/rememberScale 里单独记，开关面板不影响它。）
     */
     let recall = false;
     try {
@@ -914,6 +1290,7 @@ const gradId = `tl-arc-${tl.id}`;
       recall = false;
     }
 
+    paintScale();
     measure();
     setOpen(recall, false);
     if (!recall) paint(); // 关着也先排一次，打开时不用等
