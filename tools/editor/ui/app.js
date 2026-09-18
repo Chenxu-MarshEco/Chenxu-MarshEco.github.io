@@ -3334,11 +3334,25 @@ function formatDateAsYouType(raw) {
   return `${digits.slice(0, 4)}-${digits.slice(4, 6)}-${digits.slice(6)}`;
 }
 
+/** 今天的 `yyyy-mm-dd`（本地日期）—— 把「实时」关掉时用它兜底 */
+function isoToday() {
+  const d = new Date();
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
 /**
- * 日期控件：左边能直接打数字，右边那个 📅 把系统日历叫出来。
- * 两边改的是同一个值，`onInput` 只在拿到合法日期（或清空）时才回调。
+ * 日期控件：左边能直接打数字，右边那个 📅 把系统日历叫出来，
+ * 再右边一个「实时」开关（`opts.live` / `opts.onLive`）。
+ * 几边改的是同一个值，`onInput` 只在拿到合法日期（或清空）时才回调。
+ *
+ * 「实时」打开时，这个点存的是哨兵 `today`（不是某个具体日期）：页面上永远显示今天、
+ * 每天跟着变。所以活着的这段时间里日期框是禁用的，只留一个「每天自动（今天）」的占位。
+ * 关掉时把**之前填过的那个日期**还给他；要是本来就没填过，就用今天兜底 ——
+ * 否则这个点会变成「没有日期」，存盘时会被服务端丢掉。
  */
-function dateField(value, onInput) {
+function dateField(value, onInput, opts = {}) {
+  const live = opts.live === true;
   const wrap = document.createElement('span');
   wrap.className = 'datefield';
 
@@ -3348,10 +3362,15 @@ function dateField(value, onInput) {
   el.autocomplete = 'off';
   el.spellcheck = false;
   el.className = 'input datefield__text';
-  el.placeholder = '20230110';
-  el.value = value ?? '';
-  el.title = '直接敲数字就行：20230110，或者 2023-1-10 / 2023/1/10。右边按钮开日历。';
+  el.placeholder = live ? '每天自动（今天）' : '20230110';
+  el.value = live ? '' : (value ?? '');
+  el.disabled = live;
+  el.title = live
+    ? '这个点是「实时」的：永远显示今天，每天自动变。点右边的「实时」关掉它。'
+    : '直接敲数字就行：20230110，或者 2023-1-10 / 2023/1/10。右边按钮开日历。';
   let lastLen = el.value.length;
+  /** 切到「实时」之前填的那个日期，切回来时还给他 */
+  let lastDate = live ? '' : String(value ?? '');
 
   el.addEventListener('input', () => {
     const raw = el.value;
@@ -3432,6 +3451,7 @@ function dateField(value, onInput) {
   btn.className = 'datefield__btn';
   btn.textContent = '📅';
   btn.title = '打开日历挑日期';
+  btn.disabled = live;
   btn.addEventListener('click', () => {
     cal.value = el.value;
     if (typeof cal.showPicker === 'function') {
@@ -3446,7 +3466,42 @@ function dateField(value, onInput) {
     cal.click();
   });
 
-  wrap.append(el, btn, cal);
+  /*
+    「实时」开关。打开之后这个点存的是哨兵 `today`：
+    页面上永远显示今天、每天自动变（打开页面时脚本按访问者当天重排整条轴）。
+  */
+  const liveBtn = document.createElement('button');
+  liveBtn.type = 'button';
+  liveBtn.className = 'datefield__live';
+  liveBtn.textContent = '实时';
+  liveBtn.setAttribute('aria-pressed', live ? 'true' : 'false');
+  liveBtn.title = live
+    ? '现在是实时的（永远显示今天、每天自动变）。点一下改回固定日期。'
+    : '设为实时更新：这一个永远显示今天，每天自动变。';
+  liveBtn.addEventListener('click', () => {
+    const next = liveBtn.getAttribute('aria-pressed') !== 'true';
+    liveBtn.setAttribute('aria-pressed', next ? 'true' : 'false');
+    el.disabled = next;
+    btn.disabled = next;
+    if (next) {
+      lastDate = el.value.trim();
+      el.value = '';
+      el.placeholder = '每天自动（今天）';
+      el.classList.remove('is-bad');
+      opts.onLive?.(true, '');
+      liveBtn.title = '现在是实时的（永远显示今天、每天自动变）。点一下改回固定日期。';
+    } else {
+      // 还给他之前填的那个日期；没填过就用今天兜底，免得这个点变成「没有日期」被丢掉
+      const back = /^\d{4}-\d{2}-\d{2}$/.test(lastDate) ? lastDate : isoToday();
+      el.value = back;
+      lastLen = back.length;
+      el.placeholder = '20230110';
+      opts.onLive?.(false, back);
+      liveBtn.title = '设为实时更新：这一个永远显示今天，每天自动变。';
+    }
+  });
+
+  wrap.append(el, btn, liveBtn, cal);
   return wrap;
 }
 
@@ -3523,12 +3578,23 @@ function svgEl(tag, attrs = {}) {
   return el;
 }
 
-/** `yyyy-mm-dd` → 天数（和 src/utils/timelines.ts 的 dayOf 一致） */
+/**
+ * `yyyy-mm-dd` → 天数（和 src/utils/timelines.ts 的 dayOf 一致）。
+ * `today` 那个哨兵也算今天 —— 实时更新的时间点就靠它落在轴上。
+ */
 function tlDay(date) {
-  const m = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(String(date ?? '').trim());
+  const s = String(date ?? '').trim();
+  if (s === 'today') {
+    const d = new Date();
+    return Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / 86400000;
+  }
+  const m = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(s);
   if (!m) return NaN;
   return Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])) / 86400000;
 }
+
+/** 显示用的日期文案：实时点说人话，别把哨兵字符串露出去 */
+const tlDateText = (p) => (p?.date === 'today' ? '今天（实时）' : p?.date || '（没填日期）');
 
 /**
  * 这条轴的时间范围和「某一天落在 0~1 的哪儿」。
@@ -3775,7 +3841,7 @@ function paintTimelinePreview(host) {
         const name = document.createElement('span');
         name.className = 'tl-pv__name';
         name.textContent = o.p.label || '（还没起名）';
-        name.title = `${o.p.date}　${o.p.label || '（还没起名）'}${o.p.href ? `　→ ${o.p.href}` : ''}`;
+        name.title = `${tlDateText(o.p)}　${o.p.label || '（还没起名）'}${o.p.href ? `　→ ${o.p.href}` : ''}`;
         // 有链接的在预览里加条虚下划线，一眼看出哪几个点能点
         if (o.p.href) name.classList.add('is-link');
         name.style.transform = `translateY(calc(-50% + ${off}px))`;
@@ -3995,11 +4061,23 @@ function renderTimelineEditor() {
     kind.className = 'input tl-edit__kind';
     kind.title = '时刻 = 大塔吊 + 大字；事件 = 小一号的粉色塔吊 + 小字。功能一模一样。';
 
-    const date = dateField(p.date, (v) => {
-      p.date = v;
-      refreshSpanOptions();
-      scheduleTlPreview();
-    });
+    const date = dateField(
+      p.date,
+      (v) => {
+        p.date = v;
+        refreshSpanOptions();
+        scheduleTlPreview();
+      },
+      {
+        live: p.date === 'today',
+        onLive: (on, back) => {
+          // 打开时写哨兵 today；关掉时写回具体日期（dateField 保证 back 是个合法日期）
+          p.date = on ? 'today' : back;
+          refreshSpanOptions();
+          scheduleTlPreview();
+        },
+      }
+    );
     const label = boardInput(p.label ?? '', '事件名（常驻显示在轴旁边）', (v) => {
       p.label = v;
       refreshSpanOptions();
@@ -4061,7 +4139,7 @@ function renderTimelineEditor() {
   const slist = document.createElement('div');
   slist.className = 'tl-edit__list';
   /** 下拉里那条「2023-01-10　冰室成立」的文案 */
-  const optText = (p) => `${p.date || '（没填日期）'}　${p.label || '（没填名字）'}`;
+  const optText = (p) => `${tlDateText(p)}　${p.label || '（没填名字）'}`;
 
   tl.spans.forEach((s, i) => {
     const item = document.createElement('div');

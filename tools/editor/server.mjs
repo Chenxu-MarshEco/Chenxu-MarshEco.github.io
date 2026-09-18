@@ -1093,8 +1093,16 @@ async function readTimelines() {
 }
 
 /** 日期只收 yyyy-mm-dd，别的一律当没填 */
+/**
+ * 时间点的日期。
+ *
+ * 除了 `yyyy-mm-dd`，还认一个特殊值 **`today`** —— 那是「实时更新」的时间点：
+ * 页面上永远显示今天，每天跟着变（构建时按构建那天算，打开页面时由脚本按
+ * 访问者当天的日期重排整条轴）。所以它不算非法，得原样存下来。
+ */
 function cleanDate(v) {
   const s = String(v || '').trim();
+  if (s === 'today') return s;
   return /^\d{4}-\d{1,2}-\d{1,2}$/.test(s) ? s : '';
 }
 

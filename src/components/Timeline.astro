@@ -19,7 +19,7 @@
  *    进了用别的轴（或没有轴）的页面，自然就是关着的。
  */
 import type { Timeline as TimelineData } from '../utils/timelines';
-import { pointParam, spanEdges, spanParam, spanSides, pointKind, rangeOf, dayOf } from '../utils/timelines';
+import { pointParam, spanEdges, spanParam, spanSides, pointKind, isLiveDate, dateOf, rangeOf, dayOf } from '../utils/timelines';
 import { withBase } from '../utils/url';
 
 interface Props {
@@ -46,9 +46,17 @@ const spanMax = Math.max(range.max, range.min);
 /**
  * 时间点：位置、左右、**时刻还是事件**、名字、日期都写进 data-*，脚本照着摆。
  * 两类点走的是同一套代码，只有 CSS 里的图标大小 / 颜色和字号不一样。
+ *
+ * `day` 和 `live` 是给「实时更新」那几个点准备的：
+ *   · day  —— 构建时算出来的天序号（脚本重排整条轴时要拿它当基准）
+ *   · live —— 这个点的日期是哨兵 `today`，打开页面时要以**访问者当天**为准
+ * 所以日期显示一律用 dateOf(day)，不能直接把 date 印出来（那会是「today」四个字母）。
  */
 const points = tl.points
-  .map((p) => ({ ...p, t: pointParam(tl, p), kind: pointKind(p) }))
+  .map((p) => {
+    const day = dayOf(p.date);
+    return { ...p, t: pointParam(tl, p), kind: pointKind(p), day, live: isLiveDate(p.date), shown: dateOf(day) };
+  })
   .sort((a, b) => a.t - b.t);
 
 /**
@@ -73,9 +81,20 @@ const spans = tl.spans.map((s) => {
 });
 
 /** 带子和名字都是「一个时间段 × 一侧」一条，摊平了渲染 */
-const spanBands = spans.flatMap((s) => s.sides.map((side) => ({ id: s.id, side, fromT: s.fromT, toT: s.toT })));
+const spanBands = spans.flatMap((s) =>
+  s.sides.map((side) => ({ id: s.id, side, from: s.from, to: s.to, fromT: s.fromT, toT: s.toT }))
+);
 const spanLabels = spans.flatMap((s) =>
-  s.sides.map((side) => ({ id: s.id, side, name: s.name, href: s.href, fromT: s.fromT, toT: s.toT }))
+  s.sides.map((side) => ({
+    id: s.id,
+    side,
+    name: s.name,
+    href: s.href,
+    from: s.from,
+    to: s.to,
+    fromT: s.fromT,
+    toT: s.toT,
+  }))
 );
 
 const gradId = `tl-arc-${tl.id}`;
@@ -131,6 +150,8 @@ const gradId = `tl-arc-${tl.id}`;
             class="tl__band"
             data-tl-band
             data-side={b.side}
+            data-from-point={b.from}
+            data-to-point={b.to}
             data-tl-from={b.fromT}
             data-tl-to={b.toT}
             stroke={`url(#${gradId})`}
@@ -156,6 +177,8 @@ const gradId = `tl-arc-${tl.id}`;
             class="tl__spanName"
             data-tl-spanName={l.id}
             data-side={l.side}
+            data-from-point={l.from}
+            data-to-point={l.to}
             data-tl-from={l.fromT}
             data-tl-to={l.toT}
             href={l.href ? linkHref(l.href) : undefined}
@@ -184,8 +207,10 @@ const gradId = `tl-arc-${tl.id}`;
             data-side={p.side}
             data-kind={p.kind}
             data-param={p.t}
+            data-day={p.day}
+            data-live={p.live ? '1' : undefined}
             data-label={p.label}
-            data-date={p.date}
+            data-date={p.shown}
             data-point={p.id}
             data-href={p.href ? '1' : undefined}
           >
@@ -204,7 +229,7 @@ const gradId = `tl-arc-${tl.id}`;
             <NameTag class="tl__name" href={href} {...ext}>{p.label}</NameTag>
             <span class="tl__tip" role="tooltip">
               <b>{p.label}</b>
-              <em>{p.date}</em>
+              <em>{p.shown}{p.live ? '（实时）' : ''}</em>
               {p.href && <i>点开看看 ›</i>}
             </span>
           </div>
@@ -956,8 +981,10 @@ const gradId = `tl-arc-${tl.id}`;
     if (!panel || !body || !arcPath || !rulerPath || !tab) continue;
 
     const tlId = root.dataset.tlId ?? '';
-    const dayMin = Number(root.dataset.tlMin) || 0;
-    const dayMax = Number(root.dataset.tlMax) || 1;
+    // 轴的时间范围（天序号）。有「实时」点的话，打开页面时会被 relayoutLive 改掉，
+    // 所以这里是 let 不是 const。
+    let dayMin = Number(root.dataset.tlMin) || 0;
+    let dayMax = Number(root.dataset.tlMax) || 1;
     /** 这条轴一共跨多少天（带 padding 的完整范围）；比例尺算 V 要用 */
     const totalDays = Math.max(1e-6, dayMax - dayMin);
 
@@ -1137,6 +1164,104 @@ const gradId = `tl-arc-${tl.id}`;
         paintLabels();
         rememberLabels();
       });
+    }
+
+    /* ---------------- 「实时更新」的时间点 ---------------- */
+
+    /**
+     * 日期写成 `today` 的那些点，永远代表**访问者当天**。
+     *
+     * 这个站是静态的（构建产物躺在 GitHub Pages 上），构建时只能按构建那天算 ——
+     * 而「今天」每天都不一样，而且它还会把整条轴的范围一起带着走
+     * （最新那个点往后挪，全部点的位置都得跟着重排）。所以打开页面时在这儿重算一遍：
+     * 拿每个点构建时算出来的 `data-day` 当基准，把带 `data-live` 的换成今天，
+     * 重新求范围 → 重新求每一个点、每一条时间段带子的位置 → 再 measure + paint。
+     *
+     * 只在这条轴真有实时点的时候才跑，其它页面一步都不多做。
+     */
+    const liveItems = items.filter((el) => el.dataset.live === '1');
+
+    /** 今天的「天序号」；取本地年月日，和 dayOf 一个坐标系 */
+    const Today = () => {
+      const d = new Date();
+      return Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / 86400000;
+    };
+    const isoOf = (day: number) => {
+      const dt = new Date(day * 86400000);
+      const p = (n: number) => String(n).padStart(2, '0');
+      return `${dt.getUTCFullYear()}-${p(dt.getUTCMonth() + 1)}-${p(dt.getUTCDate())}`;
+    };
+
+    let lastLiveDay = NaN;
+
+    /**
+     * 按「今天」把整条轴重排一遍。
+     * 范围规则照抄 src/utils/timelines.ts 的 rangeOf：上下各留 6%，
+     * 只有一个点（或全挤在同一天）时人为撑开一天，免得除数为 0。
+     */
+    function relayoutLive() {
+      const today = Today();
+      lastLiveDay = today;
+
+      const dayOfEl = new Map<HTMLElement, number>();
+      for (const el of items) {
+        // 构建时算的 day 写在 data-day 上；实时点换成今天
+        const d = el.dataset.live === '1' ? today : Number(el.dataset.day);
+        dayOfEl.set(el, Number.isFinite(d) ? d : today);
+      }
+
+      let lo = Infinity;
+      let hi = -Infinity;
+      for (const d of dayOfEl.values()) {
+        if (d < lo) lo = d;
+        if (d > hi) hi = d;
+      }
+      if (!Number.isFinite(lo)) return;
+      if (hi - lo < 1) {
+        lo -= 0.5;
+        hi += 0.5;
+      }
+      const pad = (hi - lo) * 0.06;
+      lo -= pad;
+      hi += pad;
+      const total = hi - lo || 1;
+      const paramOf = (d: number) => (d - lo) / total;
+
+      // 每个点的位置 + 实时点的日期显示
+      for (const el of items) {
+        const d = dayOfEl.get(el) as number;
+        el.dataset.param = String(paramOf(d));
+        if (el.dataset.live === '1') {
+          const iso = isoOf(d);
+          el.dataset.date = iso;
+          const em = el.querySelector<HTMLElement>('.tl__tip em');
+          if (em) em.textContent = `${iso}（实时）`;
+        }
+      }
+
+      // 时间段的带子和名字：两端位置要按新的点位置重算
+      const byId = new Map<string, HTMLElement>();
+      for (const el of items) byId.set(el.dataset.point ?? '', el);
+      for (const el of [...bands, ...spanNames]) {
+        const a = byId.get(el.dataset.fromPoint ?? '');
+        const b = byId.get(el.dataset.toPoint ?? '');
+        if (!a || !b) continue;
+        const da = dayOfEl.get(a);
+        const db = dayOfEl.get(b);
+        if (da === undefined || db === undefined) continue;
+        const t0 = paramOf(Math.min(da, db));
+        const t1 = paramOf(Math.max(da, db));
+        el.dataset.tlFrom = String(t0);
+        el.dataset.tlTo = String(t1);
+      }
+
+      root.dataset.tlMin = String(lo);
+      root.dataset.tlMax = String(hi);
+      dayMin = lo;
+      dayMax = hi;
+
+      measure();
+      paint();
     }
 
     /* 合并结果：每次 measure 之后重算一次 */
@@ -1625,9 +1750,17 @@ const gradId = `tl-arc-${tl.id}`;
 
     paintScale();
     paintLabels();
+    // 有实时点就先把整条轴按「今天」重排一遍（它会自己调 measure + paint）
+    if (liveItems.length) relayoutLive();
     measure();
     setOpen(recall, false);
-    if (!recall) paint(); // 关着也先排一次，打开时不用等
+    if (!recall && !liveItems.length) paint(); // 关着也先排一次，打开时不用等
+    // 页面开着跨过零点的话，也让它跟着走到新的一天（每 10 分钟看一眼）
+    if (liveItems.length) {
+      window.setInterval(() => {
+        if (Today() !== lastLiveDay) relayoutLive();
+      }, 600000);
+    }
 
     if (typeof ResizeObserver !== 'undefined') {
       new ResizeObserver(() => {

@@ -2089,7 +2089,7 @@ body[data-type="notes"] .field--posts-only {
 */
 .tl-edit__item {
   display: grid;
-  grid-template-columns: 88px 82px 152px minmax(0, 1fr) minmax(0, 1fr) auto;
+  grid-template-columns: 88px 82px 204px minmax(0, 1fr) minmax(0, 1fr) auto;
   gap: 6px;
   align-items: center;
 }
@@ -2143,6 +2143,33 @@ body[data-type="notes"] .field--posts-only {
 .datefield__btn:hover {
   border-color: var(--border-strong);
   background: var(--surface-3);
+}
+.datefield__btn:disabled,
+.datefield__text:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+/* 「实时」开关：开着的时候整块变强调色，一眼看出这个点不是固定日期 */
+.datefield__live {
+  flex: none;
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  color: var(--text-muted);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+}
+.datefield__live:hover {
+  border-color: var(--border-strong);
+}
+.datefield__live[aria-pressed='true'] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
 }
 /*
   藏起来的原生日期输入（showPicker 要用它）。

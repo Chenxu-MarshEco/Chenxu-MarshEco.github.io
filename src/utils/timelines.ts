@@ -89,9 +89,36 @@ export const getTimeline = (id?: string | null): Timeline | undefined =>
 
 /** `yyyy-mm-dd` → 天数。算排序和中点用，认不出来给 NaN */
 export function dayOf(date: string): number {
-  const m = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(String(date ?? '').trim());
+  const s = String(date ?? '').trim();
+  // 「实时」那个时间点：永远算今天（构建那天构建、打开页面那天由脚本重排）
+  if (s === TODAY) return todayDay();
+  const m = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(s);
   if (!m) return NaN;
   return Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])) / 86400000;
+}
+
+/**
+ * 「实时更新」的时间点用这个特殊日期值。
+ *
+ * 它是一个哨兵字符串，不是日期：写进 `date` 里，`dayOf` 认它、服务端也放行。
+ * 为什么不干脆存今天的 `yyyy-mm-dd`、每天重建一次 —— 因为这个站是**静态**的，
+ * 构建产物躺在 GitHub Pages 上，不重建就永远停在构建那天。
+ * 所以：构建时按构建那天算（保证没 JS 时也不离谱），页面打开时再由脚本按
+ * 访问者当天的日期把整条轴重排一遍。
+ */
+export const TODAY = 'today';
+
+/** 这个日期是不是「实时」的 */
+export const isLiveDate = (date: string): boolean => String(date ?? '').trim() === TODAY;
+
+/**
+ * 「今天」是第几天。
+ *
+ * 取的是**本地**的年月日（用户在自己时区的「今天」），但换算方式和 `dayOf`
+ * 一样走 `Date.UTC` —— 这样两边在同一个坐标系里，跨时区不会差一天。
+ */
+export function todayDay(now: Date = new Date()): number {
+  return Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()) / 86400000;
 }
 
 /** 天数 → `yyyy-mm-dd`（展示用） */
