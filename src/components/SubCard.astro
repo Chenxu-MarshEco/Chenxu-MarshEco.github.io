@@ -151,13 +151,20 @@ const inlineStyle = [
   /*
     认 image-set 的浏览器走这一条：按 DPR 在 400 / 800 两档里挑，
     桌面上就不用为了手机上那一份清晰度白白多下一倍。
-    @supports 是必须的：--cover-hd 里是 image-set，浏览器不认它的话，
-    直接写 `background-image: var(--cover-hd)` 会变成 IACVT 整条作废，
-    连上面那条 --cover 兜底也一起没了（自定义属性不校验值，这是坑）。
+
+    ⚠ 回退值 `var(--cover-hd, var(--cover))` 里的第二个参数不能省。
+    --cover-hd **不是每张图都有**：只有图片管线里查得到、而且真的有 1x/2x 两档时
+    才写出来。像 88×31 的友链小图（不到 20KB 的图直接跳过管线，没有变体）、
+    或刚传上来还没进清单的图，只有 --cover 没有 --cover-hd。
+    这时 `var(--cover-hd)` 会解析成「保证无效的值」，整条声明变成
+    invalid-at-computed-value-time —— 注意 IACVT 不会退回上一条声明，
+    而是直接 unset，background-image 变 none，卡片就只剩底色（看上去就是一块黑）。
+    实测就是这么翻车的：链接板块里几张 88×31 的友链封面全黑。
+    写了回退值，缺 --cover-hd 时就用单张的 --cover。
   */
   @supports (background-image: image-set(url(a.png) 1x)) {
     .card--cover::before {
-      background-image: var(--cover-hd);
+      background-image: var(--cover-hd, var(--cover));
     }
   }
   /* 再压一层很淡的暗底：名字要压在任意一张图上都读得清 */

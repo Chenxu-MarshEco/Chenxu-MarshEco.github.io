@@ -194,21 +194,21 @@ const CRANES = [
     left: 48.2%;
     height: min(70%, 290px);
     aspect-ratio: 236 / 348;
-    --dur: 36s;
+    --dur: 20s;
     --delay: -9s;
   }
   .crane--left {
     left: 8.2%;
     height: min(64%, 330px);
     aspect-ratio: 192 / 300;
-    --dur: 50s;
+    --dur: 28s;
     --delay: -31s;
   }
   .crane--right {
     left: 92.2%;
     height: min(48%, 260px);
     aspect-ratio: 168 / 252;
-    --dur: 30s;
+    --dur: 17s;
     --delay: -16s;
   }
 
@@ -236,34 +236,35 @@ const CRANES = [
   /*
     回转的节奏。
     横臂「转过去」主要靠 scaleX 缩短来表达 —— 侧视看回转，横臂本来就是
-    越转越短（前后臂一起缩），这个量给足一点（最多缩到 0.906，约 9%），
-    横臂末端的水平位移才看得出来。
-    旋转只给 ±2.4°：它表现的是回转时的轻微摆动，给大了就成了横臂在翘，
-    反而不像塔吊。两者叠加，看起来才像「缓慢回转 + 一点晃」。
-    整条曲线是连续变化的，中间不停顿 —— 真司机会停，但网页上一停
-    就像动画坏了，宁可让它一直慢慢地动。
+    越转越短（前后臂一起缩）。旋转表现的是回转时横臂的轻微起落。
+
+    ⚠ 2026-09-18 按用户要求整体放大了：原来最长 50s、旋转 ±2.4°、scaleX 最短 0.906，
+    在页面上几乎看不出在动。现在周期缩短到 17~28s（约 1.8 倍快），
+    幅度按同一比例放大到旋转 ±4.6°、scaleX 最短 0.821 —— 两个量是等比例放大的，
+    所以「回转 + 一点晃」的比例关系没变，只是看得见了。
+    整条曲线仍然连续变化，中间不停顿。
   */
   @keyframes crane-slew {
     0% {
-      transform: rotate(-2.4deg) scaleX(1);
+      transform: rotate(-4.6deg) scaleX(1);
     }
     16% {
-      transform: rotate(1.8deg) scaleX(0.918);
+      transform: rotate(3.4deg) scaleX(0.844);
     }
     31% {
-      transform: rotate(2.2deg) scaleX(0.906);
+      transform: rotate(4.2deg) scaleX(0.821);
     }
     48% {
-      transform: rotate(-0.6deg) scaleX(0.972);
+      transform: rotate(-1.1deg) scaleX(0.947);
     }
     63% {
-      transform: rotate(-2deg) scaleX(0.988);
+      transform: rotate(-3.8deg) scaleX(0.977);
     }
     81% {
-      transform: rotate(0.9deg) scaleX(0.94);
+      transform: rotate(1.7deg) scaleX(0.886);
     }
     100% {
-      transform: rotate(-2.4deg) scaleX(1);
+      transform: rotate(-4.6deg) scaleX(1);
     }
   }
 

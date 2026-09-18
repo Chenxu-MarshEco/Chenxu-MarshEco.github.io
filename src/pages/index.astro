@@ -1,6 +1,7 @@
 ---
 import BaseLayout from '../layouts/BaseLayout.astro';
 import HomeCranes from '../components/HomeCranes.astro';
+import HomeBirds from '../components/HomeBirds.astro';
 import Img from '../components/Img.astro';
 import site from '../site.config';
 import { withBase } from '../utils/url';
@@ -144,6 +145,13 @@ const styleOf = (key: string) => editVars('home', key) ?? undefined;
     <div class="vapor__scan"></div>
 
     <div class="vapor__sea">
+      {/*
+        鸟群写在楼群**前面**（DOM 顺序在前 = 先绘制）：
+        这样鸟从楼群后面穿过时是同一片墨，而不是浮在天上。
+        它又是 .vapor__sea 的子节点，所以会跟着那片一起做滚动视差。
+      */}
+      <HomeBirds />
+
       {/*
         天际线和塔吊共用一个容器，塔吊写在前面 ——
         楼群因此会自然地挡住塔吊的下半截（这正是想要的效果）

@@ -1,0 +1,401 @@
+---
+/**
+ * 主页天空里的鸟群（四种：夜鹭 / 白头鹎 / 八哥 / 喜鹊），外加一个彩蛋。
+ *
+ * 形态依据（都是"飞起来时一眼能认出的特征"，不是随便画的鸟）：
+ *   夜鹭   粗胖、驼背缩颈（鹭科那条 S 形脖子折起来的样子），嘴长而尖，
+ *          宽圆翅扇得慢，脚短、拖着飞 —— 见科普中国《夜鹭——枯树昏鸦》
+ *          https://cloud.kepuchina.cn/h5/detail?id=7447774360899440640
+ *   白头鹎 最小最圆胖，短圆翅，中等尾，飞起来一波一波（扇几下收一下）
+ *   八哥   流线型、尖翅、短方尾，额前一小撮冠羽
+ *   喜鹊   长尾约占全长一半，宽翅，初级飞羽末端分开像手指，扇翅慢
+ * 四种都做成**纯剪影**，填色和楼群/塔吊同一支墨（var(--ink) #08020c），
+ * 所以鸟从楼群后面穿过时是同一片黑，不会"浮"在天上。
+ *
+ * 动效全部走 CSS（四种鸟 × 上下两个拍翅姿势做成 <symbol>，靠 opacity 交替换帧），
+ * 只有"什么时候来一群、来几只、什么鸟、往哪飞"交给下面那点 JS —— 这部分必须随机，
+ * 写死在 CSS 里每页都一样就没意思了。
+ *
+ * 彩蛋：很小概率，一群鸟里混进一只「疑问的雕像」（明日方舟 PRTS 里那个飞行敌人）。
+ * 它的样子是从它自己的 Spine 模型 A_Move 动作里渲染出来的一帧剪影
+ * （public/img/home/statue.png，同目录下 _setup 脚本可复现）。
+ * 它会飞得比鸟慢、而且**可以点**：点进 /secret/xianbao/ 。
+ *
+ * 调试开关（顺手留的，方便自己验证）：
+ *   ?birds=1    立刻放一群鸟
+ *   ?statue=1   下一群必出雕像（而不是 5% 概率）
+ */
+import { withBase } from '../utils/url';
+
+/**
+ * 四种鸟 × 上下两个拍翅姿势。
+ * viewBox 120×64，向右飞；body 含头/喙/尾，翅膀单独一个 path，
+ * 两个姿势交替出现就是扇翅。
+ */
+const BIRDS = {
+  heron: {
+    body: 'M30 32 C40 26 56 23 66 25 C70 21 78 20 82 24 C86 26 90 28 94 30 L108 31 L94 34 C88 36 84 38 80 39 C76 43 70 46 62 48 C50 52 36 49 30 44 Z M33 45 L4 52 L5 55 L35 49 Z',
+    up: 'M58 28 C50 8 30 0 6 4 C20 13 36 22 48 31 Z',
+    down: 'M58 32 C52 50 34 60 10 56 C24 47 40 39 48 33 Z',
+  },
+  bulbul: {
+    body: 'M22 34 C34 28 56 25 70 26 C76 23 86 23 90 28 L100 32 L90 35 C86 39 78 41 72 42 C56 46 34 44 22 39 Z',
+    up: 'M64 27 C58 12 44 3 26 2 C36 13 48 22 56 31 Z',
+    down: 'M64 32 C58 48 44 57 26 58 C36 47 48 38 56 31 Z',
+  },
+  myna: {
+    body: 'M32 33 C42 27 60 24 72 26 C76 23 86 23 90 29 L92 18 L96 30 L102 33 L96 35 C90 39 84 41 78 42 C60 46 42 44 32 39 Z',
+    up: 'M66 28 C58 10 38 1 12 0 C32 11 50 21 58 31 Z',
+    down: 'M66 32 C58 50 38 59 12 60 C32 49 50 39 58 31 Z',
+  },
+  magpie: {
+    body: 'M4 34 L40 31 C52 26 68 24 78 26 C84 23 94 25 96 30 L106 33 L96 37 C92 41 86 43 78 44 C68 46 52 44 40 41 L4 41 Z',
+    up: 'M62 27 C54 11 34 1 10 0 L20 8 L13 11 L25 18 L17 22 L32 28 C42 26 54 25 62 30 Z',
+    down: 'M62 32 C56 50 34 60 10 61 L20 53 L13 50 L25 43 L17 39 L32 34 C42 35 54 34 62 32 Z',
+  },
+} as const;
+
+const KEYS = Object.keys(BIRDS) as (keyof typeof BIRDS)[];
+---
+
+<div
+  class="birds"
+  data-birds
+  data-species={KEYS.join(',')}
+  data-egg-url={withBase('/secret/xianbao/')}
+  data-egg-img={withBase('/img/home/statue.png')}
+  aria-hidden="true"
+>
+  {/* 四种鸟 × 两个拍翅姿势。做成 symbol，飞的时候 <use> 引用，不产生额外请求 */}
+  <svg class="birds__defs" width="0" height="0" aria-hidden="true" focusable="false">
+    <defs>
+      {
+        KEYS.map((k) => (
+          <>
+            <symbol id={`bird-${k}-up`} viewBox="0 0 120 64">
+              <path d={BIRDS[k].body} />
+              <path d={BIRDS[k].up} />
+            </symbol>
+            <symbol id={`bird-${k}-down`} viewBox="0 0 120 64">
+              <path d={BIRDS[k].body} />
+              <path d={BIRDS[k].down} />
+            </symbol>
+          </>
+        ))
+      }
+    </defs>
+  </svg>
+</div>
+
+<style is:global>
+  /*
+    ⚠ 这里必须用 is:global，而且每条选择器都带 .birds 前缀。
+    原因：鸟群/雕像这些节点是 JS 现造的，身上没有 Astro 的作用域标记
+    （scoped <style> 只会编译成 .flock[data-astro-cid-xxx]，永远匹配不到它们）。
+    第一版就是这么翻车的：.flock 的 position:absolute / display:flex 全没生效，
+    一群鸟变成一列竖着排的块，页面被撑到 2000 多像素高。
+    加 .birds 前缀是为了别泄到全站去（只有首页挂了这个组件，且类名都在 .birds 里）。
+  */
+  .birds {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    /* 只占天空那一段，别飞到水面上去 */
+    overflow: hidden;
+  }
+
+  .birds .birds__defs {
+    position: absolute;
+  }
+
+  /* 一群鸟：整群一起横向飞过，行内样式给 --y / --dur / --size / --gap */
+  .birds .flock {
+    position: absolute;
+    left: 0;
+    top: var(--y, 30%);
+    display: flex;
+    align-items: center;
+    gap: var(--gap, 0.9em);
+    animation: bird-flock-ltr var(--dur, 22s) linear forwards;
+    will-change: transform;
+  }
+  /* 从右往左飞的那一群 */
+  .birds .flock[data-dir='rtl'] {
+    animation-name: bird-flock-rtl;
+  }
+
+  @keyframes bird-flock-ltr {
+    from {
+      transform: translateX(-16vw);
+    }
+    to {
+      transform: translateX(112vw);
+    }
+  }
+  @keyframes bird-flock-rtl {
+    from {
+      transform: translateX(112vw);
+    }
+    to {
+      transform: translateX(-16vw);
+    }
+  }
+
+  /* 单只鸟：尺寸、队形错落、上下浮动都由行内变量给 */
+  .birds .bird {
+    position: relative;
+    display: block;
+    flex: none;
+    width: var(--size, 46px);
+    translate: 0 var(--dy, 0px);
+    animation: bird-bob var(--bob, 3.2s) ease-in-out infinite alternate;
+  }
+  .birds .flock[data-dir='rtl'] .bird {
+    scale: -1 1;
+  }
+
+  @keyframes bird-bob {
+    from {
+      transform: translateY(-4px);
+    }
+    to {
+      transform: translateY(4px);
+    }
+  }
+
+  .birds .bird svg {
+    display: block;
+    width: 100%;
+    height: auto;
+    overflow: visible;
+    /* 和楼群、塔吊同一支墨：鸟从楼后穿过时不会露出第二种黑 */
+    fill: var(--ink, #08020c);
+  }
+
+  /* 拍翅：两个姿势互相隐藏，步进式切换 = 一帧一帧地扇 */
+  .birds .bird .wing {
+    animation: bird-flap var(--flap, 0.62s) steps(1, end) infinite;
+  }
+  .birds .bird .wing--down {
+    animation-delay: calc(var(--flap, 0.62s) / -2);
+  }
+  @keyframes bird-flap {
+    0%,
+    49.9% {
+      opacity: 1;
+    }
+    50%,
+    100% {
+      opacity: 0;
+    }
+  }
+
+  /*
+    彩蛋：疑问的雕像。
+    比鸟飞得慢（好点），鼠标悬上去停住 —— 一边飞一边点太难点中了。
+    .vapor 整层是 pointer-events:none，这里单独打开才收得到点击。
+  */
+  .birds .egg {
+    display: block;
+    pointer-events: auto;
+    cursor: pointer;
+    animation: bird-egg-bob var(--bob, 4.2s) ease-in-out infinite alternate;
+  }
+  .birds .egg img {
+    display: block;
+    width: 100%;
+    height: auto;
+  }
+  .birds .egg:hover,
+  .birds .egg:focus-visible {
+    animation-play-state: paused;
+  }
+  .birds .flock:has(.egg:hover) {
+    animation-play-state: paused;
+  }
+  @keyframes bird-egg-bob {
+    from {
+      transform: translateY(-7px);
+    }
+    to {
+      transform: translateY(7px);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .birds .flock,
+    .birds .bird,
+    .birds .bird .wing,
+    .birds .egg {
+      animation: none !important;
+    }
+  }
+</style>
+
+<script>
+  /*
+    调度：随机挑一种鸟、几只一组、从哪边飞、多快、飞多高。
+    频率刻意留在「一分钟能看到一两次」这个量级：太快满屏都是鸟，太慢等于没有。
+  */
+  (() => {
+    const root = document.querySelector<HTMLElement>('[data-birds]');
+    if (!root) return;
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+
+    const species = (root.dataset.species || 'heron,bulbul,myna,magpie').split(',');
+    const eggUrl = root.dataset.eggUrl || '/secret/xianbao/';
+    const eggImg = root.dataset.eggImg || '/img/home/statue.png';
+    const params = new URLSearchParams(location.search);
+    // ?birds=0 完全不放（做对照截图用）；?birds=1 立刻放一群；?statue=1 下一群必出雕像
+    if (params.get('birds') === '0') return;
+
+    /** 一群鸟之间的间隔（毫秒）。12~26 秒，平均约 19 秒一次 */
+    const GAP_MIN = 12000;
+    const GAP_MAX = 26000;
+    /** 混进雕像的概率 */
+    const EGG_CHANCE = 0.05;
+    /** 普通鸟群的飞行带（相对 .vapor__sea 的百分比）：从天空上部到楼群上方 */
+    const BIRD_BAND: [number, number] = [8, 46];
+
+    const rnd = (a: number, b: number) => a + Math.random() * (b - a);
+    const pick = <T,>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)];
+
+    /*
+      找一条「横着扫过去没被**可见内容**挡住」的带子 —— 彩蛋必须落在这种地方才点得到。
+      注意别拿 .home 当判据：那只是个没有任何绘制的包裹 div，但它照样会吃掉点击
+      （pointer-events 默认 auto），整块内容区都会被它判成"挡住"，于是永远找不到带子。
+      真正要避开的是画了东西的元素：卡片、链接、图片、标题、正文段落。
+      实测 1280×720：徽记区占 y154~322、两个大板块占 y367~627，空带子在 sea 的 12%~22%。
+    */
+    const PLAIN_CLASS = new Set(['home', 'site-main', 'container', 'wrap', 'blocks', 'stack']);
+    function isPainted(el: Element | null): boolean {
+      if (!el) return false;
+      const tag = el.tagName;
+      if (tag === 'HTML' || tag === 'BODY' || tag === 'MAIN') return false;
+      if (tag !== 'DIV' && tag !== 'SECTION') return true; // a / img / span / h1 / p … 都是画了东西的
+      return [...el.classList].some((c) => !PLAIN_CLASS.has(c) && !c.startsWith('container'));
+    }
+
+    function freeBand(): [number, number] | null {
+      const sea = document.querySelector('.vapor__sea');
+      if (!sea) return null;
+      const box = sea.getBoundingClientRect();
+      if (!box.height) return null;
+      const xs = [0.04, 0.2, 0.5, 0.8, 0.96].map((t) => Math.round(window.innerWidth * t));
+      const free: number[] = [];
+      for (let pct = 4; pct <= 48; pct += 2) {
+        const y = box.top + (box.height * pct) / 100;
+        if (y < 12 || y > window.innerHeight - 12) continue;
+        const blocked = xs.some((x) => isPainted(document.elementFromPoint(x, y)));
+        if (!blocked) free.push(pct);
+      }
+      if (!free.length) return null;
+      return [Math.max(4, Math.min(...free) - 1), Math.min(48, Math.max(...free) + 1)];
+    }
+
+    let forceEgg = params.get('statue') === '1';
+
+    function spawnFlock() {
+      const dir = Math.random() < 0.5 ? 'ltr' : 'rtl';
+      // 带雕像的那一群飞在"点得到"的带子上；实在找不到就退回靠上的位置
+      let useEgg = forceEgg || Math.random() < EGG_CHANCE;
+      forceEgg = false;
+      const band: [number, number] = useEgg ? freeBand() ?? [6, 16] : BIRD_BAND;
+      const kind = pick(species);
+      const count = Math.round(rnd(3, 7));
+      const size = rnd(30, 58); // 单只鸟的宽度（px）
+      const dur = rnd(17, 28); // 整群穿过屏幕的秒数
+
+      const flock = document.createElement('div');
+      flock.className = 'flock';
+      flock.dataset.dir = dir;
+      // 只在天上那一段飞：避开楼顶和水面
+      const y = rnd(band[0], band[1]);
+      flock.style.setProperty('--y', `${y.toFixed(1)}%`);
+      flock.style.setProperty('--dur', `${dur.toFixed(1)}s`);
+      flock.style.setProperty('--size', `${size.toFixed(0)}px`);
+      flock.style.setProperty('--gap', `${rnd(0.5, 1.1).toFixed(2)}em`);
+
+      const eggAt = useEgg ? Math.floor(Math.random() * count) : -1;
+      for (let i = 0; i < count; i++) {
+        const bird = document.createElement('div');
+        bird.className = 'bird';
+        bird.style.setProperty('--dy', `${rnd(-14, 14).toFixed(0)}px`);
+        bird.style.setProperty('--bob', `${rnd(2.6, 4.2).toFixed(2)}s`);
+        bird.style.setProperty('--flap', `${rnd(0.5, 0.78).toFixed(2)}s`);
+        // 每只的拍翅相位错开一点，整群才不会像一块板
+        bird.style.animationDelay = `${rnd(-1.2, 0).toFixed(2)}s`;
+
+        if (i === eggAt) {
+          // 彩蛋：换成雕像，慢一点、大一点，可点
+          const a = document.createElement('a');
+          a.className = 'egg';
+          a.href = eggUrl;
+          a.tabIndex = -1;
+          a.setAttribute('aria-label', '？');
+          const img = document.createElement('img');
+          img.src = eggImg;
+          img.alt = '';
+          img.decoding = 'async';
+          a.append(img);
+          bird.style.width = `${(size * 1.35).toFixed(0)}px`;
+          bird.append(a);
+        } else {
+          const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+          svg.setAttribute('viewBox', '0 0 120 64');
+          for (const pose of ['up', 'down']) {
+            const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
+            use.setAttribute('href', `#bird-${kind}-${pose}`);
+            use.setAttribute('class', `wing wing--${pose}`);
+            svg.append(use);
+          }
+          bird.append(svg);
+        }
+        flock.append(bird);
+      }
+
+      root.append(flock);
+      // 穿过去就撤掉节点，别在 DOM 里堆着
+      flock.addEventListener('animationend', () => flock.remove(), { once: true });
+      setTimeout(() => flock.remove(), (dur + 6) * 1000);
+    }
+
+    function schedule(delay?: number) {
+      const wait = delay ?? rnd(GAP_MIN, GAP_MAX);
+      setTimeout(() => {
+        // 标签页在后台就先不放，等回来再排
+        if (!document.hidden) spawnFlock();
+        schedule();
+      }, wait);
+    }
+
+    // 首屏别等太久：3~7 秒先来一群，之后按 12~26 秒的间隔随机
+    schedule(rnd(3000, 7000));
+    if (params.get('birds') === '1') setTimeout(spawnFlock, 120);
+
+    /*
+      彩蛋的点击兜底。
+      鸟群画在 .vapor 里（z-index:-1，在内容后面），所以雕像正上方多半压着
+      .home 这类**什么都没画、却照样吃点击**的包裹 div：点击根本落不到 <a> 上。
+      这里在文档上补一层判断：点在雕像矩形里就进秘密页。
+      但**绝不抢链接/按钮的点击** —— 用户明明在点卡片，不能因为那时有只雕像飞过
+      就被带到秘密页去。所以只接管"本来点了也没反应"的那些位置。
+    */
+    document.addEventListener('click', (event) => {
+      const egg = root.querySelector<HTMLElement>('.egg');
+      if (!egg) return;
+      const target = event.target as Element | null;
+      if (target && target.closest && target.closest('a, button, input, select, textarea, label, [role="button"]')) {
+        return; // 那是内容自己的点击，放行
+      }
+      const r = egg.getBoundingClientRect();
+      if (r.width === 0) return;
+      const { clientX: x, clientY: y } = event;
+      // 放 6px 余量：这东西一直在飞，人手点下去和浏览器算矩形之间差一点点
+      const pad = 6;
+      if (x >= r.left - pad && x <= r.right + pad && y >= r.top - pad && y <= r.bottom + pad) {
+        location.href = egg.href || eggUrl;
+      }
+    });
+  })();
+</script>
