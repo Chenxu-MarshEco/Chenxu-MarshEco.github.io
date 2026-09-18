@@ -136,8 +136,21 @@
                   "id": "huaya-r1-1-pmu4tbcct6",
                   "type": "text",
                   "text": "2026.9.16\n火力全开对编辑器进行了各种测试和优化，现在基本满足所有的编辑需求。"
+                },
+                {
+                  "id": "huaya-r1-1-pmu6psgks1",
+                  "type": "divider"
+                },
+                {
+                  "id": "huaya-r1-1-pmu6pt4252",
+                  "type": "text",
+                  "text": "20260917 详细构建了花娅陌域下的各种板块，接下来的日子里开始编写。"
                 }
               ]
+            },
+            {
+              "id": "huaya-r1-2",
+              "title": "昔沫濯曼涟"
             }
           ]
         },
@@ -620,7 +633,7 @@
               "image": "/img/uploads/20260916-1112-791d-2026_07_08_224708.jpg"
             },
             {
-              "id": "huaya-r1-2",
+              "id": "huaya-r3-2",
               "title": "星虹巢",
               "image": "/img/uploads/20260915-2006-58d3-friendlink_hoshi.png",
               "cardSize": "s",
@@ -634,7 +647,7 @@
               "link": "https://shema-sunf.github.io/about/"
             },
             {
-              "id": "huaya-r3-2",
+              "id": "huaya-r3-3",
               "title": "断续之梦",
               "image": "/img/uploads/20260918-1634-1c8b-Mathsicon.png",
               "link": "https://maths-s-website1.pages.dev/"
