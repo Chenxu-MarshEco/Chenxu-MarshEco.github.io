@@ -1,0 +1,19 @@
+{
+  "_readme": [
+    "每个网页一个歌单。这个文件由编辑器「音乐」面板写入，也可以手改（手改完要重新构建）。",
+    "",
+    "tracks 是曲库：id 唯一；src 是音频地址（public/audio/uploads/ 下的文件，写站内路径 /audio/uploads/xxx.mp3）；title 是显示名。",
+    "pages 按页面 key 引用曲库里的 id：",
+    "  home                                          首页",
+    "  list:posts / list:notes / list:archive        文章、手记、归档列表页",
+    "  list:tags / list:friends / list:about         标签页（/tags/<标签> 也用 list:tags）、友链、关于",
+    "  board:<板块地址去掉首尾斜杠>                    大板块树里的页面，例如 board:yongcheng、board:yongcheng-a",
+    "  entry:posts:<文件名> / entry:notes:<文件名>     文章 / 手记详情页，例如 entry:posts:hello-world",
+    "  *                                             所有页面通用歌单：某个页面自己没有歌单时就用它",
+    "",
+    "first 是「进入这一页一定第一首播」的那首；null = 没选定（进入这一页随机挑一首）。",
+    "list 是这一页的歌单；播放时随机轮播，不按这个顺序走。first 不在 list 里也会被当成歌单第一首加进去。"
+  ],
+  "tracks": [],
+  "pages": {}
+}

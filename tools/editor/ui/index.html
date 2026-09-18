@@ -35,6 +35,9 @@
         <button type="button" class="btn btn--ghost" id="btn-timelines" title="新建 / 编辑时间轴">
           时间轴
         </button>
+        <button type="button" class="btn btn--ghost" id="btn-music" title="给每个页面配一份歌单">
+          音乐
+        </button>
         <button type="button" class="btn btn--ghost" id="btn-preview" title="显示 / 隐藏预览">
           预览
         </button>
@@ -278,6 +281,65 @@
           <button type="button" class="btn btn--ghost" data-close="1">取消</button>
           <button type="button" class="btn btn--primary" id="tl-save">保存并重新构建</button>
         </div>
+      </div>
+    </div>
+
+    <!-- ============ 音乐 / 歌单 ============ -->
+    <div class="modal" id="music-modal" hidden>
+      <div class="modal__mask" data-close="1"></div>
+      <div class="modal__panel modal__panel--music" role="dialog" aria-modal="true" aria-label="音乐">
+        <div class="pstudio__top">
+          <h3 class="modal__title">音乐</h3>
+          <span class="pstudio__hint">
+            每个页面一份歌单：左边挑页面，右边排这一页的歌。
+            数据写进 <code>src/data/music.json</code>，音频存在
+            <code>public/audio/uploads/</code>。
+          </span>
+        </div>
+
+        <p class="hint" id="music-note">
+          上传会<strong>立刻</strong>把文件存进 <code>public/audio/uploads/</code> 并写进数据文件，
+          但要点「保存并重新构建」才会出现在网站上；播放顺序是<strong>随机</strong>的（不按这里的顺序走）；
+          「第一首」是进入这一页时一定先播的那首，选「不指定」就是进页面随机挑一首。
+        </p>
+
+        <div class="music">
+          <!-- 左：全站可挂歌单的页面 -->
+          <aside class="music__col">
+            <div class="pstudio__colhead">
+              <span>页面</span>
+              <input type="search" id="music-search" class="input input--sm" placeholder="找页面…" autocomplete="off" />
+            </div>
+            <ul class="music__pages" id="music-pages"></ul>
+          </aside>
+
+          <!-- 右：选中页面的歌单 + 曲库 -->
+          <section class="music__col">
+            <div class="pstudio__colhead">
+              <span class="music__current" id="music-current">未选择页面</span>
+              <button type="button" class="btn btn--sm" id="music-upload">上传音乐</button>
+              <input type="file" id="music-file" accept="audio/*" multiple hidden />
+            </div>
+            <div class="music__scroll">
+              <div id="music-tracklist"></div>
+
+              <div class="music__lib">
+                <button type="button" class="music__libhead" id="music-lib-toggle" aria-expanded="false">
+                  曲库
+                </button>
+                <div id="music-lib" hidden></div>
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <div class="music__bar">
+          <audio id="music-player" controls preload="none"></audio>
+          <span class="music__status" id="music-status"></span>
+          <button type="button" class="btn btn--ghost" data-close="1">关闭</button>
+          <button type="button" class="btn btn--primary" id="music-save">保存并重新构建</button>
+        </div>
+        <pre class="music__log" id="music-log" hidden></pre>
       </div>
     </div>
 

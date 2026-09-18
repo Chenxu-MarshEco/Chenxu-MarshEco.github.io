@@ -18,6 +18,7 @@
 
 import http from 'node:http';
 import fs from 'node:fs/promises';
+import { createWriteStream } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomBytes } from 'node:crypto';
@@ -36,11 +37,15 @@ const UI_DIR = path.join(__dirname, 'ui');
 const UPLOAD_DIR = path.join(PROJECT_ROOT, 'public', 'img', 'uploads');
 /** 首页大板块 / 子版块的封面图目录：public/img/home */
 const HOME_IMG_DIR = path.join(PROJECT_ROOT, 'public', 'img', 'home');
+/** 上传音频的落盘目录：public/audio/uploads（按需创建） */
+const AUDIO_DIR = path.join(PROJECT_ROOT, 'public', 'audio', 'uploads');
 
-/** 请求体上限 12MB */
+/** 请求体上限 12MB（只针对 JSON；音频走独立的流式分支，不受它管） */
 const MAX_BODY_BYTES = 12 * 1024 * 1024;
 /** 单张图片上限 10MB */
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+/** 单首音频上限 40MB */
+const MAX_AUDIO_BYTES = 40 * 1024 * 1024;
 
 const HOST = '127.0.0.1';
 const PORT_START = 4322;
@@ -69,6 +74,23 @@ const UPLOAD_MIME = new Map([
 const EXT_MIME = new Map(
   [...UPLOAD_MIME].map(([mime, ext]) => [ext, mime]).concat([['.jpeg', 'image/jpeg']])
 );
+
+/**
+ * 允许上传 / 试听的音频类型（扩展名 -> Content-Type）。
+ *
+ * 只认这几种：歌单是直接塞进 <audio src> 的，浏览器认不出来的格式
+ * 传上去也放不出声，不如在门口就挡掉。
+ */
+const AUDIO_MIME = new Map([
+  ['.mp3', 'audio/mpeg'],
+  ['.m4a', 'audio/mp4'],
+  ['.aac', 'audio/aac'],
+  ['.ogg', 'audio/ogg'],
+  ['.oga', 'audio/ogg'],
+  ['.opus', 'audio/opus'],
+  ['.wav', 'audio/wav'],
+  ['.flac', 'audio/flac'],
+]);
 
 /** 静态资源白名单（只暴露这几个文件，不做目录遍历） */
 const STATIC_FILES = new Map([
@@ -871,6 +893,49 @@ async function handleApi(req, res, url) {
     return sendJson(res, 200, await writeBoards(payload));
   }
 
+  // ---- 音乐 / 歌单（src/data/music.json）----
+  // 「音乐」面板打开时先拉这一份：曲库 + 各页歌单 + 全站可挂歌单的页面清单。
+  if (route === '/api/music' && req.method === 'GET') {
+    const music = await readMusic();
+    return sendJson(res, 200, {
+      ok: true,
+      music: { tracks: music.tracks, pages: music.pages },
+      pages: await musicPages(),
+      limits: { maxBytes: MAX_AUDIO_BYTES },
+    });
+  }
+  // 整份写回 + 重新构建（要出现在网站上必须走这一步）
+  if (route === '/api/music' && req.method === 'POST') {
+    const payload = await readBody(req);
+    if (!payload?.music || typeof payload.music !== 'object') {
+      throw httpError(400, '数据格式不对，需要 { music: { tracks: [...], pages: {...} } }');
+    }
+    const current = await readMusic();
+    const validKeys = new Set((await musicPages()).map((p) => p.key));
+    const clean = cleanMusic(payload.music, validKeys);
+    await writeMusicFile(current.readme, clean.tracks, clean.pages);
+    const built = await runBuild();
+    return sendJson(res, 200, {
+      ok: true,
+      ms: built.ms,
+      output: built.output,
+      dropped: clean.dropped,
+    });
+  }
+  /*
+    上传音频：请求体是**原始二进制**（前端直接 fetch(url, {body: file})），
+    所以这里绝对不能走 readBody —— 那个 12MB 上限是给 JSON 的，
+    而且会把整首歌读进内存。handleAudioUpload 里是边收边写盘。
+  */
+  if (route === '/api/music/upload' && req.method === 'POST') {
+    return await handleAudioUpload(req, res, url);
+  }
+  // 从曲库删一首（顺手清掉各页歌单里的引用、删文件），不重新构建
+  if (route === '/api/music/remove' && req.method === 'POST') {
+    const payload = await readBody(req);
+    return await handleMusicRemove(res, payload);
+  }
+
   // ---- 时间轴（独立的一份数据，见上面 TIMELINES_FILE 那段的说明）----
   if (route === '/api/timelines' && req.method === 'GET') {
     return sendJson(res, 200, await readTimelines());
@@ -1654,6 +1719,429 @@ async function writeBoards(payload) {
   return { ok: true, boards };
 }
 
+/* ------------------------------------------------------------------
+   音乐 / 歌单
+
+   数据放在 src/data/music.json：tracks 是曲库，pages 按「页面 key」
+   引用曲库里的 id。规则见那个文件里的 _readme。
+
+   页面 key 必须和 src/utils/music.ts 算出来的**一模一样** ——
+   站点那边按 key 取歌单，编辑器这边按同一套 key 写回去，
+   两边对不上就是「配了不响」。所以板块地址那段是照抄
+   src/utils/boards.ts 里的 segmentOf() + flattenBoards() 的 walk。
+   ------------------------------------------------------------------ */
+
+/** 歌单数据文件 */
+const MUSIC_FILE = path.join(PROJECT_ROOT, 'src', 'data', 'music.json');
+
+/** 通用歌单的伪页面 key（所有页面兜底用，不对应某个真实地址） */
+const MUSIC_ALL_KEY = '*';
+
+/** 站点里的定长列表页（和 src/utils/music.ts 的 LIST_PAGES 一一对应） */
+const MUSIC_LIST_PAGES = [
+  { name: 'posts', label: '文章列表', href: '/posts/' },
+  { name: 'notes', label: '手记列表', href: '/notes/' },
+  { name: 'archive', label: '归档', href: '/archive/' },
+  { name: 'tags', label: '标签', href: '/tags/' },
+  { name: 'friends', label: '友链', href: '/friends/' },
+  { name: 'about', label: '关于', href: '/about/' },
+];
+
+/**
+ * music.json 的原版说明。
+ *
+ * 正常情况是「读回来再写回去」，但文件被人删了、或者写坏了读不动时，
+ * 兜底也得有一份 —— 否则一次保存就把这份说明永久弄丢了。
+ */
+const MUSIC_README = [
+  '每个网页一个歌单。这个文件由编辑器「音乐」面板写入，也可以手改（手改完要重新构建）。',
+  '',
+  'tracks 是曲库：id 唯一；src 是音频地址（public/audio/uploads/ 下的文件，写站内路径 /audio/uploads/xxx.mp3）；title 是显示名。',
+  'pages 按页面 key 引用曲库里的 id：',
+  '  home                                          首页',
+  '  list:posts / list:notes / list:archive        文章、手记、归档列表页',
+  '  list:tags / list:friends / list:about         标签页（/tags/<标签> 也用 list:tags）、友链、关于',
+  '  board:<板块地址去掉首尾斜杠>                    大板块树里的页面，例如 board:yongcheng、board:yongcheng-a',
+  '  entry:posts:<文件名> / entry:notes:<文件名>     文章 / 手记详情页，例如 entry:posts:hello-world',
+  '  *                                             所有页面通用歌单：某个页面自己没有歌单时就用它',
+  '',
+  'first 是「进入这一页一定第一首播」的那首；null = 没选定（进入这一页随机挑一首）。',
+  'list 是这一页的歌单；播放时随机轮播，不按这个顺序走。first 不在 list 里也会被当成歌单第一首加进去。',
+];
+
+/**
+ * 地址归一化：去掉查询串 / 锚点 / 末尾斜杠。
+ * 照抄 src/utils/music.ts 的 normalizePath（那边还要去 base，这里站点 base 是 `/`）。
+ */
+function normalizeMusicPath(value) {
+  let p = String(value ?? '/').trim();
+  const q = p.search(/[?#]/);
+  if (q >= 0) p = p.slice(0, q);
+  if (!p.startsWith('/')) p = `/${p}`;
+  p = p.replace(/\/+$/, '');
+  return p || '/';
+}
+
+/** 链接版块的目标地址合不合法（和 boards.ts 的 SAFE_LINK 同一套规则） */
+const SAFE_LINK = /^(https?:\/\/|mailto:|tel:|\/|#)/i;
+function isBoardLink(value) {
+  return typeof value === 'string' && SAFE_LINK.test(value.trim());
+}
+
+/** 去重后的地址段：nodeId 去掉 parentId 前缀 -> a-1 这类短段（照抄 boards.ts） */
+function boardSegment(nodeId, parentId) {
+  if (parentId && nodeId.startsWith(`${parentId}-`)) {
+    const rest = nodeId.slice(parentId.length + 1);
+    if (rest) return rest;
+  }
+  return nodeId;
+}
+
+/**
+ * 展平版块树，只留下「真正有页面」的节点（先序）。
+ *
+ * 链接版块点了直接跳外站，站里没有它的页面，不能挂歌单；
+ * 它是叶子，也不再往下走（和 flattenBoards 的 external 分支一致）。
+ */
+function flatBoardPages(boards) {
+  const out = [];
+  const walk = (node, parentId, parentUrl, depth) => {
+    if (!node || typeof node !== 'object') return;
+    const id = String(node.id ?? '').trim();
+    const title = String(node.title ?? '').trim();
+    const link = typeof node.link === 'string' ? node.link.trim() : '';
+    if (isBoardLink(link)) return;
+    const href = String(node.href ?? '').trim();
+    const url = href || (depth === 0 ? `/${boardSegment(id, parentId)}` : `${parentUrl}/${boardSegment(id, parentId)}`);
+    out.push({ url, title: title || url });
+    for (const child of Array.isArray(node.children) ? node.children : []) {
+      walk(child, id, url, depth + 1);
+    }
+  };
+  for (const board of Array.isArray(boards) ? boards : []) walk(board, null, '', 0);
+  return out;
+}
+
+/**
+ * 全站可挂歌单的页面清单。
+ * 顺序：通用 → 首页 → 六个列表页 → 板块页（先序）→ 文章 → 手记。
+ * 文章 / 手记的标题直接用 listItems() 那份（不重新解析 frontmatter）。
+ */
+async function musicPages() {
+  const out = [
+    { key: MUSIC_ALL_KEY, label: '所有页面（通用歌单）', href: '', kind: 'all' },
+    { key: 'home', label: '首页', href: '/', kind: 'home' },
+  ];
+  for (const p of MUSIC_LIST_PAGES) {
+    out.push({ key: `list:${p.name}`, label: p.label, href: p.href, kind: 'list' });
+  }
+
+  let boards = [];
+  try {
+    const data = await readBoards();
+    boards = Array.isArray(data?.boards) ? data.boards : [];
+  } catch {
+    // 读不到版块树就当没有板块页 —— 不能让整个音乐面板打不开
+  }
+  const seenBoard = new Set();
+  for (const f of flatBoardPages(boards)) {
+    const key = `board:${normalizeMusicPath(f.url).replace(/^\//, '')}`;
+    // 两个节点写出同一个地址时会算出同一个 key，留先出现的那个（站点那边也是后者覆盖前者）
+    if (seenBoard.has(key)) continue;
+    seenBoard.add(key);
+    out.push({ key, label: f.title, href: f.url, kind: 'board' });
+  }
+
+  const [posts, notes] = await Promise.all([listItems('posts'), listItems('notes')]);
+  for (const it of posts) {
+    out.push({ key: `entry:posts:${it.slug}`, label: it.title, href: `/posts/${it.slug}/`, kind: 'entry' });
+  }
+  for (const it of notes) {
+    out.push({ key: `entry:notes:${it.slug}`, label: it.title, href: `/notes/${it.slug}/`, kind: 'entry' });
+  }
+  return out;
+}
+
+/** 读歌单。读不到 / 文件坏了都返回空结构，不让面板整个打不开 */
+async function readMusic() {
+  try {
+    const raw = JSON.parse(await fs.readFile(MUSIC_FILE, 'utf8'));
+    const tracks = Array.isArray(raw?.tracks) ? raw.tracks : [];
+    const pages =
+      raw && typeof raw.pages === 'object' && !Array.isArray(raw.pages) ? raw.pages : {};
+    return { readme: raw?._readme ?? MUSIC_README, tracks, pages };
+  } catch {
+    return { readme: MUSIC_README, tracks: [], pages: {} };
+  }
+}
+
+/** `/audio/uploads/xxx.mp3` -> `xxx.mp3`；不是这个前缀 / 名字不干净就返回空串 */
+function audioNameOf(src) {
+  const s = String(src ?? '').trim();
+  const prefix = '/audio/uploads/';
+  if (!s.startsWith(prefix)) return '';
+  const name = s.slice(prefix.length);
+  if (!name || name.includes('/') || name.includes('\\') || name.includes('..')) return '';
+  if (!AUDIO_MIME.has(path.extname(name).toLowerCase())) return '';
+  return name;
+}
+
+/** 曲目地址必须是 public/audio/uploads 下的站内文件（不许 http、不许 ..） */
+function cleanAudioSrc(raw) {
+  const name = audioNameOf(raw);
+  return name ? `/audio/uploads/${name}` : '';
+}
+
+/**
+ * 歌单清洗。
+ *
+ * 曲库：id / title / src 缺一个就丢掉，id 撞了也只留先出现的。
+ * 页面：只认合法 key；list 里的 id 必须能在曲库里找到（找不到就丢，并记账），
+ * first 找不到就置 null；list 去重；first 不在 list 里就补到开头
+ * （站点那边也这么兜，编辑器跟上，免得「选了第一首却没进歌单」）；
+ * 空条目整个删掉，文件才干净。
+ */
+function cleanMusic(payload, validKeys) {
+  const dropped = { tracks: 0, pages: 0, list: 0, first: 0 };
+
+  const tracks = [];
+  const byId = new Set();
+  for (const raw of Array.isArray(payload?.tracks) ? payload.tracks : []) {
+    if (!raw || typeof raw !== 'object') {
+      dropped.tracks++;
+      continue;
+    }
+    const id = String(raw.id ?? '').trim();
+    const title = String(raw.title ?? '').trim();
+    const src = cleanAudioSrc(raw.src);
+    if (!id || !title || !src || byId.has(id)) {
+      dropped.tracks++;
+      continue;
+    }
+    byId.add(id);
+    const track = { id, title, src };
+    const bytes = Number(raw.bytes);
+    if (Number.isFinite(bytes) && bytes > 0) track.bytes = Math.round(bytes);
+    const addedAt = String(raw.addedAt ?? '').trim();
+    if (addedAt) track.addedAt = addedAt;
+    tracks.push(track);
+  }
+
+  const rawPages =
+    payload?.pages && typeof payload.pages === 'object' && !Array.isArray(payload.pages)
+      ? payload.pages
+      : {};
+  const pages = {};
+  for (const [key, value] of Object.entries(rawPages)) {
+    if (!validKeys.has(key)) {
+      dropped.pages++;
+      continue;
+    }
+    const src = value && typeof value === 'object' ? value : {};
+    const list = [];
+    for (const rawId of Array.isArray(src.list) ? src.list : []) {
+      const id = String(rawId ?? '').trim();
+      if (!byId.has(id)) {
+        dropped.list++;
+        continue;
+      }
+      if (!list.includes(id)) list.push(id);
+    }
+    let first = String(src.first ?? '').trim();
+    if (first && !byId.has(first)) {
+      first = '';
+      dropped.first++;
+    }
+    if (first && !list.includes(first)) list.unshift(first);
+    // 既没有歌单也没有第一首：这个条目没有意义，删掉
+    if (!list.length && !first) continue;
+    pages[key] = { first: first || null, list };
+  }
+
+  return { tracks, pages, dropped };
+}
+
+/** 写回歌单文件（先留一份备份，写坏了还能捞回来 —— 和 boards / timelines 一个规矩） */
+async function writeMusicFile(readme, tracks, pages) {
+  try {
+    await fs.copyFile(MUSIC_FILE, `${MUSIC_FILE}.bak`);
+  } catch {
+    /* 第一次还没有这个文件，正常 */
+  }
+  const out = { _readme: readme ?? MUSIC_README, tracks, pages };
+  await fs.writeFile(MUSIC_FILE, `${JSON.stringify(out, null, 2)}\n`, 'utf8');
+  return out;
+}
+
+/**
+ * 音频上传的落盘文件名：
+ * `<yyyyMMdd-HHmm>-<4位随机>-<清洗过的原名>.<扩展名>`
+ * （时间前缀是为了在文件夹里按上传顺序排，随机段避免同名撞车）
+ */
+function sanitizeAudioName(name, ext) {
+  let stem = path.basename(String(name ?? 'audio'));
+  stem = stem.replace(/\.[^.]*$/, '');
+  stem = stem
+    .replace(/[^\w\u4e00-\u9fff.-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^[-.]+|[-.]+$/g, '')
+    .slice(0, 48);
+  if (!stem) stem = 'audio';
+  const d = new Date();
+  const { date, time } = formatDateParts(d);
+  const stamp = `${date.replace(/-/g, '')}-${time.replace(':', '')}`;
+  const rand = randomBytes(2).toString('hex');
+  return `${stamp}-${rand}-${stem}${ext}`;
+}
+
+/**
+ * 把请求体当原始二进制流边收边写盘，顺手卡上限。
+ *
+ * 不用 readBody：那个是给 JSON 的，12MB 上限会直接把音频拦掉，
+ * 而且整段读进内存也没必要。超限时中止、把半个文件删掉，
+ * 免得 uploads 目录里留下一个永远播不出来的残片。
+ */
+function receiveAudio(req, abs) {
+  return new Promise((resolve, reject) => {
+    let size = 0;
+    let done = false;
+    const out = createWriteStream(abs);
+
+    const fail = (err) => {
+      if (done) return;
+      done = true;
+      req.unpipe(out);
+      out.destroy();
+      fs.unlink(abs).catch(() => {
+        /* 本来就没写出来也无所谓 */
+      });
+      reject(err);
+    };
+
+    req.on('data', (chunk) => {
+      if (done) return;
+      size += chunk.length;
+      if (size > MAX_AUDIO_BYTES) {
+        // 剩下的请求体继续读掉再丢，免得客户端拿到 ECONNRESET 而不是那个 413
+        req.resume();
+        fail(httpError(413, `单首音频不能超过 ${MAX_AUDIO_BYTES / 1024 / 1024}MB`));
+      }
+    });
+    req.on('error', fail);
+    out.on('error', fail);
+    out.on('finish', () => {
+      if (done) return;
+      done = true;
+      if (!size) {
+        fs.unlink(abs).catch(() => {});
+        reject(httpError(400, '音频内容是空的'));
+        return;
+      }
+      resolve(size);
+    });
+    req.pipe(out);
+  });
+}
+
+/**
+ * 上传一首音频。
+ *
+ * 落盘之后**不重新构建** —— 一次传十首，每首都构建一遍是白等。
+ * 文件和数据文件当场就写好了，什么时候让网站看到由「保存并重新构建」决定。
+ */
+async function handleAudioUpload(req, res, url) {
+  const rawName = url.searchParams.get('name') || '';
+  const key = String(url.searchParams.get('key') || '');
+  const ext = path.extname(path.basename(rawName)).toLowerCase();
+  if (!AUDIO_MIME.has(ext)) {
+    // 请求体读掉再丢，免得客户端拿到 ECONNRESET 而不是这个 400
+    req.resume();
+    throw httpError(
+      400,
+      `只支持 ${[...AUDIO_MIME.keys()].map((e) => e.slice(1)).join(' / ')} 这些音频格式，收到的是 ${ext || '（没扩展名）'}`
+    );
+  }
+
+  const declared = Number(req.headers['content-length'] || 0);
+  if (Number.isFinite(declared) && declared > MAX_AUDIO_BYTES) {
+    req.resume();
+    throw httpError(413, `单首音频不能超过 ${MAX_AUDIO_BYTES / 1024 / 1024}MB`);
+  }
+
+  const filename = sanitizeAudioName(rawName, ext);
+  await fs.mkdir(AUDIO_DIR, { recursive: true });
+  const abs = path.join(AUDIO_DIR, filename);
+  const bytes = await receiveAudio(req, abs);
+
+  const current = await readMusic();
+  const validKeys = new Set((await musicPages()).map((p) => p.key));
+  // 先按同一套规则把盘上那份洗干净，再往后追加 —— 手改坏了的条目顺手收掉
+  const clean = cleanMusic({ tracks: current.tracks, pages: current.pages }, validKeys);
+
+  const id = `tr_${Date.now()}-${randomBytes(2).toString('hex')}`;
+  const title = path.basename(rawName).replace(/\.[^.]*$/, '').trim().slice(0, 120) || filename;
+  const track = { id, title, src: `/audio/uploads/${filename}`, bytes, addedAt: new Date().toISOString() };
+  clean.tracks.push(track);
+
+  // key 为空或不是合法页面：只进曲库，不进任何歌单（之后在面板里手动加）
+  if (key && validKeys.has(key)) {
+    const page = clean.pages[key] ?? { first: null, list: [] };
+    if (!page.list.includes(id)) page.list.push(id);
+    clean.pages[key] = page;
+  }
+
+  await writeMusicFile(current.readme, clean.tracks, clean.pages);
+  return sendJson(res, 200, {
+    ok: true,
+    track,
+    music: { tracks: clean.tracks, pages: clean.pages },
+    pages: await musicPages(),
+  });
+}
+
+/**
+ * 从曲库删掉一首：同时从所有页面的歌单里摘掉、first 指向它时置 null。
+ * 同一首的音频文件只有没有别的曲目在用时才删（src 可能被两条记录共用）。
+ * 和上传一样，这里**不重新构建**。
+ */
+async function handleMusicRemove(res, payload) {
+  const id = String(payload?.id ?? '').trim();
+  if (!id) throw httpError(400, 'id 不能为空');
+
+  const current = await readMusic();
+  const target = current.tracks.find((t) => t && String(t.id) === id);
+  if (!target) throw httpError(404, `曲库里没有 ${id}`);
+
+  const pagesIn = {};
+  for (const [key, value] of Object.entries(current.pages)) {
+    const src = value && typeof value === 'object' ? value : {};
+    const list = (Array.isArray(src.list) ? src.list : [])
+      .map((v) => String(v))
+      .filter((v) => v !== id);
+    const first = String(src.first ?? '') === id ? null : src.first ?? null;
+    pagesIn[key] = { first, list };
+  }
+
+  const validKeys = new Set((await musicPages()).map((p) => p.key));
+  const remaining = current.tracks.filter((t) => t !== target);
+  const clean = cleanMusic({ tracks: remaining, pages: pagesIn }, validKeys);
+
+  const src = cleanAudioSrc(target.src);
+  if (payload?.deleteFile !== false && src && !clean.tracks.some((t) => t.src === src)) {
+    const name = audioNameOf(src);
+    if (name) {
+      try {
+        await fs.unlink(path.join(AUDIO_DIR, name));
+      } catch {
+        /* 文件本来就不在了，也算删干净了 */
+      }
+    }
+  }
+
+  await writeMusicFile(current.readme, clean.tracks, clean.pages);
+  return sendJson(res, 200, { ok: true, music: { tracks: clean.tracks, pages: clean.pages } });
+}
+
 /**
  * public/img 下这几个子目录对编辑器可见。
  * uploads 是上传落盘的地方；home 是首页大板块/子版块的封面图，
@@ -1688,6 +2176,39 @@ async function serveImage(res, pathname) {
       'Content-Type': type,
       'Content-Length': buf.length,
       'Cache-Control': 'no-store',
+    });
+    res.end(buf);
+  } catch {
+    return false; // 文件不存在就落到后面的 404
+  }
+  return true;
+}
+
+/**
+ * 把 public/audio/uploads 下的音频发给浏览器。
+ *
+ * 试听要用它：面板里的 <audio> 就指向 /audio/uploads/xxx.mp3。
+ * 和图片一样是「白名单子目录 + 纯文件名」，挡掉 ../ 和更深的路径，
+ * 扩展名也只放行音频那几种。
+ */
+async function serveAudio(res, pathname) {
+  const rest = pathname.slice('/audio/'.length);
+  const slash = rest.indexOf('/');
+  if (slash < 0) return false;
+  if (rest.slice(0, slash) !== 'uploads') return false;
+
+  const name = rest.slice(slash + 1);
+  if (!name || name.includes('/') || name.includes('\\') || name.includes('..')) return false;
+  const type = AUDIO_MIME.get(path.extname(name).toLowerCase());
+  if (!type) return false;
+
+  try {
+    const buf = await fs.readFile(path.join(AUDIO_DIR, name));
+    res.writeHead(200, {
+      'Content-Type': type,
+      'Content-Length': buf.length,
+      'Cache-Control': 'no-store',
+      'Accept-Ranges': 'none',
     });
     res.end(buf);
   } catch {
@@ -1748,6 +2269,14 @@ async function handle(req, res) {
   */
   if (pathname.startsWith('/img/')) {
     if (await serveImage(res, pathname)) return;
+  }
+
+  /*
+    上传的音频同样得发回去 —— 音乐面板里的试听播放器指向
+    /audio/uploads/xxx.mp3，不暴露这个前缀的话点「▶」永远是 404。
+  */
+  if (pathname.startsWith('/audio/')) {
+    if (await serveAudio(res, pathname)) return;
   }
 
   if (pathname.startsWith('/api/')) {
@@ -1825,6 +2354,7 @@ function banner(url, extraQuery) {
     '   文章目录： src/content/posts',
     '   手记目录： src/content/notes',
     '   图片目录： public/img/uploads',
+    '   音频目录： public/audio/uploads',
     '',
     '   保存快捷键： Ctrl+S / Cmd+S      停止服务： Ctrl+C',
     '',

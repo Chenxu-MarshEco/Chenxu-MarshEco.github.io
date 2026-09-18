@@ -5,6 +5,7 @@ import SiteHeader from '../components/SiteHeader.astro';
 import SiteFooter from '../components/SiteFooter.astro';
 import BoardDrawer from '../components/BoardDrawer.astro';
 import Timeline from '../components/Timeline.astro';
+import MusicPlayer from '../components/MusicPlayer.astro';
 import site from '../site.config';
 import { absoluteUrl, withBase } from '../utils/url';
 import { preloadFor } from '../utils/images';
@@ -164,6 +165,14 @@ const currentPath = withoutBase.length > 1 ? withoutBase.replace(/\/+$/, '') : '
     <script is:inline>
       document.documentElement.dataset.theme = 'light';
     </script>
+
+    {/*
+      音乐：这一页有歌单才会输出脚本（没有歌单时组件什么都不输出，
+      右上角那颗音量按钮也就一直藏着）。放在 <head> 里是有意的 ——
+      脚本一跑就把 <audio> 的地址填上，音频请求能早几百毫秒出发。
+      页面属于哪一份歌单由 utils/music.ts 按地址自己认，不用逐页传参。
+    */}
+    <MusicPlayer current={currentPath} />
   </head>
 
   <body class={bodyClass}>

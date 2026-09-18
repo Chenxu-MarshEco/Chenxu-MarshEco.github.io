@@ -255,11 +255,20 @@ const KEYS = Object.keys(BIRDS) as (keyof typeof BIRDS)[];
       transform: rotate(9deg);
     }
   }
+  /*
+    鼠标悬到雕像上就停住（一边飞一边点太难点中）。
+    :hover 那两条其实是**死规则** —— 雕像画在内容后面，鼠标命中的是盖住它的
+    .home 包裹元素，浏览器不会把 .egg 当成 :hover 的目标。真正生效的是脚本
+    算出来的 .is-hover（见脚本里 syncCursor 那段）。两条都留着：
+    .is-hover 靠脚本，:hover 靠万一哪天层级改了。
+  */
   .birds .egg:hover,
+  .birds .egg.is-hover,
   .birds .egg:focus-visible {
     animation-play-state: paused;
   }
-  .birds .flock:has(.egg:hover) {
+  .birds .flock:has(.egg:hover),
+  .birds .flock.is-hover {
     animation-play-state: paused;
   }
   @keyframes bird-egg-bob {
@@ -367,6 +376,9 @@ const KEYS = Object.keys(BIRDS) as (keyof typeof BIRDS)[];
     let forceEgg = params.get('statue') === '1';
     /** 场上已经有一只雕像在飞：没飞出去之前不许再刷（防连点器） */
     let eggInFlight = false;
+    /** 场上那只雕像的 <a>（同时只会有一只），光标判断用它 */
+    let currentEgg: HTMLElement | null = null;
+    let cursorTimer = 0;
 
     function spawnFlock(opts: { egg?: boolean } = {}) {
       const dir = Math.random() < 0.5 ? 'ltr' : 'rtl';
@@ -428,6 +440,8 @@ const KEYS = Object.keys(BIRDS) as (keyof typeof BIRDS)[];
           a.append(wing, body);
           bird.style.width = `${Math.max(22, size * 0.62).toFixed(0)}px`;
           bird.append(a);
+          currentEgg = a;
+          startCursorWatch();
         } else {
           const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
           svg.setAttribute('viewBox', '0 0 120 64');
@@ -449,6 +463,10 @@ const KEYS = Object.keys(BIRDS) as (keyof typeof BIRDS)[];
         eggInFlight = true;
         const release = () => {
           eggInFlight = false;
+          stopCursorWatch();
+          // 悬停会把这一群的动画暂停住，那一群的 animationend 就永远不来了：
+          // 这里兜底撤掉节点，别让一只停住的雕像挂在画面上。
+          flock.remove();
         };
         flock.addEventListener('animationend', release, { once: true });
         setTimeout(release, (dur + 6) * 1000);
@@ -522,5 +540,81 @@ const KEYS = Object.keys(BIRDS) as (keyof typeof BIRDS)[];
         location.href = egg.href || eggUrl;
       }
     });
+
+    /*
+      ── 鼠标移上去变小手（提醒这里能点）─────────────────────────────────
+      .egg 上写了 cursor:pointer，但那条**永远不会生效**：雕像画在 .vapor 里
+      （z-index:-1，在内容后面），鼠标真正命中的是盖在它上面的 .home 这类包裹元素，
+      浏览器压根不会把 .egg 认成鼠标底下的元素。
+      所以这里自己算：指针落在雕像矩形（含一点余量）内就
+        ① 把整页光标换成小手；
+        ② 给雕像和它那一群挂上 is-hover，让 CSS 把飞行与上下浮动暂停下来 ——
+           雕像停在鼠标底下，点起来才不费劲。
+      用 110ms 的定时器而不是 pointermove：鼠标不动、雕像自己飞过来的那种情况
+      也要能变，飞走了也要能变回去。场上没有雕像时定时器是关着的，不占开销。
+    */
+    const EGG_CURSOR_PAD = 10;
+    let ptrX = -1;
+    let ptrY = -1;
+    let cursorOn = false;
+
+    document.addEventListener(
+      'pointermove',
+      (e) => {
+        ptrX = e.clientX;
+        ptrY = e.clientY;
+      },
+      { passive: true }
+    );
+    document.addEventListener('pointerleave', () => {
+      ptrX = -1;
+      ptrY = -1;
+      syncCursor();
+    });
+
+    function syncCursor() {
+      const egg = currentEgg;
+      let on = false;
+      if (egg && egg.isConnected && ptrX >= 0) {
+        const r = egg.getBoundingClientRect();
+        on =
+          r.width > 0 &&
+          ptrX >= r.left - EGG_CURSOR_PAD &&
+          ptrX <= r.right + EGG_CURSOR_PAD &&
+          ptrY >= r.top - EGG_CURSOR_PAD &&
+          ptrY <= r.bottom + EGG_CURSOR_PAD;
+      }
+      if (on === cursorOn) return;
+      cursorOn = on;
+      document.documentElement.style.cursor = on ? 'pointer' : '';
+      if (egg) {
+        egg.classList.toggle('is-hover', on);
+        const flock = egg.closest('.flock');
+        if (flock) flock.classList.toggle('is-hover', on);
+      }
+    }
+
+    function startCursorWatch() {
+      if (cursorTimer) return;
+      cursorTimer = window.setInterval(syncCursor, 110);
+    }
+
+    function stopCursorWatch() {
+      if (cursorTimer) {
+        window.clearInterval(cursorTimer);
+        cursorTimer = 0;
+      }
+      const egg = currentEgg;
+      if (egg) {
+        egg.classList.remove('is-hover');
+        const flock = egg.closest('.flock');
+        if (flock) flock.classList.remove('is-hover');
+      }
+      currentEgg = null;
+      if (cursorOn) {
+        cursorOn = false;
+        document.documentElement.style.cursor = '';
+      }
+    }
   })();
 </script>

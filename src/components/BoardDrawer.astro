@@ -100,6 +100,47 @@ function renderNodes(nodes: BoardNode[]): string {
     </svg>
   </button>
 
+  <!--
+    音量键（古筝造型），挨着回到顶部那颗按钮。
+    默认 hidden：只有「这一页有歌单」时播放器脚本才会摘掉它 ——
+    没歌单的页面上那段脚本根本不跑，这颗按钮就一直藏着。
+  -->
+  <div class="vol" id="music-vol" hidden>
+    <button
+      type="button"
+      class="corner__btn vol__btn"
+      id="music-vol-btn"
+      aria-label="音量"
+      aria-pressed="false"
+      title="音量"
+    >
+      <svg class="vol__ico" viewBox="0 0 24 24" aria-hidden="true">
+        <!-- 筝身：一头窄一头宽的斜板 -->
+        <path d="M2.6 8.4h13l1.2 8.4H1.4z"></path>
+        <!-- 弦 -->
+        <path class="vol__str" d="M5.4 8.4v8.4M8.2 8.4v8.4M11 8.4v8.4M13.8 8.4v8.4"></path>
+        <!-- 音量弧线：越大声露得越多 -->
+        <path class="vol__wave vol__wave--1" d="M18 9.6a4.4 4.4 0 0 1 0 4.8"></path>
+        <path class="vol__wave vol__wave--2" d="M20.3 7.3a7.6 7.6 0 0 1 0 9.4"></path>
+        <!-- 静音斜杠 -->
+        <path class="vol__slash" d="M3.4 20.4 20.8 3.6"></path>
+      </svg>
+    </button>
+    <div class="vol__panel">
+      <input
+        class="vol__range"
+        id="music-vol-range"
+        type="range"
+        min="0"
+        max="100"
+        step="1"
+        value="70"
+        aria-label="音量大小"
+      />
+      <span class="vol__num" id="music-vol-num">70%</span>
+    </div>
+  </div>
+
   <button
     type="button"
     class="corner__btn drawer__toggle"
@@ -272,9 +313,112 @@ function renderNodes(nodes: BoardNode[]): string {
     不藏的话这个按钮会浮在抽屉面板上，和抽屉自己的关闭按钮挤在一起。
     用 visibility 而不是 display —— display:none 会让右边的目录按钮
     往右跳一格，看着像抖了一下。
+    音量键同理：抽屉铺开时它也在抽屉底下，一起收掉（音乐照放）。
   */
-  :global(.drawer-open) .totop {
+  :global(.drawer-open) .totop,
+  :global(.drawer-open) .vol {
     visibility: hidden;
+  }
+
+  /* ---------- 音量键（古筝造型） ---------- */
+  .vol {
+    position: relative;
+    display: flex;
+    align-items: center;
+  }
+
+  .vol__ico {
+    width: 24px;
+    height: 24px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.4;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  /* 弦比筝身细一些，不然 24px 里糊成一坨 */
+  .vol__str {
+    stroke-width: 0.85;
+    opacity: 0.7;
+  }
+
+  /* 两条音量弧线：默认只露一条淡淡的，音量大时两条都点亮 */
+  .vol__wave {
+    opacity: 0.3;
+    transition: opacity var(--t-fast) var(--ease);
+  }
+  .vol__wave--2 {
+    display: none;
+  }
+  .vol__btn.is-loud .vol__wave--1 {
+    opacity: 1;
+  }
+  .vol__btn.is-loud .vol__wave--2 {
+    display: block;
+    opacity: 0.8;
+  }
+
+  /* 静音：弧线收掉，给它划一道 */
+  .vol__slash {
+    display: none;
+    stroke: var(--c-accent);
+    stroke-width: 1.7;
+  }
+  .vol__btn.is-muted .vol__wave {
+    display: none;
+  }
+  .vol__btn.is-muted .vol__slash {
+    display: block;
+  }
+
+  /* 浏览器不让自动出声时按钮暗一点：点它一下就会响 */
+  .vol__btn.is-paused {
+    opacity: 0.6;
+  }
+
+  /*
+    音量条：平时收着，鼠标移到按钮上（或键盘 tab 进来）才滑出来。
+    用 visibility 而不是 display，好让 opacity 有过渡，
+    收起时也不会挡住底下的东西。
+  */
+  .vol__panel {
+    position: absolute;
+    top: calc(100% + 0.4rem);
+    right: 0;
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    padding: 0.4rem 0.55rem;
+    border: 1px solid var(--c-border);
+    border-radius: var(--r-md);
+    background: var(--c-bg-raised);
+    box-shadow: var(--shadow-md);
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(-0.25rem);
+    transition:
+      opacity var(--t-fast) var(--ease),
+      transform var(--t-fast) var(--ease),
+      visibility var(--t-fast) linear;
+  }
+  .vol:hover .vol__panel,
+  .vol:focus-within .vol__panel {
+    opacity: 1;
+    visibility: visible;
+    transform: none;
+  }
+
+  .vol__range {
+    width: 96px;
+    accent-color: var(--c-accent);
+  }
+  .vol__num {
+    min-width: 2.4em;
+    text-align: right;
+    font-size: 0.72rem;
+    color: var(--c-text-muted);
+    font-variant-numeric: tabular-nums;
   }
 
   /* ---------- 三条杠按钮 ---------- */

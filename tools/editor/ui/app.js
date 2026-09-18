@@ -89,6 +89,21 @@ const els = {
   pageEditor: $('page-editor'),
   pageSave: $('page-save'),
 
+  btnMusic: $('btn-music'),
+  musicModal: $('music-modal'),
+  musicSearch: $('music-search'),
+  musicPages: $('music-pages'),
+  musicCurrent: $('music-current'),
+  musicUpload: $('music-upload'),
+  musicFile: $('music-file'),
+  musicTrackList: $('music-tracklist'),
+  musicLibToggle: $('music-lib-toggle'),
+  musicLib: $('music-lib'),
+  musicPlayer: $('music-player'),
+  musicStatus: $('music-status'),
+  musicSave: $('music-save'),
+  musicLog: $('music-log'),
+
   btnLayout: $('btn-layout'),
   layoutModal: $('layout-modal'),
   layoutFrame: $('layout-frame'),
@@ -4994,6 +5009,581 @@ async function switchType(type) {
 }
 
 /* ---------------------------------------------------------------
+   音乐 / 歌单
+
+   曲库和每个页面的歌单都在 src/data/music.json 里，页面 key 由服务端
+   按站点那套规则算好（和 src/utils/music.ts 完全一致）。
+
+   打开面板时 GET 一次，之后改标题、换顺序、选第一首、移出歌单都只动
+   内存里的草稿；点「保存并重新构建」才整份写回并跑一次构建。
+   只有「上传」和「从曲库删除」是当场落盘的动作（服务端那边做，
+   故意不每次构建 —— 连着传十首不用等十次构建）。
+   --------------------------------------------------------------- */
+
+/** 草稿：{ tracks: [...], pages: { key: { first, list } } } */
+let musicDraft = null;
+/** 服务端算好的全站页面清单 */
+let musicPagesList = [];
+/** 单首音频上限（服务端给的，界面上报错时用） */
+let musicLimits = { maxBytes: 40 * 1024 * 1024 };
+/** 当前选中的页面 key */
+let musicKey = '*';
+/** 左栏筛选词 */
+let musicSearch = '';
+/** 曲库区是不是展开的 */
+let musicLibOpen = false;
+/** 有没保存的改动 */
+let musicDirty = false;
+
+/** 左栏分组，顺序就是显示顺序 */
+const MUSIC_GROUPS = [
+  { id: 'all', label: '通用' },
+  { id: 'home', label: '首页' },
+  { id: 'list', label: '列表页' },
+  { id: 'board', label: '板块页' },
+  { id: 'posts', label: '文章' },
+  { id: 'notes', label: '手记' },
+];
+
+/** 一个页面归到哪一组：文章和手记都是 entry，但清单里分开放好找 */
+function musicGroupOf(page) {
+  if (page.kind === 'entry') return page.key.startsWith('entry:notes:') ? 'notes' : 'posts';
+  return page.kind;
+}
+
+function musicPageOf(key) {
+  return musicPagesList.find((p) => p.key === key) ?? null;
+}
+
+function musicTrackById(id) {
+  return (musicDraft?.tracks ?? []).find((t) => t.id === id) ?? null;
+}
+
+/** 草稿里这一页的条目；create=true 时没有就建一个 */
+function musicEntry(key, create = false) {
+  if (!musicDraft) return null;
+  let page = musicDraft.pages[key];
+  if (!page || typeof page !== 'object') {
+    if (!create) return null;
+    page = { first: null, list: [] };
+    musicDraft.pages[key] = page;
+  }
+  if (!Array.isArray(page.list)) page.list = [];
+  if (page.first === undefined) page.first = null;
+  return page;
+}
+
+/** 这一页草稿里有几首（first 不在 list 里也算一首 —— 站点会把它补进去） */
+function musicCountOf(key) {
+  const page = musicDraft?.pages?.[key];
+  if (!page || typeof page !== 'object') return 0;
+  const list = Array.isArray(page.list) ? page.list.filter((id) => musicTrackById(id)) : [];
+  const first = page.first && musicTrackById(page.first) ? page.first : null;
+  return list.length + (first && !list.includes(first) ? 1 : 0);
+}
+
+function setMusicStatus(text, isError = false) {
+  els.musicStatus.textContent = text || '';
+  els.musicStatus.classList.toggle('is-error', Boolean(isError));
+}
+
+function markMusicDirty() {
+  musicDirty = true;
+  const page = musicPageOf(musicKey);
+  setMusicStatus(`「${page?.label ?? musicKey}」有没保存的改动 —— 点右下角「保存并重新构建」才会进网站`);
+}
+
+/** 把服务端返回的 music 收进草稿 */
+function adoptMusic(music) {
+  musicDraft = {
+    tracks: Array.isArray(music?.tracks) ? music.tracks : [],
+    pages: music && typeof music.pages === 'object' && music.pages ? music.pages : {},
+  };
+  musicDirty = false;
+}
+
+async function loadMusic() {
+  const data = await apiGet('/api/music');
+  adoptMusic(data?.music);
+  if (Array.isArray(data?.pages)) musicPagesList = data.pages;
+  const max = Number(data?.limits?.maxBytes);
+  if (Number.isFinite(max) && max > 0) musicLimits = { maxBytes: max };
+  // 选中的页面在清单里没了（版块被删了之类）就退回通用歌单
+  if (!musicPagesList.some((p) => p.key === musicKey)) {
+    musicKey = musicPagesList.length ? musicPagesList[0].key : '*';
+  }
+}
+
+async function openMusicModal() {
+  els.musicModal.hidden = false;
+  els.musicLog.hidden = true;
+  els.musicLog.textContent = '';
+  els.musicPages.textContent = '';
+  els.musicTrackList.textContent = '';
+  els.musicLib.textContent = '';
+  setMusicStatus('正在读取歌单…');
+  try {
+    await loadMusic();
+    els.musicSearch.value = musicSearch;
+    renderMusic();
+    setMusicStatus(
+      `已读取：曲库 ${musicDraft.tracks.length} 首，单首上限 ${Math.round(musicLimits.maxBytes / 1024 / 1024)}MB`
+    );
+  } catch (err) {
+    setMusicStatus(`读取失败：${err.message}`, true);
+    toast(`读取歌单失败：${err.message}`, true);
+  }
+}
+
+function closeMusicModal() {
+  els.musicModal.hidden = true;
+  try {
+    els.musicPlayer.pause();
+  } catch {
+    /* 没在播就无所谓 */
+  }
+}
+
+function renderMusic() {
+  renderMusicPages();
+  renderMusicTracks();
+}
+
+/* ---------- 左栏：页面清单（按 kind 分组 + 筛选） ---------- */
+
+function renderMusicPages() {
+  const box = els.musicPages;
+  box.textContent = '';
+
+  const kw = musicSearch.trim().toLowerCase();
+  const shown = kw
+    ? musicPagesList.filter(
+        (p) => (p.label || '').toLowerCase().includes(kw) || p.key.toLowerCase().includes(kw)
+      )
+    : musicPagesList;
+
+  if (!shown.length) {
+    const li = document.createElement('li');
+    li.className = 'pw-tree__empty';
+    li.textContent = musicPagesList.length ? '没有匹配的页面' : '没拿到页面清单';
+    box.appendChild(li);
+    return;
+  }
+
+  for (const group of MUSIC_GROUPS) {
+    const items = shown.filter((p) => musicGroupOf(p) === group.id);
+    if (!items.length) continue;
+
+    const head = document.createElement('li');
+    head.className = 'music__group';
+    head.textContent = `${group.label}（${items.length}）`;
+    box.appendChild(head);
+
+    for (const page of items) {
+      const li = document.createElement('li');
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'music__page';
+      if (page.key === musicKey) btn.classList.add('is-active');
+
+      const text = document.createElement('span');
+      text.className = 'music__page-text';
+      const name = document.createElement('span');
+      name.className = 'music__page-name';
+      name.textContent = page.label || page.key;
+      const key = document.createElement('em');
+      key.className = 'music__page-key';
+      key.textContent = page.href ? `${page.key} · ${page.href}` : page.key;
+      key.title = key.textContent;
+      text.append(name, key);
+
+      const n = musicCountOf(page.key);
+      const badge = document.createElement('span');
+      badge.className = 'music__badge';
+      if (n) badge.classList.add('is-on');
+      badge.textContent = n ? String(n) : '—';
+      badge.title = n ? `这一页有 ${n} 首` : '这一页还没有歌';
+
+      btn.append(text, badge);
+      btn.addEventListener('click', () => {
+        musicKey = page.key;
+        renderMusic();
+      });
+      li.appendChild(btn);
+      box.appendChild(li);
+    }
+  }
+}
+
+/* ---------- 右栏：选中页面的歌单 ---------- */
+
+function renderMusicTracks() {
+  const box = els.musicTrackList;
+  box.textContent = '';
+
+  const page = musicPageOf(musicKey);
+  els.musicCurrent.textContent = page ? `${page.label}（${musicKey}）` : musicKey;
+  els.musicCurrent.title = page?.href ? `${musicKey} · ${page.href}` : musicKey;
+
+  if (!page) {
+    const p = document.createElement('p');
+    p.className = 'hint';
+    p.textContent = '没拿到页面清单，重新打开面板试试。';
+    box.appendChild(p);
+    renderMusicLibrary();
+    return;
+  }
+
+  const entry = musicEntry(musicKey, false);
+  const ids = entry ? entry.list.filter((id) => musicTrackById(id)) : [];
+  const firstId = entry?.first && musicTrackById(entry.first) ? entry.first : null;
+
+  const head = document.createElement('div');
+  head.className = 'music__secthead';
+  head.textContent = ids.length ? `这一页的歌单（${ids.length} 首，播放时随机轮播）` : '这一页还没有歌';
+  box.appendChild(head);
+
+  if (!ids.length) {
+    const p = document.createElement('p');
+    p.className = 'hint';
+    p.textContent = '点右上角「上传音乐」，或者从下面的曲库里「加入本页歌单」。';
+    box.appendChild(p);
+  } else {
+    const ul = document.createElement('ul');
+    ul.className = 'music__rows';
+    ids.forEach((id, i) => ul.appendChild(musicRow(id, i, ids.length, firstId, entry)));
+    box.appendChild(ul);
+
+    // 「不指定」也得有个选项，否则选了第一首就再也取消不掉
+    const none = document.createElement('label');
+    none.className = 'music__none';
+    const radio = document.createElement('input');
+    radio.type = 'radio';
+    radio.name = 'music-first';
+    radio.checked = !firstId;
+    radio.addEventListener('change', () => {
+      if (!radio.checked) return;
+      entry.first = null;
+      markMusicDirty();
+      renderMusicTracks();
+    });
+    const label = document.createElement('span');
+    label.textContent = '不指定第一首（进入这一页随机挑一首播）';
+    none.append(radio, label);
+    box.appendChild(none);
+  }
+
+  renderMusicLibrary();
+}
+
+/** 歌单里的一行：曲名（可改）+ 上下移 + 试听 + 设为第一首 + 移出 */
+function musicRow(id, index, total, firstId, entry) {
+  const t = musicTrackById(id);
+  const li = document.createElement('li');
+  li.className = 'music__row';
+  if (id === firstId) li.classList.add('is-first');
+
+  const pick = document.createElement('input');
+  pick.type = 'radio';
+  pick.name = 'music-first';
+  pick.className = 'music__pick';
+  pick.checked = id === firstId;
+  pick.title = '设为第一首：进入这一页一定先播这首';
+  pick.addEventListener('change', () => {
+    if (!pick.checked) return;
+    entry.first = id;
+    markMusicDirty();
+    renderMusicTracks();
+  });
+
+  const title = document.createElement('input');
+  title.type = 'text';
+  title.className = 'input input--sm music__title';
+  title.value = t.title;
+  title.placeholder = '曲名';
+  // 就地改名：失焦时才写进草稿，打字打到一半不会被打断
+  title.addEventListener('blur', () => {
+    const v = title.value.trim();
+    if (!v || v === t.title) {
+      title.value = t.title;
+      return;
+    }
+    t.title = v;
+    markMusicDirty();
+  });
+
+  const ops = document.createElement('div');
+  ops.className = 'music__row-ops';
+
+  const up = document.createElement('button');
+  up.type = 'button';
+  up.className = 'btn btn--sm btn--ghost music__mini';
+  up.textContent = '↑';
+  up.title = '往上挪';
+  up.disabled = index === 0;
+  up.addEventListener('click', () => {
+    entry.list.splice(index, 1);
+    entry.list.splice(index - 1, 0, id);
+    markMusicDirty();
+    renderMusicTracks();
+  });
+
+  const down = document.createElement('button');
+  down.type = 'button';
+  down.className = 'btn btn--sm btn--ghost music__mini';
+  down.textContent = '↓';
+  down.title = '往下挪';
+  down.disabled = index === total - 1;
+  down.addEventListener('click', () => {
+    entry.list.splice(index, 1);
+    entry.list.splice(index + 1, 0, id);
+    markMusicDirty();
+    renderMusicTracks();
+  });
+
+  const play = document.createElement('button');
+  play.type = 'button';
+  play.className = 'btn btn--sm btn--ghost music__mini';
+  play.textContent = '▶';
+  play.title = `试听：${t.title}`;
+  play.addEventListener('click', () => {
+    // 文件就在磁盘上，服务端把 /audio/uploads/ 发出来（serveAudio）
+    els.musicPlayer.src = t.src;
+    els.musicPlayer.play().catch((err) => toast(`试听失败：${err.message}`, true));
+  });
+
+  const out = document.createElement('button');
+  out.type = 'button';
+  out.className = 'btn btn--sm btn--ghost music__mini';
+  out.textContent = '移出';
+  out.title = '移出本页歌单（只改草稿，保存后才生效）';
+  out.addEventListener('click', () => {
+    entry.list = entry.list.filter((x) => x !== id);
+    if (entry.first === id) entry.first = null;
+    markMusicDirty();
+    renderMusicTracks();
+    renderMusicPages();
+  });
+
+  ops.append(up, down, play, out);
+  li.append(pick, title, ops);
+  return li;
+}
+
+/* ---------- 曲库（可折叠） ---------- */
+
+function renderMusicLibrary() {
+  const box = els.musicLib;
+  box.textContent = '';
+  const tracks = musicDraft?.tracks ?? [];
+
+  els.musicLibToggle.textContent = `曲库（${tracks.length} 首）${musicLibOpen ? ' ▾' : ' ▸'}`;
+  els.musicLibToggle.setAttribute('aria-expanded', musicLibOpen ? 'true' : 'false');
+  box.hidden = !musicLibOpen;
+  if (!musicLibOpen) return;
+
+  if (!tracks.length) {
+    const p = document.createElement('p');
+    p.className = 'hint';
+    p.textContent = '曲库是空的，先上传一首。';
+    box.appendChild(p);
+    return;
+  }
+
+  const entry = musicEntry(musicKey, false);
+  const inPage = new Set(entry ? entry.list : []);
+  const hasPage = Boolean(musicPageOf(musicKey));
+
+  const ul = document.createElement('ul');
+  ul.className = 'music__rows';
+  for (const t of tracks) {
+    const li = document.createElement('li');
+    li.className = 'music__row music__row--lib';
+
+    const text = document.createElement('span');
+    text.className = 'music__libtext';
+    const name = document.createElement('span');
+    name.className = 'music__libname';
+    name.textContent = t.title;
+    const meta = document.createElement('em');
+    meta.className = 'music__libmeta';
+    meta.textContent = [
+      t.bytes ? `${Math.round(t.bytes / 1024)} KB` : '',
+      t.addedAt ? String(t.addedAt).slice(0, 10) : '',
+      t.src,
+    ]
+      .filter(Boolean)
+      .join(' · ');
+    text.append(name, meta);
+
+    const ops = document.createElement('div');
+    ops.className = 'music__row-ops';
+
+    const add = document.createElement('button');
+    add.type = 'button';
+    add.className = 'btn btn--sm btn--ghost music__mini';
+    add.textContent = inPage.has(t.id) ? '已在歌单' : '加入本页歌单';
+    add.disabled = inPage.has(t.id) || !hasPage;
+    add.addEventListener('click', () => {
+      const page = musicEntry(musicKey, true);
+      if (!page) return;
+      if (!page.list.includes(t.id)) page.list.push(t.id);
+      markMusicDirty();
+      renderMusicTracks();
+      renderMusicPages();
+    });
+
+    const play = document.createElement('button');
+    play.type = 'button';
+    play.className = 'btn btn--sm btn--ghost music__mini';
+    play.textContent = '▶';
+    play.title = `试听：${t.title}`;
+    play.addEventListener('click', () => {
+      els.musicPlayer.src = t.src;
+      els.musicPlayer.play().catch((err) => toast(`试听失败：${err.message}`, true));
+    });
+
+    const del = document.createElement('button');
+    del.type = 'button';
+    del.className = 'btn btn--sm btn--ghost music__mini btn--danger';
+    del.textContent = '删除';
+    del.title = '从曲库删掉，音频文件一起删（会再问一次）';
+    del.addEventListener('click', () => removeMusicTrack(t.id));
+
+    ops.append(add, play, del);
+    li.append(text, ops);
+    ul.appendChild(li);
+  }
+  box.appendChild(ul);
+}
+
+/* ---------- 上传 / 删除 / 保存 ---------- */
+
+async function uploadMusicFiles(files) {
+  const list = Array.from(files || []);
+  if (!list.length || !musicDraft) return;
+
+  const targetKey = musicPageOf(musicKey) ? musicKey : '';
+  const btn = els.musicUpload;
+  const wasText = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = '正在上传…';
+  let okCount = 0;
+
+  try {
+    for (let i = 0; i < list.length; i++) {
+      const file = list[i];
+      setMusicStatus(`正在上传第 ${i + 1}/${list.length} 首：${file.name}`);
+      // 请求体就是 File 本身（原始二进制），服务端边收边写盘，不走 JSON
+      const url = `/api/music/upload?name=${encodeURIComponent(file.name)}&key=${encodeURIComponent(targetKey)}`;
+      try {
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/octet-stream' },
+          body: file,
+        });
+        const data = await res.json().catch(() => null);
+        if (!res.ok || !data || !data.ok) {
+          throw new Error((data && data.error) || `HTTP ${res.status}`);
+        }
+        /*
+          只把新的这一首并进本地草稿：草稿里可能还有没保存的改动，
+          拿服务端那份整个覆盖会把它们冲掉。文件和数据文件服务端已经写好了。
+        */
+        const track = data.track;
+        if (track && !musicDraft.tracks.some((x) => x.id === track.id)) {
+          musicDraft.tracks.push(track);
+        }
+        if (targetKey && track) {
+          const page = musicEntry(targetKey, true);
+          if (page && !page.list.includes(track.id)) page.list.push(track.id);
+        }
+        if (Array.isArray(data.pages)) musicPagesList = data.pages;
+        okCount++;
+        toast(`第 ${i + 1}/${list.length} 首好了：${track?.title ?? file.name}`);
+        renderMusic();
+      } catch (err) {
+        toast(`第 ${i + 1}/${list.length} 首（${file.name}）失败：${err.message}`, true);
+      }
+    }
+  } finally {
+    btn.disabled = false;
+    btn.textContent = wasText;
+    els.musicFile.value = '';
+  }
+
+  const limitMb = Math.round(musicLimits.maxBytes / 1024 / 1024);
+  setMusicStatus(
+    okCount === list.length
+      ? `${okCount} 首都上传好了（单首上限 ${limitMb}MB）—— 文件已经落盘，点「保存并重新构建」才会上网站`
+      : `上传完成：成功 ${okCount} / ${list.length} 首（单首上限 ${limitMb}MB）`,
+    okCount !== list.length
+  );
+}
+
+async function removeMusicTrack(id) {
+  const t = musicTrackById(id);
+  if (!confirm(`从曲库删掉「${t?.title ?? id}」？音频文件也会一起删掉，删了就找不回来了。`)) return;
+  if (musicDirty && !confirm('还有没保存的改动：删除以服务端那份为准，这些改动会被冲掉。继续吗？')) {
+    return;
+  }
+  try {
+    const data = await apiPost('/api/music/remove', { id, deleteFile: true });
+    adoptMusic(data?.music);
+    renderMusic();
+    setMusicStatus('已从曲库删除（文件也删了）—— 重新构建后网站上同步');
+    toast(`已删除：${t?.title ?? id}`);
+  } catch (err) {
+    setMusicStatus(`删除失败：${err.message}`, true);
+    toast(`删除失败：${err.message}`, true);
+  }
+}
+
+async function saveMusic() {
+  if (!musicDraft) return;
+  const btn = els.musicSave;
+  const wasText = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = '正在保存…';
+  setMusicStatus('正在写回歌单并重新构建…');
+
+  try {
+    const data = await apiPost('/api/music', {
+      music: { tracks: musicDraft.tracks, pages: musicDraft.pages },
+    });
+    // 存完拿服务端那份重画：写回去的是清洗过的，界面上看到的要和落盘一致
+    await loadMusic();
+    renderMusic();
+
+    const d = data?.dropped ?? {};
+    const lost = [];
+    if (d.tracks) lost.push(`${d.tracks} 首曲目`);
+    if (d.pages) lost.push(`${d.pages} 个页面条目`);
+    if (d.list) lost.push(`${d.list} 个歌单引用`);
+    if (d.first) lost.push(`${d.first} 个「第一首」`);
+
+    setMusicStatus(
+      `已保存并重新构建（${data?.ms ?? '?'} ms）` + (lost.length ? ` · 服务端丢掉了 ${lost.join('、')}` : ''),
+      lost.length > 0
+    );
+    if (data?.output) {
+      els.musicLog.textContent = data.output;
+      els.musicLog.hidden = false;
+    }
+    toast(
+      lost.length ? `保存并构建好了，但有 ${lost.join('、')} 没存下` : '歌单已保存并重新构建，刷新页面就能看到',
+      lost.length > 0
+    );
+  } catch (err) {
+    setMusicStatus(`保存失败：${err.message}`, true);
+    toast(`保存失败：${err.message}`, true);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = wasText;
+  }
+}
+
+/* ---------------------------------------------------------------
    事件绑定
    --------------------------------------------------------------- */
 
@@ -5213,6 +5803,28 @@ function bindEvents() {
     if (ev.target.dataset && ev.target.dataset.close) closePagesView();
   });
 
+  // 音乐 / 歌单
+  els.btnMusic.addEventListener('click', openMusicModal);
+  els.musicSave.addEventListener('click', saveMusic);
+  els.musicUpload.addEventListener('click', () => els.musicFile.click());
+  els.musicFile.addEventListener('change', () => uploadMusicFiles(els.musicFile.files));
+  els.musicLibToggle.addEventListener('click', () => {
+    musicLibOpen = !musicLibOpen;
+    renderMusicLibrary();
+  });
+  // 文章可能有几十篇，筛选也加一层防抖（和左栏搜索一个道理）
+  let musicSearchTimer = null;
+  els.musicSearch.addEventListener('input', () => {
+    clearTimeout(musicSearchTimer);
+    musicSearchTimer = setTimeout(() => {
+      musicSearch = els.musicSearch.value;
+      renderMusicPages();
+    }, 120);
+  });
+  els.musicModal.addEventListener('click', (ev) => {
+    if (ev.target.dataset && ev.target.dataset.close) closeMusicModal();
+  });
+
   // 排版
   els.btnLayout.addEventListener('click', openLayoutModal);
   els.layoutPage.addEventListener('change', () => loadLayoutPage(els.layoutPage.value));
@@ -5286,6 +5898,10 @@ function bindEvents() {
     const mod = ev.ctrlKey || ev.metaKey;
     if (ev.key === 'Escape' && !els.imgModal.hidden) {
       closeImageModal();
+      return;
+    }
+    if (ev.key === 'Escape' && !els.musicModal.hidden) {
+      closeMusicModal();
       return;
     }
     if (!mod) return;

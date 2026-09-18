@@ -1,0 +1,68 @@
+---
+/**
+ * 全站音乐播放器 —— 没有可见界面，界面上只有右上角那一颗古筝音量键
+ * （按钮的标签与样式在 BoardDrawer.astro 的 .corner 里）。
+ *
+ * 这里做三件事：
+ *   1. 构建期把「这一页的歌单 + 别的页面各自认领的第一首 + 地址到页面 key 的表」
+ *      算成一小包 JSON（几 KB），内联进 <head>：
+ *      播放器要在点击链接的那一瞬间就知道目标页会不会播同一首歌，
+ *      来不及等任何请求。
+ *   2. 把 src/music/player.js 原样内联进来（?raw）。用 is:inline 是因为
+ *      这段脚本必须在 <head> 里同步执行 —— 它一开始就把 <audio> 建好、
+ *      把地址填上，音频请求因此能提前几百毫秒出发，跳页的空档才短。
+ *   3. 这一页没有歌单（musicContext 返回 null）时**什么都不输出**：
+ *      不建 audio、不发请求，右上角那颗按钮因为没人摘掉 hidden 也一直藏着。
+ */
+import { musicContext } from '../utils/music';
+import runtime from '../music/player.js?raw';
+
+/*
+  构建期护栏：内联脚本里只要出现「闭合脚本标签」那几个字符，
+  HTML 解析器会在那里就把 <script> 收掉，剩下的代码变成页面上的文字 ——
+  页面上不会报错，只是播放器静悄悄不工作（这个坑已经踩过一次，
+  而且还是写在那段注释里踩的）。宁可构建直接失败。
+*/
+if (/<\/script/i.test(runtime)) {
+  throw new Error(
+    'src/music/player.js 里出现了 </script> 字面量：内联进页面会提前闭合脚本标签，请改成别的写法。'
+  );
+}
+
+interface Props {
+  /** 归一化过的当前路径（BaseLayout 里算好的那份） */
+  current: string;
+}
+
+const ctx = await musicContext(Astro.props.current);
+
+const data = ctx && {
+  key: ctx.key,
+  /** 这一页的歌单：i=id t=标题 s=地址 */
+  tracks: ctx.tracks.map((t) => ({ i: t.id, t: t.title, s: t.src })),
+  /** 进入这一页一定第一首播的那首（地址）；null = 没认领 */
+  first: ctx.first ? ctx.first.src : null,
+  /** 每个页面 key -> 它认领的第一首地址（用于判断「下一首是不是同一首」） */
+  pages: ctx.pageFirst,
+  /** 归一化地址 -> 页面 key */
+  map: ctx.map,
+  base: import.meta.env.BASE_URL.replace(/\/$/, ''),
+};
+
+// 内联 JSON 里的 < 必须转义，否则曲名里一个 </script> 就能把页面切开
+const json = data
+  ? JSON.stringify(data)
+      .replace(/</g, '\\u003c')
+      .replace(/\u2028/g, '\\u2028')
+      .replace(/\u2029/g, '\\u2029')
+  : '';
+---
+
+{
+  data && (
+    <>
+      <script is:inline set:html={`window.__MUSIC_DATA__=${json};`} />
+      <script is:inline set:html={runtime} />
+    </>
+  )
+}
