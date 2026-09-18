@@ -262,7 +262,71 @@
           "id": "tl-mu6e19cb793-pmu6lxrq742",
           "side": "left",
           "date": "2024-06-18",
-          "label": "618大灭绝"
+          "label": "618大灭绝事件",
+          "kind": "event"
+        },
+        {
+          "id": "tl-mu6e19cb793-pmu6md0ye43",
+          "side": "left",
+          "date": "2025-02-13",
+          "label": "213香蕉锡事件",
+          "kind": "event"
+        },
+        {
+          "id": "tl-mu6e19cb793-pmu6mdkxz44",
+          "side": "left",
+          "date": "2025-07-13",
+          "label": "713大清盘事件",
+          "kind": "event"
+        },
+        {
+          "id": "tl-mu6e19cb793-pmu6mes7q45",
+          "side": "right",
+          "date": "2025-06-07",
+          "label": "虹星高考",
+          "kind": "event"
+        },
+        {
+          "id": "tl-mu6e19cb793-pmu6mghdi46",
+          "side": "right",
+          "date": "2025-10-29",
+          "label": "Raw从北大休学",
+          "kind": "event"
+        },
+        {
+          "id": "tl-mu6e19cb793-pmu6mnvq647",
+          "side": "right",
+          "date": "2024-08-19",
+          "label": "Raw考进北大",
+          "kind": "event"
+        },
+        {
+          "id": "tl-mu6e19cb793-pmu6mpkz248",
+          "side": "right",
+          "date": "2025-12-29",
+          "label": "Raw入坑怪物猎人崛起",
+          "kind": "event"
+        },
+        {
+          "id": "tl-mu6e19cb793-pmu6mu3jb49",
+          "side": "right",
+          "date": "2024-10-24",
+          "label": "Raw首次夜游未名湖",
+          "kind": "event"
+        },
+        {
+          "id": "tl-mu6e19cb793-pmu6mx4ta50",
+          "side": "right",
+          "date": "2026-01-10",
+          "label": "Raw首次使用弓箭",
+          "kind": "event"
+        },
+        {
+          "id": "tl-mu6e19cb793-pmu6mz9k651",
+          "side": "right",
+          "date": "2026-03-07",
+          "label": "隰辰煦刷到大扔子滚桶视频",
+          "kind": "event"
         }
       ],
       "spans": [
