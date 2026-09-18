@@ -126,6 +126,13 @@ const KEYS = Object.keys(BIRDS) as (keyof typeof BIRDS)[];
   .birds .flock[data-dir='rtl'] {
     animation-name: bird-flock-rtl;
   }
+  /* 暗号刷出来的那一群：起点就在画面里，别让用户干等 */
+  .birds .flock[data-instant][data-dir='ltr'] {
+    animation-name: bird-flock-ltr-instant;
+  }
+  .birds .flock[data-instant][data-dir='rtl'] {
+    animation-name: bird-flock-rtl-instant;
+  }
 
   @keyframes bird-flock-ltr {
     from {
@@ -138,6 +145,22 @@ const KEYS = Object.keys(BIRDS) as (keyof typeof BIRDS)[];
   @keyframes bird-flock-rtl {
     from {
       transform: translateX(112vw);
+    }
+    to {
+      transform: translateX(-16vw);
+    }
+  }
+  @keyframes bird-flock-ltr-instant {
+    from {
+      transform: translateX(4vw);
+    }
+    to {
+      transform: translateX(112vw);
+    }
+  }
+  @keyframes bird-flock-rtl-instant {
+    from {
+      transform: translateX(96vw);
     }
     to {
       transform: translateX(-16vw);
@@ -280,12 +303,12 @@ const KEYS = Object.keys(BIRDS) as (keyof typeof BIRDS)[];
     /** 一群鸟之间的间隔（毫秒）。12~26 秒，平均约 19 秒一次 */
     const GAP_MIN = 12000;
     const GAP_MAX = 26000;
-    /** 随机混进雕像的概率 */
-    const EGG_CHANCE = 0.05;
+    /** 随机混进雕像的概率（原来是 5%，用户反馈"看不到" → 提到 10%，约每 3 分钟一只） */
+    const EGG_CHANCE = 0.1;
     /** 连点「回到顶部」几次触发雕像 */
     const TOTOP_CLICKS = 5;
-    /** 两次点击最多隔多久算"连续"（毫秒） */
-    const TOTOP_WINDOW = 1600;
+    /** 两次点击最多隔多久算"连续"（毫秒）。原来是 1.6s，人正常点五下常常超过，放宽到 3s */
+    const TOTOP_WINDOW = 3000;
     /**
      * 普通鸟群的飞行带，单位是 .vapor__sea 高度的百分比。
      * **负数 = 飞到天际线容器顶边以上**（.birds 不裁，所以能上去）：
@@ -298,13 +321,33 @@ const KEYS = Object.keys(BIRDS) as (keyof typeof BIRDS)[];
     const pick = <T,>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)];
 
     /*
-      找一条「横着扫过去点了有反应」的带子 —— 彩蛋必须落在这种地方才点得到。
-      判据跟下面那层点击兜底**完全一致**：命中点上有没有 a/button 这类可交互元素。
-      不能用「元素在不在 .home 里」来判断：.home 是个什么都没画的包裹 div，
-      却照样吃点击，会把整块内容区都判成"挡住"，永远找不到带子。
-      实测 1280×720：徽记区 y154~322、两个大板块 y367~627 都是链接，中间
-      y330~360 那条缝和顶部一条是干净的。
+      找一条「横着扫过去既能看见、又点得到」的带子 —— 彩蛋必须落在这种地方。
+      两个条件都要满足，缺一个都会让人"看不到雕像"：
+        · **点得到**：命中点上没有 a/button 这类可交互元素（否则点击被内容吃掉）
+        · **看得见**：命中点上没有**画了东西**的元素（img/h1/p…）。
+          这条是踩出来的：一开始只判"可交互"，而首页的徽记和「花涧堂」标题
+          都不在链接里 —— 于是雕像被派去从徽记背后飞过（实测 rect x280,y140，
+          正好压在 logo 上），用户反馈"整个看不到了"。
+      判"画了东西"要排除纯包裹 div（.home/.container 这些什么都没画、却照样吃点击），
+      但 .site-header__inner 这种空壳要算白名单，不然整条顶部天空都会被判成挡住。
     */
+    const PLAIN_CLASS = new Set([
+      'home', 'site-main', 'container', 'wrap', 'blocks', 'stack', 'site-header__inner', 'birds',
+    ]);
+    function isPainted(el: Element | null): boolean {
+      if (!el) return false;
+      const tag = el.tagName;
+      if (tag === 'HTML' || tag === 'BODY' || tag === 'MAIN') return false;
+      if (tag !== 'DIV' && tag !== 'SECTION') return true; // img / h1 / p / span / a / button…
+      return [...el.classList].some((c) => !PLAIN_CLASS.has(c) && !c.startsWith('container'));
+    }
+    function isBlocked(x: number, y: number): boolean {
+      const el = document.elementFromPoint(x, y);
+      if (!el) return false;
+      if (el.closest && el.closest('a, button, input, select, textarea, label, [role="button"]')) return true;
+      return isPainted(el);
+    }
+
     function freeBand(): [number, number] | null {
       const sea = document.querySelector('.vapor__sea');
       if (!sea) return null;
@@ -315,11 +358,7 @@ const KEYS = Object.keys(BIRDS) as (keyof typeof BIRDS)[];
       for (let pct = -46; pct <= 48; pct += 2) {
         const y = box.top + (box.height * pct) / 100;
         if (y < 24 || y > window.innerHeight - 24) continue;
-        const blocked = xs.some((x) => {
-          const el = document.elementFromPoint(x, y);
-          return !!(el && el.closest && el.closest('a, button, input, select, textarea, label, [role="button"]'));
-        });
-        if (!blocked) free.push(pct);
+        if (!xs.some((x) => isBlocked(x, y))) free.push(pct);
       }
       if (!free.length) return null;
       return [Math.max(-46, Math.min(...free) - 1), Math.min(48, Math.max(...free) + 1)];
@@ -331,10 +370,10 @@ const KEYS = Object.keys(BIRDS) as (keyof typeof BIRDS)[];
 
     function spawnFlock(opts: { egg?: boolean } = {}) {
       const dir = Math.random() < 0.5 ? 'ltr' : 'rtl';
-      // 带雕像的那一群飞在"点得到"的带子上；实在找不到就退回靠上的位置
+      // 带雕像的那一群飞在"看得见又点得到"的带子上；实在找不到就退回最上面那条空天
       const useEgg = opts.egg === true || forceEgg || Math.random() < EGG_CHANCE;
       forceEgg = false;
-      const band: [number, number] = useEgg ? freeBand() ?? [-30, 0] : BIRD_BAND;
+      const band: [number, number] = useEgg ? freeBand() ?? [-46, -30] : BIRD_BAND;
       const kind = pick(species);
       const count = Math.round(rnd(3, 7));
       const size = rnd(30, 58); // 单只鸟的宽度（px）
@@ -343,6 +382,11 @@ const KEYS = Object.keys(BIRDS) as (keyof typeof BIRDS)[];
       const flock = document.createElement('div');
       flock.className = 'flock';
       flock.dataset.dir = dir;
+      /*
+        暗号刷出来的那一群用"就地起飞"的动画：普通群的起点在 -16vw / 112vw（屏幕外），
+        还要等两三秒才飞进画面；用户点了五下就是明确想看它，让它直接出现在画面里。
+      */
+      if (opts.egg === true) flock.dataset.instant = '1';
       const y = rnd(band[0], band[1]);
       flock.style.setProperty('--y', `${y.toFixed(1)}%`);
       flock.style.setProperty('--dur', `${dur.toFixed(1)}s`);

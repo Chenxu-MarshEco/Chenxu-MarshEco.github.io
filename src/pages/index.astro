@@ -7,14 +7,22 @@ import site from '../site.config';
 import { withBase } from '../utils/url';
 import { flattenBoards, type BoardNode } from '../utils/boards';
 import { editVars } from '../utils/layout';
-import { bgStyle, coverUrl } from '../utils/images';
+import { bgStyle, coverUrl, variantUrl } from '../utils/images';
 
 /*
-  天际线换成图片管线出的**无损 WebP**：颜色逐位不变（塔吊的 --ink #08020c
-  和剪影图的墨色严丝合缝，这点不能有损），体积 30.2KB → 3.1KB。
-  用原始宽度那一档：这一层是 background-size:100% 100% 铺满整屏的。
+  天际线走图片管线出的**无损 WebP**：颜色逐位不变（塔吊的 --ink #08020c
+  和剪影图的墨色严丝合缝，这点不能有损），体积 30.2KB → 3KB 上下。
+
+  两处用**不同的档**（这是"剪影加载慢/出现晚"的优化之一）：
+    · 城市本体 background-size:100% 100% 铺满，取 1600 档（2.8KB）
+    · 倒影整幅被压进 72px 的水面带、还带半透明和遮罩，取 800 档就够（1.3KB）
+      —— 它的纹理从 1773×526 降到 800×237，GPU 上传/解码量少 5 倍
+  另外把城市本体这一档**在 <head> 里 preload**（地址必须跟 CSS 里用的完全一致，
+  否则会各下一份），这样它跟首屏一起出现，而不是"内容先出来、城市后补上"。
 */
-const skyline = coverUrl('/img/home/skyline.png', 1773);
+const skylineUrl = variantUrl('/img/home/skyline.png', 1600);
+const skyline = `url(${skylineUrl})`;
+const skylineReflect = `url(${variantUrl('/img/home/skyline.png', 800)})`;
 
 /*
   大板块的地址由数据推导（用户选了「自动生成页面」），
@@ -28,7 +36,7 @@ const boardUrl = (id: string) =>
 const styleOf = (key: string) => editVars('home', key) ?? undefined;
 ---
 
-<BaseLayout description={site.description} bodyClass="is-home" layoutPage="home">
+<BaseLayout description={site.description} bodyClass="is-home" layoutPage="home" preloadHref={skylineUrl}>
   {/*
     蒸汽波背景，分五层叠（而不是烘焙成一张图）。
 
@@ -162,7 +170,7 @@ const styleOf = (key: string) => editVars('home', key) ?? undefined;
       </div>
 
       <div class="vapor__reflectWrap">
-        <div class="vapor__reflect" style={`background-image:${skyline}`}></div>
+        <div class="vapor__reflect" style={`background-image:${skylineReflect}`}></div>
         {/* 水面上的横向微光 */}
         <div class="vapor__shimmer"></div>
         {/* 落日正下方的碎金 */}

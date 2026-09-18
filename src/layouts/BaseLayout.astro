@@ -43,6 +43,12 @@ interface Props {
    */
   preloadImage?: string;
   preloadImageSizes?: string;
+  /**
+   * 直接给一个确定的图片地址去 preload（不带 srcset / sizes）。
+   * 用在「CSS 背景图 + preload」这种场合：地址必须跟 CSS 里那一份**完全一致**，
+   * 否则浏览器当成两个资源各下一份。首页的城市剪影就是这么做的。
+   */
+  preloadHref?: string;
 }
 
 const {
@@ -59,6 +65,7 @@ const {
   timelineDefault = null,
   preloadImage,
   preloadImageSizes = '100vw',
+  preloadHref,
 } = Astro.props;
 
 /** 首屏大图的 preload（图片管线里查得到才发） */
@@ -110,6 +117,8 @@ const currentPath = withoutBase.length > 1 ? withoutBase.replace(/\/+$/, '') : '
         fetchpriority="high"
       />
     )}
+    {/* CSS 背景图那一种：地址与样式里用的是同一个变量，一 byte 都不会下重 */}
+    {preloadHref && <link rel="preload" as="image" href={preloadHref} fetchpriority="high" />}
     {/*
       字体分片之后，只需要预拉「第 01 片」——切片脚本按站点真实用字频率排的，
       第 01 片永远是最高频的那 300 字，任何一页都用得到，约 40KB。

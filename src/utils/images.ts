@@ -79,6 +79,20 @@ export function fallbackSrc(item: ImageItem | null, src: string): string {
 }
 
 /**
+ * 单张「最合适的那一档」的地址（不是 srcset）。
+ *
+ * 给两处用：
+ *   1. CSS 背景图（`image-set` 之外的场合，只需要一个 URL）
+ *   2. <link rel=preload as=image href=…>：preload 的地址必须跟 CSS 里用的**完全一致**，
+ *      否则浏览器会当成两个资源各下一份。所以这里返回确定的单个 URL，两边共用同一个变量。
+ */
+export function variantUrl(src: string, w: number): string {
+  const item = imageItem(src);
+  if (!item) return withBase(src);
+  return withBase(pickVariant(item, w).webp.url);
+}
+
+/**
  * 模糊占位（LQIP）：把那张 20px 宽的极小图当 <img> 自己的背景。
  * 图还没到时先显示它，到了以后真图直接盖在上面 —— 纯 CSS，不需要一行 JS。
  * 带透明的图清单里不给 LQIP（那张模糊图会从透明区域透出来），返回空串。
