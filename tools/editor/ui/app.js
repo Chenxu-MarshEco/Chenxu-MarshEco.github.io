@@ -1834,6 +1834,94 @@ function pageSelect(options, value, onChange) {
 }
 
 /**
+ * 划分线的默认颜色。
+ * 最早那版划分线是写死橙黄一根，现在改成一条线一个色，
+ * 但老数据（还有刚画上去还没改色的新线）仍然用它，所见即所得。
+ */
+const MAP_LINE_DEFAULT_COLOR = '#ffb43c';
+
+/**
+ * 编辑器里「下一次画线用什么颜色」。
+ * 放在模块级：地图编辑区每次重画都会重建 DOM，颜色得活过这一轮重建，
+ * 不然挑好的色一刷新就弹回默认，画三条线要挑三次。
+ */
+let mapDrawColor = MAP_LINE_DEFAULT_COLOR;
+
+/** `#rrggbb` → [r, g, b]；认不出来就给默认线色，不抛错 */
+function hexToRgb(hex) {
+  const m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(String(hex || '').trim());
+  if (!m) return [255, 180, 60];
+  return [parseInt(m[1], 16), parseInt(m[2], 16), parseInt(m[3], 16)];
+}
+
+/** [r, g, b] → `#rrggbb`，越界的夹回 0~255，省得存出个非法颜色 */
+function rgbToHex(r, g, b) {
+  const c = (v) =>
+    Math.max(0, Math.min(255, Math.round(Number(v) || 0)))
+      .toString(16)
+      .padStart(2, '0');
+  return `#${c(r)}${c(g)}${c(b)}`;
+}
+
+/**
+ * 「填 RGB 挑颜色」那一套：一个取色块 + 三个 0~255 的数字框，两边双向同步。
+ *
+ * 取色块是浏览器自带的调色板（本来就是按 RGB 调的），数字框则是给
+ * 「我知道要 #1e90ff，不想在色轮上摸」的场合准备的。挑完立刻回调，
+ * 预览图和线路清单会跟着变。
+ */
+function rgbColorField(getHex, setHex, opts = {}) {
+  const wrap = document.createElement('span');
+  wrap.className = 'pmap-edit__color' + (opts.compact ? ' pmap-edit__color--compact' : '');
+
+  const swatch = document.createElement('input');
+  swatch.type = 'color';
+  swatch.className = 'pmap-edit__swatch';
+  swatch.value = getHex();
+  swatch.title = '点开挑颜色（也可以直接填右边的 R / G / B）';
+
+  const boxes = ['R', 'G', 'B'].map((name) => {
+    const box = document.createElement('input');
+    box.type = 'number';
+    box.min = '0';
+    box.max = '255';
+    box.step = '1';
+    box.className = 'input pmap-edit__rgb';
+    box.title = name;
+    box.setAttribute('aria-label', `线色 ${name}`);
+    return box;
+  });
+
+  /** 把三个数字框刷成当前颜色。值没变就不写，免得手动输入时光标被顶到末尾 */
+  const paint = () => {
+    const rgb = hexToRgb(swatch.value);
+    boxes.forEach((box, i) => {
+      const v = String(rgb[i]);
+      if (box.value !== v) box.value = v;
+    });
+  };
+
+  /** 统一入口：不管从哪边改的，先归一化成合法颜色，再同步两边、回调出去 */
+  const push = (hex) => {
+    const clean = rgbToHex(...hexToRgb(hex));
+    swatch.value = clean;
+    paint();
+    setHex(clean);
+  };
+
+  paint();
+  swatch.addEventListener('input', () => push(swatch.value));
+  for (const box of boxes) {
+    box.addEventListener('input', () => push(rgbToHex(...boxes.map((b) => b.value))));
+    // 手敲的时候不打断，等离开这个框再把越界的值夹回来
+    box.addEventListener('blur', () => push(rgbToHex(...boxes.map((b) => b.value))));
+  }
+
+  wrap.append(swatch, ...boxes);
+  return wrap;
+}
+
+/**
  * 地图块的编辑区。
  *
  * 地图是**分页**的：上面一排页签切页，每页各有自己的图、图钉、划分线和简介。
@@ -1842,7 +1930,7 @@ function pageSelect(options, value, onChange) {
  *   1. 选这一页的图（复用图片块那套上传 / 压缩）
  *   2. 简介输入（显示在地图下面）
  *   3. 一张可以点的预览图 —— 在图上**点一下**钉图钉，**拖一下**画区域划分线
- *   4. 图钉清单（类型 / 名字 / 跳转地址）和划分线清单（只有删除）
+ *   4. 图钉清单（类型 / 名字 / 跳转地址）和划分线清单（颜色 / 删除）
  *
  * 位置一律存百分比（0~100）。预览图和页面上显示的大小不一样也没关系，
  * 只要按图的宽高算比例，钉出来的点就是同一个地方。
@@ -2018,7 +2106,7 @@ function mapFields(block) {
     for (const [key, label, tip] of [
       ['building', '建筑图钉', '在图上点一下 = 钉一个粉色塔吊图钉'],
       ['region', '区域图钉', '在图上点一下 = 钉一个落日配色的区域图钉'],
-      ['line', '区域划分线', '在图上按住拖一下 = 画一条橙黄色的划分线'],
+      ['line', '区域划分线', '在图上按住拖一下 = 画一条划分线，颜色用右边挑的那个'],
     ]) {
       const b = document.createElement('button');
       b.type = 'button';
@@ -2031,13 +2119,31 @@ function mapFields(block) {
       });
       modeRow.appendChild(b);
     }
+
+    /*
+      画线用的颜色。放在这一排是因为「先挑色、再画线」这个顺序最顺手：
+      挑完颜色直接去图上拖，新线就是那个色；画完想改，下面清单里
+      每条线还有自己的一个取色块。
+    */
+    const colorLabel = document.createElement('span');
+    colorLabel.className = 'pblock-edit__hint pblock-edit__hint--inline';
+    colorLabel.textContent = '线色：';
+    modeRow.appendChild(colorLabel);
+    modeRow.appendChild(
+      rgbColorField(
+        () => mapDrawColor,
+        (hex) => {
+          mapDrawColor = hex;
+        }
+      )
+    );
     wrap.appendChild(modeRow);
 
     const tip = document.createElement('p');
     tip.className = 'pblock-edit__hint';
     tip.textContent =
       mode === 'line'
-        ? '按住鼠标在图上拖一条线出来。线不显示名字、也点不动，只是把地图划成几块。'
+        ? '按住鼠标在图上拖一条线出来。线不显示名字、也点不动，只是把地图划成几块；颜色用上面挑的那个，画完还能在下面清单里单独改。'
         : `在图上点一下就钉一个${mode === 'region' ? '区域' : '建筑'}图钉；已经钉好的图钉可以直接按住拖动挪位置。`;
     wrap.appendChild(tip);
 
@@ -2055,6 +2161,8 @@ function mapFields(block) {
       const el = document.createElement('span');
       el.className = 'pmap-edit__line';
       el.dataset.lineId = ln.id;
+      // 颜色挂在元素上，样式表里用 var(--lc) 取，和页面那边一个套路
+      el.style.setProperty('--lc', ln.color || MAP_LINE_DEFAULT_COLOR);
       canvas.appendChild(el);
     }
     // 图钉
@@ -2144,6 +2252,8 @@ function mapFields(block) {
         if (x < 0 || x > 100 || y < 0 || y > 100) return;
         const el = document.createElement('span');
         el.className = 'pmap-edit__line';
+        // 预览就按当前挑好的颜色显示，拖的时候就知道画出来什么样
+        el.style.setProperty('--lc', mapDrawColor);
         canvas.appendChild(el);
         dragging = { kind: 'line', from: { x, y }, el, moved: false };
         canvas.setPointerCapture(e.pointerId);
@@ -2220,6 +2330,7 @@ function mapFields(block) {
         y1: Math.round(Math.min(100, Math.max(0, d.from.y)) * 100) / 100,
         x2: Math.round(Math.min(100, Math.max(0, to.x)) * 100) / 100,
         y2: Math.round(Math.min(100, Math.max(0, to.y)) * 100) / 100,
+        color: mapDrawColor,
       });
       markStudioDirty();
       redraw();
@@ -2315,10 +2426,29 @@ function mapFields(block) {
       const no = document.createElement('span');
       no.className = 'pmap-edit__no pmap-edit__no--line';
       no.textContent = '线';
+      // 小方块直接用这条线的颜色，一眼看清哪根是哪根
+      no.style.background = `${ln.color || MAP_LINE_DEFAULT_COLOR}38`;
+      no.style.borderColor = ln.color || MAP_LINE_DEFAULT_COLOR;
 
       const label = document.createElement('span');
       label.className = 'pblock-edit__hint pblock-edit__hint--inline';
       label.textContent = `第 ${i + 1} 条划分线（不显示名字，也不能点）`;
+
+      /*
+        改这一条的颜色。改完不整块重画（重画会把焦点也弄丢），
+        只把图上那根线的 --lc 和旁边的小方块就地刷一下。
+      */
+      const color = rgbColorField(
+        () => ln.color || MAP_LINE_DEFAULT_COLOR,
+        (hex) => {
+          ln.color = hex;
+          const el = canvas.querySelector(`[data-line-id="${ln.id}"]`);
+          if (el instanceof HTMLElement) el.style.setProperty('--lc', hex);
+          no.style.background = `${hex}38`;
+          no.style.borderColor = hex;
+          markStudioDirty();
+        }
+      );
 
       const del = document.createElement('button');
       del.type = 'button';
@@ -2330,7 +2460,7 @@ function mapFields(block) {
         redraw();
       });
 
-      item.append(no, label, del);
+      item.append(no, label, color, del);
       list.appendChild(item);
     });
 

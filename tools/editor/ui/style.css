@@ -1866,17 +1866,64 @@ body[data-type="notes"] .field--posts-only {
   z-index: 3;
 }
 
-/* 区域划分线：一条橙黄横条，靠 transform 转成任意角度 */
+/*
+  区域划分线：一条靠 transform 转成任意角度的横条，颜色取 --lc。
+  渲染方式和页面上那根线对齐 —— 半透明色带 + 横切条纹（就是图钉头上
+  那套扫描线跟着线走），这样编辑器里看到什么，页面上就是什么。
+*/
 .pmap-edit__line {
+  --lc: #ffb43c;
   position: absolute;
   height: 3px;
   margin-top: -1.5px;
   border-radius: 99px;
-  background: #ffb43c;
-  box-shadow: 0 0 6px rgba(255, 170, 60, 0.85);
+  /* 底下垫一层很淡的同色带，上面才是横切条纹 —— 和页面上那根线的两层一致 */
+  background:
+    repeating-linear-gradient(90deg, var(--lc) 0 3.4px, rgba(0, 0, 0, 0) 3.4px 5.5px),
+    linear-gradient(color-mix(in srgb, var(--lc) 34%, transparent), color-mix(in srgb, var(--lc) 34%, transparent));
+  box-shadow: 0 0 6px var(--lc);
   transform-origin: 0 50%;
   pointer-events: none;
   z-index: 2;
+}
+
+/* 「线色：」后面那套取色块 + RGB 数字框 */
+.pmap-edit__color {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.pmap-edit__swatch {
+  width: 30px;
+  height: 24px;
+  padding: 0 2px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.18);
+  cursor: pointer;
+}
+.pmap-edit__rgb {
+  width: 52px;
+  padding: 3px 5px;
+  font-size: 12px;
+  text-align: center;
+}
+/* 数字框里的上下箭头在小尺寸下太挤，去掉更清爽 */
+.pmap-edit__rgb::-webkit-outer-spin-button,
+.pmap-edit__rgb::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.pmap-edit__rgb {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+.pmap-edit__color--compact .pmap-edit__swatch {
+  width: 26px;
+  height: 22px;
+}
+.pmap-edit__color--compact .pmap-edit__rgb {
+  width: 46px;
 }
 
 /* 页签 */
@@ -1934,7 +1981,8 @@ body[data-type="notes"] .field--posts-only {
   align-items: center;
 }
 .pmap-edit__item--line {
-  grid-template-columns: 26px minmax(0, 1fr) auto;
+  /* 序号 / 说明 / 取色块+RGB / 删除 */
+  grid-template-columns: 26px minmax(0, 1fr) auto auto;
 }
 .pmap-edit__no {
   display: grid;

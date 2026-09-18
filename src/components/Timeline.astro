@@ -68,16 +68,20 @@ const gradId = `tl-arc-${tl.id}`;
   data-tl-max={spanMax}
   data-tl-default={defaultParam === null ? '' : String(defaultParam)}
 >
-  {/* 关着的时候只在右边沿露出来的那个书签 */}
+  {/*
+    关着的时候只在右边沿露出来的那个书签。
+    上面写的是**这条时间轴自己的名字**（比如「花娅年代记」），不是「时间轴」
+    三个字 —— 一个页面挂着哪条轴，光看书签就该知道，不用点开。
+  */}
   <button
     class="tl__tab"
     type="button"
     data-tl-toggle
     aria-expanded="false"
     aria-controls={`tl-panel-${tl.id}`}
-    title="打开时间轴"
+    title={`打开${tl.title}`}
   >
-    <span class="tl__tabText">时间轴</span>
+    <span class="tl__tabText">{tl.title}</span>
   </button>
 
   <aside class="tl__panel" id={`tl-panel-${tl.id}`} data-tl-panel hidden aria-label={tl.title}>
@@ -161,6 +165,13 @@ const gradId = `tl-arc-${tl.id}`;
   /*
     面板固定在最右边，关着的时候整块推到画面外，只留左边沿露出的书签。
     用 transform 推走而不是 display:none —— 推开才有那一下滑动。
+
+    配色分两套：
+      · 面板这一圈「外框」（底、边框、标题、页脚、书签、文字）走站点的粉色，
+        和右侧抽屉 BoardDrawer 那一套同色（深紫底 #1e0730 + 粉边 + #ffd9ef 字），
+        这样它看着就是网页的一部分，而不是镶上去的一块落日贴纸。
+      · 只有**轴本身**（弧线、刻度尺、时间段带子、塔吊、弧顶那颗点）保留
+        蒸汽波落日渐变。粉的框 + 落日的轴，是这一版特意定下来的关系。
   */
   .tl__panel {
     position: fixed;
@@ -171,13 +182,12 @@ const gradId = `tl-arc-${tl.id}`;
     height: 100%;
     display: flex;
     flex-direction: column;
-    background: linear-gradient(180deg, rgba(30, 4, 44, 0.97), rgba(16, 2, 26, 0.98));
-    border-left: 1px solid rgba(255, 150, 60, 0.42);
+    background: linear-gradient(180deg, rgba(38, 6, 54, 0.97), rgba(20, 3, 32, 0.98));
+    border-left: 1px solid rgba(255, 120, 190, 0.42);
     box-shadow: -18px 0 50px -20px rgb(0 0 0 / 0.7);
     transform: translateX(101%);
     transition: transform 0.26s cubic-bezier(0.4, 0, 0.2, 1);
   }
-  /* 深色页面（首页、板块页）本来就是深色，这里统一用同一套落日配色 */
   .tl.is-open .tl__panel {
     transform: translateX(0);
   }
@@ -193,11 +203,11 @@ const gradId = `tl-arc-${tl.id}`;
     z-index: 61;
     transform: translateY(-50%);
     padding: 0.85rem 0.42rem;
-    border: 1px solid rgba(255, 170, 60, 0.55);
+    border: 1px solid rgba(255, 120, 190, 0.55);
     border-right: 0;
     border-radius: 12px 0 0 12px;
     background: linear-gradient(90deg, rgba(60, 8, 40, 0.92), rgba(30, 4, 44, 0.92));
-    color: #ffd9a0;
+    color: #ffd9ef;
     font-size: 0.8rem;
     letter-spacing: 0.16em;
     writing-mode: vertical-rl;
@@ -220,19 +230,19 @@ const gradId = `tl-arc-${tl.id}`;
     justify-content: space-between;
     gap: 0.6rem;
     padding: 0.85rem 1rem;
-    border-bottom: 1px solid rgba(255, 150, 60, 0.3);
+    border-bottom: 1px solid rgba(255, 120, 190, 0.3);
   }
   .tl__title {
     font-family: var(--font-display);
     font-size: 1rem;
     letter-spacing: 0.14em;
-    color: #ffd9a0;
-    text-shadow: 0 0 12px rgba(255, 140, 40, 0.7);
+    color: #ffd9ef;
+    text-shadow: 0 0 12px rgba(255, 79, 163, 0.7);
   }
   .tl__close {
     border: 0;
     background: none;
-    color: rgba(255, 217, 160, 0.8);
+    color: rgba(255, 217, 239, 0.8);
     font-size: 1.4rem;
     line-height: 1;
     cursor: pointer;
@@ -242,7 +252,10 @@ const gradId = `tl-arc-${tl.id}`;
     color: #fff;
   }
 
-  /* 弧线所在的这一块：它就是「一屏」，弧顶在竖直正中 */
+  /*
+    弧线所在的这一块：它就是「一屏」，弧顶在竖直正中。
+    从这里往下到塔吊为止都是**轴本身** —— 只有这一部分是落日配色。
+  */
   .tl__body {
     position: relative;
     flex: 1;
@@ -274,11 +287,21 @@ const gradId = `tl-arc-${tl.id}`;
     stroke-linecap: round;
   }
 
-  /* 弧顶那一点：一个小圆点 + 当前日期 */
+  /*
+    弧顶那一点：一个小圆点 + 当前日期。
+
+    日期摆在圆点**左边**（右对齐、贴着轴）。原来是摆在右边，而右边正是
+    事件名字常驻的那一列 —— 只要有事件刚好滚到弧顶，两串字就叠在一起，
+    读出来是「2023-07-16SSW加入冰室」。左边一般是空的（用户这条轴的事件
+    全在右侧），只有偶尔有个左侧事件经过时才会碰一下，比天天撞右侧划算。
+    整个盒子以弧顶为右边缘，圆点再往右挪半个身位，正好压在轴上。
+  */
   .tl__now {
     position: absolute;
-    transform: translate(-50%, -50%);
+    transform: translate(calc(-100% + 4.5px), -50%);
     display: flex;
+    /* 源码里是「圆点、日期」，倒过来摆 → 日期在左、圆点贴轴 */
+    flex-direction: row-reverse;
     align-items: center;
     gap: 0.4rem;
     pointer-events: none;
@@ -294,7 +317,7 @@ const gradId = `tl-arc-${tl.id}`;
   .tl__nowDate {
     font-size: 0.72rem;
     letter-spacing: 0.08em;
-    color: rgba(255, 226, 180, 0.85);
+    color: rgba(255, 217, 239, 0.85);
     font-variant-numeric: tabular-nums;
   }
 
@@ -329,7 +352,12 @@ const gradId = `tl-arc-${tl.id}`;
     stroke-linejoin: round;
   }
 
-  /* 名字常驻显示，横着写（转着写就没法读了） */
+  /*
+    名字常驻显示，横着写（转着写就没法读了）。
+    它是面板上的字，所以跟着外框走粉色；塔吊才是轴上的落日色。
+    上下位置由脚本给：同一个刻度上挤了好几个事件时，它们会
+    以此为基准上下错开（见脚本里的 groupItems）。
+  */
   .tl__name {
     position: absolute;
     top: 0;
@@ -340,7 +368,7 @@ const gradId = `tl-arc-${tl.id}`;
     white-space: nowrap;
     font-size: 0.8rem;
     letter-spacing: 0.04em;
-    color: #ffe6c4;
+    color: #ffd9ef;
     text-shadow: 0 1px 5px rgba(20, 0, 10, 0.9);
   }
   .tl__item[data-side='left'] .tl__name {
@@ -357,9 +385,9 @@ const gradId = `tl-arc-${tl.id}`;
     transform: translate(-50%, -140%);
     padding: 0.2rem 0.55rem;
     border-radius: 7px;
-    border: 1px solid rgba(255, 170, 60, 0.6);
+    border: 1px solid rgba(255, 120, 190, 0.6);
     background: rgba(24, 3, 36, 0.96);
-    color: #ffe6c4;
+    color: #ffd9ef;
     font-size: 0.76rem;
     line-height: 1.5;
     white-space: nowrap;
@@ -376,7 +404,7 @@ const gradId = `tl-arc-${tl.id}`;
   }
   .tl__tip em {
     font-style: normal;
-    color: rgba(255, 200, 120, 0.85);
+    color: rgba(255, 190, 220, 0.85);
     font-variant-numeric: tabular-nums;
   }
   .tl__item:hover .tl__tip {
@@ -387,14 +415,14 @@ const gradId = `tl-arc-${tl.id}`;
     color: #fff2b8;
   }
 
-  /* 时间段的名字，跟着带子一起走 */
+  /* 时间段的名字，跟着带子一起走（同样算面板上的字，用粉色） */
   .tl__spanName {
     position: absolute;
     top: 0;
     transform: translateY(-50%);
     font-size: 0.72rem;
     letter-spacing: 0.1em;
-    color: rgba(255, 200, 120, 0.75);
+    color: rgba(255, 190, 220, 0.8);
     white-space: nowrap;
     pointer-events: none;
   }
@@ -411,15 +439,15 @@ const gradId = `tl-arc-${tl.id}`;
     justify-content: space-between;
     gap: 0.5rem;
     padding: 0.6rem 1rem;
-    border-top: 1px solid rgba(255, 150, 60, 0.3);
+    border-top: 1px solid rgba(255, 120, 190, 0.3);
     font-size: 0.76rem;
   }
   .tl__side {
     letter-spacing: 0.1em;
-    color: #ffd9a0;
+    color: #ffd9ef;
   }
   .tl__hint {
-    color: rgba(255, 217, 160, 0.55);
+    color: rgba(255, 217, 239, 0.55);
     font-size: 0.7rem;
   }
 
@@ -469,6 +497,32 @@ const gradId = `tl-arc-${tl.id}`;
   /** 刻度间隔（px，沿轴） */
   const TICK_STEP = 26;
 
+  /**
+   * 同一侧、在轴上相距不到这么多像素的两个时间点，算「挤在一起」，合并成一个塔吊。
+   *
+   * 为什么按像素而不是按天：一条轴的时间跨度可能是一年，也可能是十年，
+   * 「差两天」在一年轴上是 7px（糊成一团），在十年轴上却是看不见的。
+   * 真正决定读不读得出来的是屏幕上的距离，所以判据就用屏幕距离。
+   * 一天的日期天然是 0px，必然合并 —— 这正是「同一天要合成一个」那条要求。
+   *
+   * 取 22 而不是更大：事件名字号 0.8rem，行高约 15px，所以两点相隔 22px 以上
+   * 文字就不会叠；再往大放会把本来分得开的邻居也吸进来（比如相隔 29px 的
+   * 「虹星开服」和「桑芙加入」，它们是读得清的，不该并）。
+   */
+  const MERGE_GAP = 22;
+
+  /** 合并后组内相邻两条文字上下错开多少像素（「旁边稍微上下间隔」） */
+  const LABEL_GAP = 18;
+
+  /**
+   * 一组合并事件。
+   *
+   * 一组共用**组头**那个点的弧上位置（anchor），组内每个成员只有一个
+   * 上下偏移量 off —— 图标画在组头那儿，其余成员的图标藏起来，
+   * 文字按 off 排开。这样既只有「一个塔吊」，两条事件又都看得见。
+   */
+  type ItemGroup = { anchor: HTMLElement; members: HTMLElement[]; off: number[] };
+
   for (const root of document.querySelectorAll<HTMLElement>('[data-tl]')) {
     const panel = root.querySelector<HTMLElement>('[data-tl-panel]');
     const body = root.querySelector<HTMLElement>('[data-tl-body]');
@@ -487,9 +541,20 @@ const gradId = `tl-arc-${tl.id}`;
     const bands = Array.from(root.querySelectorAll<SVGPathElement>('[data-tl-band]'));
     const spanNames = Array.from(root.querySelectorAll<HTMLElement>('[data-tl-spanName]'));
 
-    /** 轴上的位置参数（0~1）；弧顶就是它 */
-    let cur = Number(root.dataset.tlDefault);
-    // 先给个能用的值，免得打开之前那一次 paint 拿 NaN 去算坐标
+    /**
+     * 打开时弧顶停在哪儿。
+     *
+     * 页面认领了时间点/时间段就停在那儿（data-tl-default 有值）；
+     * 没认领（属性是空的）就停在**这条轴的最开头** —— 于是最早那几件事正好
+     * 落在弧顶下方，往下滚就是顺着时间往前走。
+     *
+     * 这里不直接 Number()：Number('') 是 0、Number(undefined) 是 NaN，
+     * 两个都表示「没值」的输入会走到两条完全不同的分支上，写明白更稳。
+     */
+    const defAttr = root.dataset.tlDefault;
+    let cur = defAttr === undefined || defAttr === '' ? 0 : Number(defAttr);
+    // 实在解析不出来（属性被写坏了）也得给个能用的值，
+    // 免得打开之前那一次 paint 拿 NaN 去算坐标
     if (!Number.isFinite(cur)) cur = 0.5;
 
     let open = false;
@@ -500,6 +565,67 @@ const gradId = `tl-arc-${tl.id}`;
     let cx = 0;
     let cy = 0;
     let V = 0;
+
+    /* 合并结果：每次 measure 之后重算一次 */
+    let groups: ItemGroup[] = [];
+    /** 每个成员 → 所在组的组头（用来决定它画在哪儿） */
+    const anchorOf = new Map<HTMLElement, HTMLElement>();
+    /** 每个成员 → 组内上下偏移 */
+    const offsetOf = new Map<HTMLElement, number>();
+
+    /**
+     * 把时间点按「同一侧 + 轴上离得太近」聚成组。
+     *
+     * 只合并**同一侧**的：左右两侧本来就是两条历法（比如花娅历 / 冰室历），
+     * 同一天各挂一个事件时，两个塔吊是朝相反方向长的，文字也各在一边，
+     * 根本不会打架 —— 合成一个反而把「这天两边都发生了事」这层意思弄丢了。
+     * 真正会糊在一起的是同一侧挨着的几个，所以只处理它们。
+     *
+     * 判据从组里**上一个**成员算（链式）：三个点两两相距 20px 时，
+     * 首尾相差 40px 其实已经拉开了，但它们中间那个仍然和谁都挤，
+     * 所以还是一起并掉更清楚。
+     */
+    function groupItems() {
+      groups = [];
+      anchorOf.clear();
+      offsetOf.clear();
+
+      for (const side of ['left', 'right']) {
+        const list = items
+          .filter((el) => (el.dataset.side === 'left' ? 'left' : 'right') === side)
+          .map((el) => ({ el, t: Number(el.dataset.param) }))
+          .filter((o) => Number.isFinite(o.t))
+          .sort((a, b) => a.t - b.t);
+
+        let run: { el: HTMLElement; t: number }[] = [];
+        const flush = () => {
+          if (!run.length) return;
+          const n = run.length;
+          groups.push({
+            anchor: run[0].el,
+            members: run.map((o) => o.el),
+            // 以组头那点为中轴，整组文字上下对称排开：早的在上、晚的在下
+            off: run.map((_, i) => (i - (n - 1) / 2) * LABEL_GAP),
+          });
+          run = [];
+        };
+
+        let lastT = Number.NEGATIVE_INFINITY;
+        for (const o of list) {
+          if (run.length && (o.t - lastT) * V > MERGE_GAP) flush();
+          run.push(o);
+          lastT = o.t;
+        }
+        flush();
+      }
+
+      for (const g of groups) {
+        g.members.forEach((el, i) => {
+          anchorOf.set(el, g.anchor);
+          offsetOf.set(el, g.off[i]);
+        });
+      }
+    }
 
     /** 弧上高度 y 处的横坐标 */
     const arcX = (y: number) => {
@@ -521,9 +647,14 @@ const gradId = `tl-arc-${tl.id}`;
       /*
         整条轴的像素长度：至少 1.6 屏，且每个事件分到不少于 96px ——
         事件多了挤在一起就分不清谁是谁了。
+        （合并之后实际占位会比 items 少，这里宁可留宽一点，
+        反正合并是把挤在一起的并掉，不会因为松了就散开。）
       */
       const n = items.length + bands.length;
       V = Math.max(H * 1.6, (n + 1) * 96);
+
+      // V 定了才能按屏幕距离判断谁和谁挤在一起，所以分组放在最后
+      groupItems();
     }
 
     /** 一段圆弧的 path */
@@ -571,11 +702,17 @@ const gradId = `tl-arc-${tl.id}`;
         el.setAttribute('d', Number.isFinite(t0) && Number.isFinite(t1) ? arcD(t0, t1, 12) : '');
       }
 
-      // 事件：摆到弧上去，塔吊顺着半径朝外长
+      /*
+        事件：摆到弧上去，塔吊顺着半径朝外长。
+        合并过的点共用组头的位置 —— 组里只有组头画塔吊，其余成员把图标藏起来、
+        文字按 off 上下错开，于是「一个刻度上一个塔吊，旁边上下排着几行事件」。
+      */
       for (const el of items) {
-        const t = Number(el.dataset.param);
+        const host = anchorOf.get(el) ?? el;
+        const isAnchor = host === el;
+        const t = Number(host.dataset.param);
         const y = H / 2 + (t - cur) * V;
-        // 离屏太远就不摆（省得堆一堆看不见的元素）
+        // 离屏太远就不摆（省得堆一堆看不见的元素）；整组用同一个 y，一起进一起出
         if (y < -80 || y > H + 80) {
           el.style.visibility = 'hidden';
           continue;
@@ -585,8 +722,18 @@ const gradId = `tl-arc-${tl.id}`;
         el.style.left = `${x}px`;
         el.style.top = `${y}px`;
 
+        // 组内偏移：文字和它自己的悬停日期卡一起挪，免得指到哪条都对不上
+        const off = offsetOf.get(el) ?? 0;
+        const name = el.querySelector<HTMLElement>('.tl__name');
+        if (name) name.style.transform = `translateY(calc(-50% + ${off}px))`;
+        const tip = el.querySelector<HTMLElement>('.tl__tip');
+        if (tip) tip.style.transform = `translate(-50%, -140%) translateY(${off}px)`;
+
         const crane = el.querySelector<HTMLElement>('.tl__crane');
         if (crane) {
+          // 一组只留组头那一个塔吊
+          crane.style.display = isAnchor ? '' : 'none';
+          if (!isAnchor) continue;
           // 向外的径向单位向量（弧顶处指向正左）
           const nx = (x - cx) / R;
           const ny = (y - cy) / R;
@@ -683,9 +830,9 @@ const gradId = `tl-arc-${tl.id}`;
       if (on) {
         // 面板刚显示出来才有尺寸，这时候才量得准
         measure();
-        // 没有指定默认位置就用页面上当前那个成分
-        const def = Number(root.dataset.tlDefault);
-        if (Number.isFinite(def)) cur = def;
+        // 页面指定了默认位置就听页面的；没指定就用上面算好的 cur
+        const def = Number(defAttr);
+        if (Number.isFinite(def) && defAttr !== '' && defAttr !== undefined) cur = def;
         else if (!Number.isFinite(cur)) cur = 0.5;
         if (marked.length) {
           const mid = window.innerHeight / 2;

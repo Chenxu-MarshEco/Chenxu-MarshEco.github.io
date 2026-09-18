@@ -1225,6 +1225,22 @@ function cleanLink(raw) {
   return undefined;
 }
 
+/**
+ * 划分线的颜色。
+ *
+ * 只认 `#rrggbb`（`#abc` 这种三位简写补全成六位，统一大小写）。
+ * 这个值最后会写进 SVG 的 style / stroke，等于半个代码注入口子，
+ * 所以格式不对就整条丢掉 —— 渲染端有默认橙色兜底，不会画出隐形线。
+ */
+function cleanHexColor(raw) {
+  const s = String(raw ?? '').trim();
+  const short = /^#([0-9a-f])([0-9a-f])([0-9a-f])$/i.exec(s);
+  if (short) return `#${short[1]}${short[1]}${short[2]}${short[2]}${short[3]}${short[3]}`.toLowerCase();
+  const full = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(s);
+  if (full) return s.toLowerCase();
+  return undefined;
+}
+
 function cleanBlocks(raw, ownerId) {
   if (!Array.isArray(raw)) return [];
 
@@ -1403,7 +1419,17 @@ function cleanBlocks(raw, ownerId) {
           let lid = String(ln.id || '').trim();
           if (!lid || usedL.has(lid)) lid = `${pid}-l${li + 1}`;
           usedL.add(lid);
-          page.lines.push({ id: lid, x1, y1, x2, y2 });
+
+          const line = { id: lid, x1, y1, x2, y2 };
+          /*
+            颜色是这条线自己的，只认 #rrggbb（三位简写补全成六位）。
+            它是直接进 SVG 样式 / style 属性的，所以必须在这里卡死格式：
+            认不出来就直接不写这个字段，渲染时回落到默认橙色，
+            绝不能把用户传的任意字符串原样存下来。
+          */
+          const lc = cleanHexColor(ln.color);
+          if (lc) line.color = lc;
+          page.lines.push(line);
         });
 
         pages.push(page);

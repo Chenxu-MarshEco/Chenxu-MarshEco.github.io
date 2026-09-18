@@ -114,6 +114,33 @@ export interface MapLine {
   y1: number;
   x2: number;
   y2: number;
+  /**
+   * 这条线的颜色，`#rrggbb`。编辑器里是拿 RGB 色板挑的，一条线一个色，
+   * 这样几块区域可以用不同颜色区分开。
+   *
+   * 老数据没有这个字段：渲染时回落到 DEFAULT_LINE_COLOR，
+   * 所以不填也画得出来，不会变成一根隐形的线。
+   */
+  color?: string;
+}
+
+/** 老数据（没存颜色）的划分线用这个色，和最早那版固定橙色一致 */
+export const DEFAULT_LINE_COLOR = '#ffb43c';
+
+/**
+ * 把用户存下来的颜色洗干净。
+ *
+ * 只认 `#rrggbb`（三位简写也帮忙补全成六位）；认不出来的一律当没填。
+ * 颜色是直接塞进 style / SVG 属性的，不校验的话等于开了一个注入口子。
+ */
+export function normalizeLineColor(raw: unknown): string | undefined {
+  if (typeof raw !== 'string') return undefined;
+  const s = raw.trim();
+  const short = /^#([0-9a-f])([0-9a-f])([0-9a-f])$/i.exec(s);
+  if (short) return `#${short[1]}${short[1]}${short[2]}${short[2]}${short[3]}${short[3]}`.toLowerCase();
+  const full = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(s);
+  if (full) return s.toLowerCase();
+  return undefined;
 }
 
 /**
@@ -148,11 +175,19 @@ export function mapPages(block: {
   const normMarkers = (list: MapMarker[] | undefined): MapMarker[] =>
     (Array.isArray(list) ? list : []).map((m) => ({ ...m, kind: m.kind === 'region' ? 'region' : 'building' }));
 
+  // 线也过一遍：颜色字段是后加的，老数据没有；万一存进来一个乱七八糟的字符串，
+  // 这里直接丢掉，免得它被当成 style 用。
+  const normLines = (list: MapLine[] | undefined): MapLine[] =>
+    (Array.isArray(list) ? list : []).map((l) => {
+      const color = normalizeLineColor(l.color);
+      return color ? { ...l, color } : { id: l.id, x1: l.x1, y1: l.y1, x2: l.x2, y2: l.y2 };
+    });
+
   if (Array.isArray(block.pages) && block.pages.length) {
     return block.pages.map((pg) => ({
       ...pg,
       markers: normMarkers(pg.markers),
-      lines: Array.isArray(pg.lines) ? pg.lines : [],
+      lines: normLines(pg.lines),
     }));
   }
 

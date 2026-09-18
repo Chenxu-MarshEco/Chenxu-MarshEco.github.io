@@ -25,7 +25,7 @@ import { marked } from 'marked';
 import SubCard from './SubCard.astro';
 import { withBase } from '../utils/url';
 import type { BlockItem, SubPost } from '../utils/boardPage';
-import { isLinkUrl, mapPages, type PageBlock } from '../utils/boards';
+import { DEFAULT_LINE_COLOR, isLinkUrl, mapPages, type PageBlock } from '../utils/boards';
 import { refParam, type Timeline } from '../utils/timelines';
 
 interface Props {
@@ -474,6 +474,8 @@ const cardsOf = (b: Extract<PageBlock, { type: 'children' }>) => ({
                         viewBox 用 0~100，preserveAspectRatio=none —— 这样
                         「百分比坐标」直接就是 viewBox 坐标，不用换算。
                         线宽用 non-scaling-stroke：地图放大多少，线还是那么粗。
+                        颜色是每条线自己存的（编辑器里用 RGB 色板挑的），
+                        借 CSS 变量 --lc 传进样式，规则本身仍然写在 <style> 里。
                       */}
                       {pg.lines.length > 0 && (
                         <svg
@@ -483,13 +485,31 @@ const cardsOf = (b: Extract<PageBlock, { type: 'children' }>) => ({
                           aria-hidden="true"
                         >
                           {pg.lines.map((l) => (
-                            <line
-                              x1={l.x1}
-                              y1={l.y1}
-                              x2={l.x2}
-                              y2={l.y2}
-                              vector-effect="non-scaling-stroke"
-                            />
+                            <g class="pmap__line" style={`--lc:${l.color ?? DEFAULT_LINE_COLOR}`}>
+                              {/*
+                                一条线拆成两层，为的是做成和图钉一样的「蒸汽波栅格」：
+                                底下一根半透明实线当色带，上面压一根同色虚线，
+                                虚线的空档横着切过色带 —— 就是图钉头上那种扫描线，
+                                只是随着线的走向转了角度；两根都带 non-scaling-stroke，
+                                所以条纹节奏在屏幕上是恒定的，放大也不会糊成一片。
+                              */}
+                              <line
+                                class="pmap__lineBody"
+                                x1={l.x1}
+                                y1={l.y1}
+                                x2={l.x2}
+                                y2={l.y2}
+                                vector-effect="non-scaling-stroke"
+                              />
+                              <line
+                                class="pmap__lineDash"
+                                x1={l.x1}
+                                y1={l.y1}
+                                x2={l.x2}
+                                y2={l.y2}
+                                vector-effect="non-scaling-stroke"
+                              />
+                            </g>
                           ))}
                         </svg>
                       )}
@@ -1011,11 +1031,36 @@ const cardsOf = (b: Extract<PageBlock, { type: 'children' }>) => ({
     pointer-events: none;
     overflow: visible;
   }
-  .pmap__lines line {
-    stroke: #ffb43c;
+  /*
+    划分线的颜色：--lc 是每条线自己在行内塞进来的，没写就用老那版橙色兜底。
+    （var() 的兜底值只在变量「没定义」时生效，所以这里两层保险。）
+  */
+  .pmap__line {
+    --lc: #ffb43c;
+  }
+  .pmap__lineBody,
+  .pmap__lineDash {
+    stroke: var(--lc, #ffb43c);
     stroke-width: 3;
-    stroke-linecap: round;
-    filter: drop-shadow(0 0 5px rgba(255, 170, 60, 0.75));
+    stroke-linecap: butt;
+  }
+  /*
+    色带层：压得很淡，只用来把这条线「连起来看」。
+    它存在的意义是：条纹在缩到很小时会变成一串点，底下垫一层淡色
+    才不至于让人以为线断了。
+  */
+  .pmap__lineBody {
+    opacity: 0.34;
+  }
+  /*
+    条纹层：虚线当扫描线用。non-scaling-stroke 下 dasharray 也是按屏幕
+    像素算的，所以不管地图放到几倍，条纹的疏密都和图钉头上那套一致
+    （图钉是 2px 实 / 1.2px 空，这里按线宽 3 放大到 3.4 / 2.1）。
+    光晕用它自己的颜色，不是固定橙 —— 挑成蓝的线就该发蓝光。
+  */
+  .pmap__lineDash {
+    stroke-dasharray: 3.4 2.1;
+    filter: drop-shadow(0 0 5px var(--lc, #ffb43c));
   }
 
   /*
