@@ -13,6 +13,17 @@
  */
 
 /**
+ * 一个成分（页面内容块、子版块）认领的时间点 / 时间段。
+ *
+ * 两个字段二选一：`timePoint` 指某个时间点，`timeSpan` 指某一段时间。
+ * 指的 id 都在**这一页用的那条时间轴**里（见 BoardNode.timeline）。
+ */
+export interface TimeFields {
+  timePoint?: string;
+  timeSpan?: string;
+}
+
+/**
  * 页面内容块。
  *
  * 一个版块页除了「子版块自动铺开」，还可以自己写一段内容：
@@ -21,8 +32,11 @@
  * 每种块都带一个 id —— 排版模式就是拿它当锚点（data-edit="pg-<id>"），
  * 所以 id 要**全站唯一**（同一块内容在不同页面之间不能撞），
  * 编辑器新建块时用「节点 id + 序号」来保证这点。
+ *
+ * 用交叉类型挂上 TimeFields，是为了每个块都能认领时间点/时间段，
+ * 而不用在十种块里各写一遍这两个字段。
  */
-export type PageBlock =
+export type PageBlock = (
   | { id: string; type: 'text'; text: string }
   | { id: string; type: 'image'; src: string; alt?: string; width?: ImageWidth }
   | { id: string; type: 'link'; text: string; href: string }
@@ -47,32 +61,111 @@ export type PageBlock =
   /**
    * 一张地图 + 钉在上面的塔吊地标。
    *
-   * 位置一律存**百分比**而不是像素：地图能放大缩小、能拖，框的宽度还随
+   * 分页：`pages` 每一页都有自己的图、图钉、划分线和简介，
+   * 页面上用地图下面那对箭头翻页。
+   * 坐标一律存**百分比**而不是像素：地图能放大缩小、能拖，框的宽度还随
    * 屏幕变，只有「相对图片的百分之几」这套坐标在任何情况下都还指着同一个点。
    */
-  | { id: string; type: 'map'; src: string; alt?: string; markers: MapMarker[] }
+  | { id: string; type: 'map'; pages: MapPage[] }
   /**
    * 把这一层的子页面铺在这里。
    * shape / size 是整块的默认值，单张卡想不一样就在那个子版块上设
    * cardShape / cardSize（见 BoardNode），单个永远压过整块。
    */
-  | { id: string; type: 'children'; shape?: CardShape; size?: CardSize };
+  | { id: string; type: 'children'; shape?: CardShape; size?: CardSize }
+) &
+  TimeFields;
 
 /**
- * 地图上的一个塔吊地标。
+ * 图钉的两种类型。
+ *   building  建筑：粉色 + 简约塔吊图标
+ *   region    区域：蒸汽波落日那套橙黄色
+ * 两种都带向下的小箭头，都显示名字、都能点着跳转。
+ */
+export type MapPinKind = 'building' | 'region';
+
+/**
+ * 地图上的一个地标（图钉）。
  *
  * x / y 是相对地图图片的百分比（0~100），原点在图片左上角。
- * 存百分比是为了让地标跟着图走：放大、缩小、拖动、换屏幕宽度，
+ * 存百分比是为了让图钉跟着图走：放大、缩小、拖动、换屏幕宽度，
  * 它都还钉在图上同一个位置。存像素的话一缩放就全跑偏了。
  */
 export interface MapMarker {
   id: string;
+  kind: MapPinKind;
   x: number;
   y: number;
   /** 鼠标移到图标上显示的建筑名 */
   title: string;
   /** 点它跳去哪。站内写 `/huaya/xxx`，站外写 `https://…`；留空就只是看看名字 */
   href?: string;
+}
+
+/**
+ * 区域划分线：从 (x1,y1) 拉到 (x2,y2) 的一条线，坐标同样是百分比。
+ *
+ * 它不显示名字、也不能点 —— 只是把地图划成几块给人看，
+ * 所以这里没有 title / href。编辑器里按住鼠标在地图上拖一下就有了。
+ */
+export interface MapLine {
+  id: string;
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+}
+
+/**
+ * 地图的一页。
+ * 翻页翻的就是它：每页一张图，图上各自有自己的图钉、划分线和简介。
+ */
+export interface MapPage {
+  id: string;
+  src: string;
+  alt?: string;
+  /** 这一页的简介，显示在地图下面 */
+  text?: string;
+  markers: MapMarker[];
+  lines: MapLine[];
+}
+
+/**
+ * 取一个地图块的所有页，并把每一页补齐成完整形状。
+ *
+ * 兼容最早那版「只有一页」的写法（块上直接挂 `src` + `markers`）：
+ * 纷湖那张图就是老版本编辑器做的，数据已经落在硬盘上了，
+ * 不能因为代码升级就让它渲染不出来。读到的老数据当「只有一页」，
+ * 图钉补上默认类型（建筑）。编辑器再保存一次就会写成新的分页结构。
+ */
+export function mapPages(block: {
+  id?: string;
+  pages?: MapPage[];
+  src?: string;
+  alt?: string;
+  markers?: MapMarker[];
+}): MapPage[] {
+  const normMarkers = (list: MapMarker[] | undefined): MapMarker[] =>
+    (Array.isArray(list) ? list : []).map((m) => ({ ...m, kind: m.kind === 'region' ? 'region' : 'building' }));
+
+  if (Array.isArray(block.pages) && block.pages.length) {
+    return block.pages.map((pg) => ({
+      ...pg,
+      markers: normMarkers(pg.markers),
+      lines: Array.isArray(pg.lines) ? pg.lines : [],
+    }));
+  }
+
+  if (!block.src) return [];
+  return [
+    {
+      id: `${block.id ?? 'map'}-p1`,
+      src: block.src,
+      alt: block.alt,
+      markers: normMarkers(block.markers),
+      lines: [],
+    },
+  ];
 }
 
 /** 图片宽度档位 */
@@ -110,6 +203,22 @@ export interface BoardNode {
    * 允许 http(s) / mailto / tel / 站内 `/路径` / `#锚点`。
    */
   link?: string;
+  /**
+   * 这一页用哪条时间轴（`src/data/timelines.json` 里的 id）。
+   *
+   * 放在页面上而不是时间轴上，是因为「哪些页共用一条轴」是页面的属性：
+   * 好多页可以都指同一条（同一个时间轴），也可以各指各的。
+   * 不填就是这一页没有时间轴 —— 右侧那个书签不会出现。
+   */
+  timeline?: string;
+  /**
+   * 这一页自己认领的时间点 / 时间段。
+   *
+   * 两个用处：一是这个版块作为卡片出现在上一页时，滚到它就停在这一点；
+   * 二是直接打开这一页时，时间轴默认停在这里（比如某个年代的中点）。
+   */
+  timePoint?: string;
+  timeSpan?: string;
   /**
    * 版式。目前只认 'region'（设计稿那套三列分区，只有花娅陌域用）。
    * 不写就是默认的竖排：子页面一条一条占满整行。

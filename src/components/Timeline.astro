@@ -1,0 +1,781 @@
+---
+/**
+ * 右侧的时间轴。
+ *
+ * 一条蒸汽波落日配色的弧线竖在网页最右边，向左边微微凸出；弧顶（最突出的
+ * 那一点）永远是「当前」刻度。滚轮在面板里滚，刻度就上下走，事件跟着经过弧顶。
+ *
+ * 几个关键决定：
+ *
+ * 1. **左右两侧各一条线**。同一个刻度上可以左边挂一个事件、右边挂一个，
+ *    双线叙事用（左边记花娅历、右边记冰室历）。
+ * 2. **图钉是垂直于弧线长出来的塔吊**。所以它不是「贴」在轴上，而是从轴上
+ *    朝外伸出去 —— 位置在弧上，方向是那一点的径向。
+ * 3. **位置只存 0~1 的参数**（在这条轴的时间范围里的相对位置），
+ *    屏幕上落在哪儿由脚本按弧长算。这样面板高度一变，弧线和事件一起重排，
+ *    不用回改数据。
+ * 4. 关着的时候只在右边沿露一个书签。开合状态记在 sessionStorage 里，
+ *    按**时间轴的 id** 记：连着翻几个用同一条轴的页面，它一直开着；
+ *    进了用别的轴（或没有轴）的页面，自然就是关着的。
+ */
+import type { Timeline as TimelineData } from '../utils/timelines';
+import { pointParam, spanEdges, spanParam, rangeOf, dayOf } from '../utils/timelines';
+
+interface Props {
+  timeline: TimelineData;
+  /**
+   * 打开时默认停在哪（0~1）。页面自己被认领了时间点/时间段就传它，
+   * 没有的话传 null，脚本会退回到「当前屏幕上那个成分」或者第一个时间点。
+   */
+  defaultParam?: number | null;
+}
+
+const { timeline: tl, defaultParam = null } = Astro.props;
+
+const range = rangeOf(tl);
+const spanMin = Math.min(range.min, range.max);
+const spanMax = Math.max(range.min, range.max);
+
+/** 时间点：位置、左右、名字、日期都写进 data-*，脚本照着摆 */
+const points = tl.points
+  .map((p) => ({ ...p, t: pointParam(tl, p) }))
+  .sort((a, b) => a.t - b.t);
+
+/**
+ * 时间段：带子画在哪一侧，跟它起点那个时间点走
+ * （两端通常在同一个历法上，不同侧的话按起点算）。
+ */
+const spans = tl.spans.map((s) => {
+  const from = tl.points.find((p) => p.id === s.from);
+  const edges = spanEdges(tl, s);
+  return {
+    ...s,
+    t: spanParam(tl, s),
+    fromT: Math.min(edges.from, edges.to),
+    toT: Math.max(edges.from, edges.to),
+    side: from?.side ?? 'left',
+  };
+});
+
+const gradId = `tl-arc-${tl.id}`;
+---
+
+<div
+  class="tl"
+  data-tl
+  data-tl-id={tl.id}
+  data-tl-min={spanMin}
+  data-tl-max={spanMax}
+  data-tl-default={defaultParam === null ? '' : String(defaultParam)}
+>
+  {/* 关着的时候只在右边沿露出来的那个书签 */}
+  <button
+    class="tl__tab"
+    type="button"
+    data-tl-toggle
+    aria-expanded="false"
+    aria-controls={`tl-panel-${tl.id}`}
+    title="打开时间轴"
+  >
+    <span class="tl__tabText">时间轴</span>
+  </button>
+
+  <aside class="tl__panel" id={`tl-panel-${tl.id}`} data-tl-panel hidden aria-label={tl.title}>
+    <div class="tl__head">
+      <span class="tl__title">{tl.title}</span>
+      <button class="tl__close" type="button" data-tl-close aria-label="收起时间轴">×</button>
+    </div>
+
+    <div class="tl__body" data-tl-body>
+      <svg class="tl__svg" data-tl-svg aria-hidden="true">
+        <defs>
+          <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#fff2b8"></stop>
+            <stop offset="30%" stop-color="#ffd447"></stop>
+            <stop offset="66%" stop-color="#ff9d2e"></stop>
+            <stop offset="100%" stop-color="#e04a08"></stop>
+          </linearGradient>
+        </defs>
+        {/* 时间段的带子：脚本按弧线生成，一个时间段一条 */}
+        {spans.map((s) => (
+          <path class="tl__band" data-tl-band={s.id} stroke={`url(#${gradId})`}></path>
+        ))}
+        {/* 主弧线 */}
+        <path class="tl__arcLine" data-tl-arc stroke={`url(#${gradId})`}></path>
+        {/* 刻度：整条刻度尺用一个 path 画，滚动时只改一个 d，便宜 */}
+        <path class="tl__rulerPath" data-tl-ruler stroke={`url(#${gradId})`}></path>
+      </svg>
+
+      {/* 弧顶那一点：当前所在的日期 */}
+      <div class="tl__now" data-tl-now aria-hidden="true">
+        <span class="tl__nowDot"></span>
+        <span class="tl__nowDate" data-tl-nowdate></span>
+      </div>
+
+      {spans.map((s) => (
+        <div
+          class="tl__spanName"
+          data-tl-spanName={s.id}
+          data-side={s.side}
+          data-tl-from={s.fromT}
+          data-tl-to={s.toT}
+        >
+          {s.name}
+        </div>
+      ))}
+
+      {points.map((p) => (
+        <div
+          class="tl__item"
+          data-tl-item
+          data-side={p.side}
+          data-param={p.t}
+          data-label={p.label}
+          data-date={p.date}
+          data-point={p.id}
+        >
+          <span class="tl__crane" aria-hidden="true">
+            <svg viewBox="0 0 24 24">
+              <path d="M10.5 20.5V6.5M13.5 20.5V6.5M8.5 20.5h7M12 4v2.5M3.5 9h17M12 4 3.5 9M12 4l8.5 5M17.5 9v4"></path>
+            </svg>
+          </span>
+          {/* 名字常驻显示；鼠标移上去再补一个日期 */}
+          <span class="tl__name">{p.label}</span>
+          <span class="tl__tip" role="tooltip">
+            <b>{p.label}</b>
+            <em>{p.date}</em>
+          </span>
+        </div>
+      ))}
+    </div>
+
+    <div class="tl__foot">
+      <span class="tl__side tl__side--left">{tl.leftName}</span>
+      <span class="tl__hint">滚轮滚刻度</span>
+      <span class="tl__side tl__side--right">{tl.rightName}</span>
+    </div>
+  </aside>
+</div>
+
+<style>
+  /*
+    面板固定在最右边，关着的时候整块推到画面外，只留左边沿露出的书签。
+    用 transform 推走而不是 display:none —— 推开才有那一下滑动。
+  */
+  .tl__panel {
+    position: fixed;
+    top: 0;
+    right: 0;
+    z-index: 62;
+    width: min(430px, 92vw);
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    background: linear-gradient(180deg, rgba(30, 4, 44, 0.97), rgba(16, 2, 26, 0.98));
+    border-left: 1px solid rgba(255, 150, 60, 0.42);
+    box-shadow: -18px 0 50px -20px rgb(0 0 0 / 0.7);
+    transform: translateX(101%);
+    transition: transform 0.26s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  /* 深色页面（首页、板块页）本来就是深色，这里统一用同一套落日配色 */
+  .tl.is-open .tl__panel {
+    transform: translateX(0);
+  }
+
+  /*
+    书签：贴在右边缘、竖向居中。开面板时它退到画面外 ——
+    面板自己头上有收起按钮，不用两个入口。
+  */
+  .tl__tab {
+    position: fixed;
+    top: 50%;
+    right: 0;
+    z-index: 61;
+    transform: translateY(-50%);
+    padding: 0.85rem 0.42rem;
+    border: 1px solid rgba(255, 170, 60, 0.55);
+    border-right: 0;
+    border-radius: 12px 0 0 12px;
+    background: linear-gradient(90deg, rgba(60, 8, 40, 0.92), rgba(30, 4, 44, 0.92));
+    color: #ffd9a0;
+    font-size: 0.8rem;
+    letter-spacing: 0.16em;
+    writing-mode: vertical-rl;
+    cursor: pointer;
+    backdrop-filter: blur(4px);
+    transition: transform 0.2s ease, color 0.2s ease;
+  }
+  .tl__tab:hover {
+    color: #fff;
+    transform: translateY(-50%) translateX(-3px);
+  }
+  .tl.is-open .tl__tab {
+    transform: translateY(-50%) translateX(140%);
+    pointer-events: none;
+  }
+
+  .tl__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.6rem;
+    padding: 0.85rem 1rem;
+    border-bottom: 1px solid rgba(255, 150, 60, 0.3);
+  }
+  .tl__title {
+    font-family: var(--font-display);
+    font-size: 1rem;
+    letter-spacing: 0.14em;
+    color: #ffd9a0;
+    text-shadow: 0 0 12px rgba(255, 140, 40, 0.7);
+  }
+  .tl__close {
+    border: 0;
+    background: none;
+    color: rgba(255, 217, 160, 0.8);
+    font-size: 1.4rem;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0 0.3rem;
+  }
+  .tl__close:hover {
+    color: #fff;
+  }
+
+  /* 弧线所在的这一块：它就是「一屏」，弧顶在竖直正中 */
+  .tl__body {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+    touch-action: none;
+  }
+  .tl__svg {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+  }
+  .tl__arcLine {
+    fill: none;
+    stroke-width: 2.5;
+    filter: drop-shadow(0 0 6px rgba(255, 170, 60, 0.85));
+  }
+  .tl__rulerPath {
+    fill: none;
+    stroke-width: 1.4;
+    opacity: 0.75;
+  }
+  .tl__band {
+    fill: none;
+    stroke-width: 9;
+    opacity: 0.28;
+    stroke-linecap: round;
+  }
+
+  /* 弧顶那一点：一个小圆点 + 当前日期 */
+  .tl__now {
+    position: absolute;
+    transform: translate(-50%, -50%);
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    pointer-events: none;
+    white-space: nowrap;
+  }
+  .tl__nowDot {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: #fff2b8;
+    box-shadow: 0 0 10px rgba(255, 210, 80, 0.95);
+  }
+  .tl__nowDate {
+    font-size: 0.72rem;
+    letter-spacing: 0.08em;
+    color: rgba(255, 226, 180, 0.85);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /*
+    一个事件。外层是零尺寸的锚点，落在弧线上那一点；
+    里面的塔吊以「底边中点」为原点旋转 —— 那个点就是锚点，
+    所以不管转到什么角度，塔吊的根都长在轴上。
+  */
+  .tl__item {
+    position: absolute;
+    width: 0;
+    height: 0;
+  }
+  .tl__crane {
+    position: absolute;
+    left: -13px;
+    bottom: 0;
+    width: 26px;
+    height: 26px;
+    transform-origin: bottom center;
+    color: #ffc857;
+    filter: drop-shadow(0 0 4px rgba(255, 150, 40, 0.8));
+  }
+  .tl__crane svg {
+    display: block;
+    width: 100%;
+    height: 100%;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2.3;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  /* 名字常驻显示，横着写（转着写就没法读了） */
+  .tl__name {
+    position: absolute;
+    top: 0;
+    transform: translateY(-50%);
+    max-width: 8.5rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.8rem;
+    letter-spacing: 0.04em;
+    color: #ffe6c4;
+    text-shadow: 0 1px 5px rgba(20, 0, 10, 0.9);
+  }
+  .tl__item[data-side='left'] .tl__name {
+    right: 40px;
+  }
+  .tl__item[data-side='right'] .tl__name {
+    left: 40px;
+  }
+
+  /* 鼠标移上去补日期 */
+  .tl__tip {
+    position: absolute;
+    top: 0;
+    transform: translate(-50%, -140%);
+    padding: 0.2rem 0.55rem;
+    border-radius: 7px;
+    border: 1px solid rgba(255, 170, 60, 0.6);
+    background: rgba(24, 3, 36, 0.96);
+    color: #ffe6c4;
+    font-size: 0.76rem;
+    line-height: 1.5;
+    white-space: nowrap;
+    display: flex;
+    gap: 0.5rem;
+    align-items: baseline;
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity 0.14s ease, visibility 0.14s ease;
+  }
+  .tl__tip b {
+    font-weight: 700;
+  }
+  .tl__tip em {
+    font-style: normal;
+    color: rgba(255, 200, 120, 0.85);
+    font-variant-numeric: tabular-nums;
+  }
+  .tl__item:hover .tl__tip {
+    opacity: 1;
+    visibility: visible;
+  }
+  .tl__item:hover .tl__crane {
+    color: #fff2b8;
+  }
+
+  /* 时间段的名字，跟着带子一起走 */
+  .tl__spanName {
+    position: absolute;
+    top: 0;
+    transform: translateY(-50%);
+    font-size: 0.72rem;
+    letter-spacing: 0.1em;
+    color: rgba(255, 200, 120, 0.75);
+    white-space: nowrap;
+    pointer-events: none;
+  }
+  .tl__spanName[data-side='left'] {
+    right: 40px;
+  }
+  .tl__spanName[data-side='right'] {
+    left: 40px;
+  }
+
+  .tl__foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0.6rem 1rem;
+    border-top: 1px solid rgba(255, 150, 60, 0.3);
+    font-size: 0.76rem;
+  }
+  .tl__side {
+    letter-spacing: 0.1em;
+    color: #ffd9a0;
+  }
+  .tl__hint {
+    color: rgba(255, 217, 160, 0.55);
+    font-size: 0.7rem;
+  }
+
+  /* 窄屏：面板占满，字小一档 */
+  @media (max-width: 34rem) {
+    .tl__panel {
+      width: 100vw;
+    }
+    .tl__name {
+      max-width: 5.5rem;
+      font-size: 0.74rem;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .tl__panel,
+    .tl__tab,
+    .tl__tip {
+      transition: none;
+    }
+  }
+</style>
+
+<script>
+  /* ============================================================
+     时间轴：弧线几何 + 刻度滚动 + 和页面内容联动
+
+     坐标怎么来的：
+       弧线是一段圆弧，圆心在面板右侧某处，弧顶（最左那一点）落在
+       竖直正中。半径 R 由「面板高度」和「想凸出多少」反推：
+           R = ((H/2)² + bulge²) / (2·bulge)
+       于是弧上任意高度 y 的横坐标是 x(y) = cx - √(R² - (y-cy)²)。
+
+     位置参数 t（0~1）是「在这条轴的时间范围里的相对位置」；
+       屏幕上纵坐标 = H/2 + (t - cur) · V
+       其中 cur 是弧顶对应的参数，V 是整条轴的像素长度。
+       滚轮滚的就是 cur —— 刻度、事件、时间段一起动。
+     ============================================================ */
+  const KEY = 'tl-open-id';
+
+  /** 弧顶比两端向左凸出多少（px） */
+  const BULGE = 30;
+  /** 弧顶在面板里横向的位置（占面板宽度的比例）：右边留出给右侧标签的余地 */
+  const APEX_RATIO = 0.62;
+  /** 刻度线长度（从弧上朝外画） */
+  const TICK = 7;
+  /** 刻度间隔（px，沿轴） */
+  const TICK_STEP = 26;
+
+  for (const root of document.querySelectorAll<HTMLElement>('[data-tl]')) {
+    const panel = root.querySelector<HTMLElement>('[data-tl-panel]');
+    const body = root.querySelector<HTMLElement>('[data-tl-body]');
+    const arcPath = root.querySelector<SVGPathElement>('[data-tl-arc]');
+    const rulerPath = root.querySelector<SVGPathElement>('[data-tl-ruler]');
+    const tab = root.querySelector<HTMLButtonElement>('[data-tl-toggle]');
+    const nowBox = root.querySelector<HTMLElement>('[data-tl-now]');
+    const nowDate = root.querySelector<HTMLElement>('[data-tl-nowdate]');
+    if (!panel || !body || !arcPath || !rulerPath || !tab) continue;
+
+    const tlId = root.dataset.tlId ?? '';
+    const dayMin = Number(root.dataset.tlMin) || 0;
+    const dayMax = Number(root.dataset.tlMax) || 1;
+
+    const items = Array.from(root.querySelectorAll<HTMLElement>('[data-tl-item]'));
+    const bands = Array.from(root.querySelectorAll<SVGPathElement>('[data-tl-band]'));
+    const spanNames = Array.from(root.querySelectorAll<HTMLElement>('[data-tl-spanName]'));
+
+    /** 轴上的位置参数（0~1）；弧顶就是它 */
+    let cur = Number(root.dataset.tlDefault);
+    // 先给个能用的值，免得打开之前那一次 paint 拿 NaN 去算坐标
+    if (!Number.isFinite(cur)) cur = 0.5;
+
+    let open = false;
+    /* 几何：每次重排时算一次 */
+    let H = 0;
+    let apexX = 0;
+    let R = 1;
+    let cx = 0;
+    let cy = 0;
+    let V = 0;
+
+    /** 弧上高度 y 处的横坐标 */
+    const arcX = (y: number) => {
+      const d = Math.abs(y - cy);
+      const inside = R * R - d * d;
+      return cx - Math.sqrt(inside > 0 ? inside : 0);
+    };
+
+    function measure() {
+      H = body!.clientHeight;
+      if (!H) return;
+      const W = body!.clientWidth;
+      apexX = W * APEX_RATIO;
+      cy = H / 2;
+      // 由「凸出量」和「半高」反推半径（推导见文件头）
+      R = ((H / 2) * (H / 2) + BULGE * BULGE) / (2 * BULGE);
+      cx = apexX + R;
+
+      /*
+        整条轴的像素长度：至少 1.6 屏，且每个事件分到不少于 96px ——
+        事件多了挤在一起就分不清谁是谁了。
+      */
+      const n = items.length + bands.length;
+      V = Math.max(H * 1.6, (n + 1) * 96);
+    }
+
+    /** 一段圆弧的 path */
+    function arcD(t0: number, t1: number, steps = 20) {
+      let d = '';
+      for (let i = 0; i <= steps; i++) {
+        const t = t0 + (t1 - t0) * (i / steps);
+        const y = H / 2 + (t - cur) * V;
+        const x = arcX(y);
+        d += `${i ? 'L' : 'M'}${x.toFixed(1)} ${y.toFixed(1)}`;
+      }
+      return d;
+    }
+
+    function paint() {
+      if (!H) return;
+
+      // 主弧线：盖住整屏还多一截，滚到两头也不会露出断口
+      const over = (H * 0.6) / V;
+      arcPath!.setAttribute('d', arcD(-over, 1 + over, 28));
+
+      /*
+        刻度：等参数间距铺满整屏。滚轮滚的是 cur，刻度跟着一起走 ——
+        所以这条尺子永远在动，看起来就像在量一条很长的带子。
+      */
+      let d = '';
+      const stepT = TICK_STEP / V;
+      const first = Math.floor((cur - H / 2 / V) / stepT) * stepT;
+      for (let t = first; t <= cur + H / 2 / V + stepT; t += stepT) {
+        const y = H / 2 + (t - cur) * V;
+        if (y < -TICK || y > H + TICK) continue;
+        const x = arcX(y);
+        const nx = (x - cx) / R;
+        const ny = (y - cy) / R;
+        d += `M${x.toFixed(1)} ${y.toFixed(1)}L${(x + nx * TICK).toFixed(1)} ${(y + ny * TICK).toFixed(1)}`;
+      }
+      rulerPath!.setAttribute('d', d);
+
+      // 时间段的带子：沿弧线走一段
+      for (const el of bands) {
+        const id = el.dataset.tlBand;
+        const host = root.querySelector<HTMLElement>(`[data-tl-spanName="${id}"]`);
+        const t0 = Number(host?.dataset.tlFrom ?? 'NaN');
+        const t1 = Number(host?.dataset.tlTo ?? 'NaN');
+        el.setAttribute('d', Number.isFinite(t0) && Number.isFinite(t1) ? arcD(t0, t1, 12) : '');
+      }
+
+      // 事件：摆到弧上去，塔吊顺着半径朝外长
+      for (const el of items) {
+        const t = Number(el.dataset.param);
+        const y = H / 2 + (t - cur) * V;
+        // 离屏太远就不摆（省得堆一堆看不见的元素）
+        if (y < -80 || y > H + 80) {
+          el.style.visibility = 'hidden';
+          continue;
+        }
+        el.style.visibility = '';
+        const x = arcX(y);
+        el.style.left = `${x}px`;
+        el.style.top = `${y}px`;
+
+        const crane = el.querySelector<HTMLElement>('.tl__crane');
+        if (crane) {
+          // 向外的径向单位向量（弧顶处指向正左）
+          const nx = (x - cx) / R;
+          const ny = (y - cy) / R;
+          // 左侧的塔吊朝外（=径向），右侧的朝里（=反向）
+          const rot =
+            el.dataset.side === 'right' ? Math.atan2(-nx, ny) : Math.atan2(nx, -ny);
+          crane.style.transform = `rotate(${rot}rad)`;
+        }
+      }
+
+      // 时间段名字摆在带子中点
+      for (const el of spanNames) {
+        const t0 = Number(el.dataset.tlFrom ?? 'NaN');
+        const t1 = Number(el.dataset.tlTo ?? 'NaN');
+        if (!Number.isFinite(t0) || !Number.isFinite(t1)) {
+          el.style.visibility = 'hidden';
+          continue;
+        }
+        const mid = (t0 + t1) / 2;
+        const y = H / 2 + (mid - cur) * V;
+        el.style.visibility = y < -40 || y > H + 40 ? 'hidden' : '';
+        el.style.left = `${arcX(y)}px`;
+        el.style.top = `${y}px`;
+      }
+
+      // 弧顶那个点 + 当前日期
+      if (nowBox) {
+        nowBox.style.left = `${arcX(H / 2)}px`;
+        nowBox.style.top = `${H / 2}px`;
+      }
+      if (nowDate) {
+        const day = dayMin + cur * (dayMax - dayMin);
+        const dt = new Date(Math.round(day) * 86400000);
+        const p = (n: number) => String(n).padStart(2, '0');
+        nowDate.textContent = `${dt.getUTCFullYear()}-${p(dt.getUTCMonth() + 1)}-${p(dt.getUTCDate())}`;
+      }
+    }
+
+    /* ---------------- 和页面内容联动 ---------------- */
+
+    /*
+      页面上认领了时间点/时间段的成分都带 data-tl-param。
+      取「最靠近视口中线」的那个，把弧顶挪过去 ——
+      于是滚到某段文字/某个视频，轴就停在那一点。
+    */
+    const marked = Array.from(document.querySelectorAll<HTMLElement>('[data-tl-param]'));
+    let activeEl: HTMLElement | null = null;
+
+    function syncFromPage() {
+      if (!open || !marked.length) return;
+      const mid = window.innerHeight / 2;
+      let best: HTMLElement | null = null;
+      let bestD = Infinity;
+      for (const el of marked) {
+        const r = el.getBoundingClientRect();
+        if (r.bottom < 0 || r.top > window.innerHeight) continue;
+        const d = Math.abs((r.top + r.bottom) / 2 - mid);
+        if (d < bestD) {
+          bestD = d;
+          best = el;
+        }
+      }
+      if (!best || best === activeEl) return;
+      activeEl = best;
+      const t = Number(best.dataset.tlParam);
+      if (Number.isFinite(t)) {
+        cur = t;
+        paint();
+      }
+    }
+
+    if (marked.length) {
+      window.addEventListener('scroll', syncFromPage, { passive: true });
+      window.addEventListener('resize', syncFromPage);
+    }
+
+    /* ---------------- 开合 ---------------- */
+
+    function remember(on: boolean) {
+      try {
+        if (on) sessionStorage.setItem(KEY, tlId);
+        else if (sessionStorage.getItem(KEY) === tlId) sessionStorage.removeItem(KEY);
+      } catch {
+        /* 私密模式等场景下不可用，忽略 */
+      }
+    }
+
+    function setOpen(on: boolean, focus = true) {
+      open = on;
+      root.classList.toggle('is-open', on);
+      panel!.hidden = !on;
+      tab!.setAttribute('aria-expanded', on ? 'true' : 'false');
+      remember(on);
+      if (on) {
+        // 面板刚显示出来才有尺寸，这时候才量得准
+        measure();
+        // 没有指定默认位置就用页面上当前那个成分
+        const def = Number(root.dataset.tlDefault);
+        if (Number.isFinite(def)) cur = def;
+        else if (!Number.isFinite(cur)) cur = 0.5;
+        if (marked.length) {
+          const mid = window.innerHeight / 2;
+          let best: HTMLElement | null = null;
+          let bestD = Infinity;
+          for (const el of marked) {
+            const r = el.getBoundingClientRect();
+            const d = Math.abs((r.top + r.bottom) / 2 - mid);
+            if (d < bestD) {
+              bestD = d;
+              best = el;
+            }
+          }
+          const t = Number(best?.dataset.tlParam);
+          if (best && Number.isFinite(t)) cur = t;
+          activeEl = best;
+        }
+        paint();
+        if (focus) panel!.focus?.();
+      }
+    }
+
+    tab.addEventListener('click', () => setOpen(true));
+    root.querySelector<HTMLButtonElement>('[data-tl-close]')?.addEventListener('click', () =>
+      setOpen(false, false)
+    );
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && open) setOpen(false, false);
+    });
+
+    /* 滚轮滚刻度：面板里滚，页面不动 */
+    body.addEventListener(
+      'wheel',
+      (e) => {
+        e.preventDefault();
+        /*
+          滚多大一截，刻度就走多大一截：deltaY 是像素，除 V 换成参数。
+          往上滚（deltaY 为负）→ 参数变小 → 看到更早的事件，
+          同时事件整体往下走，和平时滚页面一个方向感。
+        */
+        cur = Math.max(0, Math.min(1, cur + e.deltaY / V));
+        paint();
+      },
+      { passive: false }
+    );
+
+    // 拖也能滚：手机上没滚轮
+    let drag: { id: number; y: number; cur: number } | null = null;
+    body.addEventListener('pointerdown', (e) => {
+      drag = { id: e.pointerId, y: e.clientY, cur };
+      body.setPointerCapture(e.pointerId);
+    });
+    body.addEventListener('pointermove', (e) => {
+      if (!drag || e.pointerId !== drag.id) return;
+      cur = Math.max(0, Math.min(1, drag.cur + (drag.y - e.clientY) / V));
+      paint();
+    });
+    const endDrag = (e: PointerEvent) => {
+      if (!drag || e.pointerId !== drag.id) return;
+      drag = null;
+      try {
+        body.releasePointerCapture(e.pointerId);
+      } catch {
+        /* 指针没了，忽略 */
+      }
+    };
+    body.addEventListener('pointerup', endDrag);
+    body.addEventListener('pointercancel', endDrag);
+
+    /*
+      进页面时要不要开着：看 sessionStorage 里记的是不是**这一条**时间轴。
+      连着翻几个用同一条轴的页面，它就一直开着；
+      换成别的轴（或没有轴的页面）自然就是关的。
+    */
+    let recall = false;
+    try {
+      recall = sessionStorage.getItem(KEY) === tlId;
+    } catch {
+      recall = false;
+    }
+
+    measure();
+    setOpen(recall, false);
+    if (!recall) paint(); // 关着也先排一次，打开时不用等
+
+    if (typeof ResizeObserver !== 'undefined') {
+      new ResizeObserver(() => {
+        measure();
+        paint();
+      }).observe(body);
+    }
+  }
+</script>

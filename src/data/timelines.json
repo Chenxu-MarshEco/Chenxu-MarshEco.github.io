@@ -1,0 +1,50 @@
+{
+  "timelines": [
+    {
+      "id": "tl-mu6e19cb793",
+      "title": "花娅年代记",
+      "leftName": "花娅历",
+      "rightName": "冰室历",
+      "points": [
+        {
+          "id": "tl-mu6e19cb793-pmu6e1xnf0",
+          "side": "right",
+          "date": "2023-01-10",
+          "label": "冰室成立"
+        },
+        {
+          "id": "tl-mu6e19cb793-pmu6e5kpv1",
+          "side": "right",
+          "date": "2023-01-10",
+          "label": "星露谷物语开服"
+        },
+        {
+          "id": "tl-mu6e19cb793-pmu6e6hkz2",
+          "side": "right",
+          "date": "2023-07-08",
+          "label": "虹星的1.20原版开服"
+        },
+        {
+          "id": "tl-mu6e19cb793-pmu6e833n3",
+          "side": "right",
+          "date": "2023-07-14",
+          "label": "桑芙加入冰室"
+        },
+        {
+          "id": "tl-mu6e19cb793-pmu6e9fab4",
+          "side": "right",
+          "date": "2023-07-15",
+          "label": "SSW加入冰室"
+        }
+      ],
+      "spans": [
+        {
+          "id": "tl-mu6e19cb793-smu6ea7c30",
+          "name": "冰室元年",
+          "from": "tl-mu6e19cb793-pmu6e1xnf0",
+          "to": "tl-mu6e19cb793-pmu6e6hkz2"
+        }
+      ]
+    }
+  ]
+}

@@ -30,6 +30,7 @@ import SubCard from './SubCard.astro';
 import PageContent from './PageContent.astro';
 import type { BlockItem } from '../utils/boardPage';
 import type { PageBlock } from '../utils/boards';
+import { refParam, type Timeline } from '../utils/timelines';
 
 interface SubPost {
   title: string;
@@ -51,9 +52,27 @@ interface Props {
   layout?: string;
   /** 这一页自己写的内容；有内容就整段顶掉「子版块自动铺开」 */
   page?: PageBlock[];
+  /**
+   * 这一页用的时间轴。传进来是为了两件事：
+   *   1. 给页面内容里认领了时间点/时间段的块标上位置（data-tl-param）
+   *   2. 同理标在子版块卡片上
+   * 滚动到这些元素时，右侧时间轴就停到对应刻度。
+   */
+  timeline?: Timeline;
 }
 
-const { trail, children, posts, layout: wantLayout, page: blocks = [] } = Astro.props;
+const {
+  trail,
+  children,
+  posts,
+  layout: wantLayout,
+  page: blocks = [],
+  timeline,
+} = Astro.props;
+
+/** 一个成分（块 / 卡片）认领的位置；没认领返回 null */
+const paramOf = (ref: { timePoint?: string; timeSpan?: string }) =>
+  refParam(timeline, { point: ref.timePoint, span: ref.timeSpan });
 
 /*
   这一页自己写了「文章」块吗？
@@ -112,7 +131,9 @@ const layout = wantLayout === 'region' && children.length >= 4 ? 'region' : 'sta
 )}
 
 {
-  blocks.length > 0 && <PageContent blocks={blocks} children={children} posts={posts} />
+  blocks.length > 0 && (
+    <PageContent blocks={blocks} children={children} posts={posts} timeline={timeline} />
+  )
 }
 
 {
@@ -125,6 +146,7 @@ const layout = wantLayout === 'region' && children.length >= 4 ? 'region' : 'sta
             data-edit={`block-${c.id}`}
             data-href={withBase(c.url)}
             style={cardSize(c) || undefined}
+            data-tl-param={paramOf(c) === null ? undefined : String(paramOf(c))}
           >
             <header class="block__head">
               <a class="block__name" href={withBase(c.url)}>
@@ -150,6 +172,7 @@ const layout = wantLayout === 'region' && children.length >= 4 ? 'region' : 'sta
                       size={k.cardSize}
                       width={k.cardW}
                       height={k.cardH}
+                      tlParam={paramOf(k)}
                     />
                   </li>
                 ))}
@@ -166,6 +189,7 @@ const layout = wantLayout === 'region' && children.length >= 4 ? 'region' : 'sta
             style={[cardSize(c), c.image ? `--cover:url(${withBase(c.image)})` : '']
               .filter(Boolean)
               .join(';') || undefined}
+            data-tl-param={paramOf(c) === null ? undefined : String(paramOf(c))}
           >
             <span class="block__name">{c.title}</span>
             {c.subtitle && <span class="block__sub">{c.subtitle}</span>}
@@ -182,6 +206,7 @@ const layout = wantLayout === 'region' && children.length >= 4 ? 'region' : 'sta
               external={c.external}
               width={c.cardW}
               height={c.cardH}
+              tlParam={paramOf(c)}
             />
           </div>
         )

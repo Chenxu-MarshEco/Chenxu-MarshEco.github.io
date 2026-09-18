@@ -10,6 +10,7 @@ import NodeView from '../../components/NodeView.astro';
 import site from '../../site.config';
 import { flattenBoards, type BoardNode } from '../../utils/boards';
 import { nodePageData } from '../../utils/boardPage';
+import { getTimeline, refParam } from '../../utils/timelines';
 
 export async function getStaticPaths() {
   const all = flattenBoards(site.homeBoards as BoardNode[]);
@@ -28,14 +29,36 @@ if (!data) throw new Error(`大板块数据里找不到 ${url}`);
 
 // 顶层大板块就是树的根，「返回」自然回首页（子层的上一级逻辑见 [...path].astro）
 const backLabel = data.parent ? `返回 ${data.parent.title}` : '返回首页';
+
+// 时间轴：和 [...path].astro 用的是同一套推导（先看这一页自己认领的，
+// 再看第一个认领了的成分），两处不能各推各的。
+const timeline = getTimeline(data.timeline);
+let timelineDefault = refParam(timeline, { point: data.timePoint, span: data.timeSpan });
+if (timelineDefault === null && timeline) {
+  for (const b of data.page) {
+    const t = refParam(timeline, { point: b.timePoint, span: b.timeSpan });
+    if (t !== null) {
+      timelineDefault = t;
+      break;
+    }
+  }
+}
 ---
 
-<BoardLayout title={data.title} image={data.image} backHref={data.parent?.url ?? '/'} backLabel={backLabel}>
+<BoardLayout
+  title={data.title}
+  image={data.image}
+  backHref={data.parent?.url ?? '/'}
+  backLabel={backLabel}
+  timeline={timeline}
+  timelineDefault={timelineDefault}
+>
   <NodeView
     trail={data.trail}
     children={data.children}
     posts={data.posts}
     layout={data.layout}
     page={data.page}
+    timeline={timeline}
   />
 </BoardLayout>

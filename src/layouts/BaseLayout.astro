@@ -4,9 +4,11 @@ import '../styles/global.css';
 import SiteHeader from '../components/SiteHeader.astro';
 import SiteFooter from '../components/SiteFooter.astro';
 import BoardDrawer from '../components/BoardDrawer.astro';
+import Timeline from '../components/Timeline.astro';
 import site from '../site.config';
 import { absoluteUrl, withBase } from '../utils/url';
 import { editStyleBlock, type PageKey } from '../utils/layout';
+import { refParam, type Timeline as TimelineData } from '../utils/timelines';
 
 interface Props {
   /** 页面标题，会拼在站点名前面。首页留空即可 */
@@ -26,6 +28,12 @@ interface Props {
    * 不填就没有排版微调（比如 404 页）。
    */
   layoutPage?: PageKey;
+  /**
+   * 这一页用的时间轴。不传就是没有时间轴 —— 右边沿不会出现那个书签。
+   * defaultParam 是「打开时默认停在哪」（页面自己认领的时间点/时间段）。
+   */
+  timeline?: TimelineData;
+  timelineDefault?: number | null;
 }
 
 const {
@@ -38,6 +46,8 @@ const {
   narrow = false,
   bodyClass = '',
   layoutPage,
+  timeline,
+  timelineDefault = null,
 } = Astro.props;
 
 /** 这一页的排版微调样式；全是默认值时为 null，不输出 */
@@ -118,6 +128,8 @@ const currentPath = withoutBase.length > 1 ? withoutBase.replace(/\/+$/, '') : '
     <SiteHeader />
     {/* 右上角目录栏（三条杠）。全站都要有，所以挂在布局里 */}
     <BoardDrawer current={currentPath} />
+    {/* 时间轴：只有指了时间轴的页面才有，挂在右边沿（关着时只露一个书签） */}
+    {timeline && <Timeline timeline={timeline} defaultParam={timelineDefault} />}
 
     <main id="main" class="site-main">
       <div class:list={['container', narrow && 'container--narrow']}>

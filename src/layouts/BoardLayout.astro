@@ -7,6 +7,7 @@
  */
 import BaseLayout from './BaseLayout.astro';
 import { withBase } from '../utils/url';
+import type { Timeline as TimelineData } from '../utils/timelines';
 
 interface Props {
   /** 页面标题，同时显示在 hero 上 */
@@ -16,12 +17,29 @@ interface Props {
   /** 返回链接的目标，默认回首页 */
   backHref?: string;
   backLabel?: string;
+  /** 这一页用的时间轴；不传就没有 */
+  timeline?: TimelineData;
+  /** 打开时间轴时默认停在哪（页面自己认领的时间点/时间段） */
+  timelineDefault?: number | null;
 }
 
-const { title, image, backHref = '/', backLabel = '返回' } = Astro.props;
+const {
+  title,
+  image,
+  backHref = '/',
+  backLabel = '返回',
+  timeline,
+  timelineDefault = null,
+} = Astro.props;
 ---
 
-<BaseLayout title={title} bodyClass="is-board" layoutPage="board">
+<BaseLayout
+  title={title}
+  bodyClass="is-board"
+  layoutPage="board"
+  timeline={timeline}
+  timelineDefault={timelineDefault}
+>
   <div class="bp">
     {/* data-edit 是排版模式的锚点，配合 layout.json 的 board 组生效 */}
     <header class="bp__hero" data-edit="hero">

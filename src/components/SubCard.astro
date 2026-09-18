@@ -43,6 +43,12 @@ interface Props {
    */
   width?: number;
   height?: number;
+  /**
+   * 这张卡认领的时间点/时间段在这条轴上的位置（0~1）。
+   * 有值就写成 data-tl-param —— 滚到这张卡时右侧时间轴停到对应刻度。
+   * 没认领、或者这一页压根没有时间轴，就是 null（不写这个属性）。
+   */
+  tlParam?: number | null;
 }
 
 const {
@@ -54,6 +60,7 @@ const {
   external = false,
   width,
   height,
+  tlParam = null,
 } = Astro.props;
 
 /** 像素宽高 + 封面图拼成一条内联样式 */
@@ -76,6 +83,7 @@ const inlineStyle = [
   href={external ? url : withBase(url)}
   {...external ? { target: '_blank', rel: 'noopener' } : {}}
   style={inlineStyle || undefined}
+  data-tl-param={tlParam === null ? undefined : String(tlParam)}
 >
   <span class="card__label">{title}</span>
 </a>

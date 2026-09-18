@@ -66,6 +66,11 @@ const els = {
   boardsEditor: $('boards-editor'),
   boardsSave: $('boards-save'),
 
+  btnTimelines: $('btn-timelines'),
+  tlModal: $('tl-modal'),
+  tlEditor: $('tl-editor'),
+  tlSave: $('tl-save'),
+
   btnPages: $('btn-pages'),
   pagesModal: $('pages-modal'),
   pagesTitle: $('pages-title'),
@@ -1287,6 +1292,17 @@ async function openPagesView(node = null) {
     }
   }
 
+  /*
+    时间轴也一起拉一把：「这一页用哪条轴」「每个块对应哪个时间点」
+    都要它的列表才画得出来。拉不到不算致命 —— 那几个下拉退化成空的，
+    别因为时间轴挂了就整个页面工作台打不开。
+  */
+  try {
+    await loadTimelines();
+  } catch {
+    /* 忽略：没有时间轴照样能改页面 */
+  }
+
   const all = studioPages();
   const want = node || studioNode || all[0]?.node || null;
   selectStudioPage(want);
@@ -1456,6 +1472,39 @@ function renderStudioFields() {
   });
   layoutSel.title = LAYOUT_HINT;
   grid.appendChild(pwField('版式', layoutSel, LAYOUT_HINT));
+
+  /*
+    时间轴：这一页用哪条轴，以及这一页自己认领哪个时间点/时间段。
+    换了轴，之前认领的点/段都是旧轴上的 id，留着就是悬空的，
+    所以一并清掉 —— 界面上那个下拉也会跟着变成「不指定」。
+  */
+  const tlOptions = [['', '（没有时间轴）']].concat(
+    (timelinesDraft?.timelines ?? []).map((t) => [t.id, t.title])
+  );
+  const tlSel = pageSelect(tlOptions, node.timeline ?? '', (v) => {
+    if (v) node.timeline = v;
+    else delete node.timeline;
+    delete node.timePoint;
+    delete node.timeSpan;
+    markStudioDirty();
+    renderStudioFields();
+    renderPageEditor();
+  });
+  grid.appendChild(
+    pwField('时间轴', tlSel, timelinesDraft?.timelines?.length
+      ? '这一页右侧显示哪条时间轴；好几页可以共用同一条'
+      : '还没有时间轴 —— 先到顶栏「时间轴」里建一条')
+  );
+
+  if (node.timeline) {
+    const claim = timeSelect(() => readTime(node), (v) => {
+      writeTime(node, v);
+      markStudioDirty();
+    });
+    grid.appendChild(
+      pwField('本页认领', claim, '打开这一页时时间轴默认停在这儿；也用在它作为卡片出现在上一页的时候')
+    );
+  }
 
   const cover = pwField('封面图', boardCoverControl(node, () => {
     markStudioDirty();
@@ -1654,6 +1703,22 @@ function renderStudioKids() {
     pxWrap.append('尺寸', pxW, '×', pxH, 'px');
     bar.append(cover, shapeLabel, sizeLabel, pxWrap);
 
+    /*
+      这一项认领的时间点/时间段。
+      两个用处：它作为卡片出现在这一页时，滚到它就停在那一点；
+      点进它自己的页面，时间轴默认也停在那儿。
+      链接版块没有自己的页面，只影响卡片那一下。
+    */
+    if (!isLink) {
+      const tlLabel = document.createElement('label');
+      tlLabel.className = 'pw-mini pw-mini--tl';
+      tlLabel.append('时间', timeSelect(() => readTime(kid), (v) => {
+        writeTime(kid, v);
+        markStudioDirty();
+      }));
+      bar.appendChild(tlLabel);
+    }
+
     if (isLink) {
       const badge = document.createElement('span');
       badge.className = 'pw-kid__badge';
@@ -1771,43 +1836,126 @@ function pageSelect(options, value, onChange) {
 /**
  * 地图块的编辑区。
  *
- * 三部分：
- *   1. 选地图图（复用图片块那套上传 / 压缩）
- *   2. 一张可以点的预览图 —— **在图上点一下就钉一个塔吊地标**
- *   3. 地标清单：每一行填名字和跳转地址，或者删掉
+ * 地图是**分页**的：上面一排页签切页，每页各有自己的图、图钉、划分线和简介。
  *
- * 位置存的是百分比（0~100），所以预览图和页面上显示的大小不一样也没关系，
+ * 一页的编辑区分四块：
+ *   1. 选这一页的图（复用图片块那套上传 / 压缩）
+ *   2. 简介输入（显示在地图下面）
+ *   3. 一张可以点的预览图 —— 在图上**点一下**钉图钉，**拖一下**画区域划分线
+ *   4. 图钉清单（类型 / 名字 / 跳转地址）和划分线清单（只有删除）
+ *
+ * 位置一律存百分比（0~100）。预览图和页面上显示的大小不一样也没关系，
  * 只要按图的宽高算比例，钉出来的点就是同一个地方。
  */
 function mapFields(block) {
   const wrap = document.createElement('div');
   wrap.className = 'pmap-edit';
-  if (!Array.isArray(block.markers)) block.markers = [];
 
-  const newMarkerId = () => `${block.id}-m${Date.now().toString(36)}${block.markers.length}`;
+  /**
+   * 把块读成「页的数组」。
+   * 兼容最早那版只有一页的写法（块上直接挂 src + markers）：
+   * 读进来当第一页，保存时服务端会写成新的分页结构。
+   */
+  const pagesOf = () => {
+    if (!Array.isArray(block.pages)) block.pages = [];
+    if (!block.pages.length && String(block.src ?? '').trim()) {
+      block.pages.push({
+        id: `${block.id}-p1`,
+        src: block.src,
+        alt: block.alt ?? '',
+        text: '',
+        markers: (Array.isArray(block.markers) ? block.markers : []).map((m) => ({
+          ...m,
+          kind: m.kind === 'region' ? 'region' : 'building',
+        })),
+        lines: [],
+      });
+    }
+    for (const pg of block.pages) {
+      if (!Array.isArray(pg.markers)) pg.markers = [];
+      if (!Array.isArray(pg.lines)) pg.lines = [];
+    }
+    return block.pages;
+  };
+  pagesOf();
 
-  /** 预览 + 清单整体重画（钉一个点、删一个点之后要重来一遍） */
+  /** 当前在看第几页、点图时放什么 */
+  let pageIdx = 0;
+  // 'building' / 'region' 是点一下钉一个；'line' 是按住拖一条
+  let mode = 'building';
+
+  const newId = (suffix) => `${block.id}-${suffix}${Date.now().toString(36)}${Math.floor(Math.random() * 1e4)}`;
+
   const redraw = () => {
     wrap.textContent = '';
+    const pages = pagesOf();
+    if (pageIdx >= pages.length) pageIdx = pages.length - 1;
+    if (pageIdx < 0) pageIdx = 0;
 
-    /* ---- 1. 选图 ---- */
+    /* ---------- 页签 ---------- */
+    const tabs = document.createElement('div');
+    tabs.className = 'pmap-edit__tabs';
+    pages.forEach((pg, i) => {
+      const tab = document.createElement('button');
+      tab.type = 'button';
+      tab.className = 'pmap-edit__tab' + (i === pageIdx ? ' is-active' : '');
+      tab.textContent = `第 ${i + 1} 页`;
+      tab.addEventListener('click', () => {
+        pageIdx = i;
+        redraw();
+      });
+      tabs.appendChild(tab);
+    });
+    const addPage = document.createElement('button');
+    addPage.type = 'button';
+    addPage.className = 'btn btn--ghost boardedit__mini';
+    addPage.textContent = '＋ 加一页';
+    addPage.addEventListener('click', () => {
+      block.pages.push({ id: newId('p'), src: '', alt: '', text: '', markers: [], lines: [] });
+      pageIdx = block.pages.length - 1;
+      markStudioDirty();
+      redraw();
+    });
+    tabs.appendChild(addPage);
+
+    if (pages.length > 1) {
+      const delPage = document.createElement('button');
+      delPage.type = 'button';
+      delPage.className = 'btn btn--ghost boardedit__mini boardedit__del';
+      delPage.textContent = '删掉这一页';
+      delPage.addEventListener('click', () => {
+        block.pages.splice(pageIdx, 1);
+        pageIdx = Math.max(0, pageIdx - 1);
+        markStudioDirty();
+        redraw();
+      });
+      tabs.appendChild(delPage);
+    }
+    wrap.appendChild(tabs);
+
+    if (!pages.length) {
+      const hint = document.createElement('p');
+      hint.className = 'pblock-edit__hint';
+      hint.textContent = '还没有页。点上面的「＋ 加一页」，再给这一页选一张地图图。';
+      wrap.appendChild(hint);
+      return;
+    }
+
+    const page = pages[pageIdx];
+
+    /* ---------- 1. 选图 ---------- */
     const row = document.createElement('div');
     row.className = 'pblock-edit__row';
 
     const thumb = document.createElement('span');
     thumb.className = 'boardedit__thumb';
-    const paintThumb = () => {
-      if (block.src) {
-        thumb.style.backgroundImage = `url(${block.src})`;
-        thumb.classList.remove('boardedit__thumb--empty');
-        thumb.title = block.src;
-      } else {
-        thumb.style.backgroundImage = '';
-        thumb.classList.add('boardedit__thumb--empty');
-        thumb.title = '还没选图';
-      }
-    };
-    paintThumb();
+    if (page.src) {
+      thumb.style.backgroundImage = `url(${page.src})`;
+      thumb.title = page.src;
+    } else {
+      thumb.classList.add('boardedit__thumb--empty');
+      thumb.title = '还没选图';
+    }
 
     const file = document.createElement('input');
     file.type = 'file';
@@ -1817,56 +1965,103 @@ function mapFields(block) {
     const pick = document.createElement('button');
     pick.type = 'button';
     pick.className = 'btn btn--ghost boardedit__mini';
-    pick.textContent = block.src ? '换一张地图' : '选地图图';
+    pick.textContent = page.src ? '换一张地图' : '选地图图';
     pick.addEventListener('click', () => file.click());
     file.addEventListener('change', async () => {
       const f = file.files && file.files[0];
       file.value = '';
       if (!f) return;
       try {
-        block.src = await uploadImage(f);
+        page.src = await uploadImage(f);
         toast('地图传好了');
+        markStudioDirty();
         redraw();
       } catch (err) {
         toast(`传图失败：${err.message}`, true);
       }
     });
 
-    const alt = boardInput(block.alt ?? '', '地图说明（可留空）', (v) => {
-      block.alt = v;
+    const alt = boardInput(page.alt ?? '', '地图说明（可留空）', (v) => {
+      page.alt = v;
+      markStudioDirty();
     });
 
     row.append(thumb, pick, alt, file);
     wrap.appendChild(row);
 
-    if (!block.src) {
+    /* ---------- 2. 简介 ---------- */
+    const textRow = document.createElement('div');
+    textRow.className = 'pblock-edit__row';
+    textRow.appendChild(
+      boardInput(page.text ?? '', '这一页的简介（可留空，显示在地图下面）', (v) => {
+        page.text = v;
+        markStudioDirty();
+      })
+    );
+    wrap.appendChild(textRow);
+
+    if (!page.src) {
       const hint = document.createElement('p');
       hint.className = 'pblock-edit__hint';
-      hint.textContent = '先选一张地图图，选好之后在图上点一下就能钉一个塔吊地标。';
+      hint.textContent = '这一页还没选图。选好之后在图上点一下就能钉图钉。';
       wrap.appendChild(hint);
       return;
     }
 
-    /* ---- 2. 点图钉点 ---- */
+    /* ---------- 3. 点 / 拖的预览图 ---------- */
+    const modeRow = document.createElement('div');
+    modeRow.className = 'pmap-edit__modes';
+    const modeLabel = document.createElement('span');
+    modeLabel.className = 'pblock-edit__hint pblock-edit__hint--inline';
+    modeLabel.textContent = '在这里放：';
+    modeRow.appendChild(modeLabel);
+    for (const [key, label, tip] of [
+      ['building', '建筑图钉', '在图上点一下 = 钉一个粉色塔吊图钉'],
+      ['region', '区域图钉', '在图上点一下 = 钉一个落日配色的区域图钉'],
+      ['line', '区域划分线', '在图上按住拖一下 = 画一条橙黄色的划分线'],
+    ]) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'btn btn--ghost boardedit__mini' + (mode === key ? ' is-active' : '');
+      b.textContent = label;
+      b.title = tip;
+      b.addEventListener('click', () => {
+        mode = key;
+        redraw();
+      });
+      modeRow.appendChild(b);
+    }
+    wrap.appendChild(modeRow);
+
     const tip = document.createElement('p');
     tip.className = 'pblock-edit__hint';
-    tip.textContent = '在图上点一下 = 在那个位置钉一个地标（钉完在下面填名字和地址）。';
+    tip.textContent =
+      mode === 'line'
+        ? '按住鼠标在图上拖一条线出来。线不显示名字、也点不动，只是把地图划成几块。'
+        : `在图上点一下就钉一个${mode === 'region' ? '区域' : '建筑'}图钉；已经钉好的图钉可以直接按住拖动挪位置。`;
     wrap.appendChild(tip);
 
     const canvas = document.createElement('div');
     canvas.className = 'pmap-edit__canvas';
 
     const img = document.createElement('img');
-    img.src = block.src;
+    img.src = page.src;
     img.alt = '';
     img.draggable = false;
     canvas.appendChild(img);
 
-    block.markers.forEach((m, i) => {
+    // 划分线画在图上（editor 里就按百分比铺，和页面上一套坐标）
+    for (const ln of page.lines) {
+      const el = document.createElement('span');
+      el.className = 'pmap-edit__line';
+      el.dataset.lineId = ln.id;
+      canvas.appendChild(el);
+    }
+    // 图钉
+    page.markers.forEach((m, i) => {
       const pin = document.createElement('span');
-      pin.className = 'pmap-edit__pin';
-      pin.style.left = `${m.x}%`;
-      pin.style.top = `${m.y}%`;
+      pin.className = `pmap-edit__pin pmap-edit__pin--${m.kind}`;
+      pin.dataset.markerId = m.id;
       pin.title = m.title || '（还没起名）';
       const n = document.createElement('i');
       n.textContent = String(i + 1);
@@ -1874,17 +2069,92 @@ function mapFields(block) {
       canvas.appendChild(pin);
     });
 
-    canvas.addEventListener('click', (e) => {
-      // 点在地标上是想删或者只是想看看，不当作「在这个位置加一个」
-      if (e.target.closest('.pmap-edit__pin')) return;
-      const rect = img.getBoundingClientRect();
-      if (!rect.width || !rect.height) return;
-      // 相对**图片**算百分比，不是相对整个画布 —— 图没铺满时两者不一样
-      const x = ((e.clientX - rect.left) / rect.width) * 100;
-      const y = ((e.clientY - rect.top) / rect.height) * 100;
+    /** 图片在画布里的实际显示框（图未必铺满画布），百分比一律相对它算 */
+    const imgBox = () => img.getBoundingClientRect();
+
+    /** 把划分线摆到画布上。线用 canvas 的百分比定位，所以要换算一次 */
+    const paintLines = () => {
+      const box = imgBox();
+      if (!box.width) return;
+      for (const ln of page.lines) {
+        const el = canvas.querySelector(`[data-line-id="${ln.id}"]`);
+        if (!(el instanceof HTMLElement)) continue;
+        // 图片未必从画布左上角开始（有留白），先算图在画布里的偏移百分比
+        const ox = ((box.left - canvas.getBoundingClientRect().left) / box.width) * 100;
+        const oy = ((box.top - canvas.getBoundingClientRect().top) / box.height) * 100;
+        const x1 = ox + ln.x1;
+        const y1 = oy + ln.y1;
+        const x2 = ox + ln.x2;
+        const y2 = oy + ln.y2;
+        const dx = ((x2 - x1) / 100) * box.width;
+        const dy = ((y2 - y1) / 100) * box.height;
+        el.style.left = `${x1}%`;
+        el.style.top = `${y1}%`;
+        el.style.width = `${Math.hypot(dx, dy)}px`;
+        el.style.transform = `rotate(${Math.atan2(dy, dx)}rad)`;
+      }
+    };
+
+    /** 把图钉摆到画布上 */
+    const paintPins = () => {
+      const box = imgBox();
+      if (!box.width) return;
+      const cbox = canvas.getBoundingClientRect();
+      for (const m of page.markers) {
+        const el = canvas.querySelector(`[data-marker-id="${m.id}"]`);
+        if (!(el instanceof HTMLElement)) continue;
+        el.style.left = `${box.left - cbox.left + (m.x / 100) * box.width}px`;
+        el.style.top = `${box.top - cbox.top + (m.y / 100) * box.height}px`;
+      }
+    };
+
+    const paintAll = () => {
+      paintLines();
+      paintPins();
+    };
+    // 图加载完才知道真实尺寸，那时候再摆一次
+    if (img.complete) paintAll();
+    else img.addEventListener('load', paintAll, { once: true });
+    requestAnimationFrame(paintAll);
+
+    let dragging = null;
+
+    canvas.addEventListener('pointerdown', (e) => {
+      const box = imgBox();
+      if (!box.width) return;
+      const pct = (ev) => ({
+        x: ((ev.clientX - box.left) / box.width) * 100,
+        y: ((ev.clientY - box.top) / box.height) * 100,
+      });
+      const { x, y } = pct(e);
+
+      const pinEl = e.target.closest?.('.pmap-edit__pin');
+      if (pinEl) {
+        // 按住已有图钉 = 挪它，不用删掉重新点
+        const m = page.markers.find((k) => k.id === pinEl.dataset.markerId);
+        if (!m) return;
+        dragging = { kind: 'pin', marker: m, el: pinEl };
+        canvas.setPointerCapture(e.pointerId);
+        pinEl.classList.add('is-dragging');
+        return;
+      }
+
+      if (mode === 'line') {
+        // 拖一条线：先立一个临时的预览元素，松手才写进数据
+        if (x < 0 || x > 100 || y < 0 || y > 100) return;
+        const el = document.createElement('span');
+        el.className = 'pmap-edit__line';
+        canvas.appendChild(el);
+        dragging = { kind: 'line', from: { x, y }, el, moved: false };
+        canvas.setPointerCapture(e.pointerId);
+        return;
+      }
+
+      // 点一下钉一个图钉
       if (x < 0 || x > 100 || y < 0 || y > 100) return;
-      block.markers.push({
-        id: newMarkerId(),
+      page.markers.push({
+        id: newId('m'),
+        kind: mode === 'region' ? 'region' : 'building',
         x: Math.round(x * 100) / 100,
         y: Math.round(y * 100) / 100,
         title: '',
@@ -1894,43 +2164,126 @@ function mapFields(block) {
       redraw();
     });
 
+    canvas.addEventListener('pointermove', (e) => {
+      if (!dragging) return;
+      const box = imgBox();
+      if (!box.width) return;
+      const cbox = canvas.getBoundingClientRect();
+      const x = ((e.clientX - box.left) / box.width) * 100;
+      const y = ((e.clientY - box.top) / box.height) * 100;
+
+      if (dragging.kind === 'pin') {
+        const m = dragging.marker;
+        m.x = Math.round(Math.min(100, Math.max(0, x)) * 100) / 100;
+        m.y = Math.round(Math.min(100, Math.max(0, y)) * 100) / 100;
+        dragging.el.style.left = `${box.left - cbox.left + (m.x / 100) * box.width}px`;
+        dragging.el.style.top = `${box.top - cbox.top + (m.y / 100) * box.height}px`;
+        return;
+      }
+
+      // 画线预览
+      dragging.moved = true;
+      const dx = ((x - dragging.from.x) / 100) * box.width;
+      const dy = ((y - dragging.from.y) / 100) * box.height;
+      dragging.el.style.left = `${box.left - cbox.left + (dragging.from.x / 100) * box.width}px`;
+      dragging.el.style.top = `${box.top - cbox.top + (dragging.from.y / 100) * box.height}px`;
+      dragging.el.style.width = `${Math.hypot(dx, dy)}px`;
+      dragging.el.style.transform = `rotate(${Math.atan2(dy, dx)}rad)`;
+      dragging.to = { x, y };
+    });
+
+    const endDraw = (e) => {
+      if (!dragging) return;
+      const d = dragging;
+      dragging = null;
+      try {
+        canvas.releasePointerCapture(e.pointerId);
+      } catch {
+        /* 指针没了，忽略 */
+      }
+
+      if (d.kind === 'pin') {
+        d.el.classList.remove('is-dragging');
+        markStudioDirty();
+        return;
+      }
+
+      // 太短的当误触，不留
+      const to = d.to ?? d.from;
+      if (!d.moved || (Math.abs(to.x - d.from.x) < 1 && Math.abs(to.y - d.from.y) < 1)) {
+        d.el.remove();
+        return;
+      }
+      page.lines.push({
+        id: newId('l'),
+        x1: Math.round(Math.min(100, Math.max(0, d.from.x)) * 100) / 100,
+        y1: Math.round(Math.min(100, Math.max(0, d.from.y)) * 100) / 100,
+        x2: Math.round(Math.min(100, Math.max(0, to.x)) * 100) / 100,
+        y2: Math.round(Math.min(100, Math.max(0, to.y)) * 100) / 100,
+      });
+      markStudioDirty();
+      redraw();
+    };
+    canvas.addEventListener('pointerup', endDraw);
+    canvas.addEventListener('pointercancel', endDraw);
+
     wrap.appendChild(canvas);
 
-    /* ---- 3. 地标清单 ---- */
+    // 画布尺寸会随窗口变，线得跟着重算一次
+    if (typeof ResizeObserver !== 'undefined') {
+      const ro = new ResizeObserver(() => paintAll());
+      ro.observe(canvas);
+    }
+
+    /* ---------- 4. 清单 ---------- */
     const list = document.createElement('div');
     list.className = 'pmap-edit__list';
 
     // 地址输入给一份候选：整棵版块树上的每一页，敲两个字就能补全
-    const dlId = `pmap-pages-${block.id}`;
+    const dlId = `pmap-pages-${block.id}-${page.id}`;
     const dl = document.createElement('datalist');
     dl.id = dlId;
-    for (const p of studioPages()) {
+    for (const sp of studioPages()) {
       const o = document.createElement('option');
-      o.value = p.url;
-      o.label = p.node.title || p.url;
+      o.value = sp.url;
+      o.label = sp.node.title || sp.url;
       dl.appendChild(o);
     }
     wrap.appendChild(dl);
 
-    if (!block.markers.length) {
+    if (!page.markers.length && !page.lines.length) {
       const none = document.createElement('p');
       none.className = 'pblock-edit__hint';
-      none.textContent = '还没有地标。在上面那张图上点几下就有了。';
+      none.textContent = '这一页还没有图钉和划分线。在上面那张图上点几下、或者拖一条线试试。';
       list.appendChild(none);
     }
 
-    block.markers.forEach((m, i) => {
+    page.markers.forEach((m, i) => {
       const item = document.createElement('div');
       item.className = 'pmap-edit__item';
 
       const no = document.createElement('span');
       no.className = 'pmap-edit__no';
       no.textContent = String(i + 1);
+      no.title = m.kind === 'region' ? '区域图钉（落日配色）' : '建筑图钉（粉色塔吊）';
 
-      const name = boardInput(m.title ?? '', '建筑名（鼠标移上去显示这个）', (v) => {
+      const kind = pageSelect(
+        [
+          ['building', '建筑'],
+          ['region', '区域'],
+        ],
+        m.kind,
+        (v) => {
+          m.kind = v;
+          markStudioDirty();
+          redraw();
+        }
+      );
+      kind.className = 'input pmap-edit__kind';
+
+      const name = boardInput(m.title ?? '', '名字（鼠标移上去显示）', (v) => {
         m.title = v;
         markStudioDirty();
-        // 只更新图钉上的提示，别整块重画 —— 重画会把正在输入的焦点弄丢
         const pin = canvas.querySelectorAll('.pmap-edit__pin')[i];
         if (pin) pin.title = v || '（还没起名）';
       });
@@ -1946,12 +2299,38 @@ function mapFields(block) {
       del.className = 'btn btn--ghost boardedit__mini boardedit__del';
       del.textContent = '删除';
       del.addEventListener('click', () => {
-        block.markers.splice(i, 1);
+        page.markers.splice(i, 1);
         markStudioDirty();
         redraw();
       });
 
-      item.append(no, name, link, del);
+      item.append(no, kind, name, link, del);
+      list.appendChild(item);
+    });
+
+    page.lines.forEach((ln, i) => {
+      const item = document.createElement('div');
+      item.className = 'pmap-edit__item pmap-edit__item--line';
+
+      const no = document.createElement('span');
+      no.className = 'pmap-edit__no pmap-edit__no--line';
+      no.textContent = '线';
+
+      const label = document.createElement('span');
+      label.className = 'pblock-edit__hint pblock-edit__hint--inline';
+      label.textContent = `第 ${i + 1} 条划分线（不显示名字，也不能点）`;
+
+      const del = document.createElement('button');
+      del.type = 'button';
+      del.className = 'btn btn--ghost boardedit__mini boardedit__del';
+      del.textContent = '删除';
+      del.addEventListener('click', () => {
+        page.lines.splice(i, 1);
+        markStudioDirty();
+        redraw();
+      });
+
+      item.append(no, label, del);
       list.appendChild(item);
     });
 
@@ -2238,6 +2617,28 @@ function renderPageEditor() {
     head.append(n, type, idTag, spacer, up, down, del);
     box.appendChild(head);
     box.appendChild(blockFields(block));
+
+    /*
+      每个块都可能有「认领的时间点/时间段」—— 滚到这一段内容时，
+      右侧时间轴停到对应刻度。挂在 blockFields 外面而不是里面：
+      那里面有十种块、各自早期 return，塞进去每一处都得补一遍。
+    */
+    if (currentTimeline()) {
+      const timeRow = document.createElement('div');
+      timeRow.className = 'pblock-edit__row pblock-edit__row--time';
+      const cap = document.createElement('span');
+      cap.className = 'pblock-edit__hint pblock-edit__hint--inline';
+      cap.textContent = '对应时间：';
+      timeRow.append(
+        cap,
+        timeSelect(() => readTime(block), (v) => {
+          writeTime(block, v);
+          markStudioDirty();
+        })
+      );
+      box.appendChild(timeRow);
+    }
+
     els.pageEditor.appendChild(box);
   });
 
@@ -2601,8 +3002,330 @@ function renderBoardsEditor() {
  * 谁先保存都会把对方的改动一起带上，不会各存一份互相覆盖。
  * silent = true 时不弹 toast、不关「子版块」弹窗（工作台自己管提示）。
  */
-async function saveBoards({ silent = false } = {}) {
+/* ---------------------------------------------------------------
+   时间轴
+
+   独立的一份数据（src/data/timelines.json），和版块树并列：
+   一条轴可以被好几个页面共用，所以不能塞进树里 —— 塞进去就得靠 id
+   到处引用，树一改就断。
+
+   页面工作台里给「这一页用哪条轴」选一条，再给各个成分认领
+   时间点或时间段；这里负责把轴本身做出来。
+   --------------------------------------------------------------- */
+
+/** 草稿：{ timelines: [...] }。编辑器里读改存都走它，保存时整份写回 */
+let timelinesDraft = null;
+/** 当前在看第几条轴 */
+let tlIndex = 0;
+
+async function loadTimelines() {
+  if (timelinesDraft) return timelinesDraft;
+  const res = await fetch('/api/timelines');
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  timelinesDraft = await res.json();
+  if (!Array.isArray(timelinesDraft.timelines)) timelinesDraft.timelines = [];
+  return timelinesDraft;
+}
+
+async function openTimelinesModal() {
+  els.tlEditor.textContent = '正在读取…';
+  els.tlModal.hidden = false;
   try {
+    await loadTimelines();
+    if (tlIndex >= timelinesDraft.timelines.length) tlIndex = 0;
+    renderTimelineEditor();
+  } catch (err) {
+    els.tlEditor.textContent = `读取失败：${err.message}`;
+  }
+}
+
+function closeTimelinesModal() {
+  els.tlModal.hidden = true;
+}
+
+/** 新时间轴的 id：不用标题当 id（改名就断），直接给一个短的 */
+const newTimelineId = () => `tl-${Date.now().toString(36)}${Math.floor(Math.random() * 1e3)}`;
+
+/**
+ * 「对应时间」那个下拉。
+ *
+ * 值用 `p:<id>` / `s:<id>` 前缀区分时间点和时间段 ——
+ * 两边 id 各自独立，不加前缀就可能撞上。
+ */
+function timeSelect(get, set) {
+  const tl = currentTimeline();
+  const sel = document.createElement('select');
+  sel.className = 'input';
+
+  const none = document.createElement('option');
+  none.value = '';
+  none.textContent = tl ? '（不指定）' : '（这一页还没选时间轴）';
+  sel.appendChild(none);
+
+  if (tl) {
+    if (tl.points.length) {
+      const g = document.createElement('optgroup');
+      g.label = '时间点';
+      for (const p of [...tl.points].sort((a, b) => String(a.date).localeCompare(String(b.date)))) {
+        const o = document.createElement('option');
+        o.value = `p:${p.id}`;
+        o.textContent = `${p.date}　${p.label}`;
+        g.appendChild(o);
+      }
+      sel.appendChild(g);
+    }
+    if (tl.spans.length) {
+      const g = document.createElement('optgroup');
+      g.label = '时间段';
+      for (const s of tl.spans) {
+        const o = document.createElement('option');
+        o.value = `s:${s.id}`;
+        o.textContent = s.name;
+        g.appendChild(o);
+      }
+      sel.appendChild(g);
+    }
+  }
+
+  sel.value = get();
+  sel.addEventListener('change', () => set(sel.value));
+  return sel;
+}
+
+/** 把一个成分（块/节点）上认领的时间读成下拉的值 */
+const readTime = (target) =>
+  target?.timeSpan ? `s:${target.timeSpan}` : target?.timePoint ? `p:${target.timePoint}` : '';
+
+/** 下拉的值写回成分 */
+function writeTime(target, value) {
+  if (!target) return;
+  delete target.timePoint;
+  delete target.timeSpan;
+  if (value.startsWith('p:')) target.timePoint = value.slice(2);
+  else if (value.startsWith('s:')) target.timeSpan = value.slice(2);
+}
+
+/** 页面工作台当前那一页用的时间轴（没选就没有） */
+function currentTimeline() {
+  const id = studioNode?.timeline || pageNode?.timeline;
+  if (!id || !timelinesDraft) return null;
+  return timelinesDraft.timelines.find((t) => t.id === id) ?? null;
+}
+
+/** 日期选择：只收 yyyy-mm-dd */
+function dateInput(value, onInput) {
+  const el = document.createElement('input');
+  el.type = 'date';
+  el.className = 'input';
+  el.value = value ?? '';
+  el.addEventListener('change', () => onInput(el.value));
+  return el;
+}
+
+function renderTimelineEditor() {
+  const box = els.tlEditor;
+  box.textContent = '';
+  const list = timelinesDraft?.timelines ?? [];
+
+  if (!list.length) {
+    const p = document.createElement('p');
+    p.className = 'hint';
+    p.textContent = '还没有时间轴。点下面的「＋ 新建时间轴」开始。';
+    box.appendChild(p);
+  }
+
+  /* ---- 选哪一条 + 新建 / 删除 ---- */
+  const bar = document.createElement('div');
+  bar.className = 'tl-edit__bar';
+
+  if (list.length) {
+    const pick = document.createElement('select');
+    pick.className = 'input';
+    list.forEach((t, i) => {
+      const o = document.createElement('option');
+      o.value = String(i);
+      o.textContent = t.title;
+      pick.appendChild(o);
+    });
+    pick.value = String(tlIndex);
+    pick.addEventListener('change', () => {
+      tlIndex = Number(pick.value) || 0;
+      renderTimelineEditor();
+    });
+    bar.appendChild(pick);
+  }
+
+  const add = document.createElement('button');
+  add.type = 'button';
+  add.className = 'btn btn--ghost boardedit__mini';
+  add.textContent = '＋ 新建时间轴';
+  add.addEventListener('click', () => {
+    timelinesDraft.timelines.push({
+      id: newTimelineId(),
+      title: `时间轴 ${timelinesDraft.timelines.length + 1}`,
+      leftName: '花娅历',
+      rightName: '冰室历',
+      points: [],
+      spans: [],
+    });
+    tlIndex = timelinesDraft.timelines.length - 1;
+    renderTimelineEditor();
+  });
+  bar.appendChild(add);
+
+  if (list.length) {
+    const del = document.createElement('button');
+    del.type = 'button';
+    del.className = 'btn btn--ghost boardedit__mini boardedit__del';
+    del.textContent = '删掉这条';
+    del.addEventListener('click', () => {
+      timelinesDraft.timelines.splice(tlIndex, 1);
+      tlIndex = Math.max(0, tlIndex - 1);
+      renderTimelineEditor();
+    });
+    bar.appendChild(del);
+  }
+  box.appendChild(bar);
+
+  const tl = list[tlIndex];
+  if (!tl) return;
+  if (!Array.isArray(tl.points)) tl.points = [];
+  if (!Array.isArray(tl.spans)) tl.spans = [];
+
+  /* ---- 基本字段 ---- */
+  const row = document.createElement('div');
+  row.className = 'tl-edit__row';
+  row.append(
+    pwField('名称', boardInput(tl.title ?? '', '这条轴叫什么', (v) => { tl.title = v; })),
+    pwField('左侧叫什么历', boardInput(tl.leftName ?? '', '比如 花娅历', (v) => { tl.leftName = v; })),
+    pwField('右侧叫什么历', boardInput(tl.rightName ?? '', '比如 冰室历', (v) => { tl.rightName = v; }))
+  );
+  box.appendChild(row);
+
+  /* ---- 时间点 ---- */
+  const pHead = document.createElement('h4');
+  pHead.className = 'tl-edit__h';
+  pHead.textContent = '时间点';
+  box.appendChild(pHead);
+
+  const plist = document.createElement('div');
+  plist.className = 'tl-edit__list';
+  tl.points.forEach((p, i) => {
+    const item = document.createElement('div');
+    item.className = 'tl-edit__item';
+
+    const side = pageSelect(
+      [['left', tl.leftName || '左侧'], ['right', tl.rightName || '右侧']],
+      p.side === 'right' ? 'right' : 'left',
+      (v) => { p.side = v; }
+    );
+    side.className = 'input tl-edit__side';
+
+    const date = dateInput(p.date, (v) => { p.date = v; });
+    const label = boardInput(p.label ?? '', '事件名（常驻显示在轴旁边）', (v) => { p.label = v; });
+
+    const del = document.createElement('button');
+    del.type = 'button';
+    del.className = 'btn btn--ghost boardedit__mini boardedit__del';
+    del.textContent = '删除';
+    del.addEventListener('click', () => {
+      const gone = p.id;
+      tl.points.splice(i, 1);
+      // 时间段是靠 id 指过来的，端点没了那一段就悬空了，一并删掉
+      tl.spans = tl.spans.filter((s) => s.from !== gone && s.to !== gone);
+      renderTimelineEditor();
+    });
+
+    item.append(side, date, label, del);
+    plist.appendChild(item);
+  });
+  box.appendChild(plist);
+
+  const addP = document.createElement('button');
+  addP.type = 'button';
+  addP.className = 'btn btn--ghost boardedit__mini';
+  addP.textContent = '＋ 加时间点';
+  addP.addEventListener('click', () => {
+    tl.points.push({
+      id: `${tl.id}-p${Date.now().toString(36)}${tl.points.length}`,
+      side: 'left',
+      date: '',
+      label: '',
+    });
+    renderTimelineEditor();
+  });
+  box.appendChild(addP);
+
+  /* ---- 时间段 ---- */
+  const sHead = document.createElement('h4');
+  sHead.className = 'tl-edit__h';
+  sHead.textContent = '时间段（两个时间点之间命名）';
+  box.appendChild(sHead);
+
+  const slist = document.createElement('div');
+  slist.className = 'tl-edit__list';
+  tl.spans.forEach((s, i) => {
+    const item = document.createElement('div');
+    item.className = 'tl-edit__item tl-edit__item--span';
+
+    const name = boardInput(s.name ?? '', '这段叫什么（比如 XX年代）', (v) => { s.name = v; });
+
+    const opts = tl.points.map((p) => [p.id, `${p.date || '（没填日期）'}　${p.label || '（没填名字）'}`]);
+    const from = pageSelect([['', '起点…'], ...opts], s.from, (v) => { s.from = v; });
+    from.className = 'input';
+    const to = pageSelect([['', '终点…'], ...opts], s.to, (v) => { s.to = v; });
+    to.className = 'input';
+
+    const del = document.createElement('button');
+    del.type = 'button';
+    del.className = 'btn btn--ghost boardedit__mini boardedit__del';
+    del.textContent = '删除';
+    del.addEventListener('click', () => {
+      tl.spans.splice(i, 1);
+      renderTimelineEditor();
+    });
+
+    item.append(name, from, to, del);
+    slist.appendChild(item);
+  });
+  box.appendChild(slist);
+
+  const addS = document.createElement('button');
+  addS.type = 'button';
+  addS.className = 'btn btn--ghost boardedit__mini';
+  addS.textContent = '＋ 加时间段';
+  addS.addEventListener('click', () => {
+    tl.spans.push({ id: `${tl.id}-s${Date.now().toString(36)}${tl.spans.length}`, name: '', from: '', to: '' });
+    renderTimelineEditor();
+  });
+  // 时间点少于两个就没得连
+  addS.disabled = tl.points.length < 2;
+  box.appendChild(addS);
+}
+
+async function saveTimelines() {
+  try {
+    const res = await fetch('/api/timelines', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(timelinesDraft),
+    });
+    const data = await res.json();
+    if (!res.ok || !data.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    // 服务端会顺手清洗（没日期的点、端点没了的段都会被丢掉），
+    // 所以存完要拿回来的那份重新渲染，让界面上看到的和落盘的一致
+    timelinesDraft = null;
+    await loadTimelines();
+    if (tlIndex >= timelinesDraft.timelines.length) tlIndex = Math.max(0, timelinesDraft.timelines.length - 1);
+    renderTimelineEditor();
+    closeTimelinesModal();
+    toast('时间轴已保存，重新构建后生效');
+  } catch (err) {
+    toast(`保存失败：${err.message}`, true);
+  }
+}
+
+async function saveBoards({ silent = false } = {}) {  try {
     const res = await fetch('/api/boards', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -3497,6 +4220,13 @@ function bindEvents() {
   els.boardsSave.addEventListener('click', () => saveBoards());
   els.boardsModal.addEventListener('click', (ev) => {
     if (ev.target.dataset && ev.target.dataset.close) closeBoardsModal();
+  });
+
+  // 时间轴
+  els.btnTimelines.addEventListener('click', openTimelinesModal);
+  els.tlSave.addEventListener('click', saveTimelines);
+  els.tlModal.addEventListener('click', (ev) => {
+    if (ev.target.dataset && ev.target.dataset.close) closeTimelinesModal();
   });
 
   // 页面工作台

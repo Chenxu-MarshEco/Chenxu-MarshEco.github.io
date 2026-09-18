@@ -12,6 +12,7 @@ import NodeView from '../../components/NodeView.astro';
 import site from '../../site.config';
 import { flattenBoards, type BoardNode } from '../../utils/boards';
 import { nodePageData } from '../../utils/boardPage';
+import { getTimeline, refParam } from '../../utils/timelines';
 
 export async function getStaticPaths() {
   const all = flattenBoards(site.homeBoards as BoardNode[]);
@@ -36,14 +37,40 @@ if (!data) throw new Error(`大板块数据里找不到 ${url}`);
 // utils/boardPage.ts 里，页面只负责用。
 const backHref = data.parent?.url ?? '/';
 const backLabel = data.parent ? `返回 ${data.parent.title}` : '返回首页';
+
+/*
+  这一页的时间轴（没指就没有）。
+  默认停在哪儿：优先这一页自己认领的时间点/时间段；
+  自己没认领就看第一个认领了的成分 —— 打开时正好对着屏幕上那段内容。
+*/
+const timeline = getTimeline(data.timeline);
+const ownsRef = { point: data.timePoint, span: data.timeSpan };
+let timelineDefault = refParam(timeline, ownsRef);
+if (timelineDefault === null && timeline) {
+  for (const b of data.page) {
+    const t = refParam(timeline, { point: b.timePoint, span: b.timeSpan });
+    if (t !== null) {
+      timelineDefault = t;
+      break;
+    }
+  }
+}
 ---
 
-<BoardLayout title={data.title} image={data.image} backHref={backHref} backLabel={backLabel}>
+<BoardLayout
+  title={data.title}
+  image={data.image}
+  backHref={backHref}
+  backLabel={backLabel}
+  timeline={timeline}
+  timelineDefault={timelineDefault}
+>
   <NodeView
     trail={data.trail}
     children={data.children}
     posts={data.posts}
     layout={data.layout}
     page={data.page}
+    timeline={timeline}
   />
 </BoardLayout>

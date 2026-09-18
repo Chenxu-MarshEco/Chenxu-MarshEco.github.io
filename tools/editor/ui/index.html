@@ -32,6 +32,9 @@
         <button type="button" class="btn btn--ghost" id="btn-boards" title="编辑首页大板块下的子版块">
           子版块
         </button>
+        <button type="button" class="btn btn--ghost" id="btn-timelines" title="新建 / 编辑时间轴">
+          时间轴
+        </button>
         <button type="button" class="btn btn--ghost" id="btn-preview" title="显示 / 隐藏预览">
           预览
         </button>
@@ -255,6 +258,25 @@
         <div class="modal__actions">
           <button type="button" class="btn btn--ghost" data-close="1">取消</button>
           <button type="button" class="btn btn--primary" id="boards-save">保存</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ 时间轴编辑弹窗 ============ -->
+    <div class="modal" id="tl-modal" hidden>
+      <div class="modal__mask" data-close="1"></div>
+      <div class="modal__panel modal__panel--wide" role="dialog" aria-modal="true" aria-label="编辑时间轴">
+        <h3 class="modal__title">时间轴</h3>
+        <p class="hint">
+          时间轴是**独立的一份数据**（<code>src/data/timelines.json</code>），可以被好几个页面共用，
+          一个页面也可以换用别的时间轴。左右两侧分别命名 —— 比如左边「花娅历」、右边「冰室历」，
+          同一个刻度上两边各挂一个事件，就是双线叙事。
+          这里做好之后，去「页面」里给这一页选一条轴，再给各个成分认领时间点或时间段。
+        </p>
+        <div id="tl-editor"></div>
+        <div class="modal__actions">
+          <button type="button" class="btn btn--ghost" data-close="1">取消</button>
+          <button type="button" class="btn btn--primary" id="tl-save">保存</button>
         </div>
       </div>
     </div>

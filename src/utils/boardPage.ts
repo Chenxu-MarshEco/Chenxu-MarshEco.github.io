@@ -42,6 +42,13 @@ export interface BlockItem {
   /** 卡片的像素宽高（盖过档位；不写就自动） */
   cardW?: number;
   cardH?: number;
+  /**
+   * 这个子版块认领的时间点 / 时间段。
+   * 两个用处：它作为卡片出现在这一页时，滚到它就停在那一点；
+   * 点进它自己的页面时，时间轴默认也停在那儿。
+   */
+  timePoint?: string;
+  timeSpan?: string;
   /** 它下面的子版块，用来在框里铺卡片 */
   kids: {
     id: string;
@@ -54,6 +61,8 @@ export interface BlockItem {
     cardSize?: 'l' | 'm' | 's';
     cardW?: number;
     cardH?: number;
+    timePoint?: string;
+    timeSpan?: string;
   }[];
 }
 
@@ -78,6 +87,11 @@ export interface NodePageData {
   layout?: string;
   /** 这一页自己写的内容；空数组 = 没写过，走「子版块自动铺开」 */
   page: PageBlock[];
+  /** 这一页用哪条时间轴（src/data/timelines.json 里的 id）；不填 = 没有时间轴 */
+  timeline?: string;
+  /** 这一页自己认领的时间点 / 时间段（时间轴打开时默认停在这儿） */
+  timePoint?: string;
+  timeSpan?: string;
 }
 
 /** 所有节点的 id -> 该节点下的文章。构建时算一次就够。 */
@@ -132,6 +146,8 @@ export async function nodePageData(url: string): Promise<NodePageData | null> {
         cardSize: c.cardSize,
         cardW: c.cardW,
         cardH: c.cardH,
+        timePoint: c.timePoint,
+        timeSpan: c.timeSpan,
         url: cf?.url ?? '/',
         kids: (c.children ?? []).map((g) => {
           const gf = all.find((x) => x.node === g);
@@ -145,6 +161,8 @@ export async function nodePageData(url: string): Promise<NodePageData | null> {
             cardSize: g.cardSize,
             cardW: g.cardW,
             cardH: g.cardH,
+            timePoint: g.timePoint,
+            timeSpan: g.timeSpan,
             url: gf?.url ?? '/',
           };
         }),
@@ -153,6 +171,9 @@ export async function nodePageData(url: string): Promise<NodePageData | null> {
     posts: posts[flat.node.id] ?? [],
     layout: flat.node.layout,
     page: flat.node.page ?? [],
+    timeline: flat.node.timeline,
+    timePoint: flat.node.timePoint,
+    timeSpan: flat.node.timeSpan,
   };
 }
 

@@ -837,6 +837,23 @@ async function handleApi(req, res, url) {
     return sendJson(res, 200, await writeBoards(payload));
   }
 
+  // ---- 时间轴（独立的一份数据，见上面 TIMELINES_FILE 那段的说明）----
+  if (route === '/api/timelines' && req.method === 'GET') {
+    return sendJson(res, 200, await readTimelines());
+  }
+  if (route === '/api/timelines' && req.method === 'POST') {
+    const payload = await readBody(req);
+    const data = cleanTimelines(payload);
+    // 先留一份备份再写，写坏了还能捞回来（和 boards 一个规矩）
+    try {
+      await fs.copyFile(TIMELINES_FILE, `${TIMELINES_FILE}.bak`);
+    } catch {
+      /* 第一次还没有这个文件，正常 */
+    }
+    await fs.writeFile(TIMELINES_FILE, `${JSON.stringify(data, null, 2)}\n`, 'utf8');
+    return sendJson(res, 200, { ok: true, timelines: data.timelines.length });
+  }
+
   // ---- 排版微调（首页元素的相对偏移与缩放）----
   if (route === '/api/layout' && req.method === 'GET') {
     return sendJson(res, 200, await readLayout());
@@ -1062,6 +1079,94 @@ async function readBoards() {
   return JSON.parse(text);
 }
 
+/* ------------------------------------------------------------------
+   时间轴（独立于页面的一份数据）
+
+   特意不塞进 home-boards.json：一条时间轴要好几个页面共用，
+   混在版块树里就得靠 id 到处引用，树一改容易断。
+   ------------------------------------------------------------------ */
+const TIMELINES_FILE = path.join(PROJECT_ROOT, 'src', 'data', 'timelines.json');
+
+async function readTimelines() {
+  const text = await fs.readFile(TIMELINES_FILE, 'utf8');
+  return JSON.parse(text);
+}
+
+/** 日期只收 yyyy-mm-dd，别的一律当没填 */
+function cleanDate(v) {
+  const s = String(v || '').trim();
+  return /^\d{4}-\d{1,2}-\d{1,2}$/.test(s) ? s : '';
+}
+
+/**
+ * 时间轴清洗。
+ *
+ * 时间点和时间段都得活着才有意义：
+ *   · 时间点：日期和名字缺一个就丢掉（没有日期排不进轴，没有名字没法显示）
+ *   · 时间段：两端必须都指向**存在的时间点**，否则整段丢掉
+ *     （指向一个已经被删掉的点，那段时间就是悬空的）
+ */
+function cleanTimelines(payload) {
+  if (!payload || !Array.isArray(payload.timelines)) {
+    throw httpError(400, '数据格式不对，需要 { timelines: [...] }');
+  }
+
+  const usedTl = new Set();
+  const timelines = [];
+
+  payload.timelines.forEach((raw, ti) => {
+    if (!raw || typeof raw !== 'object') return;
+    const title = String(raw.title || '').trim();
+    if (!title) return;
+
+    let id = String(raw.id || '').trim();
+    if (!id || usedTl.has(id)) id = `tl-${Date.now().toString(36)}-${ti + 1}`;
+    usedTl.add(id);
+
+    const tl = {
+      id,
+      title,
+      leftName: String(raw.leftName || '').trim() || '左侧',
+      rightName: String(raw.rightName || '').trim() || '右侧',
+      points: [],
+      spans: [],
+    };
+
+    const usedP = new Set();
+    const rawPoints = Array.isArray(raw.points) ? raw.points : [];
+    rawPoints.forEach((pt, pi) => {
+      if (!pt || typeof pt !== 'object') return;
+      const date = cleanDate(pt.date);
+      const label = String(pt.label || '').trim();
+      if (!date || !label) return;
+      let pid = String(pt.id || '').trim();
+      if (!pid || usedP.has(pid)) pid = `${id}-p${pi + 1}`;
+      usedP.add(pid);
+      tl.points.push({ id: pid, side: pt.side === 'right' ? 'right' : 'left', date, label });
+    });
+
+    const ids = new Set(tl.points.map((p) => p.id));
+    const usedS = new Set();
+    const rawSpans = Array.isArray(raw.spans) ? raw.spans : [];
+    rawSpans.forEach((sp, si) => {
+      if (!sp || typeof sp !== 'object') return;
+      const name = String(sp.name || '').trim();
+      if (!name) return;
+      const from = String(sp.from || '').trim();
+      const to = String(sp.to || '').trim();
+      if (!ids.has(from) || !ids.has(to) || from === to) return;
+      let sid = String(sp.id || '').trim();
+      if (!sid || usedS.has(sid)) sid = `${id}-s${si + 1}`;
+      usedS.add(sid);
+      tl.spans.push({ id: sid, name, from, to });
+    });
+
+    timelines.push(tl);
+  });
+
+  return { timelines };
+}
+
 /**
  * 递归清理一个节点。
  *
@@ -1138,9 +1243,22 @@ function cleanBlocks(raw, ownerId) {
     }
     used.add(id);
 
+    /*
+      所有块都从这一个出口出去，于是「认领的时间点/时间段」只需要在这里
+      收一次 —— cleanBlocks 里十种块各有各的早期 return，挨个补容易漏。
+    */
+    const pushBlock = (block) => {
+      if (!block) return;
+      const tp = String(b.timePoint || '').trim();
+      if (tp) block.timePoint = tp;
+      const ts = String(b.timeSpan || '').trim();
+      if (ts) block.timeSpan = ts;
+      out.push(block);
+    };
+
     if (type === 'text') {
       const text = String(b.text ?? '');
-      if (text.trim()) out.push({ id, type, text });
+      if (text.trim()) pushBlock({ id, type, text });
       return;
     }
 
@@ -1151,7 +1269,7 @@ function cleanBlocks(raw, ownerId) {
       const alt = String(b.alt || '').trim();
       if (alt) block.alt = alt;
       block.width = BLOCK_WIDTHS.has(b.width) ? b.width : 'wide';
-      out.push(block);
+      pushBlock(block);
       return;
     }
 
@@ -1159,7 +1277,7 @@ function cleanBlocks(raw, ownerId) {
       const text = String(b.text || '').trim();
       const href = String(b.href || '').trim();
       if (!text || !href) return;
-      out.push({ id, type, text, href });
+      pushBlock({ id, type, text, href });
       return;
     }
 
@@ -1168,7 +1286,7 @@ function cleanBlocks(raw, ownerId) {
       const block = { id, type };
       const text = String(b.text || '').trim();
       if (text) block.text = text;
-      out.push(block);
+      pushBlock(block);
       return;
     }
 
@@ -1177,7 +1295,7 @@ function cleanBlocks(raw, ownerId) {
       const right = String(b.right ?? '');
       // 两边都空就没有存在的意义
       if (!left.trim() && !right.trim()) return;
-      out.push({ id, type, left, right });
+      pushBlock({ id, type, left, right });
       return;
     }
 
@@ -1187,7 +1305,7 @@ function cleanBlocks(raw, ownerId) {
       const block = { id, type, src };
       const caption = String(b.caption || '').trim();
       if (caption) block.caption = caption;
-      out.push(block);
+      pushBlock(block);
       return;
     }
 
@@ -1195,7 +1313,7 @@ function cleanBlocks(raw, ownerId) {
       const block = { id, type };
       const text = String(b.text || '').trim();
       if (text) block.text = text;
-      out.push(block);
+      pushBlock(block);
       return;
     }
 
@@ -1205,55 +1323,100 @@ function cleanBlocks(raw, ownerId) {
       const block = { id, type };
       const text = String(b.text || '').trim();
       if (text) block.text = text;
-      out.push(block);
+      pushBlock(block);
       return;
     }
 
     if (type === 'map') {
-      const src = String(b.src || '').trim();
-      if (!src) return;
-      const block = { id, type, src, markers: [] };
-      const alt = String(b.alt || '').trim();
-      if (alt) block.alt = alt;
-
       /*
-        地标一个个收：坐标必须是 0~100 的数字（百分比），
-        名字不能空，地址走 cleanLink 那道（javascript: 之类会被丢掉）。
-        名字空的地标直接扔 —— 一个没有名字的图钉，鼠标移上去什么都不显示，
-        点也不知道去哪，留着只是碍事。
+        地图是「分页」结构：每一页各有自己的图、图钉、划分线和简介。
+        坐标全按 0~100 的百分比收，越界的夹回来；小数点留两位就够，
+        省得 JSON 里拖一长串浮点尾巴。
       */
-      const usedM = new Set();
-      const rawMarkers = Array.isArray(b.markers) ? b.markers : [];
-      rawMarkers.forEach((m, mi) => {
-        if (!m || typeof m !== 'object') return;
-        const title = String(m.title || '').trim();
-        if (!title) return;
-        const x = Number(m.x);
-        const y = Number(m.y);
-        if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+      const pct = (v) => {
+        const n = Number(v);
+        if (!Number.isFinite(n)) return null;
+        return Math.round(Math.min(100, Math.max(0, n)) * 100) / 100;
+      };
 
-        let mid = String(m.id || '').trim();
-        if (!mid || usedM.has(mid)) mid = `${id}-m${mi + 1}`;
-        usedM.add(mid);
+      let rawPages = Array.isArray(b.pages) ? b.pages : [];
+      /*
+        兼容最早那版「只有一页」的写法：块上直接挂 src + markers（纷湖那张图
+        就是这么存下来的）。把它当成一页收，存回去就自动变成新的分页结构了，
+        用户不用重新做一遍。
+      */
+      if (!rawPages.length && String(b.src || '').trim()) rawPages = [b];
+      const usedPage = new Set();
+      const pages = [];
 
-        // 留两位小数就够了，省得 JSON 里一长串浮点尾巴
-        const marker = {
-          id: mid,
-          x: Math.round(Math.min(100, Math.max(0, x)) * 100) / 100,
-          y: Math.round(Math.min(100, Math.max(0, y)) * 100) / 100,
-          title,
-        };
-        const href = cleanLink(m.href);
-        if (href) marker.href = href;
-        block.markers.push(marker);
+      rawPages.forEach((pg, pi) => {
+        if (!pg || typeof pg !== 'object') return;
+        const src = String(pg.src || '').trim();
+        // 没选图的页直接不要：一页空白摆在那儿只会让人以为坏了
+        if (!src) return;
+
+        let pid = String(pg.id || '').trim();
+        if (!pid || usedPage.has(pid)) pid = `${id}-p${pi + 1}`;
+        usedPage.add(pid);
+
+        const page = { id: pid, src, markers: [], lines: [] };
+        const alt = String(pg.alt || '').trim();
+        if (alt) page.alt = alt;
+        const text = String(pg.text || '').trim();
+        if (text) page.text = text;
+
+        // ---- 图钉 ----
+        const usedM = new Set();
+        const rawMarkers = Array.isArray(pg.markers) ? pg.markers : [];
+        rawMarkers.forEach((m, mi) => {
+          if (!m || typeof m !== 'object') return;
+          const title = String(m.title || '').trim();
+          // 没名字的图钉鼠标移上去什么都不显示、点也不知道去哪，留着只是碍事
+          if (!title) return;
+          const x = pct(m.x);
+          const y = pct(m.y);
+          if (x === null || y === null) return;
+
+          let mid = String(m.id || '').trim();
+          if (!mid || usedM.has(mid)) mid = `${pid}-m${mi + 1}`;
+          usedM.add(mid);
+
+          const marker = { id: mid, kind: m.kind === 'region' ? 'region' : 'building', x, y, title };
+          const href = cleanLink(m.href);
+          if (href) marker.href = href;
+          page.markers.push(marker);
+        });
+
+        // ---- 区域划分线 ----
+        const usedL = new Set();
+        const rawLines = Array.isArray(pg.lines) ? pg.lines : [];
+        rawLines.forEach((ln, li) => {
+          if (!ln || typeof ln !== 'object') return;
+          const x1 = pct(ln.x1);
+          const y1 = pct(ln.y1);
+          const x2 = pct(ln.x2);
+          const y2 = pct(ln.y2);
+          if (x1 === null || y1 === null || x2 === null || y2 === null) return;
+          // 起终点几乎重合的当误触，别留一根看不见的线在那儿
+          if (Math.abs(x2 - x1) < 0.5 && Math.abs(y2 - y1) < 0.5) return;
+
+          let lid = String(ln.id || '').trim();
+          if (!lid || usedL.has(lid)) lid = `${pid}-l${li + 1}`;
+          usedL.add(lid);
+          page.lines.push({ id: lid, x1, y1, x2, y2 });
+        });
+
+        pages.push(page);
       });
 
-      out.push(block);
+      // 一页都没留下（一张图都没选）就等于这个块是空的
+      if (!pages.length) return;
+      pushBlock({ id, type, pages });
       return;
     }
 
     if (type === 'children') {
-      out.push({
+      pushBlock({
         id,
         type,
         shape: CARD_SHAPES.has(b.shape) ? b.shape : 'wide',
@@ -1310,6 +1473,18 @@ function cleanNode(raw, parentId, used) {
   const link = cleanLink(raw.link);
   if (link) out.link = link;
 
+  /*
+    时间轴：这一页用哪条轴、以及这一页自己认领哪个时间点/时间段。
+    不认识的字段会被这里丢掉，所以必须显式带过去 —— 不然编辑器里
+    选好了时间轴，一保存就没了。
+  */
+  const timeline = String(raw.timeline || '').trim();
+  if (timeline) out.timeline = timeline;
+  const timePoint = String(raw.timePoint || '').trim();
+  if (timePoint) out.timePoint = timePoint;
+  const timeSpan = String(raw.timeSpan || '').trim();
+  if (timeSpan) out.timeSpan = timeSpan;
+
   const kids = Array.isArray(raw.children) ? raw.children : [];
   const children = kids.map((k) => cleanNode(k, id, used)).filter(Boolean);
   if (children.length) out.children = children;
@@ -1340,6 +1515,12 @@ async function writeBoards(payload) {
     // 版式字段同理：'region' = 三列分区（花娅陌域在用），编辑器不显示但要原样保留
     const layout = String(b.layout || '').trim();
     if (layout) out.layout = layout;
+    const timeline = String(b.timeline || '').trim();
+    if (timeline) out.timeline = timeline;
+    const bTp = String(b.timePoint || '').trim();
+    if (bTp) out.timePoint = bTp;
+    const bTs = String(b.timeSpan || '').trim();
+    if (bTs) out.timeSpan = bTs;
     // 顶层大板块也能自己写页面内容
     const page = cleanBlocks(b.page, boardId);
     if (page.length) out.page = page;
