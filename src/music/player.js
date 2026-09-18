@@ -64,6 +64,11 @@
   var btn = null;
   var range = null;
   var num = null;
+  var hint = null;
+  var hintText = null;
+  var buffering = false;
+  /** 这一轮「按下」之前音乐是不是已经在放（默认 true：不确定时就当它在放，别乱改音量） */
+  var downWasPlaying = true;
 
   function clamp01(n) {
     return n < 0 ? 0 : n > 1 ? 1 : n;
@@ -194,23 +199,46 @@
     if (p && typeof p.catch === 'function') p.catch(armGesture);
   }
 
+  /**
+   * 「该出声的时候补一次 play()」。
+   * 用户第一次动手、点音量键、拖音量条都走这里 —— 不许出现
+   * 「点了音量键反而更没声音」（起播那一下被顺手静音了，最像坏了）。
+   */
+  function ensureSound() {
+    if (!audio.paused && !needsGesture) return;
+    var wasPlaying = !audio.paused && audio.currentTime > 0.2;
+    needsGesture = false;
+    // 已经听过一截就别把音量从 0 再拉一遍，否则会先小声一下
+    if (!wasPlaying) fade = 0;
+    applyVol();
+    playWith(wasPlaying ? IN_RESUME : IN_FRESH);
+  }
+
   /** 浏览器不让自动出声：等用户第一次动手再补 */
   function armGesture() {
     if (needsGesture) return;
     needsGesture = true;
     paint();
-    var kick = function () {
+    var kick = function (e) {
+      /*
+        按在音量键自己身上时**不要抢着补 play()**：那一下点击是"开始播放"，
+        让它自己的 click 处理（见 wire()）先判断该不该静音。
+        这里要是先跑了 play()，click 再看到"已经在放了"，就会把用户刚点出来的
+        音乐当场静音 —— 正是"点了音量键反而没声音"的根子。
+      */
+      var t = e && e.target;
+      if (t && t.closest && t.closest('#music-vol')) return;
       document.removeEventListener('pointerdown', kick, true);
       document.removeEventListener('keydown', kick, true);
       document.removeEventListener('touchstart', kick, true);
-      needsGesture = false;
-      fade = 0;
-      applyVol();
-      playWith(IN_FRESH);
+      document.removeEventListener('click', kick, true);
+      ensureSound();
     };
     document.addEventListener('pointerdown', kick, true);
     document.addEventListener('keydown', kick, true);
     document.addEventListener('touchstart', kick, true);
+    // click 也挂一份：个别触摸流程只派发 click，多一条网不漏
+    document.addEventListener('click', kick, true);
   }
 
   /**
@@ -243,18 +271,43 @@
   }
 
   // ---- 右上角那颗音箱音量键 -----------------------------------------
+  /** 提示条改字并亮出来（只有文字变了才写 DOM） */
+  function setHint(text) {
+    if (!hint) return;
+    if (hintText && hintText.textContent !== text) hintText.textContent = text;
+    hint.hidden = false;
+  }
+
   function paint() {
     var playing = !audio.paused && !audio.ended;
     var lvl = muted ? 0 : vol;
     if (btn) {
       btn.classList.toggle('is-muted', lvl <= 0.001);
       btn.classList.toggle('is-loud', lvl > 0.55);
+      /*
+        is-paused = 还没出声（被自动播放策略挡着，或用户自己按空格暂停了）。
+        这颗键会因此长出一个小 ▶ 角标并轻轻呼吸 —— 光靠"暗一点"没人知道要点它。
+      */
       btn.classList.toggle('is-paused', !playing);
       btn.setAttribute('aria-pressed', muted ? 'true' : 'false');
       var name = cur ? cur.t : '';
-      btn.title = cur
-        ? (lvl <= 0.001 ? '已静音 · ' : '音量 ' + Math.round(lvl * 100) + '% · ') + name
-        : '音量';
+      var label;
+      if (needsGesture) label = '点一下开始播放';
+      else if (lvl <= 0.001) label = '已静音';
+      else label = '音量 ' + Math.round(lvl * 100) + '%';
+      btn.title = cur ? label + ' · ' + name : label;
+      btn.setAttribute('aria-label', needsGesture ? '点一下开始播放' : '音量');
+    }
+    // 提示条：还没出声就一直亮着（"待很久才开始放"就是没人告诉用户要点一下）；
+    // 点了之后如果还在缓冲，就改说"缓冲中" —— 8MB 一首，慢网下这段等待是真的。
+    if (hint) {
+      if (needsGesture) {
+        setHint('点一下播放');
+      } else if (buffering) {
+        setHint('缓冲中…');
+      } else {
+        hint.hidden = true;
+      }
     }
     var shown = Math.round(lvl * 100);
     if (range && document.activeElement !== range) range.value = String(shown);
@@ -267,30 +320,54 @@
     btn = document.getElementById('music-vol-btn');
     range = document.getElementById('music-vol-range');
     num = document.getElementById('music-vol-num');
+    hint = document.getElementById('music-hint');
+    hintText = document.getElementById('music-hint-text');
     // 按钮默认是 hidden 的：没有歌单的页面不会跑这段脚本，它就一直藏着
     box.hidden = false;
 
     if (btn) {
       btn.addEventListener('click', function () {
+        /*
+          按下去之前音乐没在放 → 这一下点击的本意是**"让它响"**，
+          绝不能顺手切成静音（用户点了音量键却更没声音，只会觉得功能坏了）。
+          已经在放了 → 才是正常的静音开关。
+        */
+        if (!downWasPlaying) {
+          muted = false;
+          if (vol <= 0.001) vol = 0.7;
+          ensureSound();
+          persistVol();
+          paint();
+          return;
+        }
         muted = !muted;
         if (!muted && vol <= 0.001) vol = 0.7;
-        if (needsGesture) {
-          // 被自动播放策略挡住时，这一下点击就是让它出声的机会
-          needsGesture = false;
-          fade = 0;
-          applyVol();
-          playWith(IN_FRESH);
-        }
         applyVol();
         persistVol();
         paint();
       });
     }
 
+    /*
+      真按下（按在按钮上、或按在音量条上）就是一记用户手势 ——
+      自动播放被挡的时候，只有在这一刻调 play() 浏览器才认。
+      先记下"按下之前是不是已经在放"，供上面的 click 判断。
+    */
+    box.addEventListener(
+      'pointerdown',
+      function () {
+        downWasPlaying = !audio.paused && !audio.ended;
+        ensureSound();
+      },
+      true
+    );
+
     if (range) {
       range.addEventListener('input', function () {
         vol = clamp01(Number(range.value) / 100);
         muted = vol <= 0.001;
+        // 只拖音量条也得能把音乐带起来（不然拖了没反应，一样像坏了）
+        ensureSound();
         applyVol();
         paint();
       });
@@ -304,6 +381,7 @@
         e.preventDefault();
         vol = clamp01(vol + (e.deltaY > 0 ? -0.05 : 0.05));
         muted = vol <= 0.001;
+        ensureSound();
         applyVol();
         persistVol();
         paint();
@@ -414,6 +492,15 @@
   audio.addEventListener('play', paint);
   audio.addEventListener('pause', paint);
   audio.addEventListener('volumechange', paint);
+  // 真的开始出声 / 卡住等数据：提示条靠这两个事件说"缓冲中"
+  audio.addEventListener('playing', function () {
+    buffering = false;
+    paint();
+  });
+  audio.addEventListener('waiting', function () {
+    buffering = true;
+    paint();
+  });
 
   var lastSave = 0;
   audio.addEventListener('timeupdate', function () {

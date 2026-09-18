@@ -84,6 +84,15 @@ function renderNodes(nodes: BoardNode[]): string {
   分开各自 fixed 的话，改一个尺寸另一个就对不齐了。
 -->
 <div class="corner">
+  <!--
+    还没出声时的提示（浏览器挡了自动播放，"待很久才开始放"就是等用户点一下）。
+    绝对定位挂在按钮组左边：出现/消失都不会把三颗按钮挤动。
+    它是标签不是按钮，但点它同样算一次用户手势 —— 全局那次"补 play()"会接住。
+  -->
+  <span class="volhint" id="music-hint" hidden>
+    <span class="volhint__note" aria-hidden="true">♪</span><span id="music-hint-text">点一下播放</span>
+  </span>
+
   <button type="button" class="corner__btn totop" id="totop" aria-label="回到顶部" title="回到顶部">
     <!-- 简约化的塔吊（本站的记号），不是箭头 -->
     <svg class="totop__crane" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -125,6 +134,11 @@ function renderNodes(nodes: BoardNode[]): string {
         <path class="vol__wave vol__wave--2" d="M17.6 7.2a7.7 7.7 0 0 1 0 9.6"></path>
         <!-- 静音斜杠 -->
         <path class="vol__slash" d="M3.4 20.4 20.8 3.6"></path>
+        <!--
+          还没出声时（浏览器挡了自动播放 / 用户自己暂停了）右下角冒出这个 ▶，
+          提示"点一下" —— 只把按钮调暗是不够的，没人知道要点它。
+        -->
+        <path class="vol__play" d="M15.4 15.4v6.2l5.6-3.1z"></path>
       </svg>
     </button>
     <div class="vol__panel">
@@ -321,8 +335,46 @@ function renderNodes(nodes: BoardNode[]): string {
     visibility: hidden;
   }
 
-  /* ---------- 音量键（音箱） ---------- */
-  .vol {
+  /*
+    「点一下播放」提示条：只在音乐还没出声时出现（浏览器挡了自动播放，
+    或用户自己按空格暂停了）。绝对定位挂在按钮组左边、不参与布局，
+    出现/消失都不会把三颗按钮挤动。
+  */
+  .volhint {
+    position: absolute;
+    right: calc(100% + 0.55rem);
+    top: 50%;
+    transform: translateY(-50%);
+    display: flex;
+    align-items: center;
+    gap: 0.28rem;
+    padding: 0.22rem 0.55rem;
+    border: 1px solid var(--c-border);
+    border-radius: var(--r-full);
+    background: var(--c-bg-raised);
+    color: var(--c-text-muted);
+    font-size: 0.72rem;
+    line-height: 1.5;
+    white-space: nowrap;
+    box-shadow: var(--shadow-sm);
+    animation: vol-hint 2.4s ease-in-out infinite;
+  }
+  .volhint__note {
+    color: var(--c-accent);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .volhint {
+      animation: none;
+    }
+  }
+  @media (max-width: 26rem) {
+    .volhint {
+      font-size: 0.66rem;
+      padding: 0.16rem 0.42rem;
+    }
+  }
+
+  /* ---------- 音量键（音箱） ---------- */  .vol {
     position: relative;
     display: flex;
     align-items: center;
@@ -367,9 +419,34 @@ function renderNodes(nodes: BoardNode[]): string {
     display: block;
   }
 
-  /* 浏览器不让自动出声时按钮暗一点：点它一下就会响 */
+  /* 浏览器不让自动出声时按钮会呼吸：点它一下就会响 */
   .vol__btn.is-paused {
-    opacity: 0.6;
+    animation: vol-hint 2.4s ease-in-out infinite;
+  }
+  @keyframes vol-hint {
+    0%,
+    100% {
+      opacity: 0.55;
+    }
+    50% {
+      opacity: 1;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .vol__btn.is-paused {
+      animation: none;
+      opacity: 0.7;
+    }
+  }
+
+  /* ▶ 角标：只在还没出声时出现（实心三角，跟描边的音箱区分开） */
+  .vol__play {
+    display: none;
+    fill: currentColor;
+    stroke: none;
+  }
+  .vol__btn.is-paused .vol__play {
+    display: block;
   }
 
   /*
