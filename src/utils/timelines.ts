@@ -26,9 +26,25 @@ export type TimelineSide = 'left' | 'right';
  */
 export type TimelineSpanSide = TimelineSide | 'both';
 
+/**
+ * 时间点分两类：
+ *
+ * - `moment`（**时刻**）：轴上那些「大事」。图标是那颗大一些的落日色塔吊，
+ *   文字也大一些。这是最早那版唯一的一种时间点，所以老数据没写 kind 的
+ *   一律当 moment。
+ * - `event`（**事件**）：同一天里那些零碎的记录。图标是**小一号的粉色塔吊**，
+ *   旁边的文字也更小 —— 一眼能和大事件分开，又不至于把轴糊住。
+ *
+ * 两类**功能完全一样**（左右、日期、名字、链接、合并规则都共用一套代码），
+ * 差别只在图标大小 / 颜色和字号。
+ */
+export type TimelinePointKind = 'moment' | 'event';
+
 export interface TimelinePoint {
   id: string;
   side: TimelineSide;
+  /** 时刻还是事件；没写就是时刻（老数据） */
+  kind?: TimelinePointKind;
   /** ISO 日期 `yyyy-mm-dd` */
   date: string;
   /** 事件名，常驻显示在轴旁边 */
@@ -36,6 +52,9 @@ export interface TimelinePoint {
   /** 点它跳去哪：站内写 `/huaya/xxx`，站外写 `https://…`；留空就只是看看名字 */
   href?: string;
 }
+
+/** 这个时间点是「时刻」还是「事件」；没写的（老数据）当时刻 */
+export const pointKind = (p: TimelinePoint): TimelinePointKind => (p.kind === 'event' ? 'event' : 'moment');
 
 export interface TimelineSpan {
   id: string;

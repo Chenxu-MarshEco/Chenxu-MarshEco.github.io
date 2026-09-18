@@ -1143,6 +1143,9 @@ function cleanTimelines(payload) {
       if (!pid || usedP.has(pid)) pid = `${id}-p${pi + 1}`;
       usedP.add(pid);
       const point = { id: pid, side: pt.side === 'right' ? 'right' : 'left', date, label };
+      // 时刻（moment）/ 事件（event）。老数据没这一项，渲染时按「时刻」算，
+      // 所以认不出来就不写这个字段，不去污染数据。
+      if (pt.kind === 'event' || pt.kind === 'moment') point.kind = pt.kind;
       // 点一下跳去哪：和地图图钉同一套链接规则（javascript: / data: 一律丢掉）
       const href = cleanLink(pt.href);
       if (href) point.href = href;

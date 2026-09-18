@@ -3712,25 +3712,29 @@ function paintTimelinePreview(host) {
   svg.appendChild(svgEl('path', { class: 'tl-pv__ruler', d: ticks, stroke: `url(#${gid})` }));
   inner.appendChild(svg);
 
-  /* ---- 时间点：同一侧挤在一起的合并成一个塔吊（和页面同一套判据） ---- */
+  /* ---- 时间点：同一侧 + 同一类、挤在一起的合并成一个塔吊（和页面同一套判据） ---- */
   const groups = { left: [], right: [] };
   for (const side of ['left', 'right']) {
-    const list = points
-      .map((p) => ({ p, y: range.of(tlDay(p.date)) * V }))
-      .filter((o) => (o.p.side === 'right' ? 'right' : 'left') === side)
-      .sort((a, b) => a.y - b.y);
-    let run = [];
-    let lastY = Number.NEGATIVE_INFINITY;
-    const flush = () => {
-      if (run.length) groups[side].push(run);
-      run = [];
-    };
-    for (const o of list) {
-      if (run.length && o.y - lastY > TL_PV.MERGE_GAP) flush();
-      run.push(o);
-      lastY = o.y;
+    for (const kind of ['moment', 'event']) {
+      const list = points
+        .map((p) => ({ p, y: range.of(tlDay(p.date)) * V }))
+        .filter((o) => (o.p.side === 'right' ? 'right' : 'left') === side)
+        // 时刻和事件分开成组：混在一起并成一摞就看不出大小和颜色了
+        .filter((o) => (o.p.kind === 'event' ? 'event' : 'moment') === kind)
+        .sort((a, b) => a.y - b.y);
+      let run = [];
+      let lastY = Number.NEGATIVE_INFINITY;
+      const flush = () => {
+        if (run.length) groups[side].push(run);
+        run = [];
+      };
+      for (const o of list) {
+        if (run.length && o.y - lastY > TL_PV.MERGE_GAP) flush();
+        run.push(o);
+        lastY = o.y;
+      }
+      flush();
     }
-    flush();
   }
 
   /** 一侧的文字占掉的纵向区间，「时间段名」要靠这个让位 */
@@ -3750,6 +3754,7 @@ function paintTimelinePreview(host) {
         const item = document.createElement('div');
         item.className = 'tl-pv__item';
         item.dataset.side = side;
+        item.dataset.kind = o.p.kind === 'event' ? 'event' : 'moment';
         item.style.left = `${x}px`;
         item.style.top = `${y}px`;
 
@@ -3969,6 +3974,27 @@ function renderTimelineEditor() {
     );
     side.className = 'input tl-edit__side';
 
+    /*
+      时刻还是事件。功能完全一样（左右 / 日期 / 名字 / 链接都能填），
+      差别只在页面上的图标和字号：时刻是大塔吊 + 大字，事件是小粉塔吊 + 小字。
+      「时刻」是默认值 —— 选它就把 kind 字段删掉，老数据不会因为过一遍编辑器
+      就多出一堆 kind:"moment"。
+    */
+    const kind = pageSelect(
+      [
+        ['moment', '时刻'],
+        ['event', '事件'],
+      ],
+      p.kind === 'event' ? 'event' : 'moment',
+      (v) => {
+        if (v === 'event') p.kind = 'event';
+        else delete p.kind;
+        scheduleTlPreview();
+      }
+    );
+    kind.className = 'input tl-edit__kind';
+    kind.title = '时刻 = 大塔吊 + 大字；事件 = 小一号的粉色塔吊 + 小字。功能一模一样。';
+
     const date = dateField(p.date, (v) => {
       p.date = v;
       refreshSpanOptions();
@@ -3996,25 +4022,35 @@ function renderTimelineEditor() {
       renderTimelineEditor();
     });
 
-    item.append(side, date, label, href, del);
+    item.append(side, kind, date, label, href, del);
     plist.appendChild(item);
   });
   form.appendChild(plist);
 
-  const addP = document.createElement('button');
-  addP.type = 'button';
-  addP.className = 'btn btn--ghost boardedit__mini';
-  addP.textContent = '＋ 加时间点';
-  addP.addEventListener('click', () => {
-    tl.points.push({
-      id: `${tl.id}-p${Date.now().toString(36)}${tl.points.length}`,
-      side: 'left',
-      date: '',
-      label: '',
+  // 两种时间点各一个按钮 —— 新加的那一刻就带着 kind，省得再加一步去改类型
+  for (const [label, k] of [
+    ['＋ 加时刻', 'moment'],
+    ['＋ 加事件', 'event'],
+  ]) {
+    const addP = document.createElement('button');
+    addP.type = 'button';
+    addP.className = 'btn btn--ghost boardedit__mini';
+    addP.textContent = label;
+    addP.title =
+      k === 'event' ? '加一条「事件」：小一号的粉色塔吊 + 更小的文字' : '加一条「时刻」：大塔吊 + 大字';
+    addP.addEventListener('click', () => {
+      const p = {
+        id: `${tl.id}-p${Date.now().toString(36)}${tl.points.length}`,
+        side: 'left',
+        date: '',
+        label: '',
+      };
+      if (k === 'event') p.kind = 'event';
+      tl.points.push(p);
+      renderTimelineEditor();
     });
-    renderTimelineEditor();
-  });
-  form.appendChild(addP);
+    form.appendChild(addP);
+  }
 
   /* ---- 时间段 ---- */
   const sHead = document.createElement('h4');

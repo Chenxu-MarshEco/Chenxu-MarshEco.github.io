@@ -19,7 +19,7 @@
  *    进了用别的轴（或没有轴）的页面，自然就是关着的。
  */
 import type { Timeline as TimelineData } from '../utils/timelines';
-import { pointParam, spanEdges, spanParam, spanSides, rangeOf, dayOf } from '../utils/timelines';
+import { pointParam, spanEdges, spanParam, spanSides, pointKind, rangeOf, dayOf } from '../utils/timelines';
 import { withBase } from '../utils/url';
 
 interface Props {
@@ -43,9 +43,12 @@ const range = rangeOf(tl);
 const spanMin = Math.min(range.min, range.max);
 const spanMax = Math.max(range.max, range.min);
 
-/** 时间点：位置、左右、名字、日期都写进 data-*，脚本照着摆 */
+/**
+ * 时间点：位置、左右、**时刻还是事件**、名字、日期都写进 data-*，脚本照着摆。
+ * 两类点走的是同一套代码，只有 CSS 里的图标大小 / 颜色和字号不一样。
+ */
 const points = tl.points
-  .map((p) => ({ ...p, t: pointParam(tl, p) }))
+  .map((p) => ({ ...p, t: pointParam(tl, p), kind: pointKind(p) }))
   .sort((a, b) => a.t - b.t);
 
 /**
@@ -179,6 +182,7 @@ const gradId = `tl-arc-${tl.id}`;
             class="tl__item"
             data-tl-item
             data-side={p.side}
+            data-kind={p.kind}
             data-param={p.t}
             data-label={p.label}
             data-date={p.date}
@@ -208,20 +212,14 @@ const gradId = `tl-arc-${tl.id}`;
       })}
 
       {/*
-        左上 / 右上的四个开关：各自管这一侧的「事件名」和「年代名」。
+        弧线区**最下面**的六个开关：左边三个管左侧、右边三个管右侧，
+        各是「年代 / 时刻 / 事件」。放在这儿是因为它们正好压在花娅历那一行
+        上方的横杠上面（页脚的上边框），而不是飘在整个 UI 的偏上位置。
         只管**文字** —— 塔吊、带子的颜色、刻度、弧线一概不动，
-        目的是翻年代的时候别让成堆的事件名把轴糊住。
-        分左右是因为两侧的拥挤程度是各管各的：常见的是右边挤、左边空。
+        目的是翻年代的时候别让成堆的文字把轴糊住。
       */}
       <div class="tl__toggles">
         <div class="tl__togglesGroup">
-          <button
-            class="tl__tg"
-            type="button"
-            data-tl-toggle-labels="left-events"
-            aria-pressed="true"
-            title={`显示 / 隐藏左侧（${tl.leftName}）的事件名 —— 塔吊还在`}
-          >事件</button>
           <button
             class="tl__tg"
             type="button"
@@ -229,15 +227,22 @@ const gradId = `tl-arc-${tl.id}`;
             aria-pressed="true"
             title={`显示 / 隐藏左侧（${tl.leftName}）的年代名 —— 带子还在`}
           >年代</button>
-        </div>
-        <div class="tl__togglesGroup">
           <button
             class="tl__tg"
             type="button"
-            data-tl-toggle-labels="right-events"
+            data-tl-toggle-labels="left-moments"
             aria-pressed="true"
-            title={`显示 / 隐藏右侧（${tl.rightName}）的事件名 —— 塔吊还在`}
+            title={`显示 / 隐藏左侧（${tl.leftName}）的时刻名 —— 塔吊还在`}
+          >时刻</button>
+          <button
+            class="tl__tg"
+            type="button"
+            data-tl-toggle-labels="left-events"
+            aria-pressed="true"
+            title={`显示 / 隐藏左侧（${tl.leftName}）的事件名 —— 小塔吊还在`}
           >事件</button>
+        </div>
+        <div class="tl__togglesGroup">
           <button
             class="tl__tg"
             type="button"
@@ -245,6 +250,20 @@ const gradId = `tl-arc-${tl.id}`;
             aria-pressed="true"
             title={`显示 / 隐藏右侧（${tl.rightName}）的年代名 —— 带子还在`}
           >年代</button>
+          <button
+            class="tl__tg"
+            type="button"
+            data-tl-toggle-labels="right-moments"
+            aria-pressed="true"
+            title={`显示 / 隐藏右侧（${tl.rightName}）的时刻名 —— 塔吊还在`}
+          >时刻</button>
+          <button
+            class="tl__tg"
+            type="button"
+            data-tl-toggle-labels="right-events"
+            aria-pressed="true"
+            title={`显示 / 隐藏右侧（${tl.rightName}）的事件名 —— 小塔吊还在`}
+          >事件</button>
         </div>
       </div>
     </div>
@@ -478,6 +497,19 @@ const gradId = `tl-arc-${tl.id}`;
     color: #ffc857;
     filter: drop-shadow(0 0 4px rgba(255, 150, 40, 0.8));
   }
+  /*
+    「事件」那颗塔吊：**小一号、换成粉色**。它和「时刻」共用同一套位置、
+    旋转、合并、链接逻辑，差别只在这里 —— 一眼就能把「同一天里那些零碎的记录」
+    和「真正的大事」分开，也不至于把轴铺满。
+    （粉色和地图上的建筑图钉是同一个色系。）
+  */
+  .tl__item[data-kind='event'] .tl__crane {
+    left: -9px;
+    width: 18px;
+    height: 18px;
+    color: #ff4fa3;
+    filter: drop-shadow(0 0 4px rgba(255, 40, 130, 0.85));
+  }
   .tl__crane svg {
     display: block;
     width: 100%;
@@ -487,6 +519,10 @@ const gradId = `tl-arc-${tl.id}`;
     stroke-width: 2.3;
     stroke-linecap: round;
     stroke-linejoin: round;
+  }
+  /* 小塔吊线也细一点，不然缩到 18px 会糊成一坨 */
+  .tl__item[data-kind='event'] .tl__crane svg {
+    stroke-width: 2.8;
   }
 
   /*
@@ -517,6 +553,12 @@ const gradId = `tl-arc-${tl.id}`;
     color: #fff;
     text-decoration: underline;
     text-underline-offset: 0.2em;
+  }
+  /* 「事件」的文字也小一档（页面 0.8rem → 0.68rem），和它那颗小塔吊配一脸 */
+  .tl__item[data-kind='event'] .tl__name {
+    font-size: 0.68rem;
+    letter-spacing: 0.02em;
+    color: rgba(255, 217, 239, 0.86);
   }
   .tl__item[data-side='left'] .tl__name {
     right: 40px;
@@ -584,9 +626,20 @@ const gradId = `tl-arc-${tl.id}`;
     position: absolute;
     top: 0;
     transform: translateY(-50%);
+    /*
+      年代是「一段」，比事件/时刻那种「一个点」高一级，所以给它一个**外框**：
+      圆角胶囊 + 粉边 + 半透明深底，压在任何东西上都读得出来，
+      一眼就和旁边那些没有框的名字分开。
+    */
+    padding: 0.1rem 0.55rem;
+    border: 1px solid rgba(255, 120, 190, 0.55);
+    border-radius: 999px;
+    background: rgba(26, 3, 38, 0.84);
+    box-shadow: 0 0 12px rgba(255, 79, 163, 0.22);
+    backdrop-filter: blur(3px);
     font-size: 0.92rem;
     letter-spacing: 0.1em;
-    color: rgba(255, 205, 230, 0.92);
+    color: #ffd9ef;
     text-decoration: none;
     white-space: nowrap;
     pointer-events: none;
@@ -598,13 +651,14 @@ const gradId = `tl-arc-${tl.id}`;
   }
   a.tl__spanName:hover {
     color: #fff;
-    text-decoration: underline;
-    text-underline-offset: 0.2em;
+    border-color: #ffb3dd;
+    background: rgba(60, 8, 40, 0.92);
   }
 
-  /* ---------------- 左上 / 右上那四个文字开关 ---------------- */
+  /* ---------------- 最下面那六个文字开关 ---------------- */
   /*
-    位置固定在弧线区的最上面：左边一组压在左列文字上方，右边一组压在右列上方。
+    贴在弧线区**底边**：正好落在页脚（花娅历 / 冰室历 那一行）上方那条横杠的上面。
+    左边三个管左列、右边三个管右列，各是「年代 / 时刻 / 事件」。
     整条 bar 是 pointer-events:none 的（空白处不挡下面的拖动和点击），
     只有按钮本身收事件。
   */
@@ -612,22 +666,22 @@ const gradId = `tl-arc-${tl.id}`;
     position: absolute;
     left: 0;
     right: 0;
-    top: 0;
+    bottom: 0;
     z-index: 2;
     display: flex;
-    align-items: flex-start;
+    align-items: flex-end;
     justify-content: space-between;
     gap: 0.4rem;
-    padding: 0.4rem 0.5rem 0;
+    padding: 0 0.5rem 0.42rem;
     pointer-events: none;
   }
   .tl__togglesGroup {
     display: flex;
-    gap: 0.3rem;
+    gap: 0.28rem;
     pointer-events: auto;
   }
   .tl__tg {
-    padding: 0.05rem 0.42rem;
+    padding: 0.05rem 0.4rem;
     border: 1px solid rgba(255, 120, 190, 0.45);
     border-radius: 999px;
     background: rgba(24, 3, 36, 0.86);
@@ -658,11 +712,14 @@ const gradId = `tl-arc-${tl.id}`;
 
   /*
     关掉的就是**文字**：
-    事件名藏起来，塔吊照旧（它标着事件在轴上的位置）；
+    时刻名藏起来，大塔吊照旧（它标着那个时刻在轴上的位置）；
+    事件名藏起来，小塔吊照旧；
     年代名藏起来，带子和它的颜色照旧（它标着那段年月有多长）。
   */
-  .tl.is-off-left-events .tl__item[data-side='left'] .tl__name,
-  .tl.is-off-right-events .tl__item[data-side='right'] .tl__name,
+  .tl.is-off-left-moments .tl__item[data-side='left'][data-kind='moment'] .tl__name,
+  .tl.is-off-right-moments .tl__item[data-side='right'][data-kind='moment'] .tl__name,
+  .tl.is-off-left-events .tl__item[data-side='left'][data-kind='event'] .tl__name,
+  .tl.is-off-right-events .tl__item[data-side='right'][data-kind='event'] .tl__name,
   .tl.is-off-left-spans .tl__spanName[data-side='left'],
   .tl.is-off-right-spans .tl__spanName[data-side='right'] {
     display: none;
@@ -1009,14 +1066,22 @@ const gradId = `tl-arc-${tl.id}`;
     /* ---------------- 文字开关（左上 / 右上各两个） ---------------- */
 
     /**
-     * 四路文字，各有一个开关：左侧事件名 / 左侧年代名 / 右侧事件名 / 右侧年代名。
+     * 这三类文字各有一个开关，再分左右，一共六路：
+     * 左侧年代 / 左侧时刻 / 左侧事件 / 右侧年代 / 右侧时刻 / 右侧事件。
      *
-     * 关掉的只是**文字**：塔吊还在（它标着事件在轴上的位置），
-     * 时间段带子和它的颜色也还在（它标着那段年月有多长）。
-     * 分左右是必要的 —— 两侧的拥挤程度各管各的，常见的是右边挤、左边空。
+     * 关掉的只是**文字**：大塔吊（时刻）、小塔吊（事件）都还在 ——
+     * 它们标着那天在轴上的位置；时间段带子和它的颜色也还在 ——
+     * 它标着那段年月有多长。
      */
-    const LABELS_KEY = 'tl-labels';
-    const CHANNELS = ['left-events', 'left-spans', 'right-events', 'right-spans'];
+    const LABELS_KEY = 'tl-marks';
+    const CHANNELS = [
+      'left-spans',
+      'left-moments',
+      'left-events',
+      'right-spans',
+      'right-moments',
+      'right-events',
+    ];
     const offLabels = new Set<string>();
     try {
       const raw = sessionStorage.getItem(LABELS_KEY);
@@ -1069,12 +1134,15 @@ const gradId = `tl-arc-${tl.id}`;
     const offsetOf = new Map<HTMLElement, number>();
 
     /**
-     * 把时间点按「同一侧 + 轴上离得太近」聚成组。
+     * 把时间点按「同一侧 + 同一类 + 轴上离得太近」聚成组。
      *
      * 只合并**同一侧**的：左右两侧本来就是两条历法（比如花娅历 / 冰室历），
      * 同一天各挂一个事件时，两个塔吊是朝相反方向长的，文字也各在一边，
      * 根本不会打架 —— 合成一个反而把「这天两边都发生了事」这层意思弄丢了。
      * 真正会糊在一起的是同一侧挨着的几个，所以只处理它们。
+     *
+     * 也只在**同一类**里合并：时刻是大塔吊 + 大字，事件是小塔吊 + 小字，
+     * 混在一起并成一摞的话，那点「大小 + 颜色」的区别就没了。
      *
      * 判据从组里**上一个**成员算（链式）：三个点两两相距 20px 时，
      * 首尾相差 40px 其实已经拉开了，但它们中间那个仍然和谁都挤，
@@ -1086,32 +1154,35 @@ const gradId = `tl-arc-${tl.id}`;
       offsetOf.clear();
 
       for (const side of ['left', 'right']) {
-        const list = items
-          .filter((el) => (el.dataset.side === 'left' ? 'left' : 'right') === side)
-          .map((el) => ({ el, t: Number(el.dataset.param) }))
-          .filter((o) => Number.isFinite(o.t))
-          .sort((a, b) => a.t - b.t);
+        for (const kind of ['moment', 'event']) {
+          const list = items
+            .filter((el) => (el.dataset.side === 'left' ? 'left' : 'right') === side)
+            .filter((el) => (el.dataset.kind === 'event' ? 'event' : 'moment') === kind)
+            .map((el) => ({ el, t: Number(el.dataset.param) }))
+            .filter((o) => Number.isFinite(o.t))
+            .sort((a, b) => a.t - b.t);
 
-        let run: { el: HTMLElement; t: number }[] = [];
-        const flush = () => {
-          if (!run.length) return;
-          const n = run.length;
-          groups.push({
-            anchor: run[0].el,
-            members: run.map((o) => o.el),
-            // 以组头那点为中轴，整组文字上下对称排开：早的在上、晚的在下
-            off: run.map((_, i) => (i - (n - 1) / 2) * LABEL_GAP),
-          });
-          run = [];
-        };
+          let run: { el: HTMLElement; t: number }[] = [];
+          const flush = () => {
+            if (!run.length) return;
+            const n = run.length;
+            groups.push({
+              anchor: run[0].el,
+              members: run.map((o) => o.el),
+              // 以组头那点为中轴，整组文字上下对称排开：早的在上、晚的在下
+              off: run.map((_, i) => (i - (n - 1) / 2) * LABEL_GAP),
+            });
+            run = [];
+          };
 
-        let lastT = Number.NEGATIVE_INFINITY;
-        for (const o of list) {
-          if (run.length && (o.t - lastT) * V > MERGE_GAP) flush();
-          run.push(o);
-          lastT = o.t;
+          let lastT = Number.NEGATIVE_INFINITY;
+          for (const o of list) {
+            if (run.length && (o.t - lastT) * V > MERGE_GAP) flush();
+            run.push(o);
+            lastT = o.t;
+          }
+          flush();
         }
-        flush();
       }
 
       for (const g of groups) {

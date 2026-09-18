@@ -2083,13 +2083,13 @@ body[data-type="notes"] .field--posts-only {
   margin-bottom: 8px;
 }
 /*
-  时间点一行：侧 / 日期 / 事件名 / 跳转地址 / 删除。
+  时间点一行：侧 / 时刻·事件 / 日期 / 名字 / 跳转地址 / 删除。
   时间段一行：侧 / 名字 / 起点 / 终点 / 跳转地址 / 删除。
   弹窗宽 1180，表单那一列约 766px，这些宽度分得开。
 */
 .tl-edit__item {
   display: grid;
-  grid-template-columns: 92px 152px minmax(0, 1fr) minmax(0, 1fr) auto;
+  grid-template-columns: 88px 82px 152px minmax(0, 1fr) minmax(0, 1fr) auto;
   gap: 6px;
   align-items: center;
 }
@@ -2100,7 +2100,8 @@ body[data-type="notes"] .field--posts-only {
   border-color: var(--danger);
   background: var(--danger-soft);
 }
-.tl-edit__side {
+.tl-edit__side,
+.tl-edit__kind {
   padding: 5px 6px;
   font-size: 12px;
 }
@@ -2264,6 +2265,18 @@ body[data-type="notes"] .field--posts-only {
   color: #ffd9ef;
   text-shadow: 0 1px 5px rgba(20, 0, 10, 0.9);
 }
+/* 「事件」：小一号的粉色塔吊 + 更小的文字，和页面上一致 */
+.tl-pv__item[data-kind='event'] .tl-pv__crane {
+  left: -9px;
+  width: 18px;
+  height: 18px;
+  color: #ff4fa3;
+  filter: drop-shadow(0 0 4px rgba(255, 40, 130, 0.85));
+}
+.tl-pv__item[data-kind='event'] .tl-pv__name {
+  font-size: 0.62rem;
+  color: rgba(255, 217, 239, 0.86);
+}
 .tl-pv__item[data-side='left'] .tl-pv__name {
   right: 40px;
 }
@@ -2275,7 +2288,12 @@ body[data-type="notes"] .field--posts-only {
   /* 比事件名大一档，和页面上保持一致的大小关系（页面 0.8 / 0.92rem） */
   font-size: 0.78rem;
   letter-spacing: 0.08em;
-  color: rgba(255, 205, 230, 0.92);
+  /* 页面上年代名有个胶囊外框，这里也照做 —— 一眼看出它比「点」高一级 */
+  padding: 0.08rem 0.45rem;
+  border: 1px solid rgba(255, 120, 190, 0.55);
+  border-radius: 999px;
+  background: rgba(26, 3, 38, 0.84);
+  color: #ffd9ef;
   white-space: nowrap;
   pointer-events: none;
 }
