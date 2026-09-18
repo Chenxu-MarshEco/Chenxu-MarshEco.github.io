@@ -851,7 +851,7 @@ async function handleApi(req, res, url) {
       /* 第一次还没有这个文件，正常 */
     }
     await fs.writeFile(TIMELINES_FILE, `${JSON.stringify(data, null, 2)}\n`, 'utf8');
-    return sendJson(res, 200, { ok: true, timelines: data.timelines.length });
+    return sendJson(res, 200, { ok: true, timelines: data.timelines.length, dropped: data.dropped });
   }
 
   // ---- 排版微调（首页元素的相对偏移与缩放）----
@@ -1121,11 +1121,24 @@ function cleanTimelines(payload) {
 
   const usedTl = new Set();
   const timelines = [];
+  /*
+    被丢掉的东西要记账。
+    丢本身是设计好的（没日期的点排不进轴、端点没了的段是悬空的），
+    但**不能悄悄丢** —— 编辑器那边会把这个数字报给用户，
+    免得出现「点一下保存它就没了」这种对着空列表发愣的情况。
+  */
+  const dropped = { timelines: 0, points: 0, spans: 0 };
 
   payload.timelines.forEach((raw, ti) => {
-    if (!raw || typeof raw !== 'object') return;
+    if (!raw || typeof raw !== 'object') {
+      dropped.timelines++;
+      return;
+    }
     const title = String(raw.title || '').trim();
-    if (!title) return;
+    if (!title) {
+      dropped.timelines++;
+      return;
+    }
 
     let id = String(raw.id || '').trim();
     if (!id || usedTl.has(id)) id = `tl-${Date.now().toString(36)}-${ti + 1}`;
@@ -1143,10 +1156,10 @@ function cleanTimelines(payload) {
     const usedP = new Set();
     const rawPoints = Array.isArray(raw.points) ? raw.points : [];
     rawPoints.forEach((pt, pi) => {
-      if (!pt || typeof pt !== 'object') return;
+      if (!pt || typeof pt !== 'object') { dropped.points++; return; }
       const date = cleanDate(pt.date);
       const label = String(pt.label || '').trim();
-      if (!date || !label) return;
+      if (!date || !label) { dropped.points++; return; }
       let pid = String(pt.id || '').trim();
       if (!pid || usedP.has(pid)) pid = `${id}-p${pi + 1}`;
       usedP.add(pid);
@@ -1164,12 +1177,12 @@ function cleanTimelines(payload) {
     const usedS = new Set();
     const rawSpans = Array.isArray(raw.spans) ? raw.spans : [];
     rawSpans.forEach((sp, si) => {
-      if (!sp || typeof sp !== 'object') return;
+      if (!sp || typeof sp !== 'object') { dropped.spans++; return; }
       const name = String(sp.name || '').trim();
-      if (!name) return;
+      if (!name) { dropped.spans++; return; }
       const from = String(sp.from || '').trim();
       const to = String(sp.to || '').trim();
-      if (!ids.has(from) || !ids.has(to) || from === to) return;
+      if (!ids.has(from) || !ids.has(to) || from === to) { dropped.spans++; return; }
       let sid = String(sp.id || '').trim();
       if (!sid || usedS.has(sid)) sid = `${id}-s${si + 1}`;
       usedS.add(sid);
@@ -1184,7 +1197,7 @@ function cleanTimelines(payload) {
     timelines.push(tl);
   });
 
-  return { timelines };
+  return { timelines, dropped };
 }
 
 /**

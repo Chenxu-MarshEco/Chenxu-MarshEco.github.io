@@ -19,7 +19,7 @@
  *    进了用别的轴（或没有轴）的页面，自然就是关着的。
  */
 import type { Timeline as TimelineData } from '../utils/timelines';
-import { pointParam, spanEdges, spanParam, spanSides, pointKind, isLiveDate, dateOf, rangeOf, dayOf } from '../utils/timelines';
+import { pointParam, spanEdges, spanParam, spanSides, pointKind, isLiveDate, dateOf, rangeOf, dayOf, assignSpanLanes } from '../utils/timelines';
 import { withBase } from '../utils/url';
 
 interface Props {
@@ -71,23 +71,40 @@ const points = tl.points
  */
 const spans = tl.spans.map((s) => {
   const edges = spanEdges(tl, s);
-  return {
-    ...s,
-    t: spanParam(tl, s),
-    fromT: Math.min(edges.from, edges.to),
-    toT: Math.max(edges.from, edges.to),
-    sides: spanSides(tl, s),
-  };
+  const lo = Math.min(edges.from, edges.to);
+  const hi = Math.max(edges.from, edges.to);
+  const sides = spanSides(tl, s);
+  return { ...s, t: spanParam(tl, s), fromT: lo, toT: hi, sides };
 });
 
-/** 带子和名字都是「一个时间段 × 一侧」一条，摊平了渲染 */
+/**
+ * 同一侧重合的时间段分到不同的「层」。
+ *
+ * 两条时间段在时间上叠着、又挂在同一侧时，原来它们会画在弧线的同一个偏移上、
+ * 用同一套落日色 —— 看起来就是一条压着另一条，分不清哪段是哪段
+ * （「北大年代」和「花娅年代」叠了四分之一条轴，就是这么糊在一起的）。
+ * 分层之后：第 0 层照旧（落日渐变），往外的层各自再让开一档、换一个明显不同的颜色。
+ * 「两侧都有」的时间段在左右各占一层，所以两边分别算。
+ */
+const laneList = spans.flatMap((s) => s.sides.map((side) => ({ id: `${s.id}@@${side}`, side, lo: s.fromT, hi: s.toT })));
+const lanes = assignSpanLanes(laneList);
+const laneOf = (id: string, side: string) => lanes.get(`${id}@@${side}`) ?? 0;
+
+/** 每一层的颜色；第 0 层是「没和别的叠着」时的样子（粉色胶囊 + 落日渐变带子） */
+const LANE_TINT = ['#ff78be', '#c86bff', '#5fd8ff', '#7dff9e', '#ffd447'];
+const laneColor = (lane: number) => LANE_TINT[Math.min(lane, LANE_TINT.length - 1)];
+/** 带子的描边：第 0 层保持落日渐变，往外各层用自己那个颜色 */
+const bandStroke = (lane: number) => (lane === 0 ? `url(#${gradId})` : laneColor(lane));
+
+/** 带子和名字都是「一个时间段 × 一侧」一条，摊平了渲染，各自带上自己那一层的编号 */
 const spanBands = spans.flatMap((s) =>
-  s.sides.map((side) => ({ id: s.id, side, from: s.from, to: s.to, fromT: s.fromT, toT: s.toT }))
+  s.sides.map((side) => ({ id: s.id, side, lane: laneOf(s.id, side), from: s.from, to: s.to, fromT: s.fromT, toT: s.toT }))
 );
 const spanLabels = spans.flatMap((s) =>
   s.sides.map((side) => ({
     id: s.id,
     side,
+    lane: laneOf(s.id, side),
     name: s.name,
     href: s.href,
     from: s.from,
@@ -106,6 +123,7 @@ const gradId = `tl-arc-${tl.id}`;
   data-tl-id={tl.id}
   data-tl-min={spanMin}
   data-tl-max={spanMax}
+  data-tl-grad={gradId}
   data-tl-default={defaultParam === null ? '' : String(defaultParam)}
 >
   {/*
@@ -150,11 +168,12 @@ const gradId = `tl-arc-${tl.id}`;
             class="tl__band"
             data-tl-band
             data-side={b.side}
+            data-lane={b.lane}
             data-from-point={b.from}
             data-to-point={b.to}
             data-tl-from={b.fromT}
             data-tl-to={b.toT}
-            stroke={`url(#${gradId})`}
+            style={`--lane:${b.lane};--bs:${bandStroke(b.lane)}`}
           ></path>
         ))}
         {/* 主弧线 */}
@@ -177,10 +196,12 @@ const gradId = `tl-arc-${tl.id}`;
             class="tl__spanName"
             data-tl-spanName={l.id}
             data-side={l.side}
+            data-lane={l.lane}
             data-from-point={l.from}
             data-to-point={l.to}
             data-tl-from={l.fromT}
             data-tl-to={l.toT}
+            style={`--sc:${laneColor(l.lane)}`}
             href={l.href ? linkHref(l.href) : undefined}
             {...l.href && isExternal(l.href) ? { target: '_blank', rel: 'noopener' } : {}}
             {...l.href ? { title: `${l.name}（点开看这一段）` } : {}}
@@ -460,17 +481,19 @@ const gradId = `tl-arc-${tl.id}`;
     stroke-width: 9;
     opacity: 0.28;
     stroke-linecap: round;
+    /* 颜色由标记里按「层」算好塞进 --bs：第 0 层是落日渐变，往外的层各是一个纯色 */
+    stroke: var(--bs, #ffd447);
   }
   /*
-    带子贴着弧线往自己那一侧让开一点，才看得出这段年月属于哪一边。
-    往左的往左平移，往右的往右平移（弧线在这一段几乎是竖直的，
-    横着挪就等于顺着法线挪）。
+    带子贴着弧线往自己那一侧让开，**再按层号往外加一档**：
+    同一侧重合的两条时间段分在不同层，于是重合的那一段能看到两条并排的带子，
+    而不是一条压着另一条。往左往右各自算，--lane 是标记里写好的层号。
   */
   .tl__band[data-side='left'] {
-    transform: translateX(-8px);
+    transform: translateX(calc(-8px - var(--lane, 0) * 11px));
   }
   .tl__band[data-side='right'] {
-    transform: translateX(8px);
+    transform: translateX(calc(8px + var(--lane, 0) * 11px));
   }
 
   /*
@@ -663,18 +686,23 @@ const gradId = `tl-arc-${tl.id}`;
       一眼就和旁边那些没有框的名字分开。
     */
     padding: 0.1rem 0.55rem;
-    border: 1px solid rgba(255, 120, 190, 0.55);
+    border: 1px solid var(--sc, rgba(255, 120, 190, 0.55));
     border-radius: 999px;
     background: rgba(26, 3, 38, 0.84);
     box-shadow: 0 0 12px rgba(255, 79, 163, 0.22);
     backdrop-filter: blur(3px);
     font-size: 0.92rem;
     letter-spacing: 0.1em;
-    color: #ffd9ef;
+    color: var(--sc, #ffd9ef);
     text-decoration: none;
     white-space: nowrap;
     pointer-events: none;
   }
+  /*
+    名字的边框和字色跟着它那条带子的「层」走（--sc 是标记里按层算好写进去的）：
+    带子是紫色，名字就是紫色，一眼能对上哪条带子叫什么。
+    第 0 层给的就是原来那个粉色，没有重合的场合和以前一模一样。
+  */
   /* 有链接的那几个才收鼠标，也才有下划线和手型 */
   a.tl__spanName {
     pointer-events: auto;
@@ -962,6 +990,40 @@ const gradId = `tl-arc-${tl.id}`;
   const SPAN_GAP = 40;
 
   /**
+   * 每一层带子 / 名字的颜色。第 0 层是「没和别的重合」时的样子（粉名字 + 落日渐变带子），
+   * 往外的层各给一个明显不一样的颜色 —— 重合的那一段就是靠这个分开的。
+   * **和 .astro 里那份（LANE_TINT）必须一致**，改一边记得改另一边。
+   */
+  const LANE_TINT = ['#ff78be', '#c86bff', '#5fd8ff', '#7dff9e', '#ffd447'];
+  const laneColor = (lane: number) => LANE_TINT[Math.min(lane, LANE_TINT.length - 1)];
+
+  /**
+   * 给同一侧的时间段分层：时间上有重叠的排到不同的层。
+   *
+   * 算法和 src/utils/timelines.ts 的 assignSpanLanes 是同一套（经典区间着色，
+   * 按起点排序贪心塞层）。脚本里没法 import TS，只能抄一份 —— 改一边记得改另一边。
+   * 页面打开时如果这条轴有「实时」点，整条轴会重排，重叠关系可能变，那时会再跑一遍。
+   */
+  function assignLanes(list: { id: string; side: string; lo: number; hi: number }[]) {
+    const out = new Map<string, number>();
+    for (const side of ['left', 'right']) {
+      const ends: number[] = [];
+      const sorted = list.filter((x) => x.side === side).sort((a, b) => a.lo - b.lo);
+      for (const s of sorted) {
+        let lane = ends.findIndex((end) => end <= s.lo);
+        if (lane < 0) {
+          lane = ends.length;
+          ends.push(s.hi);
+        } else {
+          ends[lane] = s.hi;
+        }
+        out.set(s.id, lane);
+      }
+    }
+    return out;
+  }
+
+  /**
    * 一组合并事件。
    *
    * 一组共用**组头**那个点的弧上位置（anchor），组内每个成员只有一个
@@ -981,6 +1043,11 @@ const gradId = `tl-arc-${tl.id}`;
     if (!panel || !body || !arcPath || !rulerPath || !tab) continue;
 
     const tlId = root.dataset.tlId ?? '';
+    /**
+     * 那段落日渐变的 id（`tl-arc-<轴 id>`）。它是构建期算的，脚本里原本拿不到 ——
+     * 实时重排要用它给第 0 层的带子重新描上渐变，所以标记里专门写了一份。
+     */
+    const gradId = root.dataset.tlGrad ?? `tl-arc-${tlId}`;
     // 轴的时间范围（天序号）。有「实时」点的话，打开页面时会被 relayoutLive 改掉，
     // 所以这里是 let 不是 const。
     let dayMin = Number(root.dataset.tlMin) || 0;
@@ -1242,17 +1309,54 @@ const gradId = `tl-arc-${tl.id}`;
       // 时间段的带子和名字：两端位置要按新的点位置重算
       const byId = new Map<string, HTMLElement>();
       for (const el of items) byId.set(el.dataset.point ?? '', el);
-      for (const el of [...bands, ...spanNames]) {
+      const spanEls = [...bands, ...spanNames];
+      /*
+        分层用的 key：**两端时间点的 id + 哪一侧**。
+        不能用算出来的 t 值当 key —— 同一个时间段在左右两侧各有带子和名字，
+        名字和带子的 t 是一样的，会撞成同一个 key；更要紧的是**复用这个 key 去重**：
+        一个时间段在这一侧只该算一次层，名字和带子共用同一个结果。
+        （喂重复的进去会把同一条挤到新的一层：第二遍进来时那一层已经占着了。）
+      */
+      const spanKey = (el: HTMLElement) =>
+        `${el.dataset.fromPoint ?? ''}@@${el.dataset.side ?? ''}@@${el.dataset.toPoint ?? ''}`;
+      const laneInput = new Map<string, { id: string; side: 'left' | 'right'; lo: number; hi: number }>();
+
+      for (const el of spanEls) {
         const a = byId.get(el.dataset.fromPoint ?? '');
         const b = byId.get(el.dataset.toPoint ?? '');
         if (!a || !b) continue;
         const da = dayOfEl.get(a);
         const db = dayOfEl.get(b);
         if (da === undefined || db === undefined) continue;
-        const t0 = paramOf(Math.min(da, db));
-        const t1 = paramOf(Math.max(da, db));
-        el.dataset.tlFrom = String(t0);
-        el.dataset.tlTo = String(t1);
+        el.dataset.tlFrom = String(paramOf(Math.min(da, db)));
+        el.dataset.tlTo = String(paramOf(Math.max(da, db)));
+        const key = spanKey(el);
+        if (!laneInput.has(key)) {
+          laneInput.set(key, {
+            id: key,
+            side: el.dataset.side === 'left' ? 'left' : 'right',
+            lo: Math.min(da, db),
+            hi: Math.max(da, db),
+          });
+        }
+      }
+
+      /*
+        实时点把整条轴拉长之后，时间段之间的重叠关系**可能**变了
+        （只有当某个时间段的端点本身就是实时点时才真的会变 ——
+        重叠看的是端点那天，不是它在轴上的百分比），所以这儿重算一遍。
+      */
+      const laneMap = assignLanes([...laneInput.values()]);
+      for (const el of spanEls) {
+        const lane = laneMap.get(spanKey(el)) ?? 0;
+        el.dataset.lane = String(lane);
+        const color = laneColor(lane);
+        if (el.classList.contains('tl__band')) {
+          el.style.setProperty('--lane', String(lane));
+          el.style.setProperty('--bs', lane === 0 ? `url(#${gradId})` : color);
+        } else {
+          el.style.setProperty('--sc', color);
+        }
       }
 
       root.dataset.tlMin = String(lo);

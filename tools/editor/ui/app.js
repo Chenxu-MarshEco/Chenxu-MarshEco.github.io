@@ -3564,6 +3564,7 @@ const TL_PV = {
   WIDTH: 360, // 量不到宽度时的兜底画布宽（正常按预览列的实际宽度算）
   PAD: 14, // 画布上下各留一点，首尾两端的文字才不会被裁掉半行
   BAND_OFFSET: 8, // 时间段带子往自己那一侧让开多少（和页面上的 translateX 对齐）
+  LANE_STEP: 11, // 同一侧重合的时间段，每往外一层再多让开多少（和页面一致）
 };
 
 /** 塔吊图形的路径，和页面右上角那颗是同一份 */
@@ -3595,6 +3596,33 @@ function tlDay(date) {
 
 /** 显示用的日期文案：实时点说人话，别把哨兵字符串露出去 */
 const tlDateText = (p) => (p?.date === 'today' ? '今天（实时）' : p?.date || '（没填日期）');
+
+/**
+ * 给同一侧的时间段分层：时间上有重叠的排到不同的层。
+ * 和 src/utils/timelines.ts 的 assignSpanLanes 是同一套算法（经典区间着色）。
+ * 层号决定预览里那条带子离轴多远、用什么颜色 —— 重合的那一段才分得开。
+ */
+function assignSpanLanes(list) {
+  const out = new Map();
+  for (const side of ['left', 'right']) {
+    const ends = [];
+    for (const s of list.filter((x) => x.side === side).sort((a, b) => a.lo - b.lo)) {
+      let lane = ends.findIndex((end) => end <= s.lo);
+      if (lane < 0) {
+        lane = ends.length;
+        ends.push(s.hi);
+      } else {
+        ends[lane] = s.hi;
+      }
+      out.set(s.id, lane);
+    }
+  }
+  return out;
+}
+
+/** 每一层的颜色；第 0 层是没重合时的样子（和页面上那份一致） */
+const LANE_TINT = ['#ff78be', '#c86bff', '#5fd8ff', '#7dff9e', '#ffd447'];
+const laneColor = (lane) => LANE_TINT[Math.min(lane, LANE_TINT.length - 1)];
 
 /**
  * 这条轴的时间范围和「某一天落在 0~1 的哪儿」。
@@ -3725,15 +3753,16 @@ function paintTimelinePreview(host) {
   };
 
   /* ---- 时间段的带子：一个时间段 × 一侧一条（和页面上一样） ---- */
-  const spanMarks = [];
+  // 先把每条「时间段 × 侧」摊平，算出各自落在第几层（同侧重合的分开），再画
+  const flatSpans = [];
   for (const s of tl.spans ?? []) {
     const a = tl.points.find((p) => p.id === s.from);
     const b = tl.points.find((p) => p.id === s.to);
     const da = tlDay(a?.date);
     const db = tlDay(b?.date);
     if (!Number.isFinite(da) || !Number.isFinite(db)) continue;
-    const lo = range.of(Math.min(da, db));
-    const hi = range.of(Math.max(da, db));
+    const lo = Math.min(da, db);
+    const hi = Math.max(da, db);
     // 挂哪几侧：数据说了算；老数据没写就按起点那侧（和 spanSides 一个规矩）
     const sides =
       s.side === 'both'
@@ -3741,19 +3770,28 @@ function paintTimelinePreview(host) {
         : s.side === 'left' || s.side === 'right'
           ? [s.side]
           : [a?.side === 'left' ? 'left' : 'right'];
-    const d = arcSeg(lo, hi);
-    for (const side of sides) {
-      svg.appendChild(
-        svgEl('path', {
-          class: 'tl-pv__band',
-          d,
-          stroke: `url(#${gid})`,
-          transform: `translate(${side === 'left' ? -TL_PV.BAND_OFFSET : TL_PV.BAND_OFFSET},0)`,
-        })
-      );
-      spanMarks.push({ el: s, y: ((lo + hi) / 2) * V, side });
-    }
+    for (const side of sides) flatSpans.push({ el: s, side, lo, hi });
   }
+  const laneMap = assignSpanLanes(flatSpans.map((f, i) => ({ id: String(i), side: f.side, lo: f.lo, hi: f.hi })));
+
+  const spanMarks = [];
+  flatSpans.forEach((f, i) => {
+    const lane = laneMap.get(String(i)) ?? 0;
+    const t0 = range.of(f.lo);
+    const t1 = range.of(f.hi);
+    const dir = f.side === 'left' ? -1 : 1;
+    const off = dir * (TL_PV.BAND_OFFSET + lane * TL_PV.LANE_STEP);
+    svg.appendChild(
+      svgEl('path', {
+        class: 'tl-pv__band',
+        d: arcSeg(t0, t1),
+        // 第 0 层还是落日渐变，往外的层各用自己那个颜色（和页面上一致）
+        stroke: lane === 0 ? `url(#${gid})` : laneColor(lane),
+        transform: `translate(${off},0)`,
+      })
+    );
+    spanMarks.push({ el: f.el, y: ((t0 + t1) / 2) * V, side: f.side, color: laneColor(lane) });
+  });
 
   /* ---- 主弧线（每 8px 一个点，够顺） ---- */
   const ys = [];
@@ -3870,6 +3908,8 @@ function paintTimelinePreview(host) {
     el.className = 'tl-pv__span' + (mark.el.href ? ' is-link' : '');
     el.textContent = mark.el.name || '（这段还没起名）';
     el.title = mark.el.href ? `${mark.el.name}　→ ${mark.el.href}` : mark.el.name || '';
+    // 名字的颜色跟着它那条带子的层走，一眼能对上哪条带子叫什么
+    el.style.setProperty('--sc', mark.color ?? laneColor(0));
     const x = arcX(y);
     /*
       和页面上一样：右侧直接写 left；左侧写 left 再 translateX(-100%)
@@ -4235,7 +4275,13 @@ function renderTimelineEditor() {
 }
 
 async function saveTimelines() {
+  const btn = els.tlSave;
+  const wasText = btn?.textContent ?? '';
   try {
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = '正在保存…';
+    }
     const res = await fetch('/api/timelines', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -4243,16 +4289,51 @@ async function saveTimelines() {
     });
     const data = await res.json();
     if (!res.ok || !data.ok) throw new Error(data.error || `HTTP ${res.status}`);
-    // 服务端会顺手清洗（没日期的点、端点没了的段都会被丢掉），
-    // 所以存完要拿回来的那份重新渲染，让界面上看到的和落盘的一致
+
+    /*
+      服务端会顺手清洗（没日期的点、端点没了的段都会被丢掉）。
+      丢东西一定要**说出来** —— 早先「实时」那个日期值服务端不认识，
+      于是一保存整个时间点就被悄悄删掉，界面上看起来就是「点了一下保存它就没了」。
+      那种事以后必须当场看到原因，而不是对着空列表发愣。
+    */
+    const d = data.dropped ?? {};
+    const lost = [];
+    if (d.timelines) lost.push(`${d.timelines} 条时间轴`);
+    if (d.points) lost.push(`${d.points} 个时间点`);
+    if (d.spans) lost.push(`${d.spans} 个时间段`);
+
+    // 存完拿服务端那份重新渲染，让界面上看到的和落盘的一致
     timelinesDraft = null;
     await loadTimelines();
     if (tlIndex >= timelinesDraft.timelines.length) tlIndex = Math.max(0, timelinesDraft.timelines.length - 1);
     renderTimelineEditor();
     closeTimelinesModal();
-    toast('时间轴已保存，重新构建后生效');
+
+    // 再构建一次，页面上才是刚存的样子（不然得另找地方点「保存并重新构建」）
+    let built = false;
+    if (btn) btn.textContent = '正在重新构建…';
+    try {
+      const bres = await fetch('/api/build', { method: 'POST' });
+      const bdata = await bres.json();
+      built = bres.ok && bdata.ok;
+    } catch {
+      /* 构建失败不算保存失败，下面会提示 */
+    }
+
+    if (lost.length) {
+      toast(`保存了，但有 ${lost.join('、')} 没存下 —— 多半是缺日期或名字、或者时间段的端点不在了`, true);
+    } else if (built) {
+      toast('时间轴已保存并重新构建，刷新页面就能看到');
+    } else {
+      toast('时间轴已保存，但重新构建没成功 —— 去启动器里点一下「保存并重新构建」', true);
+    }
   } catch (err) {
     toast(`保存失败：${err.message}`, true);
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = wasText;
+    }
   }
 }
 

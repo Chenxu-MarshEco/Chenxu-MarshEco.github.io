@@ -204,6 +204,39 @@ export function spanSides(tl: Timeline, s: TimelineSpan): TimelineSide[] {
 }
 
 /**
+ * 给同一侧的时间段**分层**：时间上有重叠的排到不同的「层」。
+ *
+ * 为什么需要：两个时间段如果时间上重合（比如「北大年代」和「花娅年代」
+ * 在右边叠了四分之一条轴），它们会画在弧线的同一个偏移上、用同一套落日色，
+ * 看起来就是一条压着另一条，根本分不出哪段是哪段。
+ * 分层之后重叠的那些各自往外让一档、各用各的颜色，重合的那一段一眼能看出是两条。
+ *
+ * 算法就是经典的区间着色（贪心）：按起点排序，能塞进已有的层就塞，
+ * 塞不下就新开一层。层数等于「同一时刻最多有几段叠着」，所以不会乱开。
+ * 首尾正好相接（一段的结束 == 另一段的开始）不算重叠，还是同一层。
+ */
+export function assignSpanLanes<T extends { id: string; side: TimelineSide; lo: number; hi: number }>(
+  spans: T[]
+): Map<string, number> {
+  const out = new Map<string, number>();
+  for (const side of ['left', 'right'] as const) {
+    const list = spans.filter((s) => s.side === side).sort((a, b) => a.lo - b.lo);
+    const ends: number[] = [];
+    for (const s of list) {
+      let lane = ends.findIndex((end) => end <= s.lo);
+      if (lane < 0) {
+        lane = ends.length;
+        ends.push(s.hi);
+      } else {
+        ends[lane] = s.hi;
+      }
+      out.set(s.id, lane);
+    }
+  }
+  return out;
+}
+
+/**
  * 页面上的一个成分认领了哪个时间点 / 时间段。
  *
  * 块和子版块都可能有，取数时统一成这一个形状。

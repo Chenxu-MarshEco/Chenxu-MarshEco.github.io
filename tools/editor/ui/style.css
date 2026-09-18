@@ -2315,12 +2315,13 @@ body[data-type="notes"] .field--posts-only {
   /* 比事件名大一档，和页面上保持一致的大小关系（页面 0.8 / 0.92rem） */
   font-size: 0.78rem;
   letter-spacing: 0.08em;
-  /* 页面上年代名有个胶囊外框，这里也照做 —— 一眼看出它比「点」高一级 */
+  /* 页面上年代名有个胶囊外框，这里也照做 —— 一眼看出它比「点」高一级。
+     边框和字色跟着它那条带子的「层」走（--sc），重合的时段才分得开。 */
   padding: 0.08rem 0.45rem;
-  border: 1px solid rgba(255, 120, 190, 0.55);
+  border: 1px solid var(--sc, rgba(255, 120, 190, 0.55));
   border-radius: 999px;
   background: rgba(26, 3, 38, 0.84);
-  color: #ffd9ef;
+  color: var(--sc, #ffd9ef);
   white-space: nowrap;
   pointer-events: none;
 }
