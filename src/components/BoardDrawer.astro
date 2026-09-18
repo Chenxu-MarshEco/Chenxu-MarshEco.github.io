@@ -84,15 +84,6 @@ function renderNodes(nodes: BoardNode[]): string {
   分开各自 fixed 的话，改一个尺寸另一个就对不齐了。
 -->
 <div class="corner">
-  <!--
-    还没出声时的提示（浏览器挡了自动播放，"待很久才开始放"就是等用户点一下）。
-    绝对定位挂在按钮组左边：出现/消失都不会把三颗按钮挤动。
-    它是标签不是按钮，但点它同样算一次用户手势 —— 全局那次"补 play()"会接住。
-  -->
-  <span class="volhint" id="music-hint" hidden>
-    <span class="volhint__note" aria-hidden="true">♪</span><span id="music-hint-text">点一下播放</span>
-  </span>
-
   <button type="button" class="corner__btn totop" id="totop" aria-label="回到顶部" title="回到顶部">
     <!-- 简约化的塔吊（本站的记号），不是箭头 -->
     <svg class="totop__crane" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -141,18 +132,26 @@ function renderNodes(nodes: BoardNode[]): string {
         <path class="vol__play" d="M15.4 15.4v6.2l5.6-3.1z"></path>
       </svg>
     </button>
-    <div class="vol__panel">
-      <input
-        class="vol__range"
-        id="music-vol-range"
-        type="range"
-        min="0"
-        max="100"
-        step="1"
-        value="70"
-        aria-label="音量大小"
-      />
-      <span class="vol__num" id="music-vol-num">70%</span>
+    <!--
+      按钮下方那一摞：音量条（悬停才出）+ 状态卡（只有"正在缓冲"时出）。
+      竖着叠在一个容器里，所以两者同时出现时也不会互相压住。
+    -->
+    <div class="vol__pop">
+      <div class="vol__panel">
+        <input
+          class="vol__range"
+          id="music-vol-range"
+          type="range"
+          min="0"
+          max="100"
+          step="1"
+          value="70"
+          aria-label="音量大小"
+        />
+        <span class="vol__num" id="music-vol-num">70%</span>
+      </div>
+      <!-- 缓冲提示：播放器脚本控制 hidden；只在真的在等数据时弹出来 -->
+      <div class="vol__status" id="music-status" hidden>缓冲中…</div>
     </div>
   </div>
 
@@ -335,46 +334,8 @@ function renderNodes(nodes: BoardNode[]): string {
     visibility: hidden;
   }
 
-  /*
-    「点一下播放」提示条：只在音乐还没出声时出现（浏览器挡了自动播放，
-    或用户自己按空格暂停了）。绝对定位挂在按钮组左边、不参与布局，
-    出现/消失都不会把三颗按钮挤动。
-  */
-  .volhint {
-    position: absolute;
-    right: calc(100% + 0.55rem);
-    top: 50%;
-    transform: translateY(-50%);
-    display: flex;
-    align-items: center;
-    gap: 0.28rem;
-    padding: 0.22rem 0.55rem;
-    border: 1px solid var(--c-border);
-    border-radius: var(--r-full);
-    background: var(--c-bg-raised);
-    color: var(--c-text-muted);
-    font-size: 0.72rem;
-    line-height: 1.5;
-    white-space: nowrap;
-    box-shadow: var(--shadow-sm);
-    animation: vol-hint 2.4s ease-in-out infinite;
-  }
-  .volhint__note {
-    color: var(--c-accent);
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .volhint {
-      animation: none;
-    }
-  }
-  @media (max-width: 26rem) {
-    .volhint {
-      font-size: 0.66rem;
-      padding: 0.16rem 0.42rem;
-    }
-  }
-
-  /* ---------- 音量键（音箱） ---------- */  .vol {
+  /* ---------- 音量键（音箱） ---------- */
+  .vol {
     position: relative;
     display: flex;
     align-items: center;
@@ -454,10 +415,23 @@ function renderNodes(nodes: BoardNode[]): string {
     用 visibility 而不是 display，好让 opacity 有过渡，
     收起时也不会挡住底下的东西。
   */
-  .vol__panel {
+  /*
+    按钮下面那一摞：音量条 + 缓冲状态卡，竖着排。
+    整摞不接指针事件（pointer-events:none），只有音量条自己收回来 ——
+    否则这块透明区域会挡住页面上的点击。
+  */
+  .vol__pop {
     position: absolute;
     top: calc(100% + 0.4rem);
     right: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 0.35rem;
+    pointer-events: none;
+  }
+
+  .vol__panel {
     display: flex;
     align-items: center;
     gap: 0.45rem;
@@ -466,6 +440,7 @@ function renderNodes(nodes: BoardNode[]): string {
     border-radius: var(--r-md);
     background: var(--c-bg-raised);
     box-shadow: var(--shadow-md);
+    pointer-events: auto;
     opacity: 0;
     visibility: hidden;
     transform: translateY(-0.25rem);
@@ -479,6 +454,20 @@ function renderNodes(nodes: BoardNode[]): string {
     opacity: 1;
     visibility: visible;
     transform: none;
+  }
+
+  /* 缓冲提示：白框，音箱按钮正下方；只在等数据时出现，不接点击 */
+  .vol__status {
+    padding: 0.26rem 0.6rem;
+    border: 1px solid var(--c-border);
+    border-radius: var(--r-md);
+    background: var(--c-bg-raised);
+    box-shadow: var(--shadow-md);
+    color: var(--c-text-muted);
+    font-size: 0.72rem;
+    line-height: 1.5;
+    white-space: nowrap;
+    pointer-events: none;
   }
 
   .vol__range {

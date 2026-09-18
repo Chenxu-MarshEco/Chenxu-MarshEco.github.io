@@ -326,6 +326,29 @@ const KEYS = Object.keys(BIRDS) as (keyof typeof BIRDS)[];
      */
     const BIRD_BAND: [number, number] = [-46, 46];
 
+    /**
+     * 鸟群该飞在哪条带子里（单位：水面那一层的高度的百分比，往上是负数）。
+     *
+     * 桌面那条 [-46, 46] 是照着桌面调的。问题是窄屏上水面那层被压到屏幕底部：
+     * 实测 390×844 竖屏 —— 水面 top 在视口 76.8%、整层只有 196px 高，
+     * 同一条带子就把鸟按在视口 67%~78%，正好压在城市剪影（76.8% 起）上，
+     * 用户反馈"手机端鸟飞得非常低，几乎在城市里面甚至最底下"。
+     *
+     * 所以窄屏换成按**天空实际还剩多少**算：取天空高度的 12%~45%
+     * （天空 = 视口顶部到水面顶），再换算回水面层的百分比。
+     * 桌面（>720px）一律走原来那条，保证桌面手感不变。
+     */
+    function birdBand(): [number, number] {
+      if (window.innerWidth > 720) return BIRD_BAND;
+      const sea = document.querySelector('.vapor__sea');
+      if (!sea) return BIRD_BAND;
+      const box = sea.getBoundingClientRect();
+      if (box.height < 40 || box.top < 60) return BIRD_BAND;
+      const sky = box.top; // 视口顶部到水面顶 = 天空实际高度
+      const toPct = (y: number) => ((y - box.top) / box.height) * 100;
+      return [toPct(sky * 0.12), toPct(sky * 0.45)];
+    }
+
     const rnd = (a: number, b: number) => a + Math.random() * (b - a);
     const pick = <T,>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)];
 
@@ -364,13 +387,16 @@ const KEYS = Object.keys(BIRDS) as (keyof typeof BIRDS)[];
       if (!box.height) return null;
       const xs = [0.04, 0.2, 0.5, 0.8, 0.96].map((t) => Math.round(window.innerWidth * t));
       const free: number[] = [];
-      for (let pct = -46; pct <= 48; pct += 2) {
+      // 采样范围跟着当前屏幕的"天空带"走 —— 窄屏上原来那条 -46..48 全在城市里，
+      // 结果一个可用点都找不到，雕像只能退回贴在剪影上飞。
+      const [lo, hi] = birdBand();
+      for (let pct = Math.ceil(lo); pct <= Math.floor(hi); pct += 2) {
         const y = box.top + (box.height * pct) / 100;
         if (y < 24 || y > window.innerHeight - 24) continue;
         if (!xs.some((x) => isBlocked(x, y))) free.push(pct);
       }
       if (!free.length) return null;
-      return [Math.max(-46, Math.min(...free) - 1), Math.min(48, Math.max(...free) + 1)];
+      return [Math.max(lo, Math.min(...free) - 1), Math.min(hi, Math.max(...free) + 1)];
     }
 
     let forceEgg = params.get('statue') === '1';
@@ -385,7 +411,8 @@ const KEYS = Object.keys(BIRDS) as (keyof typeof BIRDS)[];
       // 带雕像的那一群飞在"看得见又点得到"的带子上；实在找不到就退回最上面那条空天
       const useEgg = opts.egg === true || forceEgg || Math.random() < EGG_CHANCE;
       forceEgg = false;
-      const band: [number, number] = useEgg ? freeBand() ?? [-46, -30] : BIRD_BAND;
+      // 带雕像的那一群飞在"看得见又点得到"的带子上；找不到就退回当前屏幕天空带的最上面
+      const band: [number, number] = useEgg ? freeBand() ?? [birdBand()[0], birdBand()[0] + 16] : birdBand();
       const kind = pick(species);
       const count = Math.round(rnd(3, 7));
       const size = rnd(30, 58); // 单只鸟的宽度（px）

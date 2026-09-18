@@ -42,15 +42,23 @@
     在 <head> 里就把 audio 建出来、把地址填上：这一段执行时就开始拉音频了，
     比等 body 解析完再建要早得多，跳页后的空档因此短很多。
     audio 不带 controls 时 UA 样式表就是 display:none，不会占位。
+
+    preload 用 none（不再是 auto）：**不主动下整首歌**。
+    以前 auto + 浏览器挡自动播放时，实测整首 3MB 照样被闷头下完，
+    而页面自己的东西才 0.3MB —— 用户"加载很久"大半来自这里。
+    改成"等真的要放了再拉"（按需 + 边放边下，和网盘/音乐站的网页播放器一个思路），
+    页面首屏就只剩自己的那点资源。
   */
   var audio = document.createElement('audio');
   audio.id = 'music-audio';
-  audio.preload = 'auto';
+  audio.preload = 'none';
   audio.setAttribute('playsinline', '');
   audio.setAttribute('aria-hidden', 'true');
   document.documentElement.appendChild(audio);
 
   var cur = null; // 当前这首 {i,t,s}
+  /** 这一首打算从第几秒开始放（被掐断后重新接上时要用） */
+  var pendingResume = null;
   var fade = 0; // 淡入淡出系数 0..1，乘以音量
   var vol = 0.7; // 用户音量 0..1
   var muted = false;
@@ -75,8 +83,8 @@
   var btn = null;
   var range = null;
   var num = null;
-  var hint = null;
-  var hintText = null;
+  var statusEl = null;
+  /** 正在等数据（waiting / playing 事件驱动）—— 缓冲区那张白框看它 */
   var buffering = false;
   /** 这一轮「按下」之前音乐是不是已经在放（默认 true：不确定时就当它在放，别乱改音量） */
   var downWasPlaying = true;
@@ -207,7 +215,46 @@
   function playWith(fadeSec) {
     rampTo(1, fadeSec);
     var p = audio.play();
-    if (p && typeof p.catch === 'function') p.catch(armGesture);
+    if (p && typeof p.catch === 'function') {
+      p.catch(function () {
+        // 放不了就立刻把这次请求掐了，别让浏览器把整首歌下完（见 preload 那段注释）
+        abortLoad();
+        armGesture();
+      });
+    }
+  }
+
+  /**
+   * 把当前这首「接」回 audio 元素并按 pendingResume 定位。
+   * 自动播放被拒时我们会主动断开（省掉几 MB 的无效下载），
+   * 等用户真动手了再用这个接回来 —— 断过就必须能接回来，否则点了没反应。
+   */
+  function attachSource() {
+    if (!cur) return false;
+    if (audio.getAttribute('src') === cur.s) return false;
+    audio.src = cur.s;
+    var at = pendingResume;
+    var seek = function () {
+      if (at == null) return;
+      var d = audio.duration;
+      var pos = at;
+      if (isFinite(d) && d > 0) pos = Math.min(pos, Math.max(0, d - 0.35));
+      try {
+        audio.currentTime = pos;
+      } catch (e) {}
+    };
+    if (audio.readyState >= 1) seek();
+    else audio.addEventListener('loadedmetadata', seek, { once: true });
+    return true;
+  }
+
+  /** 掐掉当前这次加载：pause + 清 src + load()，浏览器才会真的中止下载 */
+  function abortLoad() {
+    try {
+      audio.pause();
+      audio.removeAttribute('src');
+      audio.load();
+    } catch (e) {}
   }
 
   /**
@@ -228,6 +275,8 @@
     if (!audio.paused && !needsGesture) return;
     var wasPlaying = !audio.paused && audio.currentTime > 0.2;
     needsGesture = false;
+    // 之前被掐断过（自动播放被拒时主动断的）：接回来再放
+    attachSource();
     // 已经听过一截就别把音量从 0 再拉一遍，否则会先小声一下
     if (!wasPlaying) fade = 0;
     applyVol();
@@ -250,6 +299,8 @@
         p.catch(function () {
           silentStart = false;
           audio.muted = false;
+          // 连静音自动播放都被拒：把这次加载也掐掉（别白下几 MB）
+          abortLoad();
           paint();
         });
       }
@@ -295,18 +346,8 @@
    */
   function startTrack(t, resumeAt) {
     cur = t;
-    audio.src = t.s;
-    var seek = function () {
-      if (resumeAt == null) return;
-      var d = audio.duration;
-      var at = resumeAt;
-      if (isFinite(d) && d > 0) at = Math.min(at, Math.max(0, d - 0.35));
-      try {
-        audio.currentTime = at;
-      } catch (e) {}
-    };
-    if (audio.readyState >= 1) seek();
-    else audio.addEventListener('loadedmetadata', seek, { once: true });
+    pendingResume = resumeAt == null ? null : resumeAt;
+    attachSource();
     fade = 0;
     applyVol();
     playWith(resumeAt == null ? IN_FRESH : IN_RESUME);
@@ -318,13 +359,6 @@
   }
 
   // ---- 右上角那颗音箱音量键 -----------------------------------------
-  /** 提示条改字并亮出来（只有文字变了才写 DOM） */
-  function setHint(text) {
-    if (!hint) return;
-    if (hintText && hintText.textContent !== text) hintText.textContent = text;
-    hint.hidden = false;
-  }
-
   function paint() {
     var playing = !audio.paused && !audio.ended;
     var lvl = muted ? 0 : vol;
@@ -347,21 +381,11 @@
       btn.setAttribute('aria-label', silentStart ? '点一下就有声音' : needsGesture ? '点一下开始播放' : '音量');
     }
     /*
-      提示条：还没出声就一直亮着（"待很久才开始放"就是没人告诉用户要点一下）；
-      静音自动播放中说的是"点一下就有声音"（歌其实已经在走了）；
-      点了之后还在等数据就改说"缓冲中" —— 一首 3MB，慢网下这段等待是真的。
+      缓冲状态卡：只在真的在等数据时弹在音箱按钮正下方。
+      用户明确说过常驻的"点一下播放"提示不要（按钮自己的 ▶ 角标 + tooltip 够了），
+      所以这里只剩 buffering 一种情况会让它出现。
     */
-    if (hint) {
-      if (silentStart) {
-        setHint('点一下就有声音');
-      } else if (needsGesture) {
-        setHint('点一下播放');
-      } else if (buffering) {
-        setHint('缓冲中…');
-      } else {
-        hint.hidden = true;
-      }
-    }
+    if (statusEl) statusEl.hidden = !buffering;
     var shown = Math.round(lvl * 100);
     if (range && document.activeElement !== range) range.value = String(shown);
     if (num) num.textContent = shown + '%';
@@ -373,8 +397,7 @@
     btn = document.getElementById('music-vol-btn');
     range = document.getElementById('music-vol-range');
     num = document.getElementById('music-vol-num');
-    hint = document.getElementById('music-hint');
-    hintText = document.getElementById('music-hint-text');
+    statusEl = document.getElementById('music-status');
     // 按钮默认是 hidden 的：没有歌单的页面不会跑这段脚本，它就一直藏着
     box.hidden = false;
 
