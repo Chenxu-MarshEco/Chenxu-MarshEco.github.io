@@ -1,6 +1,21 @@
 {
   "boards": [
     {
+      "id": "page-mu9w6v28",
+      "title": "关于我",
+      "subtitle": "",
+      "image": "/img/uploads/20260920-2210-3896-A443CBF1F42C5B876BFC396E2E6AFF1B.jpg",
+      "standalone": true,
+      "href": "/huaya/secret/about",
+      "page": [
+        {
+          "id": "page-mu9w6v28-pmu9w9bov1",
+          "type": "text",
+          "text": "## 隰辰煦\n- 土生土长的宁波人\n- 千禧年与宁波话怀念者\n- 昆虫与爬宠爱好者（最爱蟑螂！）\n- 花娅域主\n- 冰室最强史官\n- 每天都在等待篠雨之人\n\n欢迎你能看到这个网站！建立这个网站的初衷是开始上班后"
+        }
+      ]
+    },
+    {
       "id": "page-mu9hfl5z",
       "title": "虹星家",
       "subtitle": "",

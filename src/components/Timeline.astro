@@ -2225,43 +2225,21 @@ const initialScaleText = `一刻度约 ${
         markDirty();
         queueSync();
       });
-      /*
-        图片 / 字体到位都可能改文档高度，位置缓存得跟着作废 ——
-        但**只盯那些没写宽高的图**：写了 width/height 的图，浏览器下载期间
-        就已经把位置按比例留好了，图到位那一刻页面高度一点没变，重量纯属白干
-        （冰室精华页 291 张图，每张都触发一次 784 次 rect 的重量，实测滚动里
-        多出 10192 次 rect —— 全是因为这个）。
-      */
-      const needsWatch = marked.some((el) =>
-        Array.from(el.querySelectorAll('img')).some((i) => !(i.getAttribute('width') && i.getAttribute('height')))
-      );
-      if (needsWatch) {
-        for (const el of marked) {
-          for (const img of el.querySelectorAll('img')) {
-            if (!img.complete && !(img.getAttribute('width') && img.getAttribute('height'))) {
-              img.addEventListener(
-                'load',
-                () => {
-                  markDirty();
-                  queueSync();
-                },
-                { once: true }
-              );
-            }
-          }
-        }
-      }
       document.fonts?.ready?.then(() => {
         markDirty();
         queueSync();
       });
       /*
         分量最大的一条保险：**盯住这些成分所在容器的实际高度**。
-        位置缓存怕的就是"布局悄悄变了" —— 比如本站那种按需分片的 CJK 字体，
-        往下滚的时候新字形的分片才下下来，字一换字体、每一行的高度就变了一点，
-        几百行累积起来能差好几天（实测轴上的日期比列表里那条早 1 天）。
-        ResizeObserver 只在**真的变大变小**时回调（滚动本身不触发），
-        所以这条保险几乎不要钱，却能把"缓存过期"这件事兜住。
+        位置缓存怕的就是"布局悄悄变了"，而布局一变，这个容器的高度就一定变。它一次兜住三件事：
+          · 本站那种按需分片的 CJK 字体：往下滚时新字形才下下来，度量一变每行高度就变一点，
+            几百行攒起来能差一整天（实测轴上的日期比列表里那条早 1 天）；
+          · 图片到位（写了 width/height 的图浏览器早就留好位置，不会触发；没写的会触发，正好该重量）；
+          · 页面自己改布局（搜索筛选之类，另外还有 `tl:reindex` 那条明路）。
+        ResizeObserver 只在**真的变大变小**时回调（滚动本身不触发），所以这条保险几乎不要钱。
+        ⚠ 别再给每张图挂 `load` 去作废缓存：冰室精华页 784 条里上百个成员头像都是
+        「CSS 定死 28×28、没写 width/height」的图，一加载就当布局变了、白重量 784 次 rect ——
+        实测滚动里因此多出 14896 次 rect（19 遍）。有了下面这条 ResizeObserver 就够了。
       */
       if (typeof ResizeObserver !== 'undefined') {
         const watchBox = marked[0].parentElement ?? document.body;

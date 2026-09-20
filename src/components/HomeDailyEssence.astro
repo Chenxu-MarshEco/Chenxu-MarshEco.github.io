@@ -128,7 +128,10 @@ const pickImage = pick?.images[0] ? variantUrl(pick.images[0], 500) : '';
   .daily {
     display: flex;
     flex-direction: column;
-    padding: 0.9rem 0.95rem 1rem;
+    /* 和日历一样高：由 .extras__grid 那一行撑开 */
+    height: 100%;
+    overflow: hidden;
+    padding: 0.55rem 0.7rem 0.65rem;
     border: 1px solid rgba(255, 120, 190, 0.4);
     border-radius: 16px;
     background: linear-gradient(180deg, rgba(38, 6, 54, 0.86), rgba(20, 3, 32, 0.9));
@@ -140,8 +143,8 @@ const pickImage = pick?.images[0] ? variantUrl(pick.images[0], 500) : '';
     display: flex;
     align-items: baseline;
     justify-content: space-between;
-    gap: 0.6rem;
-    margin-bottom: 0.6rem;
+    gap: 0.5rem;
+    margin-bottom: 0.4rem;
   }
   .daily__titleWrap {
     margin: 0;
@@ -159,11 +162,12 @@ const pickImage = pick?.images[0] ? variantUrl(pick.images[0], 500) : '';
   }
   .daily__more {
     font-size: 0.76rem;
-    color: var(--c-text-faint);
+    /* 深色底：浅色主题那套令牌在这儿看不清（2.34:1） */
+    color: rgba(255, 226, 244, 0.6);
     text-decoration: none;
   }
   .daily__more:hover {
-    color: var(--c-accent);
+    color: #ffb3dd;
   }
 
   /*
@@ -175,8 +179,10 @@ const pickImage = pick?.images[0] ? variantUrl(pick.images[0], 500) : '';
   :global(.daily__card) {
     flex: 1;
     min-height: 0;
-    padding: 0.6rem 0.7rem 0.7rem;
-    border: 1px solid var(--c-border);
+    /* 卡片变扁了（和日历一样高）：内容一律在这块里裁掉，不许撑破卡片 */
+    overflow: hidden;
+    padding: 0.55rem 0.7rem 0.65rem;
+    border: 1px solid rgba(255, 120, 190, 0.3);
     border-radius: 12px;
     background: rgba(12, 2, 20, 0.5);
   }
@@ -206,42 +212,47 @@ const pickImage = pick?.images[0] ? variantUrl(pick.images[0], 500) : '';
     border-radius: 50%;
     object-fit: cover;
     border: 1px solid rgba(255, 120, 190, 0.5);
-    background: var(--c-bg-sunken);
+    background: rgba(24, 3, 36, 0.9);
   }
   :global(.daily__avatar--none) {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    color: var(--c-accent);
+    color: #ffb3dd;
     font-size: 0.76rem;
   }
   :global(.daily__name) {
     color: #fff;
   }
+  /*
+    ⚠ 这张卡是**深色底**，文字不能再走浅色主题那套令牌：
+    实测 var(--c-text) 压在这块底上只有 1.35:1（深琥珀压深紫，几乎看不见）、
+    var(--c-text-faint) 2.34:1。这里逐个换成深色底上的颜色。
+  */
   :global(.daily__time) {
     margin-left: auto;
-    color: var(--c-text-faint);
+    color: rgba(255, 226, 244, 0.6);
     font-variant-numeric: tabular-nums;
   }
   :global(.daily__text) {
-    margin: 0.5rem 0 0;
-    color: var(--c-text);
-    font-size: 0.88rem;
-    line-height: 1.75;
+    margin: 0.45rem 0 0;
+    color: rgba(255, 236, 248, 0.9);
+    font-size: 0.86rem;
+    line-height: 1.7;
     white-space: pre-wrap;
     word-break: break-word;
     /* 首页这一块不滚动，太长就截断；点「看全部」进去看完整的 */
     display: -webkit-box;
-    -webkit-line-clamp: 5;
+    -webkit-line-clamp: 4;
     -webkit-box-orient: vertical;
     overflow: hidden;
   }
   :global(.daily__pic) {
     display: block;
     width: 100%;
-    max-height: 180px;
-    margin-top: 0.5rem;
-    border: 1px solid var(--c-border-strong);
+    max-height: 120px;
+    margin-top: 0.45rem;
+    border: 1px solid rgba(255, 120, 190, 0.35);
     border-radius: 10px;
     object-fit: cover;
   }

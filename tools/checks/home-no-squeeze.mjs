@@ -1,17 +1,23 @@
 /*
  * 「首页不许挤压原有元素」的**可复现**证据。
  *
- * 用户的硬要求：新加的那些块（关于我入口 / 日历 / 冰室冰山 / 每日精华）不能挤压、
+ * 用户最早的硬要求：新加的那些块（关于我入口 / 日历 / 冰室冰山 / 每日精华）不能挤压、
  * 不能挪动首页原来就有的元素；位置不够就让首页能滚轮滚下去。
  *
+ * 后来用户又提了一条（原话见 README）：「首次进入网页首页时，画面上只有城市背景和
+ * 花涧堂logo 没有下方这些可以点击的卡片」—— 要有一屏封面把卡片顶到折线以下。
+ * 这一条**必然**让大板块往下挪一屏，所以判定标准跟着改成：
+ *   · 页头 / 徽记 / 落日 / 天际线这些"上面那屏"的元素：x / y / 宽 / 高 一个像素都不许动；
+ *   · 两个大板块和它们的两张卡：**尺寸和横向位置一个像素都不许动**（没有被挤压），
+ *     纵向只允许"整体下移一屏封面"这一种移动，三者的位移必须一致、且等于封面高度。
+ *
  * 做法：现场从 `git HEAD`（= 这一轮动手之前的那份代码）导出一份源码，单独构建出
- * 一个「改动前」的 dist，量一遍；再量当前的 dist，逐项对比 —— 两边都存在过的元素，
- * x / y / 宽 必须一个像素都不差，高也一样（`.home` 例外：它必须变高，那是新块占的地方）。
+ * 一个「改动前」的 dist，量一遍；再量当前的 dist，逐项对比。
  *
  * 为什么现场重建而不是读一份存下来的基线：`.tmp` 是临时目录，基线文件被清掉过一次，
  * 结论就再也不能复现了。这里每次跑都从 git 现取，所以结论随时能重跑。
  *
- * 用法：node tools/checks/home-no-squeeze.mjs [<当前dist>]
+ * 用法：node tools/checks/home-no-squeeze.mjs [<当前dist>] [<对比提交>]
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -98,19 +104,35 @@ try {
   console.log('\n' + (cmp.stdout ?? ''));
 
   const moved = [];
+  /* 这一轮之后允许"整体下移一屏"的三项：两个大板块和它们的卡片 */
+  const shiftable = new Set(['.boards', '.boards .board:nth-child(1)', '.boards .board:nth-child(2)']);
+  const shifts = [];
   for (const k of oldKeys) {
     const a0 = oldM.rects[k];
     const b0 = nowM.rects[k];
     if (!b0) { moved.push(`${k}（现在没了）`); continue; }
-    const boxSame = a0.x === b0.x && a0.y === b0.y && a0.w === b0.w;
-    const hSame = a0.h === b0.h;
-    if (!boxSame) moved.push(`${k} 位置/宽度变了 ${JSON.stringify(a0)} → ${JSON.stringify(b0)}`);
-    // .home 是唯一允许长高的一项：多出来的块要占地方，需求本身就要求它变高
-    else if (!hSame && k !== '.home') moved.push(`${k} 高度变了 ${a0.h} → ${b0.h}`);
+    /*
+      尺寸和横向位置：这一轮也不许动（"不要挤压"的核心）。
+      纵向：不在这三项里的必须一动不动；在这三项里的只允许整体下移（封面把卡片顶下去了），
+      位移记下来，最后要求三者一致而且是"一屏"那么多。
+      `.home` 例外：它必须变高（多了一屏封面），但左上角和宽度同样不许动。
+    */
+    const sizeSame = a0.x === b0.x && a0.w === b0.w && (k === '.home' || a0.h === b0.h);
+    if (!sizeSame) moved.push(`${k} 横向/尺寸变了 ${JSON.stringify(a0)} → ${JSON.stringify(b0)}`);
+    else if (shiftable.has(k)) shifts.push({ k, dy: +(b0.y - a0.y).toFixed(1) });
+    else if (a0.y !== b0.y) moved.push(`${k} 纵向动了 ${a0.y} → ${b0.y}`);
   }
-  const grown = nowM.rects['.home'] && oldM.rects['.home'] ? nowM.rects['.home'].h - oldM.rects['.home'].h : 0;
-  check(`改动前就有的 ${oldKeys.length} 个元素：x / y / 宽 / 高 一个像素都没变（.home 只长高 ${grown.toFixed(1)}px，那是新块占的地方）`,
+  check(`改动前就有的元素：横向位置、宽度、高度一个像素都没变（没有被挤压）`,
     moved.length === 0, moved.length ? moved.join(' | ') : `逐项一致：${oldKeys.join(' ')}`);
+
+  /* 三张板块卡的位移必须一致，而且是"被封面顶下去一屏"那么多 */
+  const shiftVals = [...new Set(shifts.map((s) => s.dy))];
+  check('大板块只是被封面**整体下移一屏**（三者位移一致，位移约等于一屏高）',
+    shifts.length === 3 && shiftVals.length === 1 && shiftVals[0] > nowM.viewport.h * 0.5,
+    `位移 ${JSON.stringify(shifts)}；视口高 ${nowM.viewport.h}px`);
+
+  const grown = nowM.rects['.home'] && oldM.rects['.home'] ? nowM.rects['.home'].h - oldM.rects['.home'].h : 0;
+  check(`.home 只长高（长了 ${grown.toFixed(1)}px：封面那一屏 + 新块占的地方）`, grown > 0, `长了 ${grown.toFixed(1)}px`);
 
   const added = nowKeys.filter((k) => !oldM.rects[k]);
   check('新块是**新增**的（改动前那些选择器在旧构建里量不到），不是从别处挤出来的',

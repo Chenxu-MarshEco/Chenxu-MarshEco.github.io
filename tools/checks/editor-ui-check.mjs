@@ -327,15 +327,27 @@ try {
       checkedNames: cbs.filter((c) => c.checked).map(nameOf),
       head: (box.querySelector('.wess__membersHead') || {}).textContent || '',
       rowText: row.textContent.slice(0, 60) }; })()`);
-  check('精华面板：点 2023-07-19 那条的「编辑」→ 勾选框里正好勾着 2 个人（花花、虹星）',
-    openEdit.ok === true && openEdit.checked === 2 && openEdit.checkedNames.join('、') === '花花、虹星',
+  /*
+    ⚠ 这一条**不能写死成员名字**。
+    2023-07-19 那条的两名成员是数据里来的，而成员名随时可能在编辑器里被改
+    （实测踩过：用户把「花花」改名成「隰辰煦」，这条断言就凭空失败了）。
+    所以期望值现场从副本的 salon.json 里按 memberIds 查出来。
+  */
+  const e0022 = salon.essences.find((e) => e.id === 'e0022');
+  const name2 = (id) => (salon.members.find((m) => m.id === id) || {}).name || '';
+  const pairPair = (e0022?.memberIds ?? []).map(name2).filter(Boolean);
+  const pairText = pairPair.join('、');
+  const second = pairPair[1] || pairPair[0] || '';
+  check(`精华面板：点 2023-07-19 那条的「编辑」→ 勾选框里正好勾着 2 个人（${pairText}）`,
+    openEdit.ok === true && openEdit.checked === 2 && openEdit.checkedNames.join('、') === pairText,
     JSON.stringify(openEdit));
   check('精华面板：这一行带着「完美对话」类别标签（只给编辑器看，站点页面不分组）',
     /完美对话/.test(openEdit.kindTag || ''), JSON.stringify(openEdit.kindTag));
 
   /** 保证编辑表单开着（第一轮之后面板会重画，表单没了就得重新搜、重新点「编辑」），
-      然后把「虹星」勾/取消 → 改好了 → 保存并重新构建 */
-  const editSave = async (wantHong) => cdp.ev(`(async () => {
+      然后把第二个人（${second}）勾/取消 → 改好了 → 保存并重新构建。
+      ⚠ 名字不能写死：成员名会在编辑器里被改，期望值从数据里来（见上面那条注释）。 */
+  const editSave = async (wantSecond) => cdp.ev(`(async () => {
     const panel = () => [...document.querySelectorAll('.wpanel')].find((el) => el.getBoundingClientRect().height > 0);
     const setVal = (el, v) => { const s = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set; s.call(el, v); el.dispatchEvent(new Event('input', { bubbles: true })); };
     let w = panel();
@@ -353,9 +365,9 @@ try {
     const box = w.querySelector('.wess__form');
     if (!box) return { ok: false, why: '表单没打开' };
     const cbs = [...box.querySelectorAll('.wess__memberGrid input[type=checkbox]')];
-    const hong = cbs.find((c) => ((c.parentElement.querySelector('.wess__memberName') || {}).textContent || '') === '虹星');
-    if (!hong) return { ok: false, why: '找不到虹星的勾选框' };
-    if (hong.checked !== ${wantHong}) { hong.click(); await new Promise((r) => setTimeout(r, 400)); }
+    const target = cbs.find((c) => ((c.parentElement.querySelector('.wess__memberName') || {}).textContent || '') === ${JSON.stringify(second)});
+    if (!target) return { ok: false, why: '找不到 ${second} 的勾选框' };
+    if (target.checked !== ${wantSecond}) { target.click(); await new Promise((r) => setTimeout(r, 400)); }
     const head = (box.querySelector('.wess__membersHead') || {}).textContent || '';
     const picked = cbs.filter((c) => c.checked).length;
     const done = [...box.querySelectorAll('button')].find((b) => b.textContent.trim() === '改好了');
@@ -370,12 +382,12 @@ try {
 
   const minus = await editSave(false);
   const okMinus = minus.ok === true && minus.picked === 1 && (await waitMembers('e0022', 1));
-  check('多成员编辑：面板里取消勾选「虹星」→「改好了」→「保存并重新构建」→ 盘上那条只剩 1 个成员',
+  check(`多成员编辑：面板里取消勾选「${second}」→「改好了」→「保存并重新构建」→ 盘上那条只剩 1 个成员`,
     okMinus, `${JSON.stringify(minus)}，盘上 memberIds=${readMembers('e0022')}`);
 
   const plus = await editSave(true);
   const okPlus = plus.ok === true && plus.picked === 2 && (await waitMembers('e0022', 2));
-  check('多成员编辑：再勾回「虹星」存一次 → 盘上又是 2 个成员（来回都能改，不会丢成员）',
+  check(`多成员编辑：再勾回「${second}」存一次 → 盘上又是 2 个成员（来回都能改，不会丢成员）`,
     okPlus, `${JSON.stringify(plus)}，盘上 memberIds=${readMembers('e0022')}`);
 
   /* ---------- ④c 左边那条时间轴：面板里选一条 → 存盘 → 盘上是那个 id ----------
@@ -412,31 +424,41 @@ try {
     所以这里先轮询等一个**可点的**保存按钮，再重新查一次 select/按钮（旧引用可能已经被重画掉）。
   */
   const setTl = async (id) => cdp.ev(`(async () => {
-    const panel = () => [...document.querySelectorAll('.wpanel')].find((el) => el.getBoundingClientRect().height > 0);
-    const findSave = () => {
-      const w = panel();
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+    /*
+      ⚠ 面板要**按内容认**，不能只挑"第一个可见的 .wpanel"：
+      编辑器里同时挂着的面板不止一个（成员/精华/日历…），
+      只按可见挑的时候，我这边读到的是精华面板的下拉，
+      点下去却可能点到另一个面板的「保存并重新构建」——
+      表现就是"点了保存但盘上没变"（这个坑真踩到过）。
+      精华面板的特征：里面有「左边那条时间轴」这一块。
+    */
+    const salonPanel = () => [...document.querySelectorAll('.wpanel')]
+      .filter((el) => el.getBoundingClientRect().height > 0)
+      .find((w) => [...w.querySelectorAll('.wbox__title')].some((t) => (t.textContent || '').includes('时间轴')));
+    const saveBtn = (w) => {
       const bar = w && w.querySelector('.wpanel__bar');
       const b = bar && [...bar.querySelectorAll('button')].find((x) => x.textContent.trim() === '保存并重新构建');
-      return b && !b.disabled ? b : null;
+      return b && !b.disabled && b.isConnected ? b : null;
     };
+    /* 上一轮保存 + 重新构建要好几秒，等它空下来再动（否则按钮还是「正在保存…」） */
     const t0 = Date.now();
-    while (!findSave()) {
-      if (Date.now() - t0 > 60000) return { ok: false, why: '等了 60 秒也没等到可点的「保存并重新构建」',
-        status: [...document.querySelectorAll('.wpanel__status')].map((s) => s.textContent).filter(Boolean) };
-      await new Promise((r) => setTimeout(r, 300));
+    while (!saveBtn(salonPanel())) {
+      if (Date.now() - t0 > 60000) return { ok: false, why: '等了 60 秒也没等到精华面板上可点的「保存并重新构建」' };
+      await sleep(300);
     }
-    const w = panel();
+    const w = salonPanel();
     const box = [...w.querySelectorAll('.wbox')].find((b) => ((b.querySelector('.wbox__title') || {}).textContent || '').includes('时间轴'));
-    if (!box) return { ok: false, why: '面板里找不到「左边那条时间轴」那一块' };
+    if (!box) return { ok: false, why: '精华面板里找不到「左边那条时间轴」那一块' };
     const sel = box.querySelector('select');
     const set = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set;
     set.call(sel, ${JSON.stringify(id)});
     sel.dispatchEvent(new Event('change', { bubbles: true }));
-    await new Promise((r) => setTimeout(r, 400));
-    const status = [...panel().querySelectorAll('.wpanel__status')].map((s) => s.textContent).filter(Boolean);
-    const save = findSave();
-    if (!save) return { ok: false, why: '找不到「保存并重新构建」', value: sel.value, status };
+    await sleep(400);
+    const status = [...salonPanel().querySelectorAll('.wpanel__status')].map((s) => s.textContent).filter(Boolean);
     const value = sel.value;
+    const save = saveBtn(salonPanel());
+    if (!save) return { ok: false, why: '找不到可点的「保存并重新构建」', value, status };
     save.click();
     return { ok: true, value, status }; })()`);
 

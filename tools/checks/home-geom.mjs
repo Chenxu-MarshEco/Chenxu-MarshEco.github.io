@@ -50,7 +50,8 @@ class CDP {
 const MEASURE = `(() => {
   const sels = ['.site-brand', '.site-title', '.about-pill', '.brand', '.brand__logo', '.brand__title',
     '.boards', '.boards .board:nth-child(1)', '.boards .board:nth-child(2)',
-    '.corner', '.vapor__sun', '.vapor__horizon', '.vapor__skyline', '.home', '.extras', '.cal', '.ice', '.daily'];
+    '.corner', '.vapor__sun', '.vapor__horizon', '.vapor__skyline', '.home', '.extras', '.cal', '.ice', '.daily',
+    '.cover', '.cover__hint', '.cards__back'];
   const out = {};
   for (const s of sels) {
     const el = document.querySelector(s);

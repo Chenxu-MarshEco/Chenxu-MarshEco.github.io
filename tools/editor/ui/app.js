@@ -5072,37 +5072,41 @@ function dateField(value, onInput, opts = {}) {
   /*
     「实时」开关。打开之后这个点存的是哨兵 `today`：
     页面上永远显示今天、每天自动变（打开页面时脚本按访问者当天重排整条轴）。
+    ⚠ `opts.hideLive`：日历/精华那种"就是一个固定日期"的地方不该出现这个开关，
+    所以那两处只借这个控件"直接打数字"的那半边（见下面的 dayPicker）。
   */
-  const liveBtn = document.createElement('button');
-  liveBtn.type = 'button';
-  liveBtn.className = 'datefield__live';
-  liveBtn.textContent = '实时';
-  liveBtn.setAttribute('aria-pressed', live ? 'true' : 'false');
-  liveBtn.title = live
-    ? '现在是实时的（永远显示今天、每天自动变）。点一下改回固定日期。'
-    : '设为实时更新：这一个永远显示今天，每天自动变。';
-  liveBtn.addEventListener('click', () => {
-    const next = liveBtn.getAttribute('aria-pressed') !== 'true';
-    liveBtn.setAttribute('aria-pressed', next ? 'true' : 'false');
-    el.disabled = next;
-    btn.disabled = next;
-    if (next) {
-      lastDate = el.value.trim();
-      el.value = '';
-      el.placeholder = '每天自动（今天）';
-      el.classList.remove('is-bad');
-      opts.onLive?.(true, '');
-      liveBtn.title = '现在是实时的（永远显示今天、每天自动变）。点一下改回固定日期。';
-    } else {
-      // 还给他之前填的那个日期；没填过就用今天兜底，免得这个点变成「没有日期」被丢掉
-      const back = /^\d{4}-\d{2}-\d{2}$/.test(lastDate) ? lastDate : isoToday();
-      el.value = back;
-      lastLen = back.length;
-      el.placeholder = '20230110';
-      opts.onLive?.(false, back);
-      liveBtn.title = '设为实时更新：这一个永远显示今天，每天自动变。';
-    }
-  });
+  const liveBtn = opts.hideLive ? null : document.createElement('button');
+  if (liveBtn) {
+    liveBtn.type = 'button';
+    liveBtn.className = 'datefield__live';
+    liveBtn.textContent = '实时';
+    liveBtn.setAttribute('aria-pressed', live ? 'true' : 'false');
+    liveBtn.title = live
+      ? '现在是实时的（永远显示今天、每天自动变）。点一下改回固定日期。'
+      : '设为实时更新：这一个永远显示今天，每天自动变。';
+    liveBtn.addEventListener('click', () => {
+      const next = liveBtn.getAttribute('aria-pressed') !== 'true';
+      liveBtn.setAttribute('aria-pressed', next ? 'true' : 'false');
+      el.disabled = next;
+      btn.disabled = next;
+      if (next) {
+        lastDate = el.value.trim();
+        el.value = '';
+        el.placeholder = '每天自动（今天）';
+        el.classList.remove('is-bad');
+        opts.onLive?.(true, '');
+        liveBtn.title = '现在是实时的（永远显示今天、每天自动变）。点一下改回固定日期。';
+      } else {
+        // 还给他之前填的那个日期；没填过就用今天兜底，免得这个点变成「没有日期」被丢掉
+        const back = /^\d{4}-\d{2}-\d{2}$/.test(lastDate) ? lastDate : isoToday();
+        el.value = back;
+        lastLen = back.length;
+        el.placeholder = '20230110';
+        opts.onLive?.(false, back);
+        liveBtn.title = '设为实时更新：这一个永远显示今天，每天自动变。';
+      }
+    });
+  }
 
   /*
     给外面一个「从别处写值」的口子（时间点那边切类型时要用）：
@@ -5113,7 +5117,7 @@ function dateField(value, onInput, opts = {}) {
     /** 塞一个日期（或 `today` 哨兵）进去，框里的字和「实时」开关一起同步 */
     set(next) {
       const on = String(next ?? '').trim() === 'today';
-      liveBtn.setAttribute('aria-pressed', on ? 'true' : 'false');
+      if (liveBtn) liveBtn.setAttribute('aria-pressed', on ? 'true' : 'false');
       el.disabled = on;
       btn.disabled = on;
       el.classList.remove('is-bad');
@@ -5131,7 +5135,7 @@ function dateField(value, onInput, opts = {}) {
     },
   });
 
-  wrap.append(el, btn, liveBtn, cal);
+  wrap.append(el, btn, ...(liveBtn ? [liveBtn] : []), cal);
   return wrap;
 }
 
@@ -9143,19 +9147,21 @@ function localDateKey(d = new Date()) {
 }
 
 /**
- * 原生日期输入。
+ * 日期输入（日历事件 / 精华的日期都走这里）。
  *
- * 日历事件和精华都只认 YYYY-MM-DD，用 type=date 最省事 ——
- * 不用像时间轴那边那样自己处理「20230110 / 2023/1/10」各种写法。
- * 空值也给得出来（用户清空输入框时 onInput('')）。
+ * ⚠ 以前这里是 `<input type="date">` —— 想填日期就得点开系统日历一层层翻
+ * （用户这次的原话：「日历页面的时间可以和时间轴一样直接输入数字 不要展开日历点」）。
+ * 现在跟时间轴那套**用同一个控件**：左边一个能直接敲数字的框
+ * （`20260114` / `2026-1-14` / `2026/1/14` 都认，边打边补横杠），
+ * 右边留一个 📅 按钮给"想翻日历"的人，但不点它就永远不会弹出来。
+ * 「实时」那个开关是时间轴专有的（哨兵 `today`），这里不出现（hideLive）。
+ *
+ * 契约没变：值合法或清空时回调 `onInput(iso)`，读不出来就把框标红、不写数据。
  */
 function dayPicker(value, onInput) {
-  const el = document.createElement('input');
-  el.type = 'date';
-  el.className = 'input wdate';
-  el.value = /^\d{4}-\d{2}-\d{2}$/.test(String(value || '')) ? value : '';
-  el.addEventListener('change', () => onInput(el.value));
-  return el;
+  const wrap = dateField(value ?? '', (iso) => onInput(iso), { hideLive: true });
+  wrap.classList.add('wdate');
+  return wrap;
 }
 
 /* ---------------------------------------------------------------
@@ -9310,7 +9316,7 @@ function renderCalendarPanel() {
   const dates = Object.keys(events).sort();
   const list = panelBox(
     `特殊日子（${dates.length} 天）`,
-    '日期用右边的日历挑，点那天的图标会跳到「跳去哪」那个地址；留空的话那天照样变色，只是点不动。',
+    '日期**直接敲数字**就行（20260604 / 2026-6-4 / 2026/6/4 都认，边打边补横杠）；右边那个 📅 才是翻系统日历用的（不点就不会弹出来）。点那天的图标会跳到「跳去哪」那个地址；留空的话那天照样变色，只是点不动。',
   );
 
   if (!dates.length) {
@@ -9363,7 +9369,7 @@ function renderCalendarPanel() {
           markPanelDirty(status, 'widgets');
           renderCalendarPanel();
         }),
-        '日历按 YYYY-MM-DD 匹配，年份不参与判断。',
+        '日历按 YYYY-MM-DD 匹配，年份不参与判断。日期直接敲数字就行。',
       )
     );
     fields.appendChild(

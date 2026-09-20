@@ -148,9 +148,31 @@ const events = cal.events ?? {};
 </script>
 
 <style>
+  /*
+    这一块要"比较扁"（用户要求：日历和甬城晴雨一样宽、但扁）：
+    卡片宽度翻了一倍多，如果格子还按 aspect-ratio:1 随宽度长，整块会变成
+    452×450 的方块。所以格子的直径改成按**屏幕宽度**给一个小值
+    （--cal-cell，桌面 26px 上下），一行 6 个格子加起来才是这块的高度。
+    卡片本身 height:100% 撑满格子 —— 于是"冰室冰山/每日精华和日历一样高"
+    这件事是网格自己保证的，不靠写死数值。
+  */
   .cal {
     position: relative;
-    padding: 0.9rem 0.95rem 3.2rem;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    /*
+      格子直径**固定 24px**（不随卡片宽度长）：卡片宽度是"和甬城晴雨一样宽"（452），
+      格子要是还按 aspect-ratio 跟着宽度长，整块会变成 452×450 的方块，一点不"扁"。
+      ⚠ 这个值同时被 home-widgets-check 盯着（手机端格子不能小于 24px，太小认不出圆）。
+    */
+    --cal-cell: 24px;
+    /*
+      下边距 2.75rem 是**给右下角那个小框留的位**：小框高约 28px、离底 0.65rem(10.4px)，
+      两者加起来 38.4px —— 下边距小于它，最后一排格子就会压到小框上
+      （实测踩过：2.1rem 时网格底边比小框顶边低 6px）。
+    */
+    padding: 0.55rem 0.7rem 2.75rem;
     border: 1px solid rgba(255, 120, 190, 0.4);
     border-radius: 16px;
     background: linear-gradient(180deg, rgba(38, 6, 54, 0.86), rgba(20, 3, 32, 0.9));
@@ -163,7 +185,7 @@ const events = cal.events ?? {};
     align-items: baseline;
     justify-content: space-between;
     gap: 0.6rem;
-    margin-bottom: 0.6rem;
+    margin-bottom: 0.35rem;
   }
   .cal__title {
     margin: 0;
@@ -177,8 +199,8 @@ const events = cal.events ?? {};
     gap: 0.3rem;
   }
   .cal__btn {
-    width: 1.5rem;
-    height: 1.5rem;
+    width: 1.4rem;
+    height: 1.4rem;
     padding: 0;
     border: 1px solid rgba(255, 120, 190, 0.45);
     border-radius: 8px;
@@ -203,17 +225,25 @@ const events = cal.events ?? {};
   .cal__week,
   .cal__grid {
     display: grid;
-    grid-template-columns: repeat(7, 1fr);
-    gap: 0.3rem;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    gap: 0.2rem 0.25rem;
+  }
+  .cal__week {
+    flex: none;
+  }
+  /* 格子行高就是一圈圆的大小；剩下的高度留给卡片自己（不拉伸圆圈） */
+  .cal__grid {
+    flex: 0 1 auto;
+    grid-auto-rows: var(--cal-cell);
+    margin-top: 0.2rem;
+    min-height: 0;
   }
   .cal__wd {
     text-align: center;
     font-size: 0.7rem;
     letter-spacing: 0.1em;
-    color: var(--c-text-faint);
-  }
-  .cal__grid {
-    margin-top: 0.25rem;
+    /* ⚠ 这块卡是深色底，别用浅色主题的 var(--c-text-faint)（那是深琥珀，压在这儿只有 2.3:1） */
+    color: rgba(255, 226, 244, 0.6);
   }
 
   /*
@@ -225,6 +255,8 @@ const events = cal.events ?? {};
   :global(.cal__day),
   :global(.cal__pad) {
     aspect-ratio: 1;
+    width: min(100%, var(--cal-cell));
+    justify-self: center;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -238,7 +270,7 @@ const events = cal.events ?? {};
       repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.16) 0 1px, transparent 1px 4px),
       radial-gradient(circle at 35% 30%, rgba(255, 150, 205, 0.95), rgba(214, 60, 140, 0.75));
     color: #fff;
-    font-size: 0.78rem;
+    font-size: 0.72rem;
     font-variant-numeric: tabular-nums;
     text-decoration: none;
     box-shadow: 0 0 0 1px rgba(255, 79, 163, 0.25), 0 3px 10px -6px rgb(0 0 0 / 0.9);

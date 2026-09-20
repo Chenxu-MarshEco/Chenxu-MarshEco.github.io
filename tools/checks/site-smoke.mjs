@@ -57,6 +57,22 @@ walk(ROOT);
 pages.sort();
 console.log(`要体检 ${pages.length} 个页面\n`);
 
+/*
+  左上角那个「关于我」小圆片应该指向哪儿：从数据里读（编辑器「关于我」面板写的
+  `about.href`），读不到就退回老地址。这样用户在编辑器里换目标页，体检脚本跟着走。
+*/
+const aboutHref = (() => {
+  try {
+    /* 数据在工作区（不是 dist）：脚本自己在 src/data 里找 */
+    const file = path.resolve('src', 'data', 'home-widgets.json');
+    const w = JSON.parse(fs.readFileSync(file, 'utf8'));
+    const h = String(w?.about?.href ?? '').trim();
+    if (h) return h;
+  } catch { /* 读不到就退回老地址 */ }
+  return '/about-me/';
+})();
+console.log(`「关于我」小圆片按数据指向：${aboutHref}\n`);
+
 const profile = path.join(process.env.TEMP ?? '.', `dsh-smoke-${Date.now()}`);
 const chrome = spawn(CHROME, ['--headless=new', '--no-sandbox', '--mute-audio', '--disable-gpu', '--enable-unsafe-swiftshader', '--disable-breakpad', `--user-data-dir=${profile}`, `--remote-debugging-port=${DEBUG_PORT}`, 'about:blank'], { stdio: 'ignore' });
 
@@ -97,7 +113,12 @@ try {
     const bad = [];
     if (!info.title) bad.push('标题空');
     if (!barePage && !info.header) bad.push('没有页头');
-    if (!barePage && info.pill !== '/about-me/') bad.push('小圆片缺失或地址不对(' + info.pill + ')');
+    /*
+      ⚠ 小圆片指向哪儿**不写死**：它跟着数据走（`home-widgets.json` 的 about.href）。
+      用户随时可以在编辑器里把「关于我」那一页换地址（实测踩过：从 /about-me/
+      换成了 /huaya/secret/about，写死网址的断言就整站 53 页一起"失败"）。
+    */
+    if (!barePage && info.pill !== aboutHref) bad.push('小圆片缺失或地址不对(' + info.pill + ')');
     if (info.overflow > 1) bad.push('横向溢出 ' + info.overflow + 'px');
     if (cdp.errors.length) bad.push(cdp.errors.slice(0, 2).join(' | '));
     if (bad.length) {

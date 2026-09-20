@@ -9,9 +9,9 @@
     "images 里是 public/img/salon/ 下的站内路径；编辑器里新增精华可以直接上传图片。"
   ],
   "title": "冰室群精华",
-  "updated": "2026-09-15",
   "note": "由群精华导出文件整理：文字 / 完美对话 / AI 创作三类都在，一条没丢。",
   "timelineId": "tl-mu6e19cb793",
+  "updated": "2026-09-20",
   "eras": [
     {
       "id": "era1",
@@ -53,87 +53,87 @@
     {
       "id": "m01-4780",
       "name": "Airo",
-      "avatar": ""
+      "avatar": "/img/uploads/20260920-2139-0c3a-f2e82b158111fede741b598c29e0858d.jpg"
     },
     {
       "id": "m02-da43",
       "name": "Raw",
-      "avatar": ""
+      "avatar": "/img/uploads/20260920-2140-9e6b-Raw.jpg"
     },
     {
       "id": "m03-018b",
       "name": "SSWTLZZ",
-      "avatar": ""
+      "avatar": "/img/uploads/20260920-2141-c3a1-2ace38273addfad17d035d38aea8103e.jpg"
     },
     {
       "id": "m04-1c92",
-      "name": "Sunf",
-      "avatar": ""
+      "name": "桑芙",
+      "avatar": "/img/uploads/20260920-2141-a969-ff8be2784d1edffad0a36fcc4bccc092.jpg"
     },
     {
       "id": "m05-7a48",
-      "name": "math",
+      "name": "马斯",
       "avatar": ""
     },
     {
       "id": "m06-5577",
-      "name": "owq",
-      "avatar": ""
+      "name": "OWQ",
+      "avatar": "/img/uploads/20260920-2143-28ed-154e98639be48e0aef98f63ada4e7189.jpg"
     },
     {
       "id": "m07-7449",
       "name": "伤感统领",
-      "avatar": ""
+      "avatar": "/img/uploads/20260920-2143-6146-e5bb024e165f62423b7cf930754328c5.jpg"
     },
     {
       "id": "m08-e2cf",
       "name": "吉吉",
-      "avatar": ""
+      "avatar": "/img/uploads/20260920-2143-b629-JIJI.jpg"
     },
     {
       "id": "m09-597e",
       "name": "平铃",
-      "avatar": ""
+      "avatar": "/img/uploads/20260920-2143-6ee8-7ca8de06fbccc0ba3031f8e280a8ed67.jpg"
     },
     {
       "id": "m10-5032",
       "name": "沃伊德",
-      "avatar": ""
+      "avatar": "/img/uploads/20260920-2158-1171-45a05fd36565d219fe9869843bbd1957.jpg"
     },
     {
       "id": "m11-c403",
-      "name": "灵空天仪",
-      "avatar": ""
+      "name": "灵空",
+      "avatar": "/img/uploads/20260920-2144-ac7e-LingKong.jpg"
     },
     {
       "id": "m12-5879",
       "name": "盾返",
-      "avatar": ""
+      "avatar": "/img/uploads/20260920-2216-f2c3-5ef063fa2e6b91b479a76026f0a99f83.jpg"
     },
     {
       "id": "m13-d1c9",
       "name": "羽之颂",
-      "avatar": ""
+      "avatar": "/img/uploads/20260920-2147-10ea-71666150ed580ed9d2aaf1662558d0ee.jpg"
     },
     {
       "id": "m14-2e3a",
       "name": "艾林森",
-      "avatar": ""
+      "avatar": "/img/uploads/20260920-2148-0d67-82742bf61167b014e7b91e7d9f76e09c.jpg"
     },
     {
       "id": "m14-4d5c",
-      "name": "花花",
-      "avatar": ""
+      "name": "隰辰煦",
+      "avatar": "/img/uploads/20260920-2148-219a-Crane.jpg"
     },
     {
       "id": "m15-5808",
       "name": "虹星",
-      "avatar": ""
+      "avatar": "/img/uploads/20260920-2152-b6a5-5d8e10880e10e92b894f7d8f5f8dcd828355089.png-1044.webp"
     },
     {
       "id": "m16-daff",
-      "name": "金色糖糕",
-      "avatar": ""
+      "name": "光子",
+      "avatar": "/img/uploads/20260920-2154-f5ed-14028717e3662998896f4c81abbde242.jpg"
     }
   ],
   "essences": [
@@ -268,11 +268,11 @@
       "date": "2023-07-13",
       "time": "",
       "text": "- 1.14+我的世界交易表\n- 农民\n- 屠夫\n- 渔夫\n- 图书管理员\n- 盔甲匠\n- 工具匠\n- 20\n- 韩26\n- D\n- 10\n- 10\n- 皮匠\n- 牧师\n- 牧羊人\n- 制图师\n- 武器匠\n- 制箭师\n- 12\n- 12\n- 12\n- 4\n- 22\n- 12\n- 12\n- 12\n- 12\n- 石匠\n- 流浪商人\n- 10\n- 2\n- 20\n- 除非只列出一个交易\n- 否则每个级别都有两个不同的交易。\n- 附魔书：\n- 每一种附魔的\n- 附魔工具：\n- 所有染色和染色的物品和\n- 方块可提供任何颜色。\n- 附魔用的等级5-19\n- 几率相等\n- 任何木材类型的组合都可用于制作。\n- 宝藏附魔的价格是双倍的\n- l山一滩花生酱",
-      "ocr": true,
       "images": [
         "/img/salon/e0010-1.jpg"
       ],
-      "eraId": "era1"
+      "eraId": "era1",
+      "ocr": true
     },
     {
       "id": "e0011",
@@ -2896,11 +2896,11 @@
       "date": "2024-10-17",
       "time": "",
       "text": "-\n- 你到我家石碑\n-\n- 然后tp到群星\n-\n- 群星\n-\n- 就知道怎么回事乱伦\n-\n- 了",
-      "ocr": true,
       "images": [
         "/img/salon/e0217-1.jpg"
       ],
-      "eraId": "era3"
+      "eraId": "era3",
+      "ocr": true
     },
     {
       "id": "e0218",
@@ -3232,11 +3232,11 @@
       "date": "2024-11-03",
       "time": "",
       "text": "- 幻想超级银趴物语花园世界冰室（26）3\n- 三\n- WIW 管E局\n- .10-05\n- WIW 管E局\n- 这死妈捷拉察拉\n- D管员正卡求行4森\n- 你会玩敏垫形吗\n- 不会玩选什么选病账吧\n- 泛L1(2:3\n- WIM特现品\n- 又连款两把\n- WIWE\n- 说真的这头友搞什么乌\n- 真的我说不会玩你就别玩了锈币\n- 真的你妈痘抽以友部没集合自己\n- 在那里开始推塔\n- 最看让政人把塔抢了\n- WIW 管EL局\n- 全家死完了是不是就你喜欢价塔\n- 是不是小时候家三人价东西被人抓\n- 住刹小挥指了才让你对价塔执念这\n- 么大\n- 反正我真你妈限了打团战退\n- WID青理\n- 自己一个战土冲到别人家单价分\n- WIWE\n- 生正\n- 脑子有问题是不是\n- 你愉那点比你妈逼还小的分有什么\n- 用\n- WID青理\n- 我夜匹款是栏匹或到你妈小学生\n- WIWE\n- 结果比小学生还英的侵即还有的\n- 小学生都知道打团上兴开集结技能\n- WID青理\n- 就你这么爱前三天两头别人在这\n- 里狂扣集合狂给你点注目还看不\n- 懂啥意息\n- WID背理员\n- 疯予不好使是不是是不是打人机\n- 同把把三十杀给你爽到了\n- WIDT理量\n- 爱不了了\n- WIW管E\n- 国际服moha就是他妈的残喧儿童\n- 欢乐浆会\n- 泛L1.(26\n- 要么就自已入英单选英的\n- 时候死命不让人选结果一上场润\n- 那死命送\n- 要么就玩单排人机局队友团战他\n- 乐呵时章个几分跑另人家三储\n- WIDT理员\n- bro以为自己那几分能逆转局势\n- 要么就是大家都扣了等集合他那\n- 个安通还直接从草丛呈钻出来开龙\n- 对面爽了打都不用打\n- WID背理品\n- 卡行卷\n- 一天连输九，把了\n- WIW管E\n- 这你妈宝mobs匹配到的都什么度\n- 那\n- 策划和侵即队友一起全家被大运创\n- 死得了",
-      "ocr": true,
       "images": [
         "/img/salon/e0243-1.jpg"
       ],
-      "eraId": "era3"
+      "eraId": "era3",
+      "ocr": true
     },
     {
       "id": "e0244",
@@ -4800,11 +4800,11 @@
       "date": "2025-06-22",
       "time": "",
       "text": "-\n- 耐鸡旅行者背包\n- Sf10492加入了游戏\n-\n- 镶框伪装方块系列\n- Sf10492退出了游戏\n- 恼人至高木有谁有吗\n-  你去灰色石碑 湿热地带\n- 旁边有个职高木森林\n- 什么职高都有\n- 52\n- 8\n- 25°℃\n- 小雨",
-      "ocr": true,
       "images": [
         "/img/salon/e0366-1.jpg"
       ],
-      "eraId": "era3"
+      "eraId": "era3",
+      "ocr": true
     },
     {
       "id": "e0367",
@@ -4837,11 +4837,11 @@
       "date": "2025-06-26",
       "time": "",
       "text": "- 群主\n- 芋芋杀人大魔王\n- 我们小区有人溺了吧\n- 管理员\n- 花花\n- 幺幺\n- 三入夕\n- 了吧\n- ai.{\n- 湖葬了吧",
-      "ocr": true,
       "images": [
         "/img/salon/e0369-1.jpg"
       ],
-      "eraId": "era3"
+      "eraId": "era3",
+      "ocr": true
     },
     {
       "id": "e0370",
@@ -4888,11 +4888,11 @@
       "date": "2025-06-28",
       "time": "",
       "text": "- 有点像鳄team\n- Arcarlight取得了进度[Vivid Wave】\n- 重生锚\n- 东方jsj是不是ai游戏大玩家\n-\n- ［伙伴的宝石】\n- H\n- 还真是\n- 笑死\n- 伙伴帮你把尿吧",
-      "ocr": true,
       "images": [
         "/img/salon/e0373-1.jpg"
       ],
-      "eraId": "era3"
+      "eraId": "era3",
+      "ocr": true
     },
     {
       "id": "e0374",
@@ -5149,11 +5149,11 @@
       "date": "2025-08-04",
       "time": "",
       "text": "@亚卡莱特ᅠ⁧呃呜喵⁧‭ [图片]\n\n- SSWTLZZ>我给我家每一个灵都起了个名字\n- 这么厉害\n- 奴隶1奴隶2奴隶3\n- 和第一个神灯生的魔王1\n- SSWTLZZ\n- 火灵天星\n- @伊格尼斯",
-      "ocr": true,
       "images": [
         "/img/salon/e0394-1.jpg"
       ],
-      "eraId": "era3"
+      "eraId": "era3",
+      "ocr": true
     },
     {
       "id": "e0395",
@@ -5330,11 +5330,11 @@
       "date": "2025-08-30",
       "time": "",
       "text": "- 我的世界老玩家\n- 手机能玩这个模组吗？\n- AR\n- 不能\n- 我的世界老玩家\n- 6\n- 我的世界老玩家\n- Fcl启动器有吗？\n- 竹若泠\n- 不能\n- 我的世界老玩家\n- 这个模组叫什么？\n- AR\n- 不支持在移动设备上运行\n- 我的世界老玩家\n- 操你妈群主\n\n---",
-      "ocr": true,
       "images": [
         "/img/salon/e0409-1.jpg"
       ],
-      "eraId": "era3"
+      "eraId": "era3",
+      "ocr": true
     },
     {
       "id": "e0410",
@@ -6359,11 +6359,11 @@
       "date": "2025-11-21",
       "time": "",
       "text": "- 绝情二爪鱼\n- 十乖乖宝贝十\n- 现在你们要我带什么吗\n- 伙伴\n- 澄净羽之颂\n- 十乖乖宝贝十1:03\n- 现在你们要我带什么吗\n- 我喝了些鸡尾酒，现在需要面包\n- 对！面包！现在就带来给我，立\n- 刻，马上!\n- 管理员\n- 濕辰煦\n- 十乖乖宝贝十1:03\n- 现在你们要我带什么吗\n- 李子园长鼻王祖名木莲冻大脚板雪\n- 糕\n- 伙伴\n- 中\n- 三夕\n- 十乖乖宝贝十1:03\n- 现在你们要我带什么吗\n- 一个玩具挖掘机，要能遥控的并且\n- 带声光",
-      "ocr": true,
       "images": [
         "/img/salon/e0491-1.jpg"
       ],
-      "eraId": "era4"
+      "eraId": "era4",
+      "ocr": true
     },
     {
       "id": "e0492",
@@ -6559,11 +6559,11 @@
       "date": "2025-12-15",
       "time": "",
       "text": "- 管理员\n- 工辰煦工\n- @十乖乖宝贝十你可以创立一个新\n- 的美学流派甚至艺术流派了\n- 管理员\n- 工辰煦\n- 就叫野狂性派\n- 管理员\n- 濕辰煦\n- 该艺术风格皆在于帮助人类感受到\n- 远古时期作为动物时求偶的野性与\n- 壮美\n- 管理员\n- 工辰煦工\n- 在派主接无的带领下，信徒们集体\n- 嚎叫，互相舞动臀部，然后交配\n- 管理员\n- 辰煦\n- 让人感受到野趣与自然的伟大",
-      "ocr": true,
       "images": [
         "/img/salon/e0507-1.jpg"
       ],
-      "eraId": "era4"
+      "eraId": "era4",
+      "ocr": true
     },
     {
       "id": "e0508",
@@ -6962,11 +6962,11 @@
       "date": "2026-01-08",
       "time": "",
       "text": "- Sf10492在与调灵髅战斗时凋零了\n- watashideath\n- and you dontseem tounderstand\n-  boa\n-  boa\n-  You don't even care about it. What you only care is just yourself.\n- 难度提升了1！\n- icareabout凋零髅\n- Idont\n-  because I'm a infant.\n- infant?\n-  Lua Pi...\n-\n- RRRRRRR\n-  And you dont seem to antstand\n- undersant\n- underpant",
-      "ocr": true,
       "images": [
         "/img/salon/e0539-1.jpg"
       ],
-      "eraId": "era5"
+      "eraId": "era5",
+      "ocr": true
     },
     {
       "id": "e0540",
@@ -7243,11 +7243,11 @@
       "date": "2026-01-20",
       "time": "",
       "text": "- 幻想超级银趴物语花园世界冰室（27）\n- 绝情二爪鱼\n- 【新\n- 无敌乖乖牙猎犬\n- 00:01\n- 绝情二爪鱼\n- 【新v无敌乖乖牙猎犬\n- 00:02\n- 绝情二爪鱼\n- 【新v】无敌乖乖牙猎犬\n- 00:02\n- 绝情二爪鱼\n- 【新无敌乖乖牙猎犬\n- 00:03\n- 绝情二爪鱼\n- 【新v无敌乖乖牙猎犬\n- 00:05\n- 管理群\n- 白公告\n- 文件\n- 相册",
-      "ocr": true,
       "images": [
         "/img/salon/e0561-1.jpg"
       ],
-      "eraId": "era5"
+      "eraId": "era5",
+      "ocr": true
     },
     {
       "id": "e0562",
@@ -8945,11 +8945,11 @@
       "date": "2026-05-29",
       "time": "",
       "text": "- 骑木的函子\n-\n-\n- ？\n-\n-\n-",
-      "ocr": true,
       "images": [
         "/img/salon/e0693-1.jpg"
       ],
-      "eraId": "era5"
+      "eraId": "era5",
+      "ocr": true
     },
     {
       "id": "e0694",
@@ -9008,11 +9008,11 @@
       "date": "2026-06-02",
       "time": "",
       "text": "- 平铃玩泰君>/sayhei\n- 探求者歇玛>\n- 吉弟八千慧\n- 探求者歇玛\n- 平铃玩泰君\n- 辰煦>\n-\n- 平铃玩泰君>\n- 102102\n-\n- 35935",
-      "ocr": true,
       "images": [
         "/img/salon/e0698-1.jpg"
       ],
-      "eraId": "era5"
+      "eraId": "era5",
+      "ocr": true
     },
     {
       "id": "e0699",
@@ -9705,11 +9705,11 @@
       "date": "2026-07-24",
       "time": "",
       "text": "-\n-\n- 行商羊驼\n-\n- 量子山羊可以产奶你们知道吗\n-\n- [奶桶]\n- 行商羊驼\n- 山羊奶这个\n- 山羊就是山羊略\n-  我想省\n- 刚好我也可以产无限奶\n-  OK\n-",
-      "ocr": true,
       "images": [
         "/img/salon/e0752-1.jpg"
       ],
-      "eraId": "era5"
+      "eraId": "era5",
+      "ocr": true
     },
     {
       "id": "e0753",
@@ -9730,11 +9730,11 @@
       "date": "2026-07-25",
       "time": "",
       "text": "- 你咋一直在掉血\n- 欠债了？\n- 他要饿死\n- 你想底\n- 但没人知道他为什么要饿死？\n-\n- 321\n- RawAya饿死了\n-\n- OK",
-      "ocr": true,
       "images": [
         "/img/salon/e0754-1.jpg"
       ],
-      "eraId": "era5"
+      "eraId": "era5",
+      "ocr": true
     },
     {
       "id": "e0755",

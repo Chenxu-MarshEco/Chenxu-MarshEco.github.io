@@ -2,7 +2,7 @@
  * 「冰室精华一条都不能丢」的验收（真浏览器量，副本不动工作区）。
  *
  * 用户的原话：完美对话 / AI 创作都要在；完美对话那条下面写着所有发言人的名字，
- * 这类精华**属于多个成员**（例：2023-07-19 的完美对话 = 虹星 + 花花），
+ * 这类精华**属于多个成员**（例：2023-07-19 的那场完美对话有两个人），
  * 显示的时候要把这些成员的名字和头像都列出来 —— 时间、对话图片也要在。
  *
  * 量这些：
@@ -162,7 +162,7 @@ try {
   check(`/salon/ 页面：${multiData.length} 条多成员精华，每条的成员名和头像位都对`,
     page.multi === multiData.length && page.facesTotal === total + multiData.reduce((a, e) => a + e.memberIds.length - 1, 0),
     `多成员条 ${page.multi}；头像位合计 ${page.facesTotal}（= ${total} 条 + 多出来的 ${page.facesTotal - total} 个头像）`);
-  check('多成员的名字是「、」连起来的（例：花花、虹星）',
+  check('多成员的名字是「、」连起来的（名字不写死：数据里怎么改这儿都跟着）',
     page.allMultiNames.every((s) => /、/.test(s)), page.allMultiNames.slice(0, 5).join(' | '));
   check(`每条都有头像位（没传头像的用首字占位圆）`, page.noFace === 0, `没头像位的 ${page.noFace} 条；占位圆 ${page.noneNames} 条写「冰室群成员」`);
   check(`16 条 OCR 转录的完美对话挂了「OCR 转录」标签`, page.badges === 16, `badge = ${page.badges}`);
@@ -178,7 +178,12 @@ try {
   check('页面上的条目是按时间正序排的（编辑器保存不重排，排序由站点这套渲染负责）',
     order.bad === 0 && order.n === total, JSON.stringify(order));
 
-  /* ③ 头像叠排：量 2023-07-19 那条（花花、虹星）两个头像的 rect */
+  /* ③ 头像叠排：量 2023-07-19 那条（两名成员）的头像 rect
+        ⚠ 名字从数据里现查，不写死：成员名随时可能在编辑器里被改
+        （实测踩过：用户把「花花」改名成「隰辰煦」，写死名字的断言就凭空失败）。 */
+  const pairIds = (data.essences.find((e) => e.id === 'e0022') || {}).memberIds ?? [];
+  const pairNames = pairIds.map((id) => byId.get(id)).filter(Boolean);
+  const pairText = pairNames.join('、');
   const stack = await cdp.ev(`(() => {
     const it = document.getElementById('e0022');
     if (!it) return null;
@@ -187,8 +192,8 @@ try {
     const r = avs.map((a) => { const b = a.getBoundingClientRect(); return { x: +b.left.toFixed(1), y: +b.top.toFixed(1), w: +b.width.toFixed(1), h: +b.height.toFixed(1), txt: a.textContent.trim(), title: a.parentElement.title }; });
     return { n: faces.length, r, name: it.querySelector('.salon__name').textContent, time: it.querySelector('.salon__time').textContent, imgs: it.querySelectorAll('.salon__pic img').length, kind: it.dataset.kind, members: it.dataset.members };
   })()`);
-  check('2023-07-19 那条完美对话：两个成员（花花 + 虹星）、名字 + 时间 + 对话图都在',
-    stack && stack.n === 2 && stack.name === '花花、虹星' && /2023-07-19/.test(stack.time) && stack.imgs >= 1 && stack.kind === 'perfect',
+  check(`2023-07-19 那条完美对话：两个成员（${pairNames.join(' + ')}）、名字 + 时间 + 对话图都在`,
+    stack && stack.n === 2 && stack.name === pairText && /2023-07-19/.test(stack.time) && stack.imgs >= 1 && stack.kind === 'perfect',
     JSON.stringify(stack && { n: stack.n, name: stack.name, time: stack.time, imgs: stack.imgs, kind: stack.kind }));
   check('两个头像叠着排（第二个比第一个往左压，量到重叠像素）',
     stack && stack.r[1].x < stack.r[0].x + stack.r[0].w && stack.r[1].x > stack.r[0].x && stack.r[0].y === stack.r[1].y && stack.r[0].w === 28,

@@ -2,46 +2,83 @@
 /**
  * 首页新增的那一屏（挂在两个大板块**下面**）。
  *
- * ⚠ 用户明确要求：**不要挤压或挪动原来已有的首页元素的位置**。
- * 所以这一屏不是塞进上面那块版心里，而是接在 `.boards` 后面 ——
- * 首页因此变高，滚轮就能往下滚（背景是 fixed 的，滚下来还是同一片落日）。
+ * 位置按用户最新一轮的要求排（原话见 README）：
+ *   · 日历在「甬城晴雨」正下方，**和甬城晴雨一样宽**，而且比较扁
+ *   · 冰室冰山 / 每日精华 **和日历一样高**
+ *   · 冰室冰山的左边对齐「花娅陌域」的左边
+ *   · 每日精华的右边对齐「花娅陌域」的右边
  *
- * 里面三块，位置按用户截图上圈的来：
- *   左  日历（在「甬城晴雨」正下方）
- *   中  冰室冰山
- *   右  每日精华（右下角那块，标题点进去是冰室精华页）
+ * 怎么保证"对齐"这件事不靠眼睛：这一屏的列定义和大板块那一行**一模一样**
+ * （`repeat(2, minmax(0,1fr))` + 同样的 13% 列间距），所以第一格天然就是
+ * 甬城晴雨那一列、第二格天然就是花娅陌域那一列；第二格里面再分成两张。
+ *
+ * 另外大板块那行被编辑器"排版"模式挪过一点（layout.json 里 boards 的 dx），
+ * 这里把同一个横向偏移也接过来 —— 用户在编辑器里左右拖板块，这一屏跟着走。
  */
 import HomeCalendar from './HomeCalendar.astro';
 import HomeIceberg from './HomeIceberg.astro';
 import HomeDailyEssence from './HomeDailyEssence.astro';
+import { editVars } from '../utils/layout';
+
+/** 只跟随大板块的**横向**微调（竖向按自己这一屏的节奏排） */
+const boardDx = (() => {
+  const v = editVars('home', 'boards');
+  const m = v ? /--dx:([^;]+)/.exec(v) : null;
+  return m ? `--dx:${m[1]}` : undefined;
+})();
 ---
 
-<section class="extras" aria-label="首页新增：日历 / 冰室冰山 / 每日精华">
-  <div class="extras__grid">
+<section class="extras" aria-label="首页：日历 / 冰室冰山 / 每日精华">
+  <div class="extras__grid" style={boardDx}>
     <HomeCalendar />
-    <HomeIceberg />
-    <HomeDailyEssence />
+    <div class="extras__pair">
+      <HomeIceberg />
+      <HomeDailyEssence />
+    </div>
   </div>
 </section>
 
 <style>
   .extras {
-    margin-top: clamp(2rem, 6vh, 4rem);
+    margin-top: clamp(1rem, 2.4vh, 1.8rem);
   }
+  /*
+    列定义必须和 .boards 那一行完全一致（同一个容器宽度 + 同样的 13% 列间距），
+    这是"日历经度 = 甬城晴雨、右侧格 = 花娅陌域"的唯一保证。
+    行间距按自己这一屏的节奏给（不是 13%，那会变成一大段空白）。
+  */
   .extras__grid {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: clamp(0.9rem, 2vw, 1.6rem);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    column-gap: 13%;
+    row-gap: clamp(0.9rem, 2vw, 1.6rem);
     align-items: stretch;
+    transform: translate(var(--dx, 0), 0);
+  }
+  /* 第二格（花娅陌域那一列）里并排两张：左边那张贴左、右边那张贴右 */
+  .extras__pair {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: clamp(0.8rem, 1.8vw, 1.5rem);
+    align-items: stretch;
+    min-width: 0;
+  }
+  /* 三张卡一样高：格子撑开 → 卡片 height:100% */
+  .extras__grid > *,
+  .extras__pair > * {
+    min-width: 0;
+    min-height: 0;
   }
 
-  @media (max-width: 1000px) {
+  /*
+    窄屏：和大板块保持同一个断点（760px 以下大板块也是单列）。
+    单列时不要求对齐，三张卡按自己的自然高度堆着。
+  */
+  @media (max-width: 760px) {
     .extras__grid {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
+      grid-template-columns: minmax(0, 1fr);
     }
-  }
-  @media (max-width: 700px) {
-    .extras__grid {
+    .extras__pair {
       grid-template-columns: minmax(0, 1fr);
     }
   }

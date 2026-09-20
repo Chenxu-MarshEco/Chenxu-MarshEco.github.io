@@ -187,25 +187,61 @@ const styleOf = (key: string) => editVars('home', key) ?? undefined;
   </div>
 
   <div class="home">
-    <header class="brand">
-      <Img
-        class="brand__logo"
-        data-edit="logo"
-        style={styleOf('logo')}
-        src="/img/home/logo.png"
-        alt="花涧堂徽记：龙环与塔吊艺术字"
-        sizes="(max-width: 760px) 42vw, 240px"
-        loading="eager"
-      />
-      <div class="brand__text">
-        <h1 class="brand__title" data-text="花涧堂" data-edit="title" style={styleOf('title')}>
-          花涧堂
-        </h1>
-        <p class="brand__tagline">{site.tagline}</p>
-      </div>
-    </header>
+    {/*
+      ---------- 封面（欣赏页） ----------
+      用户要求：「首次进入网页首页时，画面上只有城市背景和花涧堂logo，
+      没有下方这些可以点击的卡片，在屏幕下方加小字：点击进入花涧堂」。
 
-    <div class="boards" data-edit="boards" style={styleOf('boards')}>
+      所以徽记这一块自己撑满**一屏减去封面顶边**（`--cover-top` 是脚本量出来的
+      封面顶边，没脚本时用 7rem 兜底），下面那两行卡片就被顶到折线以下 ——
+      一进页面只看得到落日城市和徽记。背景层是 position: fixed，所以往下滚
+      仍然是同一片落日，天际线一直贴在屏幕底下。
+    */}
+    <section class="cover" id="home-cover">
+      <header class="brand">
+        <Img
+          class="brand__logo"
+          data-edit="logo"
+          style={styleOf('logo')}
+          src="/img/home/logo.png"
+          alt="花涧堂徽记：龙环与塔吊艺术字"
+          sizes="(max-width: 760px) 42vw, 240px"
+          loading="eager"
+        />
+        <div class="brand__text">
+          <h1 class="brand__title" data-text="花涧堂" data-edit="title" style={styleOf('title')}>
+            花涧堂
+          </h1>
+          <p class="brand__tagline">{site.tagline}</p>
+        </div>
+      </header>
+
+      {/*
+        屏幕下方那行小字。做成**链接**而不是按钮：没有 JS 的时候它就是一个
+        普通的页内锚点，浏览器自己会滚过去（原生兜底），有 JS 时再接管成
+        平滑的大滚动。
+        `position: sticky; bottom:` —— 封面还在屏幕里的时候它一直贴着屏幕下沿，
+        封面滚过去它跟着消失，这个行为不需要 JS。
+      */}
+      <a class="cover__hint" href="#home-boards" data-flip="in">
+        <span class="cover__hintText">点击进入花涧堂</span>
+        <span class="cover__hintArrow" aria-hidden="true">﹀</span>
+      </a>
+    </section>
+
+    {/*
+      ---------- 卡片区 ----------
+      上面那个小箭头（回到欣赏页）也做成 sticky：它只在这一整块（两个大板块 +
+      三张小卡）还在屏幕里的时候出现，封面那一屏看不到它。
+      `height: 0` 是为了让它**不占地方** —— 有没有它，下面卡片的排版一模一样。
+    */}
+    <div class="cards" id="home-cards">
+      <a class="cards__back" href="#home-cover" data-flip="out" title="回到首页欣赏">
+        <span class="cards__arrow" aria-hidden="true">↑</span>
+        <span class="sr-only">回到首页欣赏</span>
+      </a>
+
+      <div class="boards" id="home-boards" data-edit="boards" style={styleOf('boards')}>
       {/*
         只画**非独立页面**的顶层节点。独立页面和两大板块平级躺在数据里
         （借用同一套地址推导与页面生成），但它按定义不该出现在任何列表里 ——
@@ -228,18 +264,106 @@ const styleOf = (key: string) => editVars('home', key) ?? undefined;
       }
     </div>
 
-    {/*
-      本轮新增的一屏：日历（在「甬城晴雨」正下方）、冰室冰山、每日精华。
-
-      ⚠ 用户明确要求："不要挤压或挪动原来已有的首页元素的位置"。
-      所以它接在 .boards **后面**（同一层缩进、同样的容器宽度）而不是塞进
-      上面那块版心里 —— 已有的元素位置一个像素都不动，首页只是因此变高，
-      滚轮能往下滚（背景是 fixed 的，滚下去还是同一片落日）。
-      位置有没有真的没动，有实测：.tmp/home-geom.mjs 会逐项对比基线。
-    */}
-    <HomeWidgets />
+      {/*
+        三张小卡：日历（在「甬城晴雨」正下方、和它一样宽、比较扁）、
+        冰室冰山（左边对齐花娅陌域的左边）、每日精华（右边对齐花娅陌域的右边），
+        而且三张一样高。位置关系由 HomeWidgets 里那套网格保证（和大板块共用
+        同一套列定义），不是靠肉眼对齐。
+      */}
+      <HomeWidgets />
+    </div>
   </div>
 </BaseLayout>
+
+<script>
+  /* ============================================================
+     首页封面 →「大翻页」进卡片区 → 上面的小箭头返回
+     ------------------------------------------------------------
+     用户要求：「首次进入网页首页时，画面上只有城市背景和花涧堂logo……
+     点一下以后屏幕才会大滚动让这五个板块进入屏幕中，这时屏幕上方会出现一个
+     小箭头，点一下又可以回到那个首页欣赏页面。」
+
+     三件事：
+       1. 量出封面顶边（= 吸顶页头 + 首页上留白）和页头高度写进 CSS 变量 ——
+          写死数字在窄屏 / 大字号下一定会偏。
+       2. 点小字 → 滚到两个大板块（`#home-boards`）。没 JS 时它就是普通页内
+          锚点（原生兜底）；有 JS 时自己滚，落点让开吸顶页头，更准。
+       3. 按"封面滚掉了多少"切 body 上的状态类：还在封面 → 显示小字、藏箭头；
+          进了卡片区 → 藏小字、亮箭头。
+     ============================================================ */
+  const doc = document.documentElement;
+  const cover = document.getElementById('home-cover');
+  const boards = document.getElementById('home-boards');
+
+  const measure = () => {
+    const header = document.querySelector<HTMLElement>('.site-header');
+    const h = Math.round(header?.getBoundingClientRect().height ?? 0);
+    doc.style.setProperty('--home-header', `${h}px`);
+    if (cover) {
+      /* 封面自己的顶边（滚到 0 时它在文档里的位置）—— 一屏减去它就是封面高度 */
+      const top = Math.round(cover.getBoundingClientRect().top + window.scrollY);
+      doc.style.setProperty('--cover-top', `${top}px`);
+    }
+  };
+  measure();
+
+  /** 还在封面里？—— 封面滚掉一半以上就算"进卡片区"了 */
+  const inCover = () => {
+    if (!cover) return window.scrollY < 40;
+    const h = cover.getBoundingClientRect().height || 0;
+    return Math.min(window.scrollY, h) < h * 0.5;
+  };
+
+  const syncState = () => {
+    const coverMode = inCover();
+    document.body.classList.toggle('is-cover', coverMode);
+    document.body.classList.toggle('is-cards', !coverMode);
+  };
+  syncState();
+  window.addEventListener('scroll', syncState, { passive: true });
+  window.addEventListener('hashchange', () => window.setTimeout(syncState, 60));
+
+  let queued = false;
+  const queueMeasure = () => {
+    if (queued) return;
+    queued = true;
+    requestAnimationFrame(() => {
+      queued = false;
+      measure();
+      syncState();
+    });
+  };
+  window.addEventListener('resize', queueMeasure);
+  document.fonts?.ready?.then(queueMeasure);
+
+  const reduced = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const smoothTo = (top: number) =>
+    window.scrollTo({ top, behavior: reduced() ? ('instant' as ScrollBehavior) : 'smooth' });
+
+  document.querySelectorAll<HTMLElement>('[data-flip]').forEach((el) => {
+    el.addEventListener('click', (ev) => {
+      const dir = el.dataset.flip;
+      /* 别让浏览器的默认锚点跳转和我们自己这下一起来（两次滚动会打架） */
+      ev.preventDefault();
+      if (dir === 'in') {
+        document.body.classList.add('is-cards');
+        document.body.classList.remove('is-cover');
+        const head = parseFloat(getComputedStyle(doc).getPropertyValue('--home-header')) || 64;
+        smoothTo(boards ? Math.max(0, boards.getBoundingClientRect().top + window.scrollY - head - 14) : 0);
+      } else {
+        document.body.classList.add('is-cover');
+        document.body.classList.remove('is-cards');
+        smoothTo(0);
+      }
+      /* 地址栏也跟上（刷新后不会停在别处），但别把浏览历史顶乱 */
+      try {
+        history.replaceState(null, '', dir === 'in' ? '#home-boards' : '#home-cover');
+      } catch {
+        /* 极老的浏览器不给改就算了 */
+      }
+    });
+  });
+</script>
 
 <style>
   /* ============================================================
@@ -730,6 +854,148 @@ const styleOf = (key: string) => editVars('home', key) ?? undefined;
     min-height: 78vh;
   }
 
+  /* ============================================================
+     封面（欣赏页）：一整屏只有落日城市 + 徽记 + 底部那行小字
+     ------------------------------------------------------------
+     高度 = 一屏 - 封面顶边（页头 + 首页上留白），所以下面两行卡片
+     一定在折线以下 —— 一进页面是看不到任何卡片的。
+     `--cover-top` 由页面脚本量，没脚本时 7rem 兜底。
+     两种写法：vh 兜底，认识 dvh 的（手机地址栏收放）用 dvh。
+     ============================================================ */
+  .cover {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    /*
+      底下那 2.5rem 是**多伸出折线一点**的余量：卡片紧跟封面之后排，
+      封面要是正好等于一屏，某些屏幕比例下（还有编辑器排版挪过的那 3.5% 高，
+      约 11px）会露出卡片最上面一条边。多留 40px，卡片就稳稳在折线以下。
+      多出来这 40px 只是一片背景（徽记在上方，底部那行小字是 sticky），
+      所以看起来还是"一屏封面"。
+      两种写法：vh 兜底，认识 dvh 的（手机地址栏收放）用 dvh。
+    */
+    min-height: calc(100vh - var(--cover-top, 7rem) + 2.5rem);
+    min-height: calc(100dvh - var(--cover-top, 7rem) + 2.5rem);
+  }
+
+  /*
+    底部那行小字。sticky 贴着屏幕下沿：封面还在屏幕里就一直看得见，
+    封面滚过去它自己跟着走掉（不需要 JS）。
+  */
+  .cover__hint {
+    position: sticky;
+    bottom: 1.3rem;
+    margin: auto auto 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.28rem 0.85rem;
+    border: 1px solid rgba(255, 120, 190, 0.5);
+    border-radius: 999px;
+    background: rgba(24, 3, 36, 0.72);
+    color: #ffd9ef;
+    font-size: 0.82rem;
+    letter-spacing: 0.22em;
+    text-decoration: none;
+    backdrop-filter: blur(3px);
+    text-shadow: 0 0 10px rgba(255, 79, 163, 0.75);
+    transition: color 0.16s ease, border-color 0.16s ease, background 0.16s ease, opacity 0.25s ease;
+  }
+  .cover__hint:hover,
+  .cover__hint:focus-visible {
+    color: #fff;
+    border-color: rgba(255, 160, 210, 0.9);
+    background: rgba(46, 6, 34, 0.82);
+  }
+  .cover__hintArrow {
+    font-size: 0.9rem;
+    line-height: 1;
+    animation: coverNudge 2.4s ease-in-out infinite;
+  }
+  @keyframes coverNudge {
+    0%,
+    100% {
+      transform: translateY(-1px);
+    }
+    50% {
+      transform: translateY(2px);
+    }
+  }
+  /* 进了卡片区就把小字淡掉（位置留着，不做 display:none，免得布局跳一下） */
+  :global(body.is-cards) .cover__hint {
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  /*
+    卡片区外面这层只是给"回到欣赏页"的小箭头当靠山，本身不参与排版
+    （没有 margin/padding，和原来一模一样）。
+  */
+  .cards {
+    position: relative;
+  }
+
+  /*
+    回到欣赏页的小箭头：sticky 在吸顶页头下面，并且 height:0 ——
+    它不占任何地方，只在卡片区还在屏幕里的时候浮在顶上。
+    封面那一屏看不到它（它在这一块的顶上，那时还没滚到）。
+  */
+  .cards__back {
+    position: sticky;
+    top: calc(var(--home-header, 4rem) + 0.5rem);
+    z-index: 40;
+    display: flex;
+    justify-content: center;
+    height: 0;
+    pointer-events: none;
+  }
+  /*
+    箭头默认**藏着**，只有进了卡片区（body.is-cards，脚本按滚动位置加）才亮出来。
+    这么写而不是"默认亮、封面时藏"，是为了避免脚本还没跑到那一瞬间在页面上方闪一下。
+    没 JS 的极端情况下它就一直不出现 —— 那种情况用户直接往上滚就是了，
+    而"进卡片区"那一步是靠页内锚点走的（不依赖 JS）。
+  */
+  .cards__arrow {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    border: 1px solid rgba(255, 120, 190, 0.55);
+    border-radius: 50%;
+    background: rgba(24, 3, 36, 0.72);
+    color: #ffd9ef;
+    font-size: 1rem;
+    line-height: 1;
+    pointer-events: auto;
+    opacity: 0;
+    backdrop-filter: blur(3px);
+    box-shadow: 0 6px 20px -10px rgb(0 0 0 / 0.9);
+    transition: color 0.16s ease, border-color 0.16s ease, transform 0.16s ease, opacity 0.25s ease;
+  }
+  :global(body.is-cards) .cards__arrow {
+    opacity: 1;
+  }
+  .cards__back:hover .cards__arrow,
+  .cards__back:focus-visible .cards__arrow {
+    color: #fff;
+    border-color: rgba(255, 160, 210, 0.95);
+    transform: translateY(-2px);
+  }
+
+  /* 屏幕阅读器专用（箭头里那个 ↑ 对读屏没意义） */
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
   /*
     标题与 LOGO 靠左放，把画面中轴让给宁波中心大厦。
     居中摆放时标题正好压在那栋楼上，把它整个盖住了。
@@ -806,6 +1072,8 @@ const styleOf = (key: string) => editVars('home', key) ?? undefined;
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 13%;
+    /* 没有 JS 时页内锚点会直接跳到这里：让开吸顶页头（有 JS 时也生效，两边一致） */
+    scroll-margin-top: calc(var(--home-header, 4rem) + 0.9rem);
   }
 
   .board {
