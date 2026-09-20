@@ -378,6 +378,59 @@ try {
   check('多成员编辑：再勾回「虹星」存一次 → 盘上又是 2 个成员（来回都能改，不会丢成员）',
     okPlus, `${JSON.stringify(plus)}，盘上 memberIds=${readMembers('e0022')}`);
 
+  /* ---------- ④c 左边那条时间轴：面板里选一条 → 存盘 → 盘上是那个 id ----------
+     用户的原话：「可以在编辑器里选一个时间轴放在那个位置」。选的只是**一个 id**，
+     页面那边原样渲染那条轴；所以这里要验的就是"选完存下去，盘上是这个 id，
+     而且换成员/改精华的保存不会把它弄丢"。 */
+  const tlIds = JSON.parse(fs.readFileSync(path.join(DST, 'src', 'data', 'timelines.json'), 'utf8')).timelines.map((t) => t.id);
+  const readTl = () => { try { return JSON.parse(fs.readFileSync(MEMBERS_FILE, 'utf8')).timelineId || ''; } catch { return '?'; } };
+  const waitTl = async (expect, ms = 90000) => {
+    const t0 = Date.now();
+    while (Date.now() - t0 < ms) { if (readTl() === expect) return true; await sleep(700); }
+    return false;
+  };
+
+  const tlBox = await cdp.ev(`(async () => {
+    await window.__openWs('essences');
+    await new Promise((r) => setTimeout(r, 1400));
+    const w = [...document.querySelectorAll('.wpanel')].find((el) => el.getBoundingClientRect().height > 0);
+    const boxes = [...w.querySelectorAll('.wbox')];
+    const box = boxes.find((b) => ((b.querySelector('.wbox__title') || {}).textContent || '').includes('时间轴'));
+    if (!box) return { ok: false, titles: boxes.map((b) => (b.querySelector('.wbox__title') || {}).textContent) };
+    const sel = box.querySelector('select');
+    return { ok: true, value: sel.value, options: [...sel.options].map((o) => o.value + '|' + o.textContent),
+      hint: (box.querySelector('.wbox__hint') || {}).textContent || '' }; })()`);
+  check('精华面板里有「左边那条时间轴」的下拉，选中的就是盘上那条（选项来自站点的时间轴清单）',
+    tlBox.ok === true && tlBox.value === readTl() && tlBox.options.length === tlIds.length + 1,
+    JSON.stringify(tlBox));
+
+  const setTl = async (id) => cdp.ev(`(async () => {
+    const panel = () => [...document.querySelectorAll('.wpanel')].find((el) => el.getBoundingClientRect().height > 0);
+    const w = panel();
+    const box = [...w.querySelectorAll('.wbox')].find((b) => ((b.querySelector('.wbox__title') || {}).textContent || '').includes('时间轴'));
+    const sel = box.querySelector('select');
+    const set = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set;
+    set.call(sel, ${JSON.stringify(id)});
+    sel.dispatchEvent(new Event('change', { bubbles: true }));
+    await new Promise((r) => setTimeout(r, 400));
+    const status = [...w.querySelectorAll('.wpanel__status')].map((s) => s.textContent).filter(Boolean);
+    const save = [...w.querySelector('.wpanel__bar').querySelectorAll('button')].find((b) => b.textContent.trim() === '保存并重新构建');
+    if (!save) return { ok: false, why: '找不到「保存并重新构建」', value: sel.value, status };
+    save.click();
+    return { ok: true, value: sel.value, status }; })()`);
+
+  const other = tlIds.find((id) => id !== readTl());
+  const sw1 = await setTl(other);
+  const okSw1 = sw1.ok === true && (await waitTl(other));
+  check(`时间轴选择：面板里换成另一条（${other}）→ 存盘 → salon.json 的 timelineId 就是它`,
+    okSw1, `${JSON.stringify(sw1)}，盘上 timelineId=${readTl()}`);
+
+  const back = readTl() === other ? tlIds.find((id) => id !== other) : '';
+  const sw2 = back ? await setTl(back) : { ok: false, why: '没有可换回去的 id' };
+  const okSw2 = sw2.ok === true && (await waitTl(back));
+  check(`时间轴选择：换回原来那条（${back}）→ 存盘 → 盘上也跟着回去（来回都能改）`,
+    okSw2, `${JSON.stringify(sw2)}，盘上 timelineId=${readTl()}`);
+
   /* ---------- ⑤ 草稿保护：改字 → 切走 → 切回来 ---------- */
   const draft = await cdp.ev(`(async () => {
     await window.__openWs('calendar');

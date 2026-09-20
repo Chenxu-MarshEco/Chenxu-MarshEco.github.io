@@ -194,41 +194,83 @@ try {
     stack && stack.r[1].x < stack.r[0].x + stack.r[0].w && stack.r[1].x > stack.r[0].x && stack.r[0].y === stack.r[1].y && stack.r[0].w === 28,
     stack ? `${JSON.stringify(stack.r[0])} → ${JSON.stringify(stack.r[1])}（重叠 ${(stack.r[0].x + stack.r[0].w - stack.r[1].x).toFixed(1)}px）` : '');
 
-  /* ⑤ 时间轴 */
+  /* ⑤ 时间轴：编辑器里选的那条，**原样**渲染；点刻度跳到最近的一条精华 */
+  const tlSrc = JSON.parse(fs.readFileSync(path.join(SRC, 'src', 'data', 'timelines.json'), 'utf8')).timelines.find((t) => t.id === data.timelineId);
+  check('salon.json 里选了一条真实存在的时间轴',
+    !!tlSrc, `timelineId=${JSON.stringify(data.timelineId)} → ${tlSrc ? `${tlSrc.title}（${tlSrc.points.length} 点 / ${tlSrc.spans.length} 段）` : '找不到'}`);
+
   const tl = await cdp.ev(`(() => {
     const t = document.querySelector('.tl');
     const pts = [...document.querySelectorAll('.tl__item')];
-    const withHref = pts.filter((p) => p.dataset.href);
+    const ids = pts.map((p) => p.dataset.point);
+    const params = pts.map((p) => Number(p.dataset.param));
+    const bands = document.querySelectorAll('.tl__band, .tl__span');
     const body = document.querySelector('[data-tl-body]');
-    for (const it of withHref) {
+    /* 挑一个当前就能真点到的点（用滚轮把它滚进面板，别用 scrollIntoView） */
+    let pick = null;
+    for (const it of pts) {
       for (let i = 0; i < 8; i++) {
         const b = body.getBoundingClientRect(); const r = it.getBoundingClientRect();
         const cy = r.top + r.height / 2;
         if (cy > b.top + 40 && cy < b.bottom - 40) break;
         body.dispatchEvent(new WheelEvent('wheel', { deltaY: cy - (b.top + b.height / 2), bubbles: true, cancelable: true }));
       }
-      const a = it.querySelector('a.tl__crane') || it.querySelector('a.tl__name');
-      if (!a) continue;
+      const a = it.querySelector('a.tl__crane') || it.querySelector('a.tl__name') || it;
       const b = body.getBoundingClientRect(); const ar = a.getBoundingClientRect();
       const x = ar.left + ar.width / 2, y = ar.top + ar.height / 2;
       if (!(ar.width > 2 && ar.height > 2 && x > 2 && y > 2 && x < innerWidth - 2 && y < innerHeight - 2)) continue;
       const hit = document.elementFromPoint(x, y);
-      if (hit && (hit === a || a.contains(hit) || (hit.closest && hit.closest('a') === a)) && y > b.top + 8 && y < b.bottom - 8) return { pinned: t.classList.contains('is-pinned'), hasClose: !!document.querySelector('.tl__close, [data-tl-close]'), points: pts.length, withHref: withHref.length, href: it.dataset.href, x, y };
+      if (hit && (hit === a || a.contains(hit) || (hit.closest && hit.closest('.tl__item') === it)) && y > b.top + 8 && y < b.bottom - 8) {
+        pick = { id: it.dataset.point, label: it.dataset.label, param: Number(it.dataset.param), href: it.dataset.href, x, y };
+        break;
+      }
     }
-    return { pinned: t.classList.contains('is-pinned'), points: pts.length, withHref: withHref.length, href: null };
+    return { pinned: t.classList.contains('is-pinned'), pinnedAttr: t.dataset.tlPinned === '1',
+      hasClose: !!document.querySelector('.tl__close, [data-tl-close]'), hasTab: !!document.querySelector('.tl__tab, [data-tl-tab]'),
+      tlId: t.dataset.tlId, points: pts.length, ids, params, bands: bands.length,
+      scale: t.dataset.tlScale, min: t.dataset.tlMin, max: t.dataset.tlMax, pick };
   })()`);
-  const dateCount = new Set(data.essences.map((e) => e.date)).size;
-  check(`时间轴：常驻不可关、${dateCount} 个日期点全都带锚点（新加的完美对话日期也在轴上）`,
-    tl.pinned === true && tl.hasClose === false && tl.points === dateCount && tl.withHref === dateCount,
-    JSON.stringify({ pinned: tl.pinned, close: tl.hasClose, points: tl.points, withHref: tl.withHref, 期望: dateCount }));
-  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: tl.x, y: tl.y, button: 'none' });
-  await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: tl.x, y: tl.y, button: 'left', buttons: 1, clickCount: 1 });
-  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: tl.x, y: tl.y, button: 'left', buttons: 0, clickCount: 1 });
-  await sleep(1300);
-  const jump = await cdp.ev(`(() => { const h = location.hash; const el = h && document.querySelector(h); const r = el && el.getBoundingClientRect();
-    return { hash: h, want: ${JSON.stringify(tl.href)}, isItem: !!(el && el.classList.contains('salon__item')), inView: !!(r && r.top > -60 && r.top < innerHeight), top: r && Math.round(r.top) }; })()`);
-  check('时间轴：点一个日期真的跳到那天的精华（锚点对得上、落在视口里）',
-    jump.hash === jump.want && jump.isItem === true && jump.inView === true, JSON.stringify(jump));
+  check(`时间轴：放的是所选那条「${tlSrc?.title}」**原样**的 ${tlSrc?.points.length} 个点（一个不多一个不少）`,
+    tl.tlId === data.timelineId && tl.points === tlSrc.points.length &&
+      tlSrc.points.every((p) => tl.ids.includes(p.id)),
+    JSON.stringify({ tlId: tl.tlId, 点上轴: tl.points, 那条轴的点: tlSrc?.points.length, scale: tl.scale }));
+  check('时间轴：点/段都是那条轴自己的（没有我按精华日期造的点）',
+    tl.ids.every((id) => id.startsWith(data.timelineId)) &&
+      tl.bands >= tlSrc.spans.length && tl.bands <= tlSrc.spans.length * 2,
+    `点 id 前缀都对=${tl.ids.every((id) => id.startsWith(data.timelineId))}；段带子 ${tl.bands} 条（那条轴 ${tlSrc.spans.length} 段，两侧都挂的段会有两条带子）`);
+  check('时间轴：常驻、关不掉（没有关闭按钮也没有折叠标签）',
+    tl.pinned === true && tl.pinnedAttr === true && tl.hasClose === false && tl.hasTab === false,
+    JSON.stringify({ pinned: tl.pinned, attr: tl.pinnedAttr, close: tl.hasClose, tab: tl.hasTab }));
+  check('时间轴：比例尺也用那条轴自己的设置（不再是我写死的 tickDays 2）',
+    tl.scale !== '0.05' && String(tl.scale).length > 0,
+    `data-tl-scale=${tl.scale}（这条轴数据里 tickDays=${String(tlSrc?.tickDays)}，没写就是默认档）`);
+
+  check(`时间轴：找得到一个当前就能点的刻度（${tl.pick?.label}）`, !!tl.pick, JSON.stringify(tl.pick));
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: tl.pick.x, y: tl.pick.y, button: 'none' });
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: tl.pick.x, y: tl.pick.y, button: 'left', buttons: 1, clickCount: 1 });
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: tl.pick.x, y: tl.pick.y, button: 'left', buttons: 0, clickCount: 1 });
+  await sleep(1600);
+  const jump = await cdp.ev(`(() => {
+    const el = document.querySelector('.salon__item--hit') || (location.hash ? document.querySelector(location.hash) : null);
+    if (!el) return { hit: false, hash: location.hash };
+    const r = el.getBoundingClientRect();
+    /* 落点这条的 param 和刚点那个刻度的 param 差多少 */
+    const want = ${JSON.stringify(tl.pick.param)};
+    const got = Number(el.dataset.tlParam);
+    let nearest = null, bestD = Infinity;
+    for (const it of document.querySelectorAll('.salon__item')) {
+      const v = Number(it.dataset.tlParam);
+      if (!Number.isFinite(v)) continue;
+      const d = Math.abs(v - want);
+      if (d < bestD) { bestD = d; nearest = it; }
+    }
+    return { hit: true, id: el.id, date: (el.querySelector('.salon__time') || {}).textContent, want, got,
+      isNearest: nearest ? nearest.id === el.id : false, top: Math.round(r.top), inView: r.top > -60 && r.top < innerHeight,
+      hash: location.hash };
+  })()`);
+  check('时间轴：点一下刻度 → 跳到**离那个刻度最近**的那条精华（不是跳到别的页，也没乱跳）',
+    jump.hit === true && jump.isNearest === true && jump.inView === true && jump.hash === `#${jump.id}`,
+    JSON.stringify(jump));
 
   /* ⑥ 搜索 */
   const search = await cdp.ev(`(async () => {

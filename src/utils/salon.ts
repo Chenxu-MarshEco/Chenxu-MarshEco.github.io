@@ -2,9 +2,9 @@
  * 冰室精华（群精华）的取数逻辑（构建期）。
  *
  * 数据在 `src/data/salon.json`，三块：
- *   members   成员表 —— 头像 + 名字都在这里，精华里只存 memberIds
- *   eras      五个年代 —— 时间轴上的"段"
- *   essences  精华条目 —— 每条 = 成员（**可以多个**）+ 时间 + 内容（文字 / 图片）
+ *   members    成员表 —— 头像 + 名字都在这里，精华里只存 memberIds
+ *   essences   精华条目 —— 每条 = 成员（**可以多个**）+ 时间 + 内容（文字 / 图片）
+ *   eras       五个年代 —— 只用于**列表**里的分段小标题（不再拿来造时间轴）
  *
  * 数据是**一条都没丢**的完整版：文字 732 + 完美对话 45 + AI 创作 7 = 784 条
  * （`tools/salon/import.mjs` 跑完会拿"年代 × 类别"的条数和原导出文件里的注记
@@ -16,14 +16,12 @@
  * 一条精华可以有多个成员（例：2023-07-19 的完美对话 = 花花、虹星），
  * 页面会把每个人的名字和头像都列出来。
  *
- * 时间轴（那个左侧常驻的那条）也是从这里推出来的：
- *   · 年代 -> spans（时间轴的"段"）
- *   · 精华的日期（去重）-> points（时间轴的"点"，href 指向当天第一条精华）
- * 所以时间轴不需要单独维护一份数据，加一条精华就自动多一个点。
+ * 左边那条时间轴**不再自己生成**：编辑器里选一条站点已有的时间轴（存 `timelineId`），
+ * 页面上原样渲染那一条，一个点都不加、不改（见下面 salonTimelineId 的说明）。
  */
 import raw from '../data/salon.json';
 import { dailyIndex } from './daily';
-import { dayOf, paramOf, type Timeline, type TimelinePoint, type TimelineSpan } from './timelines';
+import { dayOf, paramOf, type Timeline } from './timelines';
 
 export interface SalonMember {
   id: string;
@@ -121,72 +119,29 @@ export const memberName = (e: SalonEssence): string =>
 export const memberAvatar = (e: SalonEssence): string => membersOf(e)[0]?.avatar || '';
 
 /* ------------------------------------------------------------------
-   时间轴
+   左边那条时间轴：**原样**用站点里已有的某一条
    ------------------------------------------------------------------ */
 
-export const SALON_TL_ID = 'salon-hishitsu';
-
-/** 同一天可能有好几条精华，时间轴上一个日期一个点，点进去看当天第一条 */
-const firstByDate = (): Map<string, SalonEssence> => {
-  const map = new Map<string, SalonEssence>();
-  for (const e of salonEssences) if (!map.has(e.date)) map.set(e.date, e);
-  return map;
-};
-
-/** 日期显示成 23.01.10（时间轴上字小，短一点才排得开） */
-const shortDate = (d: string): string => {
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(d);
-  return m ? `${m[1].slice(2)}.${m[2]}.${m[3]}` : d;
-};
-
 /**
- * 把 salon.json 拼成一条本站时间轴。
+ * 冰室精华页左边放哪条时间轴 —— 由编辑器在「精华」面板里选（存 `salon.json` 的 `timelineId`）。
  *
- * 点是「有精华的日期」（去重），段是五个年代。用 kind:'event' 是因为
- * 时间轴默认把「时刻」那类名字关掉（轴上一大堆大字太吵）—— 这里想让日期
- * 直接看得见，就归到「事件」那一类。
- */export function salonTimeline(): Timeline {
-  const days = [...firstByDate().entries()].sort((a, b) => a[0].localeCompare(b[0]));
-  const points: TimelinePoint[] = days.map(([date, first], i) => ({
-    id: `salon-${date}`,
-    // 左右交替，免得相邻日期的字挤在同一侧
-    side: i % 2 === 0 ? 'left' : 'right',
-    kind: 'event',
-    date,
-    label: shortDate(date),
-    href: `#${first.id}`,
-  }));
-
-  const spans: TimelineSpan[] = salonEras.map((era) => ({
-    id: era.id,
-    name: era.title,
-    from: era.from,
-    to: era.to,
-    side: 'both',
-  }));
-
-  return {
-    id: SALON_TL_ID,
-    title: '冰室精华',
-    leftName: '精华',
-    rightName: '精华',
-    /*
-      比例尺必须写死（一刻度 2 天），不能用默认档。
-      为什么：这条轴有 **450 个日期点**、跨 3 年多。按默认（约 19 天/格）算出来
-      整条轴只有 ~1800px，450 个点平均 4px 一个 —— 时间轴会把 22px 以内的点
-      **合并成一组**，于是几乎全轴并成几个巨大的提示卡（实测一个 tip 里塞了 93 行、
-      整页 DOM 涨到 21 万节点）。一刻度 2 天 → 轴长约 17500px、点间距 ~40px，
-      不再合并；代价是要滚动才看得全，而这个页面的轴本来就跟页面滚动联动。
-    */
-    tickDays: 2,
-    points,
-    spans,
-  };
-}
+ * 这里**只存一个 id**，页面上直接把 `getTimeline(id)` 拿到的那条时间轴原样渲染：
+ * 点、段、塔吊图标、比例尺全是那条轴自己的，本站一个都不加、不删、不改
+ * （以前这里是自己按精华日期生成 431/450 个点、还写死 tickDays 2 把轴拉长到 17 万像素，
+ * 又卡又超出用户要求 —— 用户原话：「不要做任何改动」）。
+ *
+ * 页面上唯一额外加的行为是：点轴上的刻度/塔吊 → 滚到**离那个刻度最近**的一条精华
+ * （见 salon.astro 里那段脚本）。轴的数据改了，这里自然跟着变，不用重新生成任何东西。
+ */
+export const salonTimelineId: string = String((DATA as { timelineId?: string }).timelineId || '');
 
 /**
  * 每条精华在时间轴上的位置（0~1），页面里写成 `data-tl-param`。
- * 时间轴脚本会用它把"当前滚到哪一段"和轴对上 —— 左边那条轴跟着页面走。
+ *
+ * 用的是**所选那条时间轴自己的**范围（`paramOf`），所以：
+ *   · 轴脚本照旧能靠它把"页面滚到哪"和轴上的"当前"对上（左边那条轴跟着页面走）；
+ *   · 点轴上的刻度时，拿刻度的 param 去比每条精华的 param，最近的那条就是要跳的那条 ——
+ *     不需要解析日期，也不受"这条轴上没画精华日期"的影响。
  */
 export function essenceParams(tl: Timeline): Map<string, number> {
   const out = new Map<string, number>();

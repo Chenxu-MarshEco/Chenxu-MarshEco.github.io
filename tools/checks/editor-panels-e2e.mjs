@@ -449,7 +449,7 @@ try {
       hasTab: !!document.querySelector('.tl__tab, [data-tl-tab]'),
       panelPos: panel && getComputedStyle(panel).position,
       panelW: panel && Math.round(panel.getBoundingClientRect().width),
-      points: pts.length, pointsWithHref: withHref.length,
+      points: pts.length, pointsWithHref: withHref.length, pointIds: pts.map((p) => p.dataset.point || ''),
       search: !!document.querySelector('#salon-q'),
       /* 「原页面自带的分类 UI」的结构标记：小节标题里那句「本年代…」和数据属性。
          不拿「完美对话 / AI 创作」这两个词当残留 —— 它们现在是**内容**（正文里就有），
@@ -462,7 +462,11 @@ try {
   check('精华页：时间轴常态显示在左边、不可关闭（没有关闭按钮、也没有折叠标签）',
     sa.pinned && sa.hasClose === false && sa.hasTab === false && sa.panelPos === 'static',
     JSON.stringify({ pinned: sa.pinned, close: sa.hasClose, tab: sa.hasTab, pos: sa.panelPos, w: sa.panelW }));
-  check('精华页：时间轴上是日期点，每个点都带 #精华 锚点', sa.points > 100 && sa.pointsWithHref === sa.points, `${sa.points} 个点 / ${sa.pointsWithHref} 个带锚点`);
+  /* 时间轴现在是"编辑器里选的那条，原样放上去"（见 salon-all-items-check.mjs 的详细断言） */
+  const tlRef = JSON.parse(fs.readFileSync(path.join(DST, 'src', 'data', 'timelines.json'), 'utf8')).timelines.find((t) => t.id === salon0.timelineId);
+  check(`精华页：左边放的是所选那条「${tlRef?.title}」原样的 ${tlRef?.points.length} 个点（不是我生成的日期点）`,
+    !!tlRef && sa.points === tlRef.points.length && sa.pointIds.every((id) => id.startsWith(String(salon0.timelineId))),
+    `点上轴 ${sa.points} / 那条轴 ${tlRef?.points.length}；id 前缀都对=${sa.pointIds.every((id) => id.startsWith(String(salon0.timelineId)))}`);
   check('精华页：原页面自带的分类/时间轴残留 = 0（「本年代…」小节标题、data-era 都没有）', sa.residue === 0, `命中 ${sa.residue} 次`);
   check('精华页：搜索框还在', sa.search === true, '');
 
@@ -495,22 +499,22 @@ try {
   check('精华页：按 / 能聚焦搜索框', srch.focusAfterSlash === true, '');
   check('精华页：新增那条精华出现在页面上', (await cdp.ev(`!!document.querySelector('.salon__item') && [...document.querySelectorAll('.salon__item blockquote')].some((b) => b.textContent === ${JSON.stringify(ESS_TEXT)})`)) === true, ESS_TEXT);
 
-  /* 点时间轴上的日期：用滚轮把点滚进面板（不要 scrollIntoView：轴的布局是 cur 自己重画的，
-     滚 DOM 会让坐标和画面错开），再用 elementFromPoint 确认那个坐标上真的点得到这个链接 */
+  /* 点时间轴上的刻度：用滚轮把点滚进面板（不要 scrollIntoView：轴的布局是 cur 自己重画的，
+     滚 DOM 会让坐标和画面错开），再用 elementFromPoint 确认那个坐标上真的点得到它。
+     注意：刻度**不一定带 href**（那条轴自己的点可能没有链接），所以不能按 href 过滤。 */
   const pt = await cdp.ev(`(() => {
     const body = document.querySelector('[data-tl-body]');
-    const items = [...document.querySelectorAll('.tl__item')].filter((p) => p.dataset.href);
-    if (!body || !items.length) return { href: null, why: 'no body/items' };
+    const items = [...document.querySelectorAll('.tl__item')];
+    if (!body || !items.length) return { id: null, why: 'no body/items' };
     for (const it of items) {
-      for (let i = 0; i < 8; i++) {
+      for (let i = 0; i < 12; i++) {
         const b = body.getBoundingClientRect();
         const r = it.getBoundingClientRect();
         const cy = r.top + r.height / 2;
         if (cy > b.top + 40 && cy < b.bottom - 40) break;
         body.dispatchEvent(new WheelEvent('wheel', { deltaY: cy - (b.top + b.height / 2), bubbles: true, cancelable: true }));
       }
-      const a = it.querySelector('a.tl__crane') || it.querySelector('a.tl__name');
-      if (!a) continue;
+      const a = it.querySelector('a.tl__crane') || it.querySelector('a.tl__name') || it;
       const b = body.getBoundingClientRect();
       const ar = a.getBoundingClientRect();
       const x = ar.left + ar.width / 2;
@@ -518,22 +522,33 @@ try {
       if (!(ar.width > 2 && ar.height > 2)) continue;
       if (!(x > 2 && y > 2 && x < innerWidth - 2 && y < innerHeight - 2)) continue;
       const hit = document.elementFromPoint(x, y);
-      const onA = !!(hit && (hit === a || a.contains(hit) || (hit.closest && hit.closest('a') === a)));
-      if (onA && y > b.top + 8 && y < b.bottom - 8) {
-        return { href: it.dataset.href, label: it.dataset.label, x, y, tag: hit.tagName, cls: String(hit.className).slice(0, 40) };
+      const onIt = !!(hit && (hit === a || a.contains(hit) || (hit.closest && hit.closest('.tl__item') === it)));
+      if (onIt && y > b.top + 8 && y < b.bottom - 8) {
+        return { id: it.dataset.point, label: it.dataset.label, param: Number(it.dataset.param), href: it.dataset.href, x, y, tag: hit.tagName };
       }
     }
-    return { href: null, why: 'no clickable point' };
+    return { id: null, why: 'no clickable point' };
   })()`);
-  check('精华页：时间轴上找得到一个当前就能点的日期点', /^#e\d+$/.test(pt.href ?? ''), JSON.stringify(pt));
+  check('精华页：时间轴上找得到一个当前就能点的刻度', !!pt.id, JSON.stringify(pt));
   await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: pt.x, y: pt.y, button: 'none' });
   await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: pt.x, y: pt.y, button: 'left', buttons: 1, clickCount: 1 });
   await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: pt.x, y: pt.y, button: 'left', buttons: 0, clickCount: 1 });
   await sleep(1400);
-  const jump = await cdp.ev(`(() => { const h = location.hash; const el = h && document.querySelector(h); const r = el && el.getBoundingClientRect();
-    return { hash: h, want: ${JSON.stringify(pt.href)}, isItem: !!(el && el.classList.contains('salon__item')), top: r && Math.round(r.top), inView: !!(r && r.top > -50 && r.top < innerHeight) }; })()`);
-  check('精华页：点时间轴上的日期，跳到那天最近的一条精华（锚点对得上，并且真的滚进视口了）',
-    /^#e\d+$/.test(jump.hash) && jump.hash === jump.want && jump.isItem === true && jump.inView === true, JSON.stringify(jump));
+  const jump = await cdp.ev(`(() => {
+    const h = location.hash; const el = h && document.querySelector(h); const r = el && el.getBoundingClientRect();
+    /* "最近"= param 差最小的那条 */
+    const want = ${JSON.stringify(pt.param)};
+    let nearest = null, bestD = Infinity;
+    for (const it of document.querySelectorAll('.salon__item')) {
+      const v = Number(it.dataset.tlParam);
+      if (!Number.isFinite(v)) continue;
+      const d = Math.abs(v - want);
+      if (d < bestD) { bestD = d; nearest = it; }
+    }
+    return { hash: h, picked: ${JSON.stringify(pt.label)}, isItem: !!(el && el.classList.contains('salon__item')),
+      isNearest: nearest ? h === '#' + nearest.id : false, top: r && Math.round(r.top), inView: !!(r && r.top > -60 && r.top < innerHeight) }; })()`);
+  check('精华页：点一个刻度 → 跳到**离它最近**的那条精华（落在视口里，不是跳去别的页）',
+    /^#e\d+$/.test(jump.hash) && jump.isItem === true && jump.isNearest === true && jump.inView === true, JSON.stringify(jump));
 
   /* ---- 5.5 首页随机精华：改日期跑 24 天，看它跟不跟着成员表变 ---- */
   const probes = [];

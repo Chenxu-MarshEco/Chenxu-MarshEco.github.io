@@ -237,6 +237,7 @@ const data = {
     'eras 是五个年代（时间轴上的"段"）；精华用 eraId 指回年代，时间轴上的"点"由精华的日期生成。',
     'kind 是数据来源的类别：text 文字 / perfect 完美对话 / ai AI 创作。站点页面**不按它分组**，只是留着方便编辑器筛选。',
     'ocr: true 表示这条的正文是截图 OCR 自动转录（尚未人工校对）。',
+    'timelineId：冰室精华页左边那条时间轴用站点里的哪一条（编辑器「精华」面板里选）。**原样渲染，不改一个字。**',
     'images 里是 public/img/salon/ 下的站内路径；编辑器里新增精华可以直接上传图片。',
   ],
   title: '冰室群精华',
@@ -250,6 +251,11 @@ const data = {
     return `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}`;
   })(),
   note: '由群精华导出文件整理：文字 / 完美对话 / AI 创作三类都在，一条没丢。',
+  /*
+    左边那条时间轴放哪一条：编辑器里选的，存的就是站点 timelines.json 里的一个 id。
+    重跑导入脚本时**必须原样带过来**，不然用户选完的轴会被这次重跑抹掉。
+  */
+  timelineId: String(old.timelineId || ''),
   eras,
   members,
   essences: items.map((it) => ({

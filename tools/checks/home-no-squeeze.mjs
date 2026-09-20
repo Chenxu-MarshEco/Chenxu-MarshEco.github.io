@@ -19,6 +19,13 @@ import { execSync, spawnSync } from 'node:child_process';
 
 const SRC = String.raw`D:\曼沫砾总线\Chenxu-MarshEco.github.io`;
 const CUR = path.resolve(process.argv[2] ?? path.join(SRC, 'dist'));
+/*
+ * 拿哪个提交当「改动前」。
+ * 默认 HEAD 就是"上一次提交"—— 平时改完东西还没提交时，它正好是动手前那份。
+ * 但这一轮的四块已经在 5e203a7 提交进去了，所以想看当初那次真实对比要显式给提交号：
+ *   node tools/checks/home-no-squeeze.mjs dist 69ed7e1      # 16:52 那次（没这四块）
+ */
+const REF = process.argv[3] ?? 'HEAD';
 const HEAD = path.join(SRC, '.tmp', 'squeeze-head');
 const TAR = path.join(SRC, '.tmp', 'squeeze-head.tar');
 const OLD = path.join(SRC, '.tmp', 'squeeze-old.json');
@@ -50,13 +57,13 @@ try {
 
   /* git archive -> tar 文件 -> 解开。全程用 spawnSync 传参数组，
      不走 cmd /c 的管道（那一路在带空格/中文的路径上会静默失败，踩过一次）。 */
-  const a = spawnSync('git', ['archive', 'HEAD', '-o', TAR], { cwd: SRC, encoding: 'utf8' });
+  const a = spawnSync('git', ['archive', REF, '-o', TAR], { cwd: SRC, encoding: 'utf8' });
   const t = spawnSync('tar', ['-xf', TAR, '-C', HEAD], { encoding: 'utf8' });
   const hasIndex = fs.existsSync(path.join(HEAD, 'src', 'pages', 'index.astro'));
   const hasNew = fs.existsSync(path.join(HEAD, 'src', 'components', 'HomeWidgets.astro'));
   /* tar 在 Windows 上遇到个别它建不出来的条目会以 1 退出但仍然把该解的都解出来了，
      所以判定看**解出来没有**，tar 的退出码只当参考一起打出来。 */
-  check('从 git HEAD 导出「改动前」源码（有首页、且没有这一轮的新文件）',
+  check(`从 git ${REF} 导出「改动前」源码（有首页、且没有这一轮的新文件）`,
     a.status === 0 && hasIndex && !hasNew,
     `git=${a.status} tar=${t.status} index.astro=${hasIndex} HomeWidgets.astro=${hasNew} pages ${fs.existsSync(path.join(HEAD, 'src', 'pages')) ? fs.readdirSync(path.join(HEAD, 'src', 'pages')).length : 0} 项${t.stderr ? ' tar stderr: ' + t.stderr.trim().split('\n').slice(-1)[0] : ''}`);
 

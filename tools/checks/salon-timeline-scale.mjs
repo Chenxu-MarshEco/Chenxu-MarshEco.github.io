@@ -1,6 +1,8 @@
 /*
- * 检查：冰室精华页那条"常驻"时间轴里，底部的比例尺还能不能用、预设的一刻度 2 天有没有生效。
- * （这轮我把这条轴的比例尺写死成 tickDays: 2，得确认它没有把尺子/滑块弄坏或者挤出面板。）
+ * 检查：冰室精华页那条"常驻"时间轴里，底部的比例尺还能不能用。
+ * （这条轴现在是**编辑器里选的那条已有的时间轴原样放上去**的，比例尺是它自己的设置 ——
+ *  花娅年代记没写 tickDays，走默认档 1 格 ≈ 19 天。要确认的是：尺子还在、滑块还能拖、
+ *  拖了整条轴会重画、而且没被挤出面板。）
  */
 import http from 'node:http';
 import fs from 'node:fs';
@@ -69,7 +71,9 @@ try {
     return m ? Number(m[1]) : NaN;
   };
   check('常驻轴里比例尺还在、且没被挤出面板', !!before.rail && before.railInsidePanel === true && before.knobVisible === true, JSON.stringify(before));
-  check('预设生效：刻度写的是"1 格 ≈ 2.0 天"（tickDays: 2）', daysOf(before.value) === 2, JSON.stringify({ value: before.value }));
+  check('比例尺用**所选那条时间轴自己的**设置（花娅年代记没写 tickDays → 默认档 1 格 ≈ 19 天）',
+    Number.isFinite(daysOf(before.value)) && daysOf(before.value) === 19 && String(before.scaleSrc ?? before.value).length > 0,
+    JSON.stringify({ value: before.value, 期望: 19 }));
 
   // 把滑块拖到右边（一刻度更多天 → 轴缩起来）
   await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: before.knob.x, y: before.knob.y, button: 'none' });

@@ -1032,6 +1032,16 @@ async function handleApi(req, res, url) {
     const payload = await readBody(req);
     const current = await readSalon();
     const data = cleanSalon(payload, current);
+    /*
+      左边那条时间轴：只认站点里真有的 id。
+      不信任前端传的值（面板上的下拉是照 timelines.json 生成的，但手改请求/删了那条轴
+      之后就会指向一个不存在的时间轴 —— 那页面上那块地方会静默变空）。认不出来就当没选。
+    */
+    const known = await salonTimelineIds();
+    if (data.file.timelineId && !known.has(data.file.timelineId)) {
+      data.dropped.timeline = data.file.timelineId;
+      data.file.timelineId = '';
+    }
     try {
       await fs.copyFile(SALON_FILE, `${SALON_FILE}.bak`);
     } catch {
@@ -2269,10 +2279,26 @@ async function readSalon() {
     title: String(data.title || '冰室群精华'),
     updated: String(data.updated || ''),
     note: String(data.note || ''),
+    /* 冰室精华页左边放哪条时间轴（站点 timelines.json 里的一个 id，空串 = 不放） */
+    timelineId: String(data.timelineId || ''),
     eras: Array.isArray(data.eras) ? data.eras : [],
     members: Array.isArray(data.members) ? data.members : [],
     essences: Array.isArray(data.essences) ? data.essences : [],
   };
+}
+
+/**
+ * 允许挂到冰室精华页左边的那些时间轴 id。
+ * 只认站点 `src/data/timelines.json` 里真有的 —— 写一个不存在的 id 上去，
+ * 页面那边 `getTimeline()` 会拿到 undefined，那块地方就空了（不报错但也不好查）。
+ */
+async function salonTimelineIds() {
+  try {
+    const raw = JSON.parse(await fs.readFile(TIMELINES_FILE, 'utf8'));
+    return new Set((Array.isArray(raw?.timelines) ? raw.timelines : []).map((t) => String(t?.id || '')).filter(Boolean));
+  } catch {
+    return new Set();
+  }
 }
 
 /** 某一天落在哪个年代里；落不进任何一段就是空串（面板上显示「不在任何年代里」） */
@@ -2303,7 +2329,7 @@ function cleanSalon(payload, current) {
   if (!payload || typeof payload !== 'object') {
     throw httpError(400, '数据格式不对，需要 { members: [...] } 或 { essences: [...] }');
   }
-  const dropped = { members: 0, essences: 0 };
+  const dropped = { members: 0, essences: 0, timeline: '' };
   const has = (k) => Object.prototype.hasOwnProperty.call(payload, k);
 
   const readme = Array.isArray(payload._readme) ? payload._readme : current._readme;
@@ -2311,6 +2337,12 @@ function cleanSalon(payload, current) {
   if (Array.isArray(readme)) file._readme = readme;
   file.title = String(payload.title ?? '').trim() || current.title || '冰室群精华';
   file.note = has('note') ? String(payload.note ?? '') : current.note;
+  /*
+    冰室精华页左边那条时间轴：存站点 timelines.json 里的一个 id（空串 = 不放）。
+    请求里没带就保留盘上原来的 —— 成员面板保存一次不该把选好的时间轴弄丢。
+    id 是否真实存在由路由那边核对（这里只管格式）。
+  */
+  file.timelineId = has('timelineId') ? String(payload.timelineId ?? '').trim() : String(current.timelineId || '');
   // 「保存时 updated 更新成今天」—— 面板改了什么都是改了这一份数据，
   // 日期跟着变是对的（旧值只在读盘时兜底，写回一律刷新）
   file.updated = formatDateParts(new Date()).date;

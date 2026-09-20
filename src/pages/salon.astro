@@ -24,24 +24,30 @@ import {
   salonMembers,
   salonNote,
   salonTitle,
-  salonTimeline,
+  salonTimelineId,
   salonUpdated,
   essenceIds,
   essenceParams,
   memberName,
   membersOf,
 } from '../utils/salon';
+import { getTimeline } from '../utils/timelines';
 import { variantUrl } from '../utils/images';
 
-const tl = salonTimeline();
-const params = essenceParams(tl);
+/*
+  左边那条时间轴：编辑器里选中的那一条，**原样**渲染。
+  以前这里是按精华日期自己生成几百个点（还写死比例尺），又卡又超出用户要求 ——
+  现在的规则是「点、段、塔吊、比例尺全是那条轴自己的，一个都不加不删」。
+*/
+const tl = salonTimelineId ? getTimeline(salonTimelineId) : undefined;
+const params = tl ? essenceParams(tl) : new Map<string, number>();
 const list = salonEssences;
 const eraName = new Map(salonEras.map((e) => [e.id, e.title]));
 /** 只在"换了一个年代"的那条精华前面插一个年代大标题 */
 const eraOf = (e: (typeof list)[number], prev: (typeof list)[number] | undefined) =>
   !prev || prev.eraId !== e.eraId ? e : null;
 /** 时间轴默认停在最早那一天（一进页面看到的就是开头） */
-const firstParam = list.length ? (params.get(list[0].id) ?? 0) : 0;
+const firstParam = list.length && tl ? (params.get(list[0].id) ?? 0) : 0;
 ---
 
 <BaseLayout
@@ -51,10 +57,20 @@ const firstParam = list.length ? (params.get(list[0].id) ?? 0) : 0;
 >
   <div class="salon">
     <aside class="salon__side">
-      <Timeline timeline={tl} pinned={true} defaultParam={firstParam} />
+      {tl ? (
+        <div class="salon__tl" data-salon-tl data-tl-id={tl.id}>
+          {/* 原样放上去：不传任何会改它的东西，只给宽度 */}
+          <Timeline timeline={tl} pinned={true} defaultParam={firstParam} />
+        </div>
+      ) : (
+        <p class="salon__tlNone">
+          这里还没有放时间轴。<br />
+          编辑器的「精华」面板里可以选一条站点已有的时间轴放上来（<b>原样放，不改一个字</b>）。
+        </p>
+      )}
       <p class="salon__sideNote">
         成员 {salonMembers.length} 人 · 精华 {list.length} 条<br />
-        点轴上的日期可以直接跳到那天的精华
+        {tl ? <>点轴上的刻度（或塔吊）直接跳到离那天最近的一条精华</> : <>还没有选时间轴</>}
       </p>
     </aside>
 
@@ -169,6 +185,90 @@ const firstParam = list.length ? (params.get(list[0].id) ?? 0) : 0;
 
 <script>
   /* ============================================================
+     左边那条时间轴：点刻度 → 跳到离那天最近的一条精华
+     ------------------------------------------------------------
+     用户的要求只有这一条：
+       「点击时间轴上的刻度，就跳到离那个日期最近的精华消息；
+         点刻度即可，或是点时间轴上原本就有的塔吊图标」
+
+     所以这里**不动那条时间轴的任何数据/画法**（点、段、塔吊、比例尺都是它自己的），
+     只是接管"点上去"这一下：
+       · 被点的刻度带着 `data-param`（它在这条轴上的位置 0~1，服务端算好的）；
+       · 每条精华带着 `data-tl-param`（同一条轴上的位置，也是同一套算法）；
+       · 两个 param 差最小的那条精华，就是"离这个刻度最近"的那条 → 滚过去 + 闪一下。
+     用位置比而不是比日期：轴上可能有没有日期的「难以考据」点，比位置对它们也成立。
+     ============================================================ */
+  const tlBox = document.querySelector<HTMLElement>('[data-salon-tl]');
+  const tlList = document.getElementById('salon-list');
+
+  if (tlBox && tlList) {
+    const rows = Array.from(tlList.querySelectorAll<HTMLElement>('.salon__item'));
+    const params = rows
+      .map((el) => ({ el, t: Number(el.dataset.tlParam) }))
+      .filter((r) => Number.isFinite(r.t));
+
+    /** 落到某条精华上：滚过去 + 闪一下 + 把地址栏的 hash 也换掉（好复制给别人） */
+    const jumpTo = (el: HTMLElement) => {
+      /*
+        自己算目标位置再 scrollTo，比 scrollIntoView 可控：
+        `scroll-margin-top` 那 5.5rem 是给吸顶页头留的，这里直接减掉同样的量。
+        平滑滚动偶尔会被打断（这条轴自己也在跟着页面滚），所以 1.2 秒后检查一次 ——
+        还没到就把"到位"这件事直接做掉，绝不留下"点了但停在半路"。
+      */
+      const topOf = () => Math.max(0, el.getBoundingClientRect().top + window.scrollY - 88);
+      window.scrollTo({ top: topOf(), behavior: 'smooth' });
+      window.setTimeout(() => {
+        const r = el.getBoundingClientRect();
+        if (r.top < -40 || r.top > window.innerHeight * 0.5) {
+          window.scrollTo({ top: topOf(), left: 0, behavior: 'instant' as ScrollBehavior });
+        }
+      }, 1200);
+      el.classList.remove('salon__item--hit');
+      // 重新触发一次动画：先把类摘掉、读一下布局、再加回去
+      void el.offsetWidth;
+      el.classList.add('salon__item--hit');
+      window.setTimeout(() => el.classList.remove('salon__item--hit'), 2400);
+      try {
+        history.replaceState(null, '', `#${el.id}`);
+      } catch {
+        /* 极老的浏览器不给改就算了 */
+      }
+    };
+
+    /**
+     * 手机上（没有悬停能力）保留原来的"两下"：第一下只弹提示卡，第二下点卡片里那行字才跳。
+     * 桌面鼠标一下就跳 —— 用户的原话是"点刻度即可"。
+     */
+    const noHover = () => window.matchMedia('(hover: none)').matches;
+
+    tlBox.addEventListener(
+      'click',
+      (ev) => {
+        const t = ev.target as HTMLElement | null;
+        const item = t?.closest?.<HTMLElement>('.tl__item');
+        if (!item || !params.length) return;
+        const onCard = !!t?.closest?.('.tl__tipOpen');
+        if (noHover() && !onCard) return; // 触屏第一下交给时间轴自己弹卡片
+        const want = Number(item.dataset.param);
+        if (!Number.isFinite(want)) return;
+        // 抢在时间轴自己的锚点跳转之前接管（默认是跳到轴数据里那个 href）
+        ev.preventDefault();
+        let best = params[0];
+        let bestD = Math.abs(best.t - want);
+        for (const p of params) {
+          const d = Math.abs(p.t - want);
+          if (d < bestD) {
+            bestD = d;
+            best = p;
+          }
+        }
+        jumpTo(best.el);
+      },
+      true
+    );
+  }
+
+  /* ============================================================
      搜索 + 按 / 聚焦
      ------------------------------------------------------------
      纯前端筛：精华是一次性静态渲染出来的（搜索引擎也看得到），
@@ -254,6 +354,21 @@ const firstParam = list.length ? (params.get(list[0].id) ?? 0) : 0;
     position: sticky;
     top: 1.2rem;
     align-self: flex-start;
+  }
+  /* 放所选时间轴的框：高度交给组件自己（它内部按 clamp 定死，弧线几何要用） */
+  .salon__tl {
+    width: 100%;
+  }
+  /* 还没选时间轴时的说明（编辑器里选完就换成轴） */
+  .salon__tlNone {
+    margin: 0;
+    padding: 1rem 0.9rem;
+    border: 1px dashed var(--c-border-strong);
+    border-radius: 12px;
+    font-size: 0.8rem;
+    line-height: 1.8;
+    color: var(--c-text-faint);
+    text-align: center;
   }
   .salon__sideNote {
     margin: 0.7rem 0 0;
@@ -355,6 +470,11 @@ const firstParam = list.length ? (params.get(list[0].id) ?? 0) : 0;
   .salon__item:target {
     border-left-color: #ffd447;
     animation: salonHit 1.6s ease-out;
+  }
+  /* 点时间轴刻度跳过来的那一条（脚本加的类；hash 那种是 :target，两条路都有反馈） */
+  .salon__item--hit {
+    border-left-color: #ffd447;
+    animation: salonHit 2.2s ease-out;
   }
   @keyframes salonHit {
     0% {

@@ -9763,6 +9763,12 @@ async function openEssencesModal() {
   els.essEditor.textContent = '正在读取…';
   try {
     await loadSalon();
+    /*
+      顺便把时间轴清单读进内存（有缓存，不会冲掉「时间轴」面板里没保存的改动）：
+      这个面板顶上那个「左边放哪条时间轴」的下拉要它，而 renderEssencesPanel() 是同步的。
+      读不到就退回空清单 —— 下拉里只剩「（不放时间轴）」，不影响精华本身的编辑。
+    */
+    await loadTimelines().catch(() => {});
   } catch (err) {
     els.essEditor.textContent = `读取失败：${err.message}`;
     return;
@@ -9805,6 +9811,49 @@ function renderEssencesPanel() {
   const all = salonDraft.essences;
   const list = filteredEssences();
   const shown = Math.min(essShown, list.length);
+
+  /* ---- 左边那条时间轴：选站点里已有的一条，**原样**放上去 ---- */
+  /*
+    用户的要求（原话）：「可以在编辑器里选一个时间轴放在那个位置……放上去以后
+    不要做任何改动！！！不要加减删改东西！！！页面上只需要：点刻度跳到离那个日期
+    最近的精华」。所以这里只是一个下拉：把 id 存进 salon.json 的 timelineId，
+    页面那边 getTimeline(id) 拿出来原样渲染 —— 不带任何"按精华日期生成点"的逻辑。
+  */
+  const tlBox = panelBox(
+    '左边那条时间轴',
+    '选一条站点已有的时间轴原样放到冰室精华页左边。**一个点、一段、一个塔吊都不会加、不会改**；' +
+      '页面上唯一多出来的行为是：点轴上的刻度（或塔吊）跳到离那天最近的一条精华。'
+  );
+  const tlSel = document.createElement('select');
+  tlSel.className = 'input';
+  const tlOpts = [{ id: '', title: '（不放时间轴）' }, ...(timelinesDraft?.timelines ?? []).map((t) => ({ id: t.id, title: t.title }))];
+  for (const o of tlOpts) {
+    const opt = document.createElement('option');
+    opt.value = o.id;
+    opt.textContent = o.id ? `${o.title}（${o.id}）` : o.title;
+    tlSel.appendChild(opt);
+  }
+  // 盘上的 id 已经不在清单里（那条轴被删了）也要能显示出来，不然下拉会静默跳到第一项
+  const cur = String(salonDraft.timelineId ?? '');
+  if (cur && !tlOpts.some((o) => o.id === cur)) {
+    const opt = document.createElement('option');
+    opt.value = cur;
+    opt.textContent = `${cur}（这条时间轴已经不在了）`;
+    tlSel.appendChild(opt);
+  }
+  tlSel.value = cur;
+  tlSel.addEventListener('change', () => {
+    salonDraft.timelineId = tlSel.value;
+    markPanelDirty(status, 'salon');
+  });
+  tlBox.appendChild(panelRow('时间轴', tlSel));
+  if (!(timelinesDraft?.timelines ?? []).length) {
+    const p = document.createElement('p');
+    p.className = 'hint wbox__hint';
+    p.textContent = '一条时间轴都没读到 —— 先去「时间轴」面板建一条，再回来选。';
+    tlBox.appendChild(p);
+  }
+  body.appendChild(tlBox);
 
   /* ---- 工具条：搜索 + 排序 + 新增 ---- */
   const tools = document.createElement('div');
