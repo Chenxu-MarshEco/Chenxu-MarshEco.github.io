@@ -1,0 +1,48 @@
+---
+/**
+ * 首页新增的那一屏（挂在两个大板块**下面**）。
+ *
+ * ⚠ 用户明确要求：**不要挤压或挪动原来已有的首页元素的位置**。
+ * 所以这一屏不是塞进上面那块版心里，而是接在 `.boards` 后面 ——
+ * 首页因此变高，滚轮就能往下滚（背景是 fixed 的，滚下来还是同一片落日）。
+ *
+ * 里面三块，位置按用户截图上圈的来：
+ *   左  日历（在「甬城晴雨」正下方）
+ *   中  冰室冰山
+ *   右  每日精华（右下角那块，标题点进去是冰室精华页）
+ */
+import HomeCalendar from './HomeCalendar.astro';
+import HomeIceberg from './HomeIceberg.astro';
+import HomeDailyEssence from './HomeDailyEssence.astro';
+---
+
+<section class="extras" aria-label="首页新增：日历 / 冰室冰山 / 每日精华">
+  <div class="extras__grid">
+    <HomeCalendar />
+    <HomeIceberg />
+    <HomeDailyEssence />
+  </div>
+</section>
+
+<style>
+  .extras {
+    margin-top: clamp(2rem, 6vh, 4rem);
+  }
+  .extras__grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: clamp(0.9rem, 2vw, 1.6rem);
+    align-items: stretch;
+  }
+
+  @media (max-width: 1000px) {
+    .extras__grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+  @media (max-width: 700px) {
+    .extras__grid {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+</style>

@@ -1,0 +1,132 @@
+---
+/**
+ * 首页「冰室冰山」那一块。
+ *
+ * 用户要求：点它进一个页面，并且**预留图片和链接接口**（图还没做，
+ * 编辑器「冰室冰山」面板里传图和填链接；没填图就先显示带塔吊的占位）。
+ */
+import widgets from '../data/home-widgets.json';
+import { variantUrl } from '../utils/images';
+import { withBase } from '../utils/url';
+
+const ice = (widgets.iceberg ?? {}) as { title?: string; image?: string; text?: string; href?: string };
+const rawHref = String(ice.href ?? '').trim();
+const external = /^https?:/i.test(rawHref);
+const url = rawHref ? (external ? rawHref : withBase(rawHref)) : '';
+const imgRaw = String(ice.image ?? '').trim();
+/** 走图片管线（编辑器上传时已经压过一档；查不到清单就退回原图） */
+const img = imgRaw ? variantUrl(imgRaw, 800) : '';
+const title = ice.title || '冰室冰山';
+const Tag = url ? 'a' : 'div';
+---
+
+<Tag
+  class:list={['ice', !url && 'ice--nolink']}
+  href={url || undefined}
+  title={url ? title : '还没填链接（编辑器「冰室冰山」面板里填）'}
+  {...external ? { target: '_blank', rel: 'noopener' } : {}}
+>
+  <span class="ice__art">
+    {
+      img ? (
+        <img class="ice__img" src={img} alt="" loading="lazy" decoding="async" />
+      ) : (
+        /* 占位：一块冰蓝的斜坡 + 站点那台塔吊，等用户传图 */
+        <span class="ice__ph" aria-hidden="true">
+          <svg viewBox="0 0 24 24" class="ice__crane">
+            <path d="M10.5 20.5V6.5M13.5 20.5V6.5M8.5 20.5h7M12 4v2.5M3.5 9h17M12 4 3.5 9M12 4l8.5 5M17.5 9v4" />
+          </svg>
+        </span>
+      )
+    }
+  </span>
+
+  <span class="ice__body">
+    <b class="ice__title">{title}</b>
+    {ice.text && <span class="ice__text">{ice.text}</span>}
+    {!url && <span class="ice__hint">（链接留空，去编辑器里填）</span>}
+  </span>
+</Tag>
+
+<style>
+  .ice {
+    display: block;
+    position: relative;
+    overflow: hidden;
+    border: 1px solid rgba(255, 120, 190, 0.4);
+    border-radius: 16px;
+    background: linear-gradient(180deg, rgba(38, 6, 54, 0.86), rgba(20, 3, 32, 0.9));
+    box-shadow: 0 14px 40px -22px rgb(0 0 0 / 0.8);
+    text-decoration: none;
+    color: inherit;
+    transition: transform 0.16s ease, border-color 0.16s ease;
+  }
+  a.ice:hover {
+    transform: translateY(-2px);
+    border-color: rgba(255, 120, 190, 0.8);
+  }
+  .ice--nolink {
+    cursor: default;
+    opacity: 0.92;
+  }
+
+  .ice__art {
+    display: block;
+    aspect-ratio: 16 / 10;
+    background: linear-gradient(180deg, rgba(30, 8, 48, 0.9), rgba(10, 2, 18, 0.9));
+  }
+  .ice__img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  /* 占位：冰蓝的斜切面 + 一台小塔吊 */
+  .ice__ph {
+    position: relative;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(165deg, #d9f2ff 0%, #8fd4ff 34%, #4f9fd8 62%, #234a70 100%);
+    clip-path: polygon(0 100%, 18% 46%, 34% 66%, 52% 22%, 70% 58%, 86% 38%, 100% 100%);
+    opacity: 0.55;
+  }
+  .ice__crane {
+    width: 34px;
+    height: 34px;
+    margin-bottom: 12%;
+    fill: none;
+    stroke: #0d2438;
+    stroke-width: 2.2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  .ice__body {
+    display: block;
+    padding: 0.55rem 0.8rem 0.7rem;
+    border-top: 1px solid var(--c-border);
+  }
+  .ice__title {
+    display: block;
+    font-size: 0.98rem;
+    letter-spacing: 0.12em;
+    color: #ffd9ef;
+  }
+  .ice__text {
+    display: block;
+    margin-top: 0.2rem;
+    font-size: 0.8rem;
+    line-height: 1.6;
+    color: var(--c-text-muted);
+  }
+  .ice__hint {
+    display: block;
+    margin-top: 0.2rem;
+    font-size: 0.72rem;
+    color: var(--c-text-faint);
+  }
+</style>

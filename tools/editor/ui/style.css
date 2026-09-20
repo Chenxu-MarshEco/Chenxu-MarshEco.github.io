@@ -3727,3 +3727,480 @@ body.pblock-dragging * {
     grid-template-columns: minmax(150px, 13rem) minmax(0, 1fr);
   }
 }
+
+/* ---------------------------------------------------------------
+   首页那几块 + 冰室精华（后加的五个面板）
+
+   五个面板共用一个外壳（app.js 的 panelShell）：顶上「切换」条、
+   一句说明、内容区（.wpanel__body，里面是一块块 .wbox）、底部动作条。
+   内容区要滚动、动作条要一直看得见 —— 所以 body 自己滚，
+   外壳用 flex 撑满弹窗面板的高度。别的面板是整块弹窗滚，
+   这两个 735 条的清单滚起来手感差，所以这里分开。
+--------------------------------------------------------------- */
+
+.wpanel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+}
+.wpanel__hint {
+  margin: 0;
+}
+.wpanel__body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+  max-height: min(64vh, 660px);
+  overflow-y: auto;
+  padding-right: 2px;
+}
+.wpanel__bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+.wpanel__status {
+  flex: 1 1 auto;
+  min-width: 120px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+.wpanel__status.is-dirty {
+  color: var(--accent);
+}
+
+/* 内容区里一块块卡片 */
+.wbox {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+}
+.wbox__title {
+  margin: 0;
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+}
+.wbox__hint {
+  margin: 0;
+}
+
+/* 「标签 + 控件」那一行：标签定宽，右边一列控件对齐 */
+.wrow {
+  display: grid;
+  grid-template-columns: 7.5rem minmax(0, 1fr);
+  gap: 8px 10px;
+  align-items: start;
+}
+@media (max-width: 720px) {
+  .wrow {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.wrow__label {
+  padding-top: 6px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.wrow__cell {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.wrow__hint {
+  margin: 0;
+}
+.warea {
+  min-height: 34px;
+  resize: vertical;
+  font: inherit;
+}
+.wdate,
+.wtime {
+  width: auto;
+  min-width: 10.5rem;
+}
+
+/* 图片上传点：缩略图 + 按钮，拖进来 / Ctrl+V 都认（attachImageIntake） */
+.wimg {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+.wimg__thumb {
+  flex: 0 0 auto;
+  width: 72px;
+  height: 72px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  font-size: 11px;
+  color: var(--text-faint);
+}
+.wimg__thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.wimg__thumb--empty {
+  border-style: dashed;
+}
+.wimg__ops {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.wimg__hint {
+  flex: 1 1 100%;
+  margin: 0;
+}
+
+/* ---------- 日历：一天一张小卡片 ---------- */
+.wcal-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+}
+.wcal-row__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.wcal-row__idx {
+  font-size: 11px;
+  font-style: normal;
+  font-family: var(--font-mono);
+  color: var(--text-faint);
+}
+.wcal-row__fields {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* ---------- 精华：工具条 + 只画前 N 条的清单 ---------- */
+.wess__tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+.wess__search {
+  flex: 1 1 14rem;
+  min-width: 10rem;
+}
+.wess__count {
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.wess__rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.wess__row {
+  display: grid;
+  grid-template-columns: 8.5rem minmax(7rem, 10rem) minmax(0, 1fr) 8rem auto;
+  gap: 8px;
+  align-items: center;
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  font-size: 12.5px;
+}
+@media (max-width: 900px) {
+  .wess__row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.wess__when {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.wess__who {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wess__who--missing {
+  color: var(--danger);
+}
+.wess__avatar {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  object-fit: cover;
+  background: var(--surface-3);
+}
+.wess__avatar--none {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+/* 一条精华挂好几个成员：头像叠着排成一摞，看得出一条里有几个人 */
+.wess__faces {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+}
+.wess__faces .wess__avatar + .wess__avatar {
+  margin-left: -8px;
+  box-shadow: 0 0 0 1.5px var(--surface);
+}
+.wess__names {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* 种类标签（文字 / 完美对话 / AI 创作），只给编辑器看 */
+.wess__kind {
+  display: inline-block;
+  padding: 0 5px;
+  margin-right: 2px;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  font-size: 10.5px;
+  font-style: normal;
+  line-height: 1.6;
+  color: var(--text-muted);
+  background: var(--surface-2);
+  vertical-align: 1px;
+}
+.wess__kind--perfect {
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+.wess__kind--ai {
+  border-color: color-mix(in srgb, #8a6bd0 55%, transparent);
+  color: #8a6bd0;
+  background: color-mix(in srgb, #8a6bd0 12%, transparent);
+}
+/* 表单里的多选成员清单 */
+.wess__members {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  max-height: 15rem;
+  overflow-y: auto;
+}
+.wess__membersHead {
+  margin: 0;
+  position: sticky;
+  top: -8px;
+  padding: 2px 0;
+  background: var(--surface-2);
+}
+.wess__membersHead.is-bad {
+  color: var(--danger);
+}
+.wess__memberGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr));
+  gap: 4px 8px;
+}
+.wess__member {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 5px;
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.wess__member:hover {
+  border-color: var(--border-strong);
+  background: var(--surface);
+}
+.wess__member:has(input:checked) {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.wess__memberName {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wess__text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wess__text--empty {
+  color: var(--text-faint);
+  font-style: italic;
+}
+.wess__meta {
+  font-size: 11px;
+  color: var(--text-faint);
+  text-align: right;
+  white-space: nowrap;
+}
+.wess__ops {
+  display: inline-flex;
+  gap: 4px;
+  justify-content: flex-end;
+}
+.wess__more,
+.wess__end {
+  align-self: flex-start;
+}
+.wess__end {
+  margin: 0;
+}
+
+/* 单条精华的表单（新增 / 编辑），插在列表行下面 */
+.wess__form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 4px 0 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--accent);
+  border-radius: var(--r-sm);
+  background: var(--accent-soft);
+}
+.wess__dt {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.wess__era {
+  font-size: 11.5px;
+  font-style: normal;
+  color: var(--text-muted);
+}
+.wess__era--none {
+  color: var(--text-faint);
+}
+.wess__imgs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.wess__imgcell {
+  position: relative;
+  width: 84px;
+  height: 84px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  overflow: hidden;
+  background: var(--surface-2);
+}
+.wess__imgcell img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.wess__imgdel {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  font: inherit;
+  line-height: 1;
+  cursor: pointer;
+}
+.wess__imgadd {
+  display: inline-flex;
+  gap: 6px;
+}
+.wess__formact {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* ---------- 成员：一个人一张卡片 ---------- */
+.wmem {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+}
+.wmem__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.wmem__id {
+  font-size: 11px;
+  font-style: normal;
+  font-family: var(--font-mono);
+  color: var(--text-faint);
+}
+.wmem__count {
+  flex: 1 1 auto;
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+.wmem__count--none {
+  color: var(--text-faint);
+}
+.wmem__fields {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+

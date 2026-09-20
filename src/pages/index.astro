@@ -2,6 +2,7 @@
 import BaseLayout from '../layouts/BaseLayout.astro';
 import HomeCranes from '../components/HomeCranes.astro';
 import HomeBirds from '../components/HomeBirds.astro';
+import HomeWidgets from '../components/HomeWidgets.astro';
 import Img from '../components/Img.astro';
 import site from '../site.config';
 import { withBase } from '../utils/url';
@@ -226,6 +227,17 @@ const styleOf = (key: string) => editVars('home', key) ?? undefined;
         ))
       }
     </div>
+
+    {/*
+      本轮新增的一屏：日历（在「甬城晴雨」正下方）、冰室冰山、每日精华。
+
+      ⚠ 用户明确要求："不要挤压或挪动原来已有的首页元素的位置"。
+      所以它接在 .boards **后面**（同一层缩进、同样的容器宽度）而不是塞进
+      上面那块版心里 —— 已有的元素位置一个像素都不动，首页只是因此变高，
+      滚轮能往下滚（背景是 fixed 的，滚下去还是同一片落日）。
+      位置有没有真的没动，有实测：.tmp/home-geom.mjs 会逐项对比基线。
+    */}
+    <HomeWidgets />
   </div>
 </BaseLayout>
 

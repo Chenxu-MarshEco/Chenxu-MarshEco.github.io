@@ -344,7 +344,19 @@ export async function optimizeAll(opts = {}) {
 
   manifest.cfg = CFG.version;
   manifest.generated = new Date().toISOString();
-  manifest.items = next;
+  /*
+    只有「整库跑」（only === null）才能把 items 直接换成 next —— 那次是
+    以盘上现有的图为准，顺便把已经删掉的图从清单里清出去。这也是上面那段
+    「清掉不再需要的产物」只在 !only 时跑的原因。
+
+    只编一张时（编辑器上传走的就是 optimizeOne -> optimizeAll({only:[key]})）
+    **必须合并**：以前这里是无条件 `= next`，于是「上传一张新头像」会把清单里
+    另外 1039 张的记录全抹掉 —— 后果有两个，都量过：
+      · 紧接着的那次构建找不到缓存，把 1039 张全部重编：45.1s（正常 4.9s）；
+      · 在下次构建跑完之前，那些图因为 manifest 里查不到而退回原图发。
+    变体文件本身没被删（only 时跳过清理），所以合并回来就是完整的。
+  */
+  manifest.items = only ? { ...prevItems, ...next } : next;
   await fsp.mkdir(OPT_DIR, { recursive: true });
   await fsp.writeFile(MANIFEST_FILE, JSON.stringify(manifest));
 

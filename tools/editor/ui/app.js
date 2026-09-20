@@ -159,6 +159,36 @@ const els = {
   lnH: $('ln-h'),
   lnS: $('ln-s'),
 
+  /*
+    首页那几块（src/data/home-widgets.json）：日历 / 关于我 / 冰室冰山。
+    三个面板各写文件里的一块，所以它们是三个独立的工作面，共用一份
+    widgetsDraft（见 panels 那一节）。
+
+    *Save 那几个按钮是 app.js 自己画出来的（panelShell 的动作条），
+    这里取到的是 null，画完在各自的 renderXxxPanel 里指到真按钮上。
+    顶栏没有这五个入口：它们只从「☰ 工作台」和面板顶上那条「切换」进。
+  */
+  calendarModal: $('calendar-modal'),
+  calEditor: $('cal-editor'),
+  calSave: $('cal-save'),
+
+  aboutModal: $('about-modal'),
+  aboutEditor: $('about-editor'),
+  aboutSave: $('about-save'),
+
+  icebergModal: $('iceberg-modal'),
+  icebergEditor: $('iceberg-editor'),
+  icebergSave: $('iceberg-save'),
+
+  /* 冰室精华（src/data/salon.json）：精华 / 成员两个面板共用一份 salonDraft */
+  essencesModal: $('essences-modal'),
+  essEditor: $('ess-editor'),
+  essSave: $('ess-save'),
+
+  membersModal: $('members-modal'),
+  memEditor: $('mem-editor'),
+  memSave: $('mem-save'),
+
   toast: $('toast'),
 };
 
@@ -1554,6 +1584,15 @@ const WORKSPACES = [
   { id: 'timelines', label: '时间轴', hint: '新建 / 编辑时间轴' },
   { id: 'music', label: '音乐', hint: '给每个页面配一份歌单' },
   { id: 'layout', label: '排版', hint: '拖动 / 缩放页面上的元素' },
+  /*
+    首页那几块（src/data/home-widgets.json）+ 冰室精华（src/data/salon.json）。
+    放在最后：这几个是后来加的，前八个的顺序和用户已经点熟的位置一个字没动。
+  */
+  { id: 'calendar', label: '日历', hint: '首页日历：特殊日子、以及今天那句话' },
+  { id: 'about', label: '关于我', hint: '页头小圆片的头像 + /about-me/ 的正文' },
+  { id: 'iceberg', label: '冰室冰山', hint: '首页「冰室冰山」那块：图、一句话、链接' },
+  { id: 'essences', label: '精华', hint: '冰室群精华：735 条，可搜索 / 新增 / 改删' },
+  { id: 'members', label: '成员', hint: '精华的成员表：改名 / 换头像，他所有精华跟着变' },
 ];
 
 /** 现在开着的是哪个工作面；没有面板开着就是主界面 'docs' */
@@ -1574,6 +1613,11 @@ function closeWorkspace(id) {
   else if (id === 'timelines') closeTimelinesModal();
   else if (id === 'music') closeMusicModal();
   else if (id === 'layout') closeLayoutModal();
+  else if (id === 'calendar') closeCalendarModal();
+  else if (id === 'about') closeAboutModal();
+  else if (id === 'iceberg') closeIcebergModal();
+  else if (id === 'essences') closeEssencesModal();
+  else if (id === 'members') closeMembersModal();
 }
 
 /** 关掉除 except 以外的所有面板 */
@@ -1601,6 +1645,11 @@ async function openWorkspace(id) {
   else if (id === 'timelines') await openTimelinesModal();
   else if (id === 'music') await openMusicModal();
   else if (id === 'layout') await openLayoutModal();
+  else if (id === 'calendar') await openCalendarModal();
+  else if (id === 'about') await openAboutModal();
+  else if (id === 'iceberg') await openIcebergModal();
+  else if (id === 'essences') await openEssencesModal();
+  else if (id === 'members') await openMembersModal();
 }
 
 /** 面板里那条切换条：每个面板顶上都有一个空的 [data-ws-slot]，往里面填按钮 */
@@ -6589,6 +6638,8 @@ async function saveTimelines() {
       于是一保存整个时间点就被悄悄删掉，界面上看起来就是「点了一下保存它就没了」。
       那种事以后必须当场看到原因，而不是对着空列表发愣。
     */
+
+
     const d = data.dropped ?? {};
     const lost = [];
     if (d.timelines) lost.push(`${d.timelines} 条时间轴`);
@@ -7414,6 +7465,8 @@ async function saveNavs() {
     });
     const data = await res.json();
     if (!res.ok || !data.ok) throw new Error(data.error || `HTTP ${res.status}`);
+
+
 
     const d = data.dropped ?? {};
     const lost = [];
@@ -8810,6 +8863,1611 @@ async function saveMusic() {
   }
 }
 
+/* ===============================================================
+   首页那几块 + 冰室精华（后加的五块面板）
+
+   数据两份，都在 src/data/ 下：
+     home-widgets.json   about / calendar / iceberg / daily
+                         → 面板：日历、关于我、冰室冰山
+     salon.json          eras / members / essences
+                         → 面板：精华、成员
+
+   三条贯穿这几个面板的规矩（照着站点那边的数据契约来的）：
+
+   1. **一个文件、一份草稿。** 写 home-widgets.json 的三个面板共用
+      widgetsDraft，写 salon.json 的两个面板共用 salonDraft。面板之间切换
+      只是把 DOM 藏起来，草稿一直在内存里 —— 和 boardsDraft / navsDraft 一样，
+      改过没保存的内容切走再切回来还在。保存时把整份草稿发上去，
+      服务端再逐块清洗（没带的块原样保留），所以「在「成员」里保存」
+      绝不会把 735 条精华碰掉。
+
+   2. **成员和精华只靠 id 绑定。** 精华里只存 memberId，名字和头像只在
+      members 表里。站点渲染时（src/utils/salon.ts 的 memberName /
+      memberAvatar）现查成员表，所以改了名字 / 换了头像，这个人所有的精华
+      ——包括首页那条「每日精华」—— 一起跟着变。这里的编辑代码一个字节
+      都不往 essences 里塞 name / avatar，服务端写回时也只挑白名单字段。
+
+   3. **改了要保存 + 重新构建才看得到。** 数据落盘只是第一步，
+      首页 / /salon/ / /about-me/ / /iceberg/ 都是构建期读这些 JSON 的，
+      所以每个面板的保存按钮都跟着跑一次 /api/build（和导航 / 音乐一致）。
+   =============================================================== */
+
+/**
+ * 五个面板共用的外壳：顶上一排「切换」小按钮 + 标题 + 说明 + 内容区 + 底部动作条。
+ *
+ * 换成「页面 / 独立页面」那种整块搬 DOM 的做法没必要 —— 这五块各自
+ * 只有一份内容，没有共用控件的需求，一个外壳函数就够了。
+ */
+function panelShell(host, { hint = '', group = '' } = {}) {
+  host.textContent = '';
+  const wrap = document.createElement('div');
+  wrap.className = 'wpanel';
+
+  const sw = document.createElement('span');
+  sw.className = 'wsswitch';
+  sw.dataset.wsSlot = '';
+  wrap.appendChild(sw);
+
+  if (hint) {
+    const p = document.createElement('p');
+    p.className = 'hint wpanel__hint';
+    p.textContent = hint;
+    wrap.appendChild(p);
+  }
+
+  const body = document.createElement('div');
+  body.className = 'wpanel__body';
+  wrap.appendChild(body);
+
+  const bar = document.createElement('div');
+  bar.className = 'wpanel__bar';
+  const status = document.createElement('span');
+  status.className = 'wpanel__status';
+  bar.appendChild(status);
+  wrap.appendChild(bar);
+
+  host.appendChild(wrap);
+  paintWorkspaceSwitch();   // 新插进来的 [data-ws-slot] 要立刻填上按钮
+  /*
+    草稿保护要连「有改动没保存」这句话一起保住：切走再切回来，内容还在、
+    状态栏却变回空白，看起来就像改动已经存过了（踩过一次）。
+
+    ⚠ 这里必须说清是**哪一组**的脏标记：写成 markPanelDirty(status)
+    会把 home-widgets 和 salon 两组一起标脏，于是「在日历里改一笔」
+    会让「精华」面板也显示有改动（踩过第二次）。所以传 group 进来，
+    由 markPanelDirty 自己去查那一组的标记。
+  */
+  const dirty = group === 'salon' ? salonDirty : group === 'widgets' ? widgetsDirty : false;
+  if (dirty) markPanelDirty(status, group);
+  return { body, foot: bar, status };
+}
+
+/** 底部动作条上的一个按钮 */
+function panelBtn(text, title, onClick, primary = false, id = '') {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = primary ? 'btn btn--primary' : 'btn btn--ghost';
+  b.textContent = text;
+  if (title) b.title = title;
+  if (id) b.id = id;
+  b.addEventListener('click', onClick);
+  return b;
+}
+
+/** 内容区里一块带标题的卡片。编辑区全是这种块，面板长得才一致 */
+function panelBox(title, hint = '') {
+  const box = document.createElement('section');
+  box.className = 'wbox';
+  if (title) {
+    const h = document.createElement('h4');
+    h.className = 'wbox__title';
+    h.textContent = title;
+    box.appendChild(h);
+  }
+  if (hint) {
+    const p = document.createElement('p');
+    p.className = 'hint wbox__hint';
+    p.textContent = hint;
+    box.appendChild(p);
+  }
+  return box;
+}
+
+/** 一行「标签 + 控件」，各处表单用同一套对齐 */
+function panelRow(labelText, control, hint = '') {
+  const row = document.createElement('div');
+  row.className = 'wrow';
+  const lab = document.createElement('label');
+  lab.className = 'wrow__label';
+  lab.textContent = labelText;
+  const cell = document.createElement('div');
+  cell.className = 'wrow__cell';
+  cell.appendChild(control);
+  if (hint) {
+    const p = document.createElement('p');
+    p.className = 'hint wrow__hint';
+    p.textContent = hint;
+    cell.appendChild(p);
+  }
+  row.append(lab, cell);
+  return row;
+}
+
+/** 多行文本框（正文 / 说明用），高度按行数给 */
+function panelArea(value, placeholder, rows, onInput) {
+  const ta = document.createElement('textarea');
+  ta.className = 'input warea';
+  ta.rows = rows;
+  ta.placeholder = placeholder || '';
+  ta.value = value ?? '';
+  ta.addEventListener('input', () => onInput(ta.value));
+  return ta;
+}
+
+/**
+ * 编辑器里给图片做缩略图用的地址。
+ *
+ * **一律走编辑器自己这个服务（相对路径）**，不指到预览服务 4321：
+ *   · 4321 发的是构建产物 dist，而**上传的图要等下一次构建才会进 dist** ——
+ *     用户刚拖一张图进来，缩略图就是 404 破图，看着像没传上去（踩过一次）；
+ *   · 编辑器自己的服务直接发 `public/`（tools/editor/server.mjs 的 serveImage），
+ *     文件一落盘就能看见，改完地址框也是立刻生效。
+ * 站内路径照样是 `/img/...`，存进数据里和站点上的写法完全一致，不用转换。
+ */
+function previewImgSrc(src) {
+  const s = String(src || '').trim();
+  if (!s) return '';
+  if (/^(https?:|data:|blob:)/i.test(s)) return s;
+  return s.startsWith('/') ? s : `/${s}`;
+}
+
+/**
+ * 一个图片上传点：缩略图 + 「选图片」按钮 + 可选的「清空」。
+ *
+ * 三条路（点按钮 / 拖进来 / 截图 Ctrl+V）全走 attachImageIntake，
+ * 和封面图、地图图、页面图片块是同一套 —— 从 QQ 拖进来和 Ctrl+V 都认。
+ * `getValue` 每次都从数据里现读，所以面板重画之后缩略图还是对的。
+ *
+ * `onValue(v)` 是给**同一个面板里那个手填的地址输入框**用的：缩略图能当场重画，
+ * 可那个输入框是另一个控件，不通知它就一直是旧值 —— 用户刚拖完图，看见
+ * 「头像图」换了、下面「头像地址」还空着，会以为没传上去（踩过一次）。
+ * 那个输入框自己的 input 回调里调 `slot.sync(v, true)`（true = 不用再回头写它一遍）。
+ */
+function imageSlot({ label, getValue, setValue, onChanged, onValue, accept, multiple = false, hint = '' }) {
+  const wrap = document.createElement('div');
+  wrap.className = 'wimg';
+
+  const thumb = document.createElement('span');
+  thumb.className = 'wimg__thumb';
+  const paint = () => {
+    const v = String(getValue() || '').trim();
+    thumb.textContent = '';
+    if (v) {
+      const img = document.createElement('img');
+      img.src = previewImgSrc(v);
+      img.alt = '';
+      img.loading = 'lazy';
+      thumb.appendChild(img);
+      thumb.title = v;
+      thumb.classList.remove('wimg__thumb--empty');
+    } else {
+      thumb.classList.add('wimg__thumb--empty');
+      thumb.textContent = '还没传';
+      thumb.title = '还没传图';
+    }
+  };
+  paint();
+
+  /*
+    写进数据 + 立刻把缩略图和旁边那个地址输入框一起刷新。
+    上传（拖 / 粘 / 选文件）和清空都走这儿，保证几处显示永远是一个值。
+  */
+  const write = (v) => {
+    setValue(v);
+    paint();
+    onValue?.(v);
+    onChanged?.();
+  };
+
+  const file = document.createElement('input');
+  file.type = 'file';
+  file.accept = accept || IMAGE_ACCEPT;
+  if (multiple) file.multiple = true;
+  file.hidden = true;
+
+  const pick = document.createElement('button');
+  pick.type = 'button';
+  pick.className = 'btn btn--ghost boardedit__mini';
+  pick.textContent = '选图片';
+  pick.title = '也可以直接把图拖进来，或 QQ 截图后 Ctrl+V';
+  pick.addEventListener('click', () => file.click());
+
+  const ops = document.createElement('div');
+  ops.className = 'wimg__ops';
+  ops.append(pick, file);
+
+  if (!multiple) {
+    const clear = document.createElement('button');
+    clear.type = 'button';
+    clear.className = 'btn btn--ghost boardedit__mini boardedit__del';
+    clear.textContent = '清空';
+    clear.title = '把这一项改成空（留空时页面上会画占位）';
+    clear.addEventListener('click', () => {
+      write('');
+    });
+    ops.appendChild(clear);
+  }
+
+  attachImageIntake({
+    el: wrap,
+    input: file,
+    multiple,
+    label,
+    onFiles: async (files) => {
+      for (const f of files) {
+        const p = await uploadImage(f);
+        write(p);
+        toast(`${label}已上传：${p}`);
+      }
+    },
+    onUrl: (url) => {
+      write(url);
+      toast(`${label}地址已填上（拖进来的是链接）`);
+    },
+  });
+
+  wrap.append(thumb, ops);
+  if (hint) {
+    const h = document.createElement('p');
+    h.className = 'hint wimg__hint';
+    h.textContent = hint;
+    wrap.appendChild(h);
+  }
+  /* 地址输入框自己改了值之后叫一下：刷新缩略图，别反过来再写它一遍 */
+  const sync = (v, skipOnValue = false) => {
+    setValue(v);
+    paint();
+    if (!skipOnValue) onValue?.(v);
+  };
+  return { el: wrap, paint, sync };
+}
+
+/* ---------------------------------------------------------------
+   日期：日历事件和精华都要挑一天
+   --------------------------------------------------------------- */
+
+/** 本地日期 → YYYY-MM-DD（不能用 toISOString：那是 UTC，晚上会差一天） */
+function localDateKey(d = new Date()) {
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
+/**
+ * 原生日期输入。
+ *
+ * 日历事件和精华都只认 YYYY-MM-DD，用 type=date 最省事 ——
+ * 不用像时间轴那边那样自己处理「20230110 / 2023/1/10」各种写法。
+ * 空值也给得出来（用户清空输入框时 onInput('')）。
+ */
+function dayPicker(value, onInput) {
+  const el = document.createElement('input');
+  el.type = 'date';
+  el.className = 'input wdate';
+  el.value = /^\d{4}-\d{2}-\d{2}$/.test(String(value || '')) ? value : '';
+  el.addEventListener('change', () => onInput(el.value));
+  return el;
+}
+
+/* ---------------------------------------------------------------
+   首页那三块：日历 / 关于我 / 冰室冰山
+   --------------------------------------------------------------- */
+
+/** src/data/home-widgets.json 的草稿（三个面板共用一份） */
+let widgetsDraft = null;
+/** 这一组有没有没保存的改动（切面板回来时状态栏要接着写「有改动没保存」） */
+let widgetsDirty = false;
+
+async function loadWidgets() {
+  if (widgetsDraft) return widgetsDraft;
+  const res = await fetch('/api/widgets');
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const data = await res.json();
+  widgetsDraft = data && typeof data === 'object' ? data : {};
+  if (!widgetsDraft.calendar || typeof widgetsDraft.calendar !== 'object') widgetsDraft.calendar = {};
+  if (!widgetsDraft.calendar.events || typeof widgetsDraft.calendar.events !== 'object') {
+    widgetsDraft.calendar.events = {};
+  }
+  if (!widgetsDraft.about || typeof widgetsDraft.about !== 'object') widgetsDraft.about = {};
+  if (!widgetsDraft.iceberg || typeof widgetsDraft.iceberg !== 'object') widgetsDraft.iceberg = {};
+  return widgetsDraft;
+}
+
+/**
+ * 面板顶上的「有改动没保存」。
+ *
+ * group 要传对：写 home-widgets.json 的三个面板传 'widgets'、
+ * 写 salon.json 的两个传 'salon'。在日历里改一笔不该让「精华」面板
+ * 也跟着显示「有改动没保存」—— 这两个文件互不相干。
+ */
+function markPanelDirty(statusEl, group = '') {
+  if (group !== 'salon') widgetsDirty = true;
+  if (group !== 'widgets') salonDirty = true;
+  if (!statusEl) return;
+  statusEl.textContent = '有改动没保存';
+  statusEl.classList.add('is-dirty');
+}
+
+/**
+ * 保存 home-widgets.json 并重新构建。
+ *
+ * 发的是**整份草稿**（三块一起带上）：写这个文件的三个面板共用一份草稿，
+ * 只发自己那一块的话，另一块里「改了还没保存」的内容会被服务端的
+ * 盘上值覆盖掉。服务端逐块清洗，所以多带不吃亏。
+ */
+async function saveWidgets(btn, statusEl) {
+  const was = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = '正在保存…';
+  statusEl.textContent = '正在保存…';
+  statusEl.classList.remove('is-dirty');
+  try {
+    const res = await fetch('/api/widgets', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(widgetsDraft),
+    });
+    const data = await res.json();
+    if (!res.ok || !data.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    widgetsDirty = false;
+    const lost = data.dropped?.events
+      ? `；有 ${data.dropped.events} 个特殊日子没存下（日期必须是 YYYY-MM-DD、名字不能空）`
+      : '';
+    if (data.built) {
+      statusEl.textContent = `已保存并重新构建（${data.ms} ms）`;
+      toast(`首页这几块已保存并重新构建（${data.ms} ms）${lost}`);
+    } else {
+      statusEl.textContent = '已保存，但重新构建没成功';
+      toast(`已保存，但重新构建没成功：${String(data.output || '').split('\n')[0]}`, true);
+    }
+  } catch (err) {
+    statusEl.textContent = `出错了：${err.message}`;
+    statusEl.classList.add('is-dirty');
+    toast(`保存失败：${err.message}`, true);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = was;
+  }
+}
+
+/** 三个首页面板共用的开场白：把草稿读回来（有草稿就不重读，改动不会丢） */
+async function openWidgetPanel(id, modal, editor, active) {
+  markWorkspaceActive(id);
+  modal.hidden = false;
+  editor.textContent = '正在读取…';
+  try {
+    await loadWidgets();
+    return true;
+  } catch (err) {
+    editor.textContent = `读取失败：${err.message}`;
+    return false;
+  }
+}
+
+/* ---------- 日历 ---------- */
+
+async function openCalendarModal() {
+  if (!(await openWidgetPanel('calendar', els.calendarModal, els.calEditor))) return;
+  renderCalendarPanel();
+}
+
+function closeCalendarModal() {
+  els.calendarModal.hidden = true;
+}
+
+function renderCalendarPanel() {
+  const cal = widgetsDraft.calendar;
+  const { body, foot, status } = panelShell(els.calEditor, {
+    hint:
+      '首页日历上的特殊日子。日历显示的是**访问者当天那个月**，所以这里按 YYYY-MM-DD 匹配 —— ' +
+      '写 2024-06-04 就是每年的 6 月 4 日都会变色（不看年份）；今天没有特殊日子时右下角那个小框写 idleText。',
+    group: 'widgets',
+  });
+
+  /* ---- 两个句式 ---- */
+  const texts = panelBox('今天那句话', '右下角小框里的文案。「{title}」会被换成那天事件的名字。');
+  texts.appendChild(
+    panelRow(
+      '没有特殊日子',
+      panelArea(cal.idleText ?? '', '今天依然是等待篠雨的一天', 1, (v) => {
+        cal.idleText = v;
+        markPanelDirty(status, 'widgets');
+      }),
+    )
+  );
+  texts.appendChild(
+    panelRow(
+      '有特殊日子',
+      panelArea(cal.specialText ?? '', '今天是{title}', 1, (v) => {
+        cal.specialText = v;
+        markPanelDirty(status, 'widgets');
+      }),
+      '「{title}」是占位符，换成下面那张表里那天的名字。某一格自己填了「自定义文案」时，就用那一格自己的。',
+    )
+  );
+  texts.appendChild(
+    panelRow(
+      '卡片标题',
+      boardInput(cal.title ?? '', '日历', (v) => {
+        cal.title = v;
+        markPanelDirty(status, 'widgets');
+      }),
+    )
+  );
+  body.appendChild(texts);
+
+  /* ---- 特殊日子表 ---- */
+  const events = cal.events;
+  const dates = Object.keys(events).sort();
+  const list = panelBox(
+    `特殊日子（${dates.length} 天）`,
+    '日期用右边的日历挑，点那天的图标会跳到「跳去哪」那个地址；留空的话那天照样变色，只是点不动。',
+  );
+
+  if (!dates.length) {
+    const p = document.createElement('p');
+    p.className = 'hint';
+    p.textContent = '还没有特殊日子。点下面的「＋ 添加一天」。';
+    list.appendChild(p);
+  }
+
+  dates.forEach((date, i) => {
+    const ev = events[date];
+    const row = document.createElement('div');
+    row.className = 'wcal-row';
+    row.dataset.date = date;
+
+    const head = document.createElement('div');
+    head.className = 'wcal-row__head';
+    const tag = document.createElement('em');
+    tag.className = 'wcal-row__idx';
+    tag.textContent = `#${i + 1}`;
+    const del = document.createElement('button');
+    del.type = 'button';
+    del.className = 'btn btn--ghost boardedit__mini boardedit__del';
+    del.textContent = '删除';
+    del.title = '删掉这一天（那天就不再变色了）';
+    del.addEventListener('click', () => {
+      if (!confirm(`删掉 ${date}（${ev.title || '没写名字'}）这一天？`)) return;
+      delete events[date];
+      markPanelDirty(status, 'widgets');
+      renderCalendarPanel();
+    });
+    head.append(tag, del);
+
+    const fields = document.createElement('div');
+    fields.className = 'wcal-row__fields';
+    fields.appendChild(
+      panelRow(
+        '日期',
+        dayPicker(date, (v) => {
+          const next = String(v || '').trim();
+          if (!next || next === date) return;
+          if (events[next]) {
+            toast(`${next} 已经有特殊日子了，先改那一天的日期`, true);
+            renderCalendarPanel();
+            return;
+          }
+          // 键换了：重建这一项，顺便保持原来的顺序（重画后按日期重排）
+          events[next] = ev;
+          delete events[date];
+          markPanelDirty(status, 'widgets');
+          renderCalendarPanel();
+        }),
+        '日历按 YYYY-MM-DD 匹配，年份不参与判断。',
+      )
+    );
+    fields.appendChild(
+      panelRow(
+        '是什么日子',
+        boardInput(ev.title ?? '', '篠雨的生日', (v) => {
+          ev.title = v;
+          markPanelDirty(status, 'widgets');
+        }),
+      )
+    );
+    fields.appendChild(
+      panelRow(
+        '跳去哪',
+        linkField(ev.href ?? '', '/about-me/ 或 https://…（留空就点不动）', (v) => {
+          ev.href = v;
+          markPanelDirty(status, 'widgets');
+        }, { anchor: true }),
+      )
+    );
+    fields.appendChild(
+      panelRow(
+        '自定义文案',
+        panelArea(ev.text ?? '', '留空就用上面的句式（今天是{title}）', 2, (v) => {
+          ev.text = v;
+          markPanelDirty(status, 'widgets');
+        }),
+        '填了就不套上面那个句式，这一格整句照用。',
+      )
+    );
+
+    row.append(head, fields);
+    list.appendChild(row);
+  });
+
+  const add = panelBtn('＋ 添加一天', '加一个特殊日子，默认选今天', () => {
+    const today = localDateKey();
+    let key = today;
+    let n = 2;
+    while (events[key]) {
+      // 同一天已经有就用「今天+N 天」，免得一按就撞
+      const d = new Date();
+      d.setDate(d.getDate() + (n - 1));
+      key = localDateKey(d);
+      n += 1;
+    }
+    events[key] = { title: '', href: '', text: '' };
+    markPanelDirty(status, 'widgets');
+    renderCalendarPanel();
+  });
+  list.appendChild(add);
+  body.appendChild(list);
+
+  foot.append(
+    panelBtn('关闭面板', '关掉这个面板（没保存的改动留着，切回来还在）', () => openWorkspace('docs')),
+    panelBtn('重新读取', '把盘上的值重新读一遍（没保存的改动会丢）', async () => {
+      if (!confirm('重新读盘会丢掉还没保存的改动，确定吗？')) return;
+      widgetsDraft = null;
+      widgetsDirty = false;
+      await loadWidgets();
+      renderCalendarPanel();
+    }),
+    panelBtn('打开首页', '在新标签页打开预览站点的首页（要先构建过）', () => {
+      window.open(`${PREVIEW_URL}/`, '_blank', 'noopener');
+    }),
+    panelBtn('保存并重新构建', '写进 src/data/home-widgets.json 并重新构建站点', () =>
+      saveWidgets(els.calSave, status), true, 'cal-save'),
+  );
+  els.calSave = $('cal-save');
+}
+
+/* ---------- 关于我 ---------- */
+
+async function openAboutModal() {
+  if (!(await openWidgetPanel('about', els.aboutModal, els.aboutEditor))) return;
+  renderAboutPanel();
+}
+
+function closeAboutModal() {
+  els.aboutModal.hidden = true;
+}
+
+function renderAboutPanel() {
+  const about = widgetsDraft.about;
+  const { body, foot, status } = panelShell(els.aboutEditor, {
+    hint:
+      '左上角那个小圆片和 /about-me/ 页面都读这一份：avatar 是那个圆形头像，text 是页面里那段自我介绍（支持 Markdown）。',
+    group: 'widgets',
+  });
+
+  const box = panelBox('头像', '存到 /img/uploads/ 下。没传的话页面上画一个带塔吊的占位圆。');
+  /* 地址框和缩略图是同一个值的两个入口，所以互相同步（见 imageSlot 的 onValue / sync） */
+  const avatarInput = boardInput(about.avatar ?? '', '/img/uploads/xxx.png 或 https://…', () => {});
+  const slot = imageSlot({
+    label: '头像',
+    getValue: () => about.avatar,
+    setValue: (v) => { about.avatar = v; },
+    onValue: (v) => { avatarInput.value = v; },
+    onChanged: () => markPanelDirty(status, 'widgets'),
+    hint: '建议正方形；圆形裁剪是页面那边做的。',
+  });
+  // slot 建好了才挂这个回调（不然是 TDZ 里的 slot，一敲字就抛错）
+  avatarInput.addEventListener('input', () => {
+    slot.sync(avatarInput.value, true);
+    markPanelDirty(status, 'widgets');
+  });
+  box.appendChild(panelRow('头像图', slot.el));
+  box.appendChild(
+    panelRow('头像地址', avatarInput, '也可以从别处拖一张图进来，或者直接把链接粘在这里。')
+  );
+  body.appendChild(box);
+
+  const texts = panelBox('文字');
+  texts.appendChild(
+    panelRow(
+      '标题',
+      boardInput(about.title ?? '', '关于我', (v) => {
+        about.title = v;
+        markPanelDirty(status, 'widgets');
+      }),
+      '页头那个圆片的提示文字，也是 /about-me/ 页面上的大标题。不能留空。',
+    )
+  );
+  texts.appendChild(
+    panelRow(
+      '正文',
+      panelArea(about.text ?? '', '支持 **粗体**、[链接](地址)、- 列表、## 小标题', 12, (v) => {
+        about.text = v;
+        markPanelDirty(status, 'widgets');
+      }),
+      'Markdown，和文章正文一个写法（行内图片也认）。',
+    )
+  );
+  texts.appendChild(
+    panelRow(
+      '跳转地址',
+      linkField(about.href ?? '', '/about-me/', (v) => {
+        about.href = v;
+        markPanelDirty(status, 'widgets');
+      }, { anchor: true }),
+      '页头那个小圆片点一下去哪，默认 /about-me/。',
+    )
+  );
+  body.appendChild(texts);
+
+  foot.append(
+    panelBtn('关闭面板', '关掉这个面板（没保存的改动留着，切回来还在）', () => openWorkspace('docs')),
+    panelBtn('打开 /about-me/', '在新标签页打开预览站点里的这一页（要先构建过）', () => {
+      window.open(`${PREVIEW_URL}/about-me/`, '_blank', 'noopener');
+    }),
+    panelBtn('保存并重新构建', '写进 src/data/home-widgets.json 并重新构建站点', () =>
+      saveWidgets(els.aboutSave, status), true, 'about-save'),
+  );
+  els.aboutSave = $('about-save');
+}
+
+/* ---------- 冰室冰山 ---------- */
+
+async function openIcebergModal() {
+  if (!(await openWidgetPanel('iceberg', els.icebergModal, els.icebergEditor))) return;
+  renderIcebergPanel();
+}
+
+function closeIcebergModal() {
+  els.icebergModal.hidden = true;
+}
+
+function renderIcebergPanel() {
+  const ice = widgetsDraft.iceberg;
+  const { body, foot, status } = panelShell(els.icebergEditor, {
+    hint: '首页中间那一块。图没传就画一个带塔吊的占位；链接留空的话整块不可点。',
+    group: 'widgets',
+  });
+
+  const box = panelBox('这张图');
+  const iceInput = boardInput(ice.image ?? '', '/img/uploads/xxx.png 或 https://…', () => {});
+  const slot = imageSlot({
+    label: '冰山图',
+    getValue: () => ice.image,
+    setValue: (v) => { ice.image = v; },
+    onValue: (v) => { iceInput.value = v; },
+    onChanged: () => markPanelDirty(status, 'widgets'),
+  });
+  // 同上：slot 有了才挂回调
+  iceInput.addEventListener('input', () => {
+    slot.sync(iceInput.value, true);
+    markPanelDirty(status, 'widgets');
+  });
+  box.appendChild(panelRow('图片', slot.el));
+  box.appendChild(panelRow('图片地址', iceInput));
+  body.appendChild(box);
+
+  const texts = panelBox('文字和链接');
+  texts.appendChild(
+    panelRow(
+      '标题',
+      boardInput(ice.title ?? '', '冰室冰山', (v) => {
+        ice.title = v;
+        markPanelDirty(status, 'widgets');
+      }),
+      '不能留空。',
+    )
+  );
+  texts.appendChild(
+    panelRow(
+      '一句话介绍',
+      panelArea(ice.text ?? '', '一句话就好', 3, (v) => {
+        ice.text = v;
+        markPanelDirty(status, 'widgets');
+      }),
+      '纯文本，这一块不支持 Markdown（页面上就是一行小字）。',
+    )
+  );
+  texts.appendChild(
+    panelRow(
+      '跳转地址',
+      linkField(ice.href ?? '', '/iceberg/ 或 https://…', (v) => {
+        ice.href = v;
+        markPanelDirty(status, 'widgets');
+      }, { anchor: true }),
+      '留空的话整块都不好点。',
+    )
+  );
+  body.appendChild(texts);
+
+  foot.append(
+    panelBtn('关闭面板', '关掉这个面板（没保存的改动留着，切回来还在）', () => openWorkspace('docs')),
+    panelBtn('打开 /iceberg/', '在新标签页打开预览站点里的这一页（要先构建过）', () => {
+      window.open(`${PREVIEW_URL}/iceberg/`, '_blank', 'noopener');
+    }),
+    panelBtn('保存并重新构建', '写进 src/data/home-widgets.json 并重新构建站点', () =>
+      saveWidgets(els.icebergSave, status), true, 'iceberg-save'),
+  );
+  els.icebergSave = $('iceberg-save');
+}
+/* ---------------------------------------------------------------
+   冰室精华 / 成员（src/data/salon.json）
+   --------------------------------------------------------------- */
+
+/** salon.json 的草稿（「精华」和「成员」两个面板共用一份） */
+let salonDraft = null;
+/** 这一组有没有没保存的改动（同上） */
+let salonDirty = false;
+/** 精华面板的搜索词 / 排序 / 一次画多少条 */
+let essSearch = '';
+let essSortDesc = true;
+/** 已经画了多少条（735 条全画出来会把面板卡住，先画一屏，"加载更多"接着来） */
+let essShown = 0;
+const ESS_PAGE = 60;
+
+async function loadSalon() {
+  if (salonDraft) return salonDraft;
+  const res = await fetch('/api/salon');
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const data = await res.json();
+  salonDraft = data && typeof data === 'object' ? data : {};
+  if (!Array.isArray(salonDraft.members)) salonDraft.members = [];
+  if (!Array.isArray(salonDraft.eras)) salonDraft.eras = [];
+  if (!Array.isArray(salonDraft.essences)) salonDraft.essences = [];
+  return salonDraft;
+}
+
+/** 改过之后要把服务端算出来的那份换成草稿里的，不然一重读就白改 */
+function salonEraName(id) {
+  const era = salonDraft?.eras?.find((e) => e.id === id);
+  return era ? era.title : '';
+}
+
+/** 某一天落在哪个年代里（和服务端 eraIdForDate 同一套规则，页面上即时显示用） */
+function eraIdForDate(date) {
+  const d = String(date || '');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return '';
+  for (const era of salonDraft?.eras ?? []) {
+    const from = String(era?.from || '');
+    const to = String(era?.to || '');
+    if (from && to && d >= from && d <= to) return String(era.id || '');
+  }
+  return '';
+}
+
+const memberById = (id) => (salonDraft?.members ?? []).find((m) => m.id === id) || null;
+
+/**
+ * 一条精华的成员 id 列表。
+ *
+ * 数据里现在存的是 `memberIds`（数组，顺序 = 对话里出现的顺序）；更早那份
+ * 存的是单个 `memberId`。**两套都要认** —— 不然刚换成新数据、用户一点保存，
+ * 界面这边读的是空数组，748 条的成员看着就全没了（服务端那一侧也有同一套兜底）。
+ * 空数组是合法的：那条精华就是没有对应成员，照旧画出来。
+ */
+function essenceMemberIds(e) {
+  const valid = new Set((salonDraft?.members ?? []).map((m) => m.id));
+  const out = [];
+  const push = (v) => {
+    const id = String(v ?? '').trim();
+    if (!id || !valid.has(id) || out.includes(id)) return;
+    out.push(id);
+  };
+  if (Array.isArray(e?.memberIds)) for (const v of e.memberIds) push(v);
+  if (!out.length && !Array.isArray(e?.memberIds)) push(e?.memberId);
+  return out;
+}
+
+/** 这条精华牵扯到哪些成员（查不到的那些直接不要了，和 essenceMemberIds 一致） */
+const essenceMembers = (e) => essenceMemberIds(e).map(memberById).filter(Boolean);
+
+/** 成员名用「、」连起来；一个都没有就写「未知成员」 */
+function essenceMemberText(e) {
+  const names = essenceMembers(e).map((m) => m.name);
+  return names.length ? names.join('、') : '未知成员';
+}
+
+/** 精华的三种来源（只给编辑器看，站点页面不按它分组） */
+const ESSENCE_KIND_LABEL = { text: '文字', perfect: '完美对话', ai: 'AI 创作' };
+const essenceKindOf = (e) => (ESSENCE_KIND_LABEL[e?.kind] ? e.kind : 'text');
+
+/** 这个成员名下有多少条精华（删成员 / 改名时用来说清后果）。按 memberIds 里包含他算 */
+function essenceCountOf(memberId) {
+  return (salonDraft?.essences ?? []).filter((e) => essenceMemberIds(e).includes(memberId)).length;
+}
+
+/**
+ * 新精华的 id：现有的是 e0001…e0735，所以往后接着编。
+ * 和服务端的 nextEssenceId 一套规则（那边还会兜一次底）。
+ */
+function newEssenceId() {
+  const used = new Set((salonDraft?.essences ?? []).map((e) => e.id));
+  for (let n = 1; n <= 9999; n += 1) {
+    const id = `e${String(n).padStart(4, '0')}`;
+    if (!used.has(id)) return id;
+  }
+  return `e-${Date.now().toString(36)}`;
+}
+
+/** 新成员 id：`mNN-xxxx`，和现有那批长得一样 */
+function newMemberId() {
+  const used = new Set((salonDraft?.members ?? []).map((m) => m.id));
+  for (let i = 0; i < 500; i += 1) {
+    const n = String((salonDraft?.members ?? []).length + 1 + i).padStart(2, '0');
+    const id = `m${n}-${Math.floor(Math.random() * 0xffff).toString(16).padStart(4, '0')}`;
+    if (!used.has(id)) return id;
+  }
+  return `m-${Date.now().toString(36)}`;
+}
+
+/** 保存 salon.json 并重新构建（发整份草稿，两个面板共用一份） */
+async function saveSalon(btn, statusEl) {
+  const was = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = '正在保存…';
+  statusEl.textContent = '正在保存…';
+  statusEl.classList.remove('is-dirty');
+  try {
+    const res = await fetch('/api/salon', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(salonDraft),
+    });
+    const data = await res.json();
+    if (!res.ok || !data.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    salonDirty = false;
+    const d = data.dropped ?? {};
+    const lost = [];
+    if (d.members) lost.push(`${d.members} 个成员`);
+    if (d.essences) lost.push(`${d.essences} 条精华`);
+    /*
+      拿服务端那份重新来过：它按日期重排过、eraId 也是它按日期算的，
+      界面上看到的必须和落盘的一致。
+    */
+    salonDraft = null;
+    await loadSalon();
+    if (data.built) {
+      statusEl.textContent = `已保存并重新构建（${data.ms} ms）`;
+      toast(
+        `冰室精华已保存并重新构建（${data.ms} ms）` +
+          (lost.length ? `；有 ${lost.join('、')} 项没存下（成员要有名字、精华要有日期）` : '')
+      );
+    } else {
+      statusEl.textContent = '已保存，但重新构建没成功';
+      toast(`已保存，但重新构建没成功：${String(data.output || '').split('\n')[0]}`, true);
+    }
+  } catch (err) {
+    statusEl.textContent = `出错了：${err.message}`;
+    statusEl.classList.add('is-dirty');
+    toast(`保存失败：${err.message}`, true);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = was;
+  }
+}
+
+/* ---------- 精华 ---------- */
+
+async function openEssencesModal() {
+  markWorkspaceActive('essences');
+  els.essencesModal.hidden = false;
+  els.essEditor.textContent = '正在读取…';
+  try {
+    await loadSalon();
+  } catch (err) {
+    els.essEditor.textContent = `读取失败：${err.message}`;
+    return;
+  }
+  essShown = ESS_PAGE;
+  renderEssencesPanel();
+}
+
+function closeEssencesModal() {
+  els.essencesModal.hidden = true;
+}
+
+/** 按成员名 / 日期 / 正文 / 时间筛。几百条里找一条靠它 */
+function filteredEssences() {
+  const kw = essSearch.trim().toLowerCase();
+  const list = (salonDraft?.essences ?? []).filter((e) => {
+    if (!kw) return true;
+    // 一条精华可能挂着好几个成员（完美对话就是），**任意一个**的名字命中就算
+    const names = essenceMembers(e).map((m) => m.name.toLowerCase());
+    return (
+      names.some((n) => n.includes(kw)) ||
+      String(e.date || '').includes(kw) ||
+      String(e.time || '').includes(kw) ||
+      String(e.text || '').toLowerCase().includes(kw) ||
+      (ESSENCE_KIND_LABEL[essenceKindOf(e)] || '').includes(kw)
+    );
+  });
+  // 数据本来就是按日期排的，这里只翻个向
+  return essSortDesc ? [...list].reverse() : list;
+}
+
+function renderEssencesPanel() {
+  const { body, foot, status } = panelShell(els.essEditor, {
+    hint:
+      '冰室群精华的每一条 = 成员（可以好几个）+ 日期时间 + 正文/图片。成员名和头像**不在**这里存，' +
+      '只存成员 id —— 所以给成员改名 / 换头像，他所有的精华一起跟着变（去「成员」面板改）。',
+    group: 'salon',
+  });
+
+  const all = salonDraft.essences;
+  const list = filteredEssences();
+  const shown = Math.min(essShown, list.length);
+
+  /* ---- 工具条：搜索 + 排序 + 新增 ---- */
+  const tools = document.createElement('div');
+  tools.className = 'wess__tools';
+
+  const search = document.createElement('input');
+  search.type = 'search';
+  search.className = 'input input--sm wess__search';
+  search.placeholder = '搜成员名 / 日期 / 正文…';
+  search.autocomplete = 'off';
+  search.value = essSearch;
+  let timer = null;
+  search.addEventListener('input', () => {
+    clearTimeout(timer);
+    // 735 条过一遍很快，但连打时没必要每个键都重画
+    timer = setTimeout(() => {
+      essSearch = search.value;
+      essShown = ESS_PAGE;
+      renderEssencesPanel();
+    }, 120);
+  });
+
+  const count = document.createElement('span');
+  count.className = 'wess__count';
+  /*
+    条数旁边带上来源的分布：三种 kind 的条数加起来必然等于总数 ——
+    "一条都不能丢"这件事，一眼就能对上账（用户就是按这个核的）。
+  */
+  const kindTally = Object.keys(ESSENCE_KIND_LABEL)
+    .map((k) => [k, all.filter((e) => essenceKindOf(e) === k).length])
+    .filter(([, n]) => n > 0)
+    .map(([k, n]) => `${ESSENCE_KIND_LABEL[k]} ${n}`)
+    .join(' · ');
+  count.textContent = essSearch.trim()
+    ? `命中 ${list.length} / 共 ${all.length} 条`
+    : `共 ${all.length} 条${kindTally ? `（${kindTally}）` : ''}`;
+  count.title = kindTally ? `按来源分布：${kindTally}（加起来 = 总数）` : '';
+
+  const sort = document.createElement('button');
+  sort.type = 'button';
+  sort.className = 'btn btn--ghost btn--sm';
+  sort.textContent = essSortDesc ? '新的在前 ↓' : '旧的在前 ↑';
+  sort.title = '换一下排序方向（只影响这里的显示和新增时的落点，数据本身一直是按日期排的）';
+  sort.addEventListener('click', () => {
+    essSortDesc = !essSortDesc;
+    renderEssencesPanel();
+  });
+
+  const addBtn = panelBtn('＋ 新增一条', '在最上面打开新增表单', () => openEssenceForm(tools, status));
+  tools.append(search, count, sort, addBtn);
+  body.appendChild(tools);
+
+  if (!list.length) {
+    const p = document.createElement('p');
+    p.className = 'hint';
+    p.textContent = all.length ? '没有命中的精华，换个关键词试试。' : '一条精华都没有，点「＋ 新增一条」。';
+    body.appendChild(p);
+  } else {
+    /*
+      只画前 essShown 条。735 条全塞进 DOM 面板会明显卡（每次重画都要
+      重建上万个节点），所以先画一屏，"加载更多"一次加 60 条。
+      行里不放输入框：改内容要点「编辑」进单条表单 —— 一行一个输入框
+      不但挤，还会让"每敲一个字就重画列表"变成灾难。
+    */
+    const ul = document.createElement('ul');
+    ul.className = 'wess__rows';
+    for (let i = 0; i < shown; i += 1) ul.appendChild(essenceRow(list[i], status));
+    body.appendChild(ul);
+
+    if (shown < list.length) {
+      const more = document.createElement('div');
+      more.className = 'wess__more';
+      const b = panelBtn(
+        `加载更多（还有 ${list.length - shown} 条）`,
+        '接着往下画 60 条',
+        () => {
+          essShown = Math.min(list.length, essShown + ESS_PAGE);
+          renderEssencesPanel();
+        },
+      );
+      more.appendChild(b);
+      body.appendChild(more);
+    } else if (list.length > ESS_PAGE) {
+      const p = document.createElement('p');
+      p.className = 'hint wess__end';
+      p.textContent = `这 ${list.length} 条都画出来了。`;
+      body.appendChild(p);
+    }
+  }
+
+  foot.append(
+    panelBtn('关闭面板', '关掉这个面板（没保存的改动留着，切回来还在）', () => openWorkspace('docs')),
+    panelBtn('看 /salon/', '在新标签页打开预览站点里的冰室精华页（要先构建过）', () => {
+      window.open(`${PREVIEW_URL}/salon/`, '_blank', 'noopener');
+    }),
+    panelBtn('保存并重新构建', '写进 src/data/salon.json 并重新构建站点', () =>
+      saveSalon(els.essSave, status), true, 'ess-save'),
+  );
+  els.essSave = $('ess-save');
+}
+
+/** 一个成员的小圆头像（列表行 / 多选清单里都用它） */
+function memberAvatarEl(m) {
+  if (m?.avatar) {
+    const img = document.createElement('img');
+    img.className = 'wess__avatar';
+    img.src = previewImgSrc(m.avatar);
+    img.alt = '';
+    img.loading = 'lazy';
+    img.title = m.name;
+    return img;
+  }
+  const ph = document.createElement('span');
+  ph.className = 'wess__avatar wess__avatar--none';
+  ph.textContent = String(m?.name || '?').slice(0, 1);
+  ph.title = m?.name || '未知成员';
+  return ph;
+}
+
+/**
+ * 一条精华的成员那格：头像叠着排 + 名字用「、」连起来。
+ *
+ * 一条精华可以有多个成员（完美对话就是），所以这里**全部列出来** ——
+ * 只显示第一个的话，看起来就像那条精华只属于一个人。
+ */
+function essenceWhoEl(e) {
+  const wrap = document.createElement('span');
+  wrap.className = 'wess__who';
+  const members = essenceMembers(e);
+  if (!members.length) {
+    wrap.classList.add('wess__who--missing');
+    wrap.textContent = '未知成员';
+    return wrap;
+  }
+  const faces = document.createElement('span');
+  faces.className = 'wess__faces';
+  for (const m of members) faces.appendChild(memberAvatarEl(m));
+  const names = document.createElement('span');
+  names.className = 'wess__names';
+  names.textContent = members.map((m) => m.name).join('、');
+  wrap.append(faces, names);
+  return wrap;
+}
+
+/** 列表里的一行：日期 时间 成员（可多个） 正文开头 图片数 种类 + 编辑/删除 */
+function essenceRow(e, status) {
+  const li = document.createElement('li');
+  li.className = 'wess__row';
+  li.dataset.essId = e.id;
+
+  const when = document.createElement('span');
+  when.className = 'wess__when';
+  when.textContent = `${e.date}${e.time ? ` ${e.time}` : ''}`;
+
+  const who = essenceWhoEl(e);
+
+  const text = document.createElement('span');
+  text.className = 'wess__text';
+  const body = String(e.text || '').replace(/\s+/g, ' ').trim();
+  text.textContent = body.length > 60 ? `${body.slice(0, 60)}…` : body || '（没有文字）';
+  if (!body) text.classList.add('wess__text--empty');
+
+  const meta = document.createElement('span');
+  meta.className = 'wess__meta';
+  const kind = essenceKindOf(e);
+  const tag = document.createElement('em');
+  tag.className = `wess__kind wess__kind--${kind}`;
+  tag.textContent = ESSENCE_KIND_LABEL[kind];
+  tag.title = '这一条的来源（只给编辑器看，站点页面不按它分组）';
+  const bits = [];
+  if (e.images?.length) bits.push(`${e.images.length} 张图`);
+  const eraName = salonEraName(e.eraId);
+  bits.push(eraName || '（不在任何年代里）');
+  meta.append(tag, document.createTextNode(' ' + bits.join(' · ')));
+
+  const ops = document.createElement('span');
+  ops.className = 'wess__ops';
+  const edit = panelBtn('编辑', '改这一条（成员 / 日期时间 / 正文 / 图片）', () => {
+    openEssenceForm(li, status, e);
+  });
+  edit.classList.add('boardedit__mini');
+  const del = panelBtn('删除', '删掉这一条（会问一次）', () => {
+    if (!confirm(`删掉 ${e.date}${e.time ? ` ${e.time}` : ''}「${essenceMemberText(e)}」的一条精华？`)) return;
+    const idx = salonDraft.essences.indexOf(e);
+    if (idx >= 0) salonDraft.essences.splice(idx, 1);
+    markPanelDirty(status, 'salon');
+    renderEssencesPanel();
+  });
+  del.classList.add('boardedit__mini', 'boardedit__del');
+  ops.append(edit, del);
+
+  li.append(when, who, text, meta, ops);
+  return li;
+}
+
+/**
+ * 一条精华的表单：新增（`existing` 为空）或者编辑某一条。
+ * 插在 `host` 后面（列表行的下面 / 工具条的下面），不进新弹窗 ——
+ * 面板已经够深了，再叠一层弹窗只会让人找不到退路。
+ *
+ * 图片：`images` 数组是唯一的真相，上传就把 /img/uploads/... 追加进去。
+ * 从 QQ 拖进来、截图 Ctrl+V、点按钮选文件三条路都在（attachImageIntake）。
+ */
+function openEssenceForm(host, status, existing = null) {
+  host.parentNode?.querySelector('.wess__form')?.remove();
+
+  const isNew = !existing;
+  /*
+    不管新增还是编辑，表单改的都是**这一份副本**，点「保存这一条」才写回数组。
+    编辑时如果直接抓着原对象改，点「取消」也回不去了（改到一半点取消，
+    那条精华已经被改脏了）—— 和页面工作台 commitPageBlocks 一个道理。
+  */
+  const draft = existing
+    ? { ...existing, memberIds: [...essenceMemberIds(existing)], images: [...(existing.images ?? [])] }
+    : {
+        id: newEssenceId(),
+        memberIds: salonDraft.members[0] ? [salonDraft.members[0].id] : [],
+        kind: 'text',
+        date: localDateKey(),
+        time: '',
+        text: '',
+        images: [],
+        eraId: '',
+      };
+  // 老数据只有 memberId：进表单就归一到 memberIds（保存时服务端也认这一套）
+  if (!Array.isArray(draft.memberIds)) draft.memberIds = essenceMemberIds(draft);
+  delete draft.memberId;
+
+  const form = document.createElement('div');
+  form.className = 'wess__form';
+  const title = document.createElement('h4');
+  title.className = 'wbox__title';
+  title.textContent = isNew ? `新增一条精华（id ${draft.id}）` : `编辑 ${draft.id}`;
+  form.appendChild(title);
+
+  /*
+    成员：一条精华可以挂**好几个**人（2023-07-19 那场完美对话 = 虹星 + 花花），
+    所以用勾选清单而不是单选下拉。
+
+    顺序 = 对话里出现的顺序，是有意义的，所以这里维护的是一个**数组**：
+    勾上就追加到末尾、取消就摘掉，不去按成员表重排。清单每次按这个数组的顺序
+    显示已勾选的人在前，改顺序就是「先全取消再按想要的顺序勾一遍」。
+  */
+  const members = salonDraft.members;
+  const picked = [...draft.memberIds];
+  const pickBox = document.createElement('div');
+  pickBox.className = 'wess__members';
+  const pickHead = document.createElement('p');
+  pickHead.className = 'hint wess__membersHead';
+  const paintPickHead = () => {
+    pickHead.textContent = picked.length
+      ? `已选 ${picked.length} 人：${picked.map((id) => memberById(id)?.name || id).join('、')}`
+      : '一个人都没选 —— 这条精华在站点上会显示成「未知成员」（保存是允许的）';
+    pickHead.classList.toggle('is-bad', !picked.length);
+  };
+  pickBox.appendChild(pickHead);
+
+  const grid = document.createElement('div');
+  grid.className = 'wess__memberGrid';
+  const boxes = [];
+  for (const m of members) {
+    const lab = document.createElement('label');
+    lab.className = 'wess__member';
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.value = m.id;
+    cb.checked = picked.includes(m.id);
+    cb.addEventListener('change', () => {
+      const at = picked.indexOf(m.id);
+      if (cb.checked) {
+        if (at < 0) picked.push(m.id);
+      } else if (at >= 0) {
+        picked.splice(at, 1);
+      }
+      paintPickHead();
+      // 选中的人排到前面，一眼能看出这条精华现在挂着谁
+      boxes.sort((a, b) => {
+        const ai = picked.indexOf(a.cb.value);
+        const bi = picked.indexOf(b.cb.value);
+        return (ai < 0 ? 999 : ai) - (bi < 0 ? 999 : bi);
+      });
+      for (const b of boxes) grid.appendChild(b.lab);
+    });
+    lab.append(cb, memberAvatarEl(m));
+    const name = document.createElement('span');
+    name.className = 'wess__memberName';
+    name.textContent = m.name;
+    lab.appendChild(name);
+    boxes.push({ lab, cb, name: m.name });
+    grid.appendChild(lab);
+  }
+  pickBox.appendChild(grid);
+  const sortBtn = panelBtn('把已选的排到前面', '顺序 = 对话里出现的顺序，勾选的先后就是顺序', () => {
+    boxes.sort((a, b) => {
+      const ai = picked.indexOf(a.cb.value);
+      const bi = picked.indexOf(b.cb.value);
+      return (ai < 0 ? 999 : ai) - (bi < 0 ? 999 : bi);
+    });
+    for (const b of boxes) grid.appendChild(b.lab);
+  });
+  sortBtn.classList.add('boardedit__mini');
+  pickBox.appendChild(sortBtn);
+  paintPickHead();
+  form.appendChild(
+    panelRow(
+      '成员（可多选）',
+      pickBox,
+      '成员名和头像来自「成员」面板，这里只存 id。改成员那里保存后，这条会跟着变。',
+    )
+  );
+
+  /* 种类：只给编辑器看，站点页面不按它分组 */
+  const kindSel = document.createElement('select');
+  kindSel.className = 'input';
+  for (const [k, label] of Object.entries(ESSENCE_KIND_LABEL)) {
+    const o = document.createElement('option');
+    o.value = k;
+    o.textContent = `${label}（${k}）`;
+    kindSel.appendChild(o);
+  }
+  kindSel.value = essenceKindOf(draft);
+  kindSel.addEventListener('change', () => {
+    draft.kind = kindSel.value;
+  });
+  form.appendChild(
+    panelRow('种类', kindSel, '文字 / 完美对话 / AI 创作。站点不按它分组，只是方便在这儿筛。'),
+  );
+
+  const dateWrap = document.createElement('div');
+  dateWrap.className = 'wess__dt';
+  const eraTag = document.createElement('em');
+  eraTag.className = 'wess__era';
+  const paintEra = (d) => {
+    const id = eraIdForDate(d);
+    eraTag.textContent = id ? `落在年代：${salonEraName(id)}` : '不在任何年代里（eraId 留空）';
+    eraTag.classList.toggle('wess__era--none', !id);
+  };
+  const dateEl = dayPicker(draft.date, (v) => {
+    draft.date = v;
+    paintEra(v);
+  });
+  const timeEl = boardInput(draft.time ?? '', '19:44', (v) => {
+    draft.time = v;
+  });
+  timeEl.classList.add('wtime');
+  dateWrap.append(dateEl, timeEl, eraTag);
+  paintEra(draft.date);
+  form.appendChild(panelRow('日期 / 时间', dateWrap, '时间是 HH:MM，可以留空。年代（eraId）按日期自动落，不用手填。'));
+
+  form.appendChild(
+    panelRow(
+      '正文',
+      panelArea(draft.text ?? '', '这一条的内容；只有图片的话就留空', 4, (v) => {
+        draft.text = v;
+      }),
+      '纯文本（站点那边不做 Markdown 渲染）。',
+    )
+  );
+
+  const imgWrap = document.createElement('div');
+  imgWrap.className = 'wess__imgs';
+  const paintImgs = () => {
+    imgWrap.textContent = '';
+    if (!draft.images.length) {
+      const p = document.createElement('p');
+      p.className = 'hint';
+      p.textContent = '还没有图片。';
+      imgWrap.appendChild(p);
+    }
+    draft.images.forEach((src, i) => {
+      const cell = document.createElement('div');
+      cell.className = 'wess__imgcell';
+      const img = document.createElement('img');
+      img.src = previewImgSrc(src);
+      img.alt = '';
+      img.loading = 'lazy';
+      img.title = src;
+      const del = document.createElement('button');
+      del.type = 'button';
+      del.className = 'wess__imgdel';
+      del.textContent = '×';
+      del.title = '把这张从这一条里去掉（不会删文件）';
+      del.addEventListener('click', () => {
+        draft.images.splice(i, 1);
+        paintImgs();
+      });
+      cell.append(img, del);
+      imgWrap.appendChild(cell);
+    });
+  };
+  paintImgs();
+
+  const imgSlot = document.createElement('div');
+  imgSlot.className = 'wess__imgadd';
+  const file = document.createElement('input');
+  file.type = 'file';
+  file.accept = IMAGE_ACCEPT;
+  file.multiple = true;
+  file.hidden = true;
+  const pick = panelBtn('＋ 加图片', '一次可以选多张；也可以直接把图拖进来，或截图后 Ctrl+V', () => file.click());
+  imgSlot.append(pick, file);
+  attachImageIntake({
+    el: imgSlot,
+    input: file,
+    multiple: true,
+    label: '精华图片',
+    onFiles: async (files) => {
+      pick.disabled = true;
+      try {
+        for (const f of files) {
+          const p = await uploadImage(f);
+          draft.images.push(p);
+          toast(`精华图片已上传：${p}`);
+        }
+      } finally {
+        pick.disabled = false;
+        paintImgs();
+      }
+    },
+    // 多图的地方拖进来的是链接的话一律不接（一张链接图不如让他自己贴地址）
+    onUrl: () => toast('这里收图片文件：从网页拖过来的链接请用「选图片」上传', true),
+  });
+  form.appendChild(panelRow('图片', imgSlot, '上传后把 /img/uploads/... 追加进这一条的 images 里，一张一个格子。'));
+  form.appendChild(imgWrap);
+
+  const actions = document.createElement('div');
+  actions.className = 'wess__formact';
+  const save = panelBtn(isNew ? '保存这一条' : '改好了', '写进草稿（整个面板还要点「保存并重新构建」才落盘）', () => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(draft.date)) {
+      toast('先选个日期', true);
+      return;
+    }
+    /*
+      成员**允许一个都不选**：数据里本来就有一条精华挂不到人的情况（群精华里
+      那种"系统消息"），站点上渲染成「未知成员」。所以这里只提醒一句，不拦着存 ——
+      拦下来就等于"这条精华我存不了"，比存成未知成员糟得多。
+    */
+    if (!picked.length && !draft.text.trim() && !draft.images.length) {
+      toast('正文和图片至少留一样，不然这一条页面上是空的', true);
+      return;
+    }
+    draft.memberIds = [...picked];
+    draft.eraId = eraIdForDate(draft.date);
+    if (isNew) {
+      salonDraft.essences.push(draft);
+    } else {
+      // 编辑：把这一份改好的副本替回数组里（原地改是取消不掉的，见上面）
+      const at = salonDraft.essences.findIndex((e) => e.id === draft.id);
+      if (at >= 0) salonDraft.essences[at] = draft;
+      else salonDraft.essences.push(draft);
+    }
+    markPanelDirty(status, 'salon');
+    form.remove();
+    renderEssencesPanel();
+    toast(
+      (isNew ? '加好了' : '改好了') +
+        (picked.length ? '' : '（一个成员都没选，站点上会显示「未知成员」）') +
+        '，记得点「保存并重新构建」',
+    );
+  }, true);
+  const cancel = panelBtn('取消', '这一条不做了', () => form.remove());
+  actions.append(save, cancel);
+  form.appendChild(actions);
+
+  host.after(form);
+  form.scrollIntoView({ block: 'nearest' });
+}
+
+/* ---------- 成员 ---------- */
+
+async function openMembersModal() {
+  markWorkspaceActive('members');
+  els.membersModal.hidden = false;
+  els.memEditor.textContent = '正在读取…';
+  try {
+    await loadSalon();
+  } catch (err) {
+    els.memEditor.textContent = `读取失败：${err.message}`;
+    return;
+  }
+  renderMembersPanel();
+}
+
+function closeMembersModal() {
+  els.membersModal.hidden = true;
+}
+
+function renderMembersPanel() {
+  const { body, foot, status } = panelShell(els.memEditor, {
+    hint:
+      '精华里**只存成员 id**（一条精华可以挂好几个人），名字和头像全在这张表里现查 —— ' +
+      '所以在这里改名字 / 换头像，这个人所有的精华（包括首页那条「每日精华」）都会跟着变。' +
+      '改完点「保存并重新构建」才看得到。',
+    group: 'salon',
+  });
+
+  const members = salonDraft.members;
+  const holders = {};
+
+  /*
+    「名下 N 条」是按 memberIds 里**包含**这个人算的（不是 memberId 相等）——
+    一条精华挂两个人，两个人名下就都算这一条，所以各人条数相加大于等于总条数。
+    「被挂到」那行是去重后的条数，用来和精华面板的总数对账。
+  */
+  const perMemberTotal = members.reduce((n, m) => n + essenceCountOf(m.id), 0);
+  const touched = new Set();
+  for (const e of salonDraft.essences ?? []) {
+    for (const id of essenceMemberIds(e)) touched.add(e.id);
+  }
+  const total = (salonDraft.essences ?? []).length;
+
+  const note = panelBox(
+    `成员（${members.length} 人）`,
+    '「精华」面板里的每一条都指向这里的一个 id（可以指向好几个人）。删掉一个成员，引用他的精华会显示成「未知成员」' +
+      '（站点那边就是这么兜底的），精华本身不会消失。',
+  );
+  const tally = document.createElement('p');
+  tally.className = 'hint';
+  tally.textContent =
+    `名下条数合计 ${perMemberTotal} 次（一条精华挂 N 个人就算 N 次）· ` +
+    `至少挂到一个成员的精华 ${touched.size} / 共 ${total} 条` +
+    (total - touched.size > 0 ? `（另 ${total - touched.size} 条一个成员都没挂，站点上显示「未知成员」）` : '');
+  note.appendChild(tally);
+
+  if (!members.length) {
+    const p = document.createElement('p');
+    p.className = 'hint';
+    p.textContent = '一个成员都没有。点下面的「＋ 新增成员」。';
+    note.appendChild(p);
+  }
+
+  members.forEach((m) => {
+    const row = document.createElement('div');
+    row.className = 'wmem';
+    row.dataset.memberId = m.id;
+
+    const head = document.createElement('div');
+    head.className = 'wmem__head';
+    const idTag = document.createElement('em');
+    idTag.className = 'wmem__id';
+    idTag.textContent = m.id;
+    idTag.title = 'id 是精华指向这个人的依据，改名不改 id';
+    const count = document.createElement('span');
+    count.className = 'wmem__count';
+    const n = essenceCountOf(m.id);
+    count.textContent = n ? `名下 ${n} 条精华` : '名下还没有精华';
+    count.classList.toggle('wmem__count--none', !n);
+    const del = document.createElement('button');
+    del.type = 'button';
+    del.className = 'btn btn--ghost boardedit__mini boardedit__del';
+    del.textContent = '删除';
+    del.title = '删掉这个成员';
+    del.addEventListener('click', () => {
+      const msg = n
+        ? `${m.name} 名下还有 ${n} 条精华。删掉之后那 ${n} 条会显示成「未知成员」（精华本身不会消失）。确定删掉他吗？`
+        : `删掉成员 ${m.name}？`;
+      if (!confirm(msg)) return;
+      const i = salonDraft.members.indexOf(m);
+      if (i >= 0) salonDraft.members.splice(i, 1);
+      markPanelDirty(status, 'salon');
+      renderMembersPanel();
+    });
+    head.append(idTag, count, del);
+
+    const fields = document.createElement('div');
+    fields.className = 'wmem__fields';
+
+    /* 头像地址框和缩略图同步（和「关于我」那套一样） */
+    const avatarInput = boardInput(m.avatar ?? '', '/img/uploads/xxx.png 或 https://…', () => {});
+    const slot = imageSlot({
+      label: '成员头像',
+      getValue: () => m.avatar,
+      setValue: (v) => { m.avatar = v; },
+      // 头像存的是路径，改了之后列表里那个圆形缩略图要跟着换
+      onValue: (v) => {
+        avatarInput.value = v;
+        refreshEssenceRows([m.id]);
+      },
+      onChanged: () => {
+        markPanelDirty(status, 'salon');
+      },
+      hint: '留空的话页面上画一个带首字的占位圆。',
+    });
+    holders[m.id] = slot;
+    // 同上：slot 有了才挂回调
+    avatarInput.addEventListener('input', () => {
+      slot.sync(avatarInput.value, true);
+      markPanelDirty(status, 'salon');
+      refreshEssenceRows([m.id]);
+    });
+    fields.appendChild(panelRow('头像', slot.el));
+    fields.appendChild(
+      panelRow(
+        '名字',
+        boardInput(m.name ?? '', '成员名', (v) => {
+          m.name = v;
+          markPanelDirty(status, 'salon');
+          // 精华列表里显示的就是这个名字，改一个字它就该跟着变
+          refreshEssenceRows([m.id]);
+        }),
+        '改名不影响 id，所以他名下那几条精华一条都不会丢。',
+      )
+    );
+    fields.appendChild(panelRow('头像地址', avatarInput));
+
+    row.append(head, fields);
+    note.appendChild(row);
+  });
+
+  note.appendChild(
+    panelBtn('＋ 新增成员', '新 id 自动生成，不会和现有的撞', () => {
+      salonDraft.members.push({ id: newMemberId(), name: `新成员${salonDraft.members.length + 1}`, avatar: '' });
+      markPanelDirty(status, 'salon');
+      renderMembersPanel();
+    }),
+  );
+  body.appendChild(note);
+
+  /*
+    头像接入口是挂在 DOM 上的，重画面板会把它们带走；被带走的那几个
+    在 pruneIntakes() 里会被剔掉，下次重画会自动重新注册，不用手动清理。
+  */
+
+  foot.append(
+    panelBtn('关闭面板', '关掉这个面板（没保存的改动留着，切回来还在）', () => openWorkspace('docs')),
+    panelBtn('重新读取', '把盘上的值重新读一遍（没保存的改动会丢）', async () => {
+      if (!confirm('重新读盘会丢掉还没保存的改动，确定吗？')) return;
+      salonDraft = null;
+      salonDirty = false;
+      await loadSalon();
+      renderMembersPanel();
+    }),
+    panelBtn('看 /salon/', '在新标签页打开预览站点里的冰室精华页（要先构建过）', () => {
+      window.open(`${PREVIEW_URL}/salon/`, '_blank', 'noopener');
+    }),
+    panelBtn('保存并重新构建', '写进 src/data/salon.json 并重新构建站点', () =>
+      saveSalon(els.memSave, status), true, 'mem-save'),
+  );
+  els.memSave = $('mem-save');
+}
+
+/**
+ * 成员改了名字 / 头像之后，把「精华」面板列表里属于他的那几行就地刷一遍。
+ *
+ * 为什么不整个 renderEssencesPanel()：那会把滚动位置和"加载到第几条"
+ * 一起重来，几百条的位置一丢就得重新翻。而这里要改的只是名字和缩略图，
+ * 就地改文本最省事，也不打断手上正在做的事。
+ *
+ * 一条精华挂好几个成员时，只要有**任意一个**改到了就整行的成员那格重画 ——
+ * 名字用「、」连着、头像叠着排，单独改一个名字就得两个一起重排。
+ */
+function refreshEssenceRows(memberIds) {
+  if (!els.essencesModal || els.essencesModal.hidden) return;
+  const ids = new Set(memberIds);
+  for (const li of els.essEditor.querySelectorAll('.wess__row')) {
+    const e = (salonDraft?.essences ?? []).find((x) => x.id === li.dataset.essId);
+    if (!e || !essenceMemberIds(e).some((id) => ids.has(id))) continue;
+    const who = li.querySelector('.wess__who');
+    if (!who) continue;
+    who.replaceWith(essenceWhoEl(e));
+  }
+}
+
 /* ---------------------------------------------------------------
    事件绑定
    --------------------------------------------------------------- */
@@ -9151,6 +10809,24 @@ function bindEvents() {
     if (ev.target.dataset && ev.target.dataset.close) closeLayoutModal();
   });
 
+  /*
+    首页那几块 + 冰室精华：五个面板都没有顶栏按钮（顶栏已经挤满了），
+    入口就两个 —— 左上角「☰ 工作台」的清单和每个面板顶上那排「切换」，
+    两个都走 openWorkspace()，那里面已经接好了这五个 id。
+    这里只管「点遮罩 / 点取消关掉」，和别的面板一个规矩。
+  */
+  for (const [modal, close] of [
+    [els.calendarModal, closeCalendarModal],
+    [els.aboutModal, closeAboutModal],
+    [els.icebergModal, closeIcebergModal],
+    [els.essencesModal, closeEssencesModal],
+    [els.membersModal, closeMembersModal],
+  ]) {
+    modal.addEventListener('click', (ev) => {
+      if (ev.target.dataset && ev.target.dataset.close) close();
+    });
+  }
+
   // iframe 里的编辑脚本通过 postMessage 回报状态
   window.addEventListener('message', (ev) => {
     const d = ev.data;
@@ -9223,6 +10899,24 @@ function bindEvents() {
     if (ev.key === 'Escape' && !els.musicModal.hidden) {
       closeMusicModal();
       return;
+    }
+    /*
+      首页那几块 + 冰室精华的五个面板也吃 Esc。同时只可能开着一个
+      （openWorkspace 会先把别的都关掉），所以一个个判就够了。
+    */
+    if (ev.key === 'Escape') {
+      for (const [modal, close] of [
+        [els.calendarModal, closeCalendarModal],
+        [els.aboutModal, closeAboutModal],
+        [els.icebergModal, closeIcebergModal],
+        [els.essencesModal, closeEssencesModal],
+        [els.membersModal, closeMembersModal],
+      ]) {
+        if (!modal.hidden) {
+          close();
+          return;
+        }
+      }
     }
     if (!mod) return;
     const key = ev.key.toLowerCase();
@@ -9309,6 +11003,15 @@ async function init() {
   setDirty(false);
   await loadMarked();
 }
+
+/*
+  验收口子：这个文件是 <script type="module">，顶层函数不在 window 上，
+  自动化测试（.tmp 里那几个 CDP 脚本）连 openWorkspace 都叫不到。
+  挂一个最小的把手出来，只暴露"打开某个工作面 / 当前是哪个"，
+  没有它就只能靠点 DOM 猜，测出来的东西也不牢靠。
+*/
+window.__openWs = (id) => openWorkspace(id);
+window.__activeWs = () => activeWorkspace;
 
 init().catch((err) => {
   console.error(err);

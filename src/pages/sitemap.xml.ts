@@ -12,7 +12,16 @@ import { flattenBoards, isStandalone, type BoardNode } from '../utils/boards';
 export const GET: APIRoute = async ({ site: astroSite }) => {
   const entries = [...(await getPosts()), ...(await getNotes())];
 
-  const staticPages = ['/', '/posts', '/notes', '/tags', '/archive', '/about', '/friends'];
+  /*
+    手写死的几个独立页面。
+    `/about-me/`（页头左上角那个小圆片点进去的）和 `/iceberg/`（首页冰室冰山那块）
+    是本轮新加的，性质跟 `/about` 一样是普通公开页，收录。
+
+    ⚠ **`/salon/`（冰室精华）故意不收**：那页是 735 条群聊里摘出来的原话，
+    属于"首页点得进去、知道地址就能看"的东西，不该主动推给搜索引擎。
+    哪天想让它被搜到，把它加进这个数组即可（或者给那页加 noindex）。
+  */
+  const staticPages = ['/', '/posts', '/notes', '/tags', '/archive', '/about', '/friends', '/about-me', '/iceberg'];
 
   /*
     大板块树里的每一层都会自动生成页面，这里把它们的地址全部收录。

@@ -5,13 +5,30 @@
  * 导航链接和日夜模式切换都已按用户要求移除，只留左上角的
  * 「徽记 + 站点名」，点哪一块都是回首页。
  * 栏目入口统一在首页「花娅陌域 → 花娅陌质流」里。
+ *
+ * 新增（本轮）：站名右边一个「关于我」的小圆片，点它进 /about-me/。
+ * 皮和右上角那三个固定控件（回到顶部 / 音量 / 目录）统一：
+ * 同一组边框色、圆角、底色。
+ *
+ * ⚠ 为什么要把站名和这个小圆片**包进一层**再放进页头：
+ *   `.site-header__inner` 是 `justify-content: space-between`。
+ *   以前只有站名一个子元素，它被顶在左边；直接把小圆片当第二个子元素塞进去，
+ *   space-between 会把它甩到**最右边**。包一层之后，"左边这一组"仍是唯一子元素，
+ *   站名的位置一个像素都不动（用户明确要求别挪动原有元素）。
  */
 import site from '../site.config';
 import Img from './Img.astro';
+import widgets from '../data/home-widgets.json';
+import { variantUrl } from '../utils/images';
 import { withBase } from '../utils/url';
 
 const base = withBase('/');
 /** 徽记和首页 .brand__logo 用的是同一张图（/img/home/logo.png，走图片管线发小图） */
+const about = (widgets.about ?? {}) as { title?: string; avatar?: string; href?: string };
+const aboutHref = withBase(about.href || '/about-me/');
+const aboutAvatarRaw = String(about.avatar ?? '').trim();
+/** 26px 的小圆片，取管线里最小那一档就够（查不到清单就退回原图） */
+const aboutAvatar = aboutAvatarRaw ? variantUrl(aboutAvatarRaw, 400) : '';
 ---
 
 <header class="site-header">
@@ -21,22 +38,41 @@ const base = withBase('/');
     边距改由 .site-header__inner 自己的 padding-inline 给（见 global.css）。
   */}
   <div class="site-header__inner">
-    <a class="site-brand" href={base}>
-      {/* 紧挨着就是「花涧堂」三个字，徽记算装饰，alt 留空免得读屏念两遍 */}
-      <Img
-        class="site-brand__logo"
-        src="/img/home/logo.png"
-        alt=""
-        sizes="48px"
-        loading="eager"
-        decoding="async"
-      />
-      <span class="site-title">{site.title}</span>
-    </a>
+    <div class="site-header__left">
+      <a class="site-brand" href={base}>
+        {/* 紧挨着就是「花涧堂」三个字，徽记算装饰，alt 留空免得读屏念两遍 */}
+        <Img
+          class="site-brand__logo"
+          src="/img/home/logo.png"
+          alt=""
+          sizes="48px"
+          loading="eager"
+          decoding="async"
+        />
+        <span class="site-title">{site.title}</span>
+      </a>
+
+      <a class="about-pill" href={aboutHref} title="关于我（点进去看那一页）">
+        {aboutAvatar ? (
+          <img class="about-pill__face" src={aboutAvatar} alt="" loading="lazy" decoding="async" />
+        ) : (
+          <span class="about-pill__face about-pill__face--none" aria-hidden="true" />
+        )}
+        <span class="about-pill__text">{about.title || '关于我'}</span>
+      </a>
+    </div>
   </div>
 </header>
 
 <style>
+  /* 左边这一组：站名 + 关于我，仍然算页头的"唯一子元素"（见上面的说明） */
+  .site-header__left {
+    display: flex;
+    align-items: center;
+    gap: clamp(0.6rem, 1.4vw, 1.1rem);
+    min-width: 0;
+  }
+
   .site-brand {
     display: inline-flex;
     align-items: center;
@@ -64,5 +100,55 @@ const base = withBase('/');
   .site-brand:hover .site-title,
   .site-brand:focus-visible .site-title {
     text-shadow: 0 0 12px rgba(255, 90, 170, 0.9);
+  }
+
+  /* ---------- 「关于我」小圆片：皮和右上角那三个固定控件一套 ---------- */
+  .about-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    flex: 0 0 auto;
+    padding: 0.22rem 0.7rem 0.22rem 0.28rem;
+    border: 1px solid var(--c-border-strong);
+    border-radius: 999px;
+    background: var(--c-bg-raised);
+    color: var(--c-text);
+    font-size: 0.82rem;
+    letter-spacing: 0.08em;
+    text-decoration: none;
+    transition: border-color 0.15s ease, color 0.15s ease;
+  }
+  .about-pill:hover,
+  .about-pill:focus-visible {
+    border-color: var(--c-accent);
+    color: var(--c-accent);
+  }
+
+  /* 里面那个圆圈：填用户上传的头像；没传就先画一个空圈 */
+  .about-pill__face {
+    width: 26px;
+    height: 26px;
+    flex: none;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 1px solid rgba(255, 120, 190, 0.5);
+    background: var(--c-bg-sunken);
+  }
+  .about-pill__face--none {
+    display: inline-block;
+    background:
+      repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.14) 0 1px, transparent 1px 4px),
+      repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.14) 0 1px, transparent 1px 4px),
+      radial-gradient(circle at 35% 30%, rgba(255, 150, 205, 0.85), rgba(214, 60, 140, 0.6));
+  }
+
+  @media (max-width: 420px) {
+    /* 很窄的屏上先只留圆圈，把字挤掉免得页头换行 */
+    .about-pill__text {
+      display: none;
+    }
+    .about-pill {
+      padding-right: 0.28rem;
+    }
   }
 </style>

@@ -1,0 +1,295 @@
+---
+/**
+ * 首页的日历（挂在「甬城晴雨」下面）。
+ *
+ * 用户要的样子：最常见的月历，显示**当前这个月**和今天；每天是一个
+ * **粉色带栅格的圆**（和地图图钉一个味道）加数字；有事件的那天换成
+ * 蒸汽波日落橙黄、点得进对应页面；右下角一个小框写今天：
+ * 没特殊日子就写「今天依然是等待篠雨的一天」，有就写「今天是xxx的生日」。
+ *
+ * 两个刻意的做法：
+ *   1. **"今天"和"当前月"一律在浏览器里算**。站点是静态的，构建那天算出来的
+ *      "今天"过两天就错了。所以日历格子由页面里那段脚本生成，构建期只把
+ *      事件表（日期 -> 名字/链接）塞进去。
+ *   2. 事件表来自 src/data/home-widgets.json，编辑器「日历」面板直接改它。
+ *      事件里的 href 留空也没关系 —— 那天照样变色，只是点不动。
+ */
+import widgets from '../data/home-widgets.json';
+import { withBase } from '../utils/url';
+
+interface CalEvent {
+  title?: string;
+  href?: string;
+  text?: string;
+}
+const cal = (widgets.calendar ?? {}) as {
+  title?: string;
+  idleText?: string;
+  specialText?: string;
+  events?: Record<string, CalEvent>;
+};
+const events = cal.events ?? {};
+---
+
+<section class="cal" id="home-cal" data-cal aria-labelledby="cal-title">
+  <header class="cal__head">
+    <h3 class="cal__title" id="cal-title">{cal.title || '日历'}</h3>
+    <div class="cal__nav">
+      <button class="cal__btn" type="button" data-cal-prev aria-label="上个月">‹</button>
+      <span class="cal__month" data-cal-month></span>
+      <button class="cal__btn" type="button" data-cal-next aria-label="下个月">›</button>
+    </div>
+  </header>
+
+  <div class="cal__week" aria-hidden="true">
+    {['一', '二', '三', '四', '五', '六', '日'].map((w) => <span class="cal__wd">{w}</span>)}
+  </div>
+
+  <div class="cal__grid" data-cal-grid role="grid" aria-label="月历"></div>
+
+  {
+    /*
+      右下角那个小框：脚本会把今天的文案写进去（无特殊日子就用 idleText）。
+      构建期先按今天渲染一遍，免得 JS 没跑到时是个空框。
+    */
+  }
+  <p class="cal__today" data-cal-today>
+    {cal.idleText || '今天依然是等待篠雨的一天'}
+  </p>
+
+  <script
+    type="application/json"
+    id="cal-data"
+    set:html={JSON.stringify({
+      events,
+      idleText: cal.idleText || '今天依然是等待篠雨的一天',
+      specialText: cal.specialText || '今天是{title}',
+      base: withBase('/'),
+    })}
+  />
+</section>
+
+<script>
+  /* ============================================================
+     月历：格子全在浏览器里生成（"今天"和"当前月"必须按访问者的表算）
+     ============================================================ */
+  type CalEvent = { title?: string; href?: string; text?: string };
+  const root = document.querySelector<HTMLElement>('[data-cal]');
+  const dataEl = document.getElementById('cal-data');
+  if (root && dataEl) {
+    const cfg = JSON.parse(dataEl.textContent || '{}') as {
+      events: Record<string, CalEvent>;
+      idleText: string;
+      specialText: string;
+      base: string;
+    };
+    const grid = root.querySelector<HTMLElement>('[data-cal-grid]');
+    const monthLab = root.querySelector<HTMLElement>('[data-cal-month]');
+    const todayBox = root.querySelector<HTMLElement>('[data-cal-today]');
+
+    /** 本地日期 -> YYYY-MM-DD（不能用 toISOString：那是 UTC，晚上会差一天） */
+    const ymd = (d: Date) =>
+      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+    const now = new Date();
+    let year = now.getFullYear();
+    let month = now.getMonth(); // 0-11
+    const todayKey = ymd(now);
+
+    const paint = () => {
+      if (!grid) return;
+      const first = new Date(year, month, 1);
+      const daysInMonth = new Date(year, month + 1, 0).getDate();
+      // 周一当第一列（getDay(): 0=周日），所以偏移量要 +6 再取模
+      const lead = (first.getDay() + 6) % 7;
+
+      const cells: string[] = [];
+      for (let i = 0; i < lead; i++) cells.push('<span class="cal__pad"></span>');
+      for (let day = 1; day <= daysInMonth; day++) {
+        const key = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+        const ev = cfg.events[key];
+        const isToday = key === todayKey;
+        const cls = ['cal__day'];
+        if (ev) cls.push('cal__day--event');
+        if (isToday) cls.push('cal__day--today');
+        const num = `<span class="cal__num">${day}</span>`;
+        const label = ev?.title ? `${key} ${ev.title}` : key;
+        cells.push(
+          ev?.href
+            ? `<a class="${cls.join(' ')}" href="${ev.href}" title="${label}" aria-label="${label}">${num}</a>`
+            : `<span class="${cls.join(' ')}" title="${label}" aria-label="${label}">${num}</span>`
+        );
+      }
+      grid.innerHTML = cells.join('');
+      if (monthLab) monthLab.textContent = `${year} 年 ${month + 1} 月`;
+
+      if (todayBox) {
+        const ev = cfg.events[todayKey];
+        todayBox.textContent = ev
+          ? (ev.text || cfg.specialText.replace('{title}', ev.title || ''))
+          : cfg.idleText;
+        todayBox.classList.toggle('cal__today--event', !!ev);
+      }
+    };
+
+    root.querySelector('[data-cal-prev]')?.addEventListener('click', () => {
+      month--;
+      if (month < 0) ((month = 11), year--);
+      paint();
+    });
+    root.querySelector('[data-cal-next]')?.addEventListener('click', () => {
+      month++;
+      if (month > 11) ((month = 0), year++);
+      paint();
+    });
+
+    paint();
+  }
+</script>
+
+<style>
+  .cal {
+    position: relative;
+    padding: 0.9rem 0.95rem 3.2rem;
+    border: 1px solid rgba(255, 120, 190, 0.4);
+    border-radius: 16px;
+    background: linear-gradient(180deg, rgba(38, 6, 54, 0.86), rgba(20, 3, 32, 0.9));
+    box-shadow: 0 14px 40px -22px rgb(0 0 0 / 0.8);
+    backdrop-filter: blur(4px);
+  }
+
+  .cal__head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.6rem;
+    margin-bottom: 0.6rem;
+  }
+  .cal__title {
+    margin: 0;
+    font-size: 1rem;
+    letter-spacing: 0.14em;
+    color: #ffd9ef;
+  }
+  .cal__nav {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+  }
+  .cal__btn {
+    width: 1.5rem;
+    height: 1.5rem;
+    padding: 0;
+    border: 1px solid rgba(255, 120, 190, 0.45);
+    border-radius: 8px;
+    background: rgba(24, 3, 36, 0.85);
+    color: #ffd9ef;
+    font: inherit;
+    line-height: 1;
+    cursor: pointer;
+  }
+  .cal__btn:hover {
+    background: rgba(255, 79, 163, 0.22);
+    color: #fff;
+  }
+  .cal__month {
+    min-width: 5.6em;
+    text-align: center;
+    font-size: 0.8rem;
+    color: rgba(255, 226, 244, 0.8);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .cal__week,
+  .cal__grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 0.3rem;
+  }
+  .cal__wd {
+    text-align: center;
+    font-size: 0.7rem;
+    letter-spacing: 0.1em;
+    color: var(--c-text-faint);
+  }
+  .cal__grid {
+    margin-top: 0.25rem;
+  }
+
+  /*
+    ⚠ 下面这些「一天」的样式必须写成 :global()。
+    格子是**页面脚本**生成的（grid.innerHTML），生成出来的元素身上没有
+    Astro 的 data-astro-cid-* 作用域属性，写成普通选择器一个都命不中 ——
+    页面不报错，只是日历变成一堆没样式的数字（这个坑本站踩过一次）。
+  */
+  :global(.cal__day),
+  :global(.cal__pad) {
+    aspect-ratio: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  :global(.cal__day) {
+    position: relative;
+    border-radius: 50%;
+    border: 1px solid rgba(255, 120, 190, 0.55);
+    background:
+      repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.16) 0 1px, transparent 1px 4px),
+      repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.16) 0 1px, transparent 1px 4px),
+      radial-gradient(circle at 35% 30%, rgba(255, 150, 205, 0.95), rgba(214, 60, 140, 0.75));
+    color: #fff;
+    font-size: 0.78rem;
+    font-variant-numeric: tabular-nums;
+    text-decoration: none;
+    box-shadow: 0 0 0 1px rgba(255, 79, 163, 0.25), 0 3px 10px -6px rgb(0 0 0 / 0.9);
+    transition: transform 0.12s ease, box-shadow 0.12s ease;
+  }
+  :global(.cal__day:hover) {
+    transform: translateY(-1px);
+    box-shadow: 0 0 0 1px rgba(255, 79, 163, 0.5), 0 6px 14px -6px rgb(0 0 0 / 0.9);
+  }
+  :global(.cal__num) {
+    position: relative;
+    text-shadow: 0 0 6px rgba(140, 0, 70, 0.9);
+  }
+
+  /* 今天：外面套一圈落日黄的光环 */
+  :global(.cal__day--today) {
+    box-shadow: 0 0 0 2px #ffd447, 0 0 14px -2px rgba(255, 180, 60, 0.9);
+  }
+
+  /* 特殊日子：蒸汽波日落橙黄（粉 -> 橙 -> 黄），可以点进去 */
+  :global(.cal__day--event) {
+    border-color: rgba(255, 212, 71, 0.85);
+    background:
+      repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.2) 0 1px, transparent 1px 4px),
+      repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.2) 0 1px, transparent 1px 4px),
+      linear-gradient(160deg, #fff2b8 0%, #ffd447 32%, #ff9a3c 68%, #ff5f6d 100%);
+    color: #4a1200;
+    font-weight: 700;
+  }
+  :global(.cal__day--event .cal__num) {
+    text-shadow: 0 1px 0 rgba(255, 255, 255, 0.45);
+  }
+
+  /* 右下角那个小框 */
+  .cal__today {
+    position: absolute;
+    right: 0.7rem;
+    bottom: 0.65rem;
+    max-width: calc(100% - 1.4rem);
+    margin: 0;
+    padding: 0.25rem 0.6rem;
+    border: 1px solid rgba(255, 120, 190, 0.45);
+    border-radius: 9px;
+    background: rgba(24, 3, 36, 0.9);
+    color: rgba(255, 226, 244, 0.9);
+    font-size: 0.76rem;
+    line-height: 1.5;
+    text-align: right;
+  }
+  .cal__today--event {
+    border-color: rgba(255, 212, 71, 0.8);
+    color: #ffe9a8;
+  }
+</style>

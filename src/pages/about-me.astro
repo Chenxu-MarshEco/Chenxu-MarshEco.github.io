@@ -1,0 +1,152 @@
+---
+/**
+ * 「关于我」页面 —— /about-me/（首页左上角那个小圆片点进来的就是它）
+ *
+ * 用户的要求：
+ *   · 外框 UI 和右边的回到顶部 / 音量那些控件统一 —— 直接用 BaseLayout，
+ *     页头页脚、右上角那三个固定控件、主题色全都跟着全站走。
+ *   · 页面里一个圆圈放本人的头像；头像走编辑器（home-widgets.json 的 about.avatar），
+ *     现在还没传就画一个带栅格的占位圆，位置和大小都留好了，传了立刻就在。
+ *   · 文字部分也走同一份数据（about.text），支持 Markdown（粗体、链接、行内图片）。
+ */
+import BaseLayout from '../layouts/BaseLayout.astro';
+import { marked } from 'marked';
+import widgets from '../data/home-widgets.json';
+import { enhanceHtml, variantUrl } from '../utils/images';
+import { withBase } from '../utils/url';
+
+const about = (widgets.about ?? {}) as { title?: string; avatar?: string; text?: string; href?: string };
+const title = about.title || '关于我';
+const avatarRaw = String(about.avatar ?? '').trim();
+/** 头像也走图片管线：编辑器里传上来的图在上传时就压过，这里取那一档（查不到就退回原图） */
+const avatar = avatarRaw ? variantUrl(avatarRaw, 400) : '';
+const href = String(about.href ?? '').trim();
+const body = enhanceHtml(marked.parse(String(about.text ?? '').trim(), { async: false }) as string);
+---
+
+<BaseLayout title={title} description={`${title} —— 花涧堂。`} narrow={true}>
+  <article class="me">
+    <header class="me__head">
+      {/*
+        那个圆圈：有头像就用头像；没有就画一块粉色栅格（和日历上的圆、地图图钉一个味道），
+        提示"这里是个头像位"。
+      */}
+      <div class="me__faceWrap">
+        {
+          avatar ? (
+            <img class="me__face" src={avatar} alt={`${title}的头像`} loading="eager" decoding="async" />
+          ) : (
+            <div class="me__face me__face--none" aria-label="还没有上传头像">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M10.5 20.5V6.5M13.5 20.5V6.5M8.5 20.5h7M12 4v2.5M3.5 9h17M12 4 3.5 9M12 4l8.5 5M17.5 9v4" />
+              </svg>
+            </div>
+          )
+        }
+      </div>
+      <h1 class="me__title">{title}</h1>
+      {!avatar && <p class="me__hint">头像还没传：编辑器「关于我」面板里传一张就好。</p>}
+    </header>
+
+    {
+      body.trim() ? (
+        <div class="me__body" set:html={body} />
+      ) : (
+        <p class="me__empty">
+          这里还没有写内容 —— 编辑器「关于我」面板里写点什么吧（支持 **粗体**、[链接](地址) 这些
+          Markdown 写法）。
+        </p>
+      )
+    }
+
+    {
+      href && href !== '/about-me/' && (
+        <p class="me__back">
+          <a href={/^https?:/i.test(href) ? href : withBase(href)}>继续看别处 ›</a>
+        </p>
+      )
+    }
+  </article>
+</BaseLayout>
+
+<style>
+  .me {
+    padding: clamp(1.2rem, 4vh, 2.6rem) 0 4rem;
+  }
+
+  .me__head {
+    text-align: center;
+    margin-bottom: 1.6rem;
+  }
+
+  .me__faceWrap {
+    display: flex;
+    justify-content: center;
+    margin-bottom: 1rem;
+  }
+
+  /*
+    头像圆：给足尺寸，外圈一圈粉边 + 辉光，和站点其它圆形元素一致。
+    头像本身用 object-fit: cover 撑满整个圆（不管上传的是方的还是长的）。
+  */
+  .me__face {
+    width: clamp(120px, 22vw, 190px);
+    height: clamp(120px, 22vw, 190px);
+    border-radius: 50%;
+    object-fit: cover;
+    border: 2px solid rgba(255, 120, 190, 0.65);
+    box-shadow:
+      0 0 0 6px rgba(255, 120, 190, 0.12),
+      0 0 34px -6px rgba(255, 90, 170, 0.75);
+    background: var(--c-bg-sunken);
+  }
+
+  /* 占位：粉色栅格 + 一台塔吊 */
+  .me__face--none {
+    display: grid;
+    place-items: center;
+    background:
+      repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.14) 0 1px, transparent 1px 6px),
+      repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.14) 0 1px, transparent 1px 6px),
+      radial-gradient(circle at 35% 30%, rgba(255, 150, 205, 0.9), rgba(214, 60, 140, 0.62));
+  }
+  .me__face--none svg {
+    width: 40%;
+    height: 40%;
+    fill: none;
+    stroke: rgba(70, 0, 40, 0.75);
+    stroke-width: 2.2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  .me__title {
+    margin: 0;
+    font-size: clamp(1.6rem, 3.6vw, 2.4rem);
+    letter-spacing: 0.1em;
+  }
+  .me__hint {
+    margin: 0.6rem 0 0;
+    font-size: 0.82rem;
+    color: var(--c-text-faint);
+  }
+
+  .me__body {
+    color: var(--c-text);
+    line-height: 1.9;
+  }
+  .me__body :global(h2) {
+    margin-top: 1.8rem;
+  }
+  .me__body :global(img) {
+    max-width: 100%;
+    border-radius: 12px;
+  }
+  .me__empty {
+    color: var(--c-text-muted);
+    line-height: 1.9;
+  }
+  .me__back {
+    margin-top: 2rem;
+  }
+</style>

@@ -589,6 +589,63 @@
       </div>
     </div>
 
+    <!--
+      ============ 首页那几块 + 冰室精华：五个面板 ============
+
+      这五个各自的数据都在 src/data/ 下（home-widgets.json 三块、salon.json 两块），
+      内容区里那些卡片 / 输入框**和顶上那排「切换」按钮**全由 app.js 画
+      （panelShell + panelBox），这里只放一个外壳：标题 + 空的内容区。
+
+      别的面板（子版块 / 时间轴 / 导航 / 页面 …）的 [data-ws-slot] 写在这份 HTML 里；
+      这五个不写 —— panelShell 每次重画都会塞一个新的进来，
+      HTML 里再写一个就会画出两条一模一样的「切换」条（踩过一次）。
+    -->
+
+    <!-- 日历：home-widgets.json 的 calendar -->
+    <div class="modal" id="calendar-modal" hidden>
+      <div class="modal__mask" data-close="1"></div>
+      <div class="modal__panel modal__panel--full" role="dialog" aria-modal="true" aria-label="日历">
+        <h3 class="modal__title">首页 · 日历</h3>
+        <div id="cal-editor"></div>
+      </div>
+    </div>
+
+    <!-- 关于我：home-widgets.json 的 about -->
+    <div class="modal" id="about-modal" hidden>
+      <div class="modal__mask" data-close="1"></div>
+      <div class="modal__panel modal__panel--full" role="dialog" aria-modal="true" aria-label="关于我">
+        <h3 class="modal__title">首页 · 关于我</h3>
+        <div id="about-editor"></div>
+      </div>
+    </div>
+
+    <!-- 冰室冰山：home-widgets.json 的 iceberg -->
+    <div class="modal" id="iceberg-modal" hidden>
+      <div class="modal__mask" data-close="1"></div>
+      <div class="modal__panel modal__panel--full" role="dialog" aria-modal="true" aria-label="冰室冰山">
+        <h3 class="modal__title">首页 · 冰室冰山</h3>
+        <div id="iceberg-editor"></div>
+      </div>
+    </div>
+
+    <!-- 精华：salon.json 的 essences（735 条，带搜索 / 分页） -->
+    <div class="modal" id="essences-modal" hidden>
+      <div class="modal__mask" data-close="1"></div>
+      <div class="modal__panel modal__panel--full" role="dialog" aria-modal="true" aria-label="冰室精华">
+        <h3 class="modal__title">冰室精华</h3>
+        <div id="ess-editor"></div>
+      </div>
+    </div>
+
+    <!-- 成员：salon.json 的 members（精华只存 memberId，名字和头像都在这儿） -->
+    <div class="modal" id="members-modal" hidden>
+      <div class="modal__mask" data-close="1"></div>
+      <div class="modal__panel modal__panel--full" role="dialog" aria-modal="true" aria-label="冰室精华成员">
+        <h3 class="modal__title">冰室精华 · 成员</h3>
+        <div id="mem-editor"></div>
+      </div>
+    </div>
+
     <!-- 隐藏的封面文件输入 -->
     <input type="file" id="cover-file" accept="image/png,image/jpeg,image/gif,image/webp,image/svg+xml" hidden />
 

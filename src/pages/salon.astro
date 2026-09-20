@@ -1,0 +1,467 @@
+---
+/**
+ * 冰室精华（群精华）页面 —— /salon/
+ *
+ * 数据全在 `src/data/salon.json`（由群精华导出文件整理而来，见 utils/salon.ts）。
+ *
+ * 三件事和用户的要求一一对应：
+ *   1. **左边那条时间轴常驻**：用的是站点自己的时间轴组件，`pinned` 模式 ——
+ *      不走右边滑出的抽屉、没有书签、没有关闭按钮，一进页面就是开的；
+ *      点轴上的日期会跳到当天**最近的那条精华**（每个日期的点 href 指向当天第一条）。
+ *   2. **搜索保留**：按 / 聚焦，边打边筛，右上角显示命中数。
+ *   3. **每条精华 = 成员 + 时间 + 内容**：成员名和头像都从成员表现查
+ *      （所以编辑器里给成员改名/换头像，这里和历史所有精华一起变）。
+ *
+ * 原导出文件自带的「时间轴 / 文字 / AI / 完美分类」都按用户要求去掉了：
+ * 分类那两块在整理数据时就没要（见 .tmp 里的抽取脚本），时间轴换成了本站这条。
+ */
+import BaseLayout from '../layouts/BaseLayout.astro';
+import Timeline from '../components/Timeline.astro';
+import site from '../site.config';
+import {
+  salonEssences,
+  salonEras,
+  salonMembers,
+  salonNote,
+  salonTitle,
+  salonTimeline,
+  salonUpdated,
+  essenceIds,
+  essenceParams,
+  memberName,
+  membersOf,
+} from '../utils/salon';
+import { variantUrl } from '../utils/images';
+
+const tl = salonTimeline();
+const params = essenceParams(tl);
+const list = salonEssences;
+const eraName = new Map(salonEras.map((e) => [e.id, e.title]));
+/** 只在"换了一个年代"的那条精华前面插一个年代大标题 */
+const eraOf = (e: (typeof list)[number], prev: (typeof list)[number] | undefined) =>
+  !prev || prev.eraId !== e.eraId ? e : null;
+/** 时间轴默认停在最早那一天（一进页面看到的就是开头） */
+const firstParam = list.length ? (params.get(list[0].id) ?? 0) : 0;
+---
+
+<BaseLayout
+  title={salonTitle}
+  description={`${salonTitle}：冰室群里的精华消息，${list.length} 条，${salonUpdated} 前更新。`}
+  bodyClass="is-salon"
+>
+  <div class="salon">
+    <aside class="salon__side">
+      <Timeline timeline={tl} pinned={true} defaultParam={firstParam} />
+      <p class="salon__sideNote">
+        成员 {salonMembers.length} 人 · 精华 {list.length} 条<br />
+        点轴上的日期可以直接跳到那天的精华
+      </p>
+    </aside>
+
+    <main class="salon__main">
+      <header class="salon__head">
+        <h1 class="salon__title">{salonTitle}</h1>
+        <p class="salon__meta">
+          共 {list.length} 条 · 截至 {salonUpdated}
+          {salonNote && <span class="salon__note">　{salonNote}</span>}
+        </p>
+        <div class="salon__searchBox">
+          <input
+            id="salon-q"
+            class="salon__search"
+            type="search"
+            placeholder="搜索关键词 / 成员 / 日期…（按 / 聚焦）"
+            autocomplete="off"
+          />
+          <span id="salon-hit" class="salon__hit" aria-live="polite"></span>
+        </div>
+      </header>
+
+      <div class="salon__list" id="salon-list">
+        {
+          list.map((e, i) => {
+            const prev = list[i - 1];
+            const era = eraOf(e, prev);
+            const people = membersOf(e);
+            const name = memberName(e);
+            const ids = essenceIds(e);
+            return (
+              <>
+                {era && <h2 class="salon__era">{eraName.get(e.eraId)}</h2>}
+                {(!prev || prev.date !== e.date) && <h3 class="salon__date">{e.date}</h3>}
+                <article
+                  class="salon__item"
+                  id={e.id}
+                  data-tl-param={params.get(e.id)}
+                  data-members={ids.join(' ')}
+                  data-kind={e.kind || 'text'}
+                >
+                  <div class="salon__who">
+                    {/*
+                      这条精华的成员**可能不止一个**（完美对话是多人一起说的）。
+                      头像每个成员一个、叠着排；没传头像的成员用首字占位圆。
+                      一个成员都没解析出来的（OCR 只认出游戏聊天/表格的那种）画一个"群"。
+                    */}
+                    <span class="salon__faces">
+                      {people.length ? (
+                        people.map((p) => (
+                          <span class="salon__face" title={p.name}>
+                            {p.avatar ? (
+                              <img class="salon__avatar" src={variantUrl(p.avatar, 400)} alt="" loading="lazy" decoding="async" />
+                            ) : (
+                              <span class="salon__avatar salon__avatar--none" aria-hidden="true">
+                                {p.name.slice(0, 1)}
+                              </span>
+                            )}
+                          </span>
+                        ))
+                      ) : (
+                        <span class="salon__face" title="这条没解析出成员（OCR 是游戏聊天/表格截图）">
+                          <span class="salon__avatar salon__avatar--none" aria-hidden="true">
+                            群
+                          </span>
+                        </span>
+                      )}
+                    </span>
+                    <b class="salon__name">{name}</b>
+                    {e.ocr && (
+                      <span class="salon__badge" title="这条的正文是截图 OCR 自动转录的，尚未人工校对">
+                        OCR 转录
+                      </span>
+                    )}
+                    <time class="salon__time" datetime={`${e.date}T${e.time || '00:00'}`}>
+                      {e.date}
+                      {e.time && ` ${e.time}`}
+                    </time>
+                  </div>
+
+                  {e.text && <blockquote class="salon__text">{e.text}</blockquote>}
+
+                  {e.images.map((src) => (
+                    /* aria-label：图片本身 alt 是空的（截图内容说不清），
+                       链接又只有一张图，读屏会只念"链接"—— 补一句人能听懂的 */
+                    <a
+                      class="salon__pic"
+                      href={src}
+                      target="_blank"
+                      rel="noopener"
+                      aria-label={`查看大图：${name} ${e.date}`}
+                    >
+                      {/*
+                        走站点的图片管线（多尺寸 WebP/AVIF）：
+                        variantUrl 在清单里查不到这张图时会退化成原图，所以
+                        没跑过 `pnpm images` 也不会挂 —— 但部署流程是跑管线的，
+                        线上实际拿到的就是压过的那一档（246 张原图共 8.4MB）。
+                      */}
+                      <img src={variantUrl(src, 800)} alt="" loading="lazy" decoding="async" />
+                    </a>
+                  ))}
+                </article>
+              </>
+            );
+          })
+        }
+        <p class="salon__empty" id="salon-empty" hidden>没有匹配的精华，换个词试试。</p>
+      </div>
+    </main>
+  </div>
+</BaseLayout>
+
+<script>
+  /* ============================================================
+     搜索 + 按 / 聚焦
+     ------------------------------------------------------------
+     纯前端筛：精华是一次性静态渲染出来的（搜索引擎也看得到），
+     这里只是给它加一层"边打边筛"。用 textContent 当检索文本 ——
+     成员名、日期、时刻、正文都在里面，不用另外维护一份索引。
+     ============================================================ */
+  const q = document.getElementById('salon-q') as HTMLInputElement | null;
+  const list = document.getElementById('salon-list');
+  const hit = document.getElementById('salon-hit');
+  const empty = document.getElementById('salon-empty');
+
+  if (q && list) {
+    const items = Array.from(list.querySelectorAll<HTMLElement>('.salon__item'));
+    const groups = Array.from(list.querySelectorAll<HTMLElement>('.salon__date'));
+    const eras = Array.from(list.querySelectorAll<HTMLElement>('.salon__era'));
+    // 每条精华预先算好检索文本，省得每敲一个字就把 textContent 取一遍
+    const hay = items.map((el) => (el.textContent || '').toLowerCase());
+
+    const apply = () => {
+      const kw = q.value.trim().toLowerCase();
+      let shown = 0;
+      items.forEach((el, i) => {
+        const ok = !kw || hay[i].includes(kw);
+        el.hidden = !ok;
+        if (ok) shown++;
+      });
+      // 只留下"还有内容"的日期小标题和年代大标题
+      groups.forEach((h) => {
+        let n = h.nextElementSibling;
+        let any = false;
+        while (n && !n.classList.contains('salon__date') && !n.classList.contains('salon__era')) {
+          if (n.classList.contains('salon__item') && !n.hidden) any = true;
+          n = n.nextElementSibling;
+        }
+        h.hidden = !any;
+      });
+      eras.forEach((h) => {
+        let n = h.nextElementSibling;
+        let any = false;
+        while (n && !n.classList.contains('salon__era')) {
+          if (((n.classList.contains('salon__item') && !n.hidden) || (n.classList.contains('salon__date') && !n.hidden))) any = true;
+          n = n.nextElementSibling;
+        }
+        h.hidden = !any;
+      });
+      if (hit) hit.textContent = kw ? `命中 ${shown} / ${items.length} 条` : '';
+      if (empty) empty.hidden = !(kw && shown === 0);
+    };
+
+    q.addEventListener('input', apply);
+    q.addEventListener('search', apply);
+    document.addEventListener('keydown', (e) => {
+      // 按 / 聚焦搜索框（在输入框里打字时不抢）
+      const t = e.target as HTMLElement | null;
+      const typing = t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable);
+      if (e.key === '/' && !typing) {
+        e.preventDefault();
+        q.focus();
+        q.select();
+      }
+      if (e.key === 'Escape' && document.activeElement === q && q.value) {
+        q.value = '';
+        apply();
+      }
+    });
+    apply();
+  }
+</script>
+
+<style>
+  .salon {
+    display: flex;
+    gap: clamp(1.2rem, 2.6vw, 2.6rem);
+    align-items: flex-start;
+    max-width: 1240px;
+    margin: 0 auto;
+    padding: clamp(1.2rem, 3vh, 2.4rem) clamp(0.9rem, 2.4vw, 1.6rem) 5rem;
+  }
+
+  /* 左边那条轴常驻：滚页面时它跟着停住，不用滚回去看 */
+  .salon__side {
+    flex: 0 0 clamp(260px, 27vw, 330px);
+    position: sticky;
+    top: 1.2rem;
+    align-self: flex-start;
+  }
+  .salon__sideNote {
+    margin: 0.7rem 0 0;
+    font-size: 0.78rem;
+    line-height: 1.7;
+    color: var(--c-text-faint);
+    text-align: center;
+  }
+
+  .salon__main {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .salon__head {
+    margin-bottom: 1.2rem;
+  }
+  .salon__title {
+    margin: 0;
+    font-size: clamp(1.7rem, 3.4vw, 2.5rem);
+    letter-spacing: 0.06em;
+    color: #fff;
+    text-shadow: 0 0 12px rgba(255, 79, 163, 0.65);
+  }
+  .salon__meta {
+    margin: 0.5rem 0 0;
+    font-size: 0.86rem;
+    line-height: 1.7;
+    color: var(--c-text-muted);
+  }
+  .salon__note {
+    color: var(--c-text-faint);
+  }
+
+  .salon__searchBox {
+    position: relative;
+    margin-top: 0.9rem;
+  }
+  .salon__search {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 0.55rem 0.8rem;
+    border: 1px solid var(--c-border-strong);
+    border-radius: 10px;
+    background: var(--c-bg-sunken);
+    color: var(--c-text);
+    font: inherit;
+    font-size: 0.94rem;
+  }
+  .salon__search:focus-visible {
+    outline: 2px solid var(--c-accent);
+    outline-offset: 1px;
+  }
+  .salon__hit {
+    position: absolute;
+    right: 0.6rem;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 0.78rem;
+    color: var(--c-accent);
+    pointer-events: none;
+  }
+
+  /* ---------- 年代 / 日期小标题 ---------- */
+  .salon__era {
+    margin: 2.6rem 0 0.6rem;
+    padding-bottom: 0.35rem;
+    border-bottom: 2px solid rgba(255, 120, 190, 0.35);
+    font-size: 1.3rem;
+    letter-spacing: 0.08em;
+    color: var(--c-accent);
+  }
+  .salon__date {
+    margin: 1.6rem 0 0.5rem;
+    font-size: 0.92rem;
+    letter-spacing: 0.1em;
+    color: var(--c-text-faint);
+  }
+
+  /* ---------- 一条精华 ---------- */
+  .salon__item {
+    margin: 0 0 0.9rem;
+    padding: 0.7rem 0.9rem 0.8rem;
+    border: 1px solid var(--c-border);
+    border-left: 3px solid rgba(255, 120, 190, 0.5);
+    border-radius: 12px;
+    background: var(--c-bg-raised);
+    /* 时间轴点日期跳过来时，别让吸顶页头压住 */
+    scroll-margin-top: 5.5rem;
+    /*
+      ⚠ 这里**不要**加 content-visibility: auto。
+      试过（735 条跳过屏幕外渲染，确实省），但屏幕外的条目只剩"估算高度"，
+      左边那条时间轴是按各条的**实际位置**算"当前滚到哪一段"的 ——
+      实测轴上的日期比列表里正在看的那条**早 3 天**（2026-07-11 vs 2026-07-14）。
+      轴的日期要跟眼睛看到的一致比省那点渲染重要，所以撤掉了。
+      （真要再优化，得给每条写接近真实高度的 contain-intrinsic-size 才行。）
+    */
+  }
+  .salon__item:target {
+    border-left-color: #ffd447;
+    animation: salonHit 1.6s ease-out;
+  }
+  @keyframes salonHit {
+    0% {
+      background: rgba(255, 120, 190, 0.18);
+    }
+    100% {
+      background: var(--c-bg-raised);
+    }
+  }
+
+  .salon__who {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.86rem;
+    flex-wrap: wrap;
+  }
+  /*
+    多个成员：头像叠着排（左边那个盖住右边那个一点），一眼看出"这条是几个人一起的"。
+    叠的是外圈的描边色，所以看起来是一枚一枚压上去的，不会糊成一团。
+  */
+  .salon__faces {
+    display: inline-flex;
+    align-items: center;
+    flex: none;
+  }
+  .salon__face {
+    display: inline-flex;
+    flex: none;
+  }
+  .salon__face + .salon__face {
+    margin-left: -8px;
+  }
+  .salon__avatar {
+    width: 28px;
+    height: 28px;
+    flex: none;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 1px solid rgba(255, 120, 190, 0.5);
+    background: var(--c-bg-sunken);
+  }
+  .salon__avatar--none {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--c-accent);
+    font-size: 0.8rem;
+  }
+  .salon__name {
+    color: #fff;
+    letter-spacing: 0.04em;
+  }
+  /* 截图 OCR 转录的条目挂一个小标签，让人知道这段字不是手打的 */
+  .salon__badge {
+    flex: none;
+    padding: 0.05rem 0.35rem;
+    border: 1px solid rgba(255, 170, 90, 0.5);
+    border-radius: 999px;
+    color: #ffd9a0;
+    font-size: 0.68rem;
+    letter-spacing: 0.06em;
+  }
+  .salon__time {
+    margin-left: auto;
+    color: var(--c-text-faint);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .salon__text {
+    margin: 0.5rem 0 0;
+    padding: 0.5rem 0.75rem;
+    border-left: 3px solid rgba(255, 120, 190, 0.35);
+    border-radius: 0 8px 8px 0;
+    background: var(--c-bg-sunken);
+    color: var(--c-text);
+    font-size: 0.92rem;
+    line-height: 1.8;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  .salon__pic {
+    display: block;
+    margin-top: 0.5rem;
+  }
+  .salon__pic img {
+    display: block;
+    max-width: min(100%, 520px);
+    border: 1px solid var(--c-border-strong);
+    border-radius: 10px;
+  }
+
+  .salon__empty {
+    margin: 1.5rem 0;
+    color: var(--c-text-muted);
+  }
+
+  /* ---------- 窄屏：轴挪到上面，别占着一整列 ---------- */
+  @media (max-width: 880px) {
+    .salon {
+      flex-direction: column;
+    }
+    .salon__side {
+      position: static;
+      flex: none;
+      width: 100%;
+    }
+  }
+</style>

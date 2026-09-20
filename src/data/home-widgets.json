@@ -1,0 +1,41 @@
+{
+  "_readme": [
+    "首页四块新增内容的数据（编辑器里对应的面板：关于我 / 日历 / 冰室冰山 / 每日精华）。",
+    "",
+    "about      左上角「关于我」：avatar 是那个圆形头像（编辑器里上传，存 /img/uploads/xxx），",
+    "           text 是页面里那段自我介绍（可以写 Markdown 的粗体、链接），href 默认 /about-me/。",
+    "calendar   首页「甬城晴雨」下面的日历：",
+    "           title        卡片标题，默认「日历」",
+    "           idleText     今天没有特殊日子时右下角小框写的话",
+    "           specialText  有特殊日子时的句式，{title} 会被换成那天事件的名字（例如「{title}」->「篠雨的生日」）",
+    "           events       特殊日子表：键是 YYYY-MM-DD，值是 { title, href, text }",
+    "                        · title  那天是什么日子（如「篠雨的生日」）",
+    "                        · href   点那天的图标跳到哪（留空就只是变颜色、点不动）",
+    "                        · text   可选：这一天的完整文案，写了就不套 specialText",
+    "iceberg    「冰室冰山」板块：image 是那张图，text 是一句话，href 点进去的页面（留空则整块不可点）",
+    "daily      「每日精华」：title 是标题（点它进 href，默认 /salon/），",
+    "           下面那条随机精华来自 src/data/salon.json（按访问者当天日期挑，同一天固定、隔天自动换）。"
+  ],
+  "about": {
+    "title": "关于我",
+    "avatar": "",
+    "text": "",
+    "href": "/about-me/"
+  },
+  "calendar": {
+    "title": "日历",
+    "idleText": "今天依然是等待篠雨的一天",
+    "specialText": "今天是{title}",
+    "events": {}
+  },
+  "iceberg": {
+    "title": "冰室冰山",
+    "image": "",
+    "text": "",
+    "href": ""
+  },
+  "daily": {
+    "title": "每日精华",
+    "href": "/salon/"
+  }
+}

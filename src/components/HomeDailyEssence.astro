@@ -1,0 +1,248 @@
+---
+/**
+ * 首页「每日精华」（右下角那一块）。
+ *
+ * 两件：
+ *   · 标题「每日精华」本身是个链接 -> /salon/（冰室精华页）
+ *   · 标题下面那条随机精华：成员头像 + 成员 + 时间 + 内容（文字或图片）
+ *
+ * "随机"是按**访问者当天**挑的（utils/daily.ts 那套哈希）：
+ *   构建期先按构建那天渲染一条（不跑 JS 也看得见、搜索引擎也抓得到），
+ *   页面脚本再用访问者当天的日期从 /salon.json 里重挑一条 —— 同一天固定不变，
+ *   隔天自动换，而且**不用重新构建站点**。
+ */
+import widgets from '../data/home-widgets.json';
+import { salonEssences, memberName, membersOf } from '../utils/salon';
+import { dailyIndex, localDateKey } from '../utils/daily';
+import { variantUrl } from '../utils/images';
+import { withBase } from '../utils/url';
+
+const daily = (widgets.daily ?? {}) as { title?: string; href?: string };
+const href = withBase(daily.href || '/salon/');
+const builtOn = localDateKey();
+const pick = salonEssences[dailyIndex(builtOn, salonEssences.length)] ?? null;
+/* 一条精华可能属于多个成员（完美对话那种），所以这里是"成员们"而不是"成员" */
+const pickPeople = pick ? membersOf(pick) : [];
+const pickName = pick ? memberName(pick) : '';
+/** 图片走站点图片管线（客户端重挑时用的是 /salon.json 里同样处理过的地址） */
+const pickImage = pick?.images[0] ? variantUrl(pick.images[0], 500) : '';
+---
+
+<section class="daily" data-daily data-built={builtOn} aria-labelledby="daily-title">
+  <header class="daily__head">
+    <h3 class="daily__titleWrap">
+      <a class="daily__title" id="daily-title" href={href}>{daily.title || '每日精华'}</a>
+    </h3>
+    <a class="daily__more" href={href}>看全部 ›</a>
+  </header>
+
+  <article class="daily__card" data-daily-card>
+    {
+      pick ? (
+        <>
+          <div class="daily__who">
+            <span class="daily__faces">
+              {pickPeople.length ? (
+                pickPeople.map((p) => (
+                  <span class="daily__face" title={p.name}>
+                    {p.avatar ? (
+                      <img class="daily__avatar" src={variantUrl(p.avatar, 400)} alt="" loading="lazy" decoding="async" />
+                    ) : (
+                      <span class="daily__avatar daily__avatar--none" aria-hidden="true">
+                        {p.name.slice(0, 1)}
+                      </span>
+                    )}
+                  </span>
+                ))
+              ) : (
+                <span class="daily__face">
+                  <span class="daily__avatar daily__avatar--none" aria-hidden="true">
+                    群
+                  </span>
+                </span>
+              )}
+            </span>
+            <b class="daily__name">{pickName}</b>
+            <time class="daily__time">{pick.date}{pick.time && ` ${pick.time}`}</time>
+          </div>
+          {pick.text && <blockquote class="daily__text">{pick.text}</blockquote>}
+          {pickImage && <img class="daily__pic" src={pickImage} alt="" loading="lazy" decoding="async" />}
+        </>
+      ) : (
+        <p class="daily__text">还没有精华：去编辑器的「精华」面板里添一条。</p>
+      )
+    }
+  </article>
+</section>
+
+<script>
+  /* 用访问者"今天"重挑一条 —— 和服务端同一套挑法（utils/daily.ts） */
+  import { dailyIndex, localDateKey } from '../utils/daily';
+  import { withBase } from '../utils/url';
+
+  type Person = { name: string; avatar: string };
+  type Item = { id: string; member: string; avatar: string; members?: Person[]; date: string; time: string; text: string; image: string };
+
+  const root = document.querySelector<HTMLElement>('[data-daily]');
+  const card = root?.querySelector<HTMLElement>('[data-daily-card]');
+  const built = root?.dataset.built || '';
+
+  if (root && card && localDateKey() !== built) {
+    fetch(withBase('/salon.json'))
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data: { essences?: Item[] } | null) => {
+        const list = data?.essences ?? [];
+        if (!list.length) return;
+        const pick = list[dailyIndex(localDateKey(), list.length)];
+        if (!pick) return;
+        const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        const escAttr = (s: string) => esc(s).replace(/"/g, '&quot;');
+        /* 老 JSON 只有单个 member/avatar；新 JSON 是 members 数组 —— 两种都认 */
+        const people: Person[] = pick.members?.length
+          ? pick.members
+          : pick.member
+            ? [{ name: pick.member, avatar: pick.avatar || '' }]
+            : [];
+        const faces = people.length
+          ? people
+              .map((p) =>
+                p.avatar
+                  ? `<span class="daily__face" title="${escAttr(p.name)}"><img class="daily__avatar" src="${escAttr(p.avatar)}" alt="" loading="lazy" decoding="async"></span>`
+                  : `<span class="daily__face" title="${escAttr(p.name)}"><span class="daily__avatar daily__avatar--none" aria-hidden="true">${esc(p.name.slice(0, 1))}</span></span>`
+              )
+              .join('')
+          : `<span class="daily__face"><span class="daily__avatar daily__avatar--none" aria-hidden="true">群</span></span>`;
+        card.innerHTML =
+          `<div class="daily__who"><span class="daily__faces">${faces}</span><b class="daily__name">${esc(pick.member)}</b>` +
+          `<time class="daily__time">${esc(pick.date)}${pick.time ? ' ' + esc(pick.time) : ''}</time></div>` +
+          (pick.text ? `<blockquote class="daily__text">${esc(pick.text)}</blockquote>` : '') +
+          (pick.image ? `<img class="daily__pic" src="${escAttr(pick.image)}" alt="" loading="lazy" decoding="async">` : '');
+      })
+      .catch(() => {
+        /* 拿不到就留着服务端渲染的那条，不影响别的 */
+      });
+  }
+</script>
+
+<style>
+  .daily {
+    display: flex;
+    flex-direction: column;
+    padding: 0.9rem 0.95rem 1rem;
+    border: 1px solid rgba(255, 120, 190, 0.4);
+    border-radius: 16px;
+    background: linear-gradient(180deg, rgba(38, 6, 54, 0.86), rgba(20, 3, 32, 0.9));
+    box-shadow: 0 14px 40px -22px rgb(0 0 0 / 0.8);
+    backdrop-filter: blur(4px);
+  }
+
+  .daily__head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.6rem;
+    margin-bottom: 0.6rem;
+  }
+  .daily__titleWrap {
+    margin: 0;
+  }
+  .daily__title {
+    font-size: 1rem;
+    letter-spacing: 0.14em;
+    color: #ffd9ef;
+    text-decoration: none;
+    border-bottom: 1px dotted rgba(255, 120, 190, 0.6);
+  }
+  .daily__title:hover {
+    color: #fff;
+    border-bottom-color: #ff4fa3;
+  }
+  .daily__more {
+    font-size: 0.76rem;
+    color: var(--c-text-faint);
+    text-decoration: none;
+  }
+  .daily__more:hover {
+    color: var(--c-accent);
+  }
+
+  /*
+    ⚠ 卡片内部的样式一律 :global()：这块内容在"访问者当天 ≠ 构建那天"时
+    会被页面脚本整段重写（card.innerHTML），重写出来的元素没有 Astro 的
+    data-astro-cid-* 作用域属性 —— 写成普通选择器的话，第二天打开首页
+    会看到一条**没样式**的精华（这个坑本站踩过一次，见 HOME 日历那边）。
+  */
+  :global(.daily__card) {
+    flex: 1;
+    min-height: 0;
+    padding: 0.6rem 0.7rem 0.7rem;
+    border: 1px solid var(--c-border);
+    border-radius: 12px;
+    background: rgba(12, 2, 20, 0.5);
+  }
+  :global(.daily__who) {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.84rem;
+  }
+  /* 多个成员：头像叠着排（完美对话那种一条好几个人的） */
+  :global(.daily__faces) {
+    display: inline-flex;
+    align-items: center;
+    flex: none;
+  }
+  :global(.daily__face) {
+    display: inline-flex;
+    flex: none;
+  }
+  :global(.daily__face + .daily__face) {
+    margin-left: -7px;
+  }
+  :global(.daily__avatar) {
+    width: 26px;
+    height: 26px;
+    flex: none;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 1px solid rgba(255, 120, 190, 0.5);
+    background: var(--c-bg-sunken);
+  }
+  :global(.daily__avatar--none) {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--c-accent);
+    font-size: 0.76rem;
+  }
+  :global(.daily__name) {
+    color: #fff;
+  }
+  :global(.daily__time) {
+    margin-left: auto;
+    color: var(--c-text-faint);
+    font-variant-numeric: tabular-nums;
+  }
+  :global(.daily__text) {
+    margin: 0.5rem 0 0;
+    color: var(--c-text);
+    font-size: 0.88rem;
+    line-height: 1.75;
+    white-space: pre-wrap;
+    word-break: break-word;
+    /* 首页这一块不滚动，太长就截断；点「看全部」进去看完整的 */
+    display: -webkit-box;
+    -webkit-line-clamp: 5;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  :global(.daily__pic) {
+    display: block;
+    width: 100%;
+    max-height: 180px;
+    margin-top: 0.5rem;
+    border: 1px solid var(--c-border-strong);
+    border-radius: 10px;
+    object-fit: cover;
+  }
+</style>

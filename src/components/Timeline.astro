@@ -29,9 +29,18 @@ interface Props {
    * 没有的话传 null，脚本会退回到「当前屏幕上那个成分」或者第一个时间点。
    */
   defaultParam?: number | null;
+  /**
+   * **常驻模式**：不从右边滑出来，直接当普通块摆在页面里，没有书签、没有关闭按钮，
+   * 一进页面就是开的（冰室精华页左边那条用它 —— 用户要求"常态显示、无法关闭"）。
+   *
+   * 页面得自己给这个组件一个宽度（比如放在左栏里），高度由组件内部
+   * 按 clamp(320px,58vh,620px) 定死 —— 弧线的几何是按 .tl__body 的实际
+   * 高度算的，不给高度会算成 0、整条轴塌成一点。
+   */
+  pinned?: boolean;
 }
 
-const { timeline: tl, defaultParam = null } = Astro.props;
+const { timeline: tl, defaultParam = null, pinned = false } = Astro.props;
 
 /** 站内链接补上 base；站外原样（外链开新窗口，见下面的标记） */
 const linkHref = (href: string) =>
@@ -145,9 +154,10 @@ const initialScaleText = `一刻度约 ${
 ---
 
 <div
-  class:list={['tl', 'is-off-left-moments', 'is-off-right-moments']}
+  class:list={['tl', 'is-off-left-moments', 'is-off-right-moments', pinned && 'is-pinned']}
   data-tl
   data-tl-id={tl.id}
+  data-tl-pinned={pinned ? '1' : undefined}
   data-tl-min={spanMin}
   data-tl-max={spanMax}
   data-tl-grad={gradId}
@@ -158,22 +168,32 @@ const initialScaleText = `一刻度约 ${
     关着的时候只在右边沿露出来的那个书签。
     上面写的是**这条时间轴自己的名字**（比如「花娅年代记」），不是「时间轴」
     三个字 —— 一个页面挂着哪条轴，光看书签就该知道，不用点开。
-  */}
-  <button
-    class="tl__tab"
-    type="button"
-    data-tl-toggle
-    aria-expanded="false"
-    aria-controls={`tl-panel-${tl.id}`}
-    title={`打开${tl.title}`}
-  >
-    <span class="tl__tabText">{tl.title}</span>
-  </button>
 
-  <aside class="tl__panel" id={`tl-panel-${tl.id}`} data-tl-panel hidden aria-label={tl.title}>
+    常驻模式没有这个书签 —— 它一直在那儿，不需要入口。
+  */}
+  {!pinned && (
+    <button
+      class="tl__tab"
+      type="button"
+      data-tl-toggle
+      aria-expanded="false"
+      aria-controls={`tl-panel-${tl.id}`}
+      title={`打开${tl.title}`}
+    >
+      <span class="tl__tabText">{tl.title}</span>
+    </button>
+  )}
+
+  <aside
+    class="tl__panel"
+    id={`tl-panel-${tl.id}`}
+    data-tl-panel
+    hidden={pinned ? undefined : true}
+    aria-label={tl.title}
+  >
     <div class="tl__head">
       <span class="tl__title">{tl.title}</span>
-      <button class="tl__close" type="button" data-tl-close aria-label="收起时间轴">×</button>
+      {!pinned && <button class="tl__close" type="button" data-tl-close aria-label="收起时间轴">×</button>}
     </div>
 
     <div class="tl__body" data-tl-body>
@@ -444,6 +464,35 @@ const initialScaleText = `一刻度约 ${
   }
   .tl.is-open .tl__panel {
     transform: translateX(0);
+  }
+
+  /*
+    ---------- 常驻模式（冰室精华页左边那条）----------
+
+    不从右边滑出来、也没有书签和关闭按钮：它就当普通块摆在页面里，
+    一进页面就是开的（用户要求"常态显示在原网页左边时间轴那个位置、无法关闭"）。
+
+    高度必须给死：弧线的几何是按 .tl__body 的实际高度算的（measure() 里
+    H = body.clientHeight），靠 flex:1 在一个没有固定高度的容器里会算成 0，
+    整条轴塌成一个点。所以这里写 clamp，页面只负责给宽度。
+  */
+  .tl.is-pinned .tl__panel {
+    position: static;
+    width: 100%;
+    height: auto;
+    transform: none;
+    border: 1px solid rgba(255, 120, 190, 0.42);
+    border-radius: 14px;
+    box-shadow: none;
+    overflow: hidden;
+  }
+  .tl.is-pinned .tl__body {
+    flex: none;
+    height: clamp(320px, 58vh, 620px);
+  }
+  .tl.is-pinned .tl__tab,
+  .tl.is-pinned .tl__close {
+    display: none;
   }
 
   /*
@@ -813,6 +862,11 @@ const initialScaleText = `一刻度约 ${
   .tl__tipMark {
     margin-left: auto;
     color: #ff9ad5;
+  }
+  /* 合并组行数封顶后那行"…还有 N 条" */
+  .tl__tipMore {
+    color: var(--c-text-faint);
+    font-size: 0.72rem;
   }
   /*
     提示卡里那一行（名字 + 日期）本身是链接（这个点填了链接才有）：
@@ -1195,6 +1249,8 @@ const initialScaleText = `一刻度约 ${
   const TICK = 7;
   /** 刻度间隔（px，沿轴） */
   const TICK_STEP = 26;
+  /** 合并成一组时，提示卡里最多列几条（超出的用一行"…还有 N 条"） */
+  const MAX_TIP_ROWS = 12;
 
   /**
    * 比例尺的两个端点：最左一刻度 = 一天，最右一刻度 = 一年。
@@ -1288,7 +1344,12 @@ const initialScaleText = `一刻度约 ${
     const tab = root.querySelector<HTMLButtonElement>('[data-tl-toggle]');
     const nowBox = root.querySelector<HTMLElement>('[data-tl-now]');
     const nowDate = root.querySelector<HTMLElement>('[data-tl-nowdate]');
-    if (!panel || !body || !arcPath || !rulerPath || !tab) continue;
+    /*
+      常驻模式（冰室精华页左边那条）没有书签、也不该被关掉：
+      没有 tab 就不要求它存在，后面的 tab 操作一律用 ?. 兜住。
+    */
+    const pinned = root.dataset.tlPinned === '1';
+    if (!panel || !body || !arcPath || !rulerPath || (!tab && !pinned)) continue;
 
     const tlId = root.dataset.tlId ?? '';
     /**
@@ -1747,13 +1808,27 @@ const initialScaleText = `一刻度约 ${
 
         const ul = document.createElement('ul');
         ul.className = 'tl__tipList';
-        for (const m of members) {
+        /*
+          合并组里的行数**要封顶**。
+          因为一屏挤得下多少个点取决于比例尺，极端情况下（比如一条轴几百个点、
+          又用了很小的比例尺）整条轴会并成几个巨组 —— 实测有一组塞了 93 行，
+          整页 DOM 因此涨到 21 万节点。这里最多列前 MAX_TIP_ROWS 条，剩下的
+          用一行"…还有 N 条"交代，提示卡不至于变成一堵墙、DOM 也不会爆。
+        */
+        const shown = members.slice(0, MAX_TIP_ROWS);
+        for (const m of shown) {
           const li = document.createElement('li');
           const row = tipRow(m, true);
           const link = tipLink(m, row);
           if (link) li.append(link);
           else li.append(...row);
           ul.append(li);
+        }
+        if (members.length > shown.length) {
+          const more = document.createElement('li');
+          more.className = 'tl__tipMore';
+          more.textContent = `…还有 ${members.length - shown.length} 条`;
+          ul.append(more);
         }
         tip.append(ul);
       }
@@ -2072,8 +2147,9 @@ const initialScaleText = `一刻度约 ${
       open = on;
       root.classList.toggle('is-open', on);
       panel!.hidden = !on;
-      tab!.setAttribute('aria-expanded', on ? 'true' : 'false');
-      remember(on);
+      tab?.setAttribute('aria-expanded', on ? 'true' : 'false');
+      // 常驻模式不记开合状态：它一直开着，没有"下次打开"这回事
+      if (!pinned) remember(on);
       // 面板收起来时把手机端那张提示卡一起收掉（下次打开不该还亮着）
       if (!on) closeTip();
       if (on) {
@@ -2104,7 +2180,7 @@ const initialScaleText = `一刻度约 ${
       }
     }
 
-    tab.addEventListener('click', () => setOpen(true));
+    tab?.addEventListener('click', () => setOpen(true));
     root.querySelector<HTMLButtonElement>('[data-tl-close]')?.addEventListener('click', () =>
       setOpen(false, false)
     );
@@ -2273,6 +2349,8 @@ const initialScaleText = `一刻度约 ${
     } catch {
       recall = false;
     }
+    // 常驻模式一进页面就是开的，也不看 sessionStorage
+    if (pinned) recall = true;
 
     paintScale();
     paintLabels();

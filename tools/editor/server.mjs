@@ -990,6 +990,76 @@ async function handleApi(req, res, url) {
     return sendJson(res, 200, { ok: true, built, ms, output, dropped: data.dropped });
   }
 
+  // ---- 首页那四块（src/data/home-widgets.json）----
+  // 「日历 / 关于我 / 冰室冰山 / 每日精华」三个面板都写这一个文件，所以
+  // POST 是**逐块 merge**：只清洗请求里带来的那几块，daily 和 _readme 原样留着。
+  if (route === '/api/widgets' && req.method === 'GET') {
+    return sendJson(res, 200, await readWidgets());
+  }
+  if (route === '/api/widgets' && req.method === 'POST') {
+    const payload = await readBody(req);
+    const current = await readWidgets();
+    const data = cleanWidgets(payload, current);
+    try {
+      await fs.copyFile(WIDGETS_FILE, `${WIDGETS_FILE}.bak`);
+    } catch {
+      /* 第一次还没有这个文件，正常 */
+    }
+    await fs.writeFile(WIDGETS_FILE, `${JSON.stringify(data.file, null, 2)}\n`, 'utf8');
+    // 和导航一样：写完就重建，构建失败不算保存失败
+    let built = false;
+    let ms = 0;
+    let output = '';
+    try {
+      const r = await runBuild();
+      built = true;
+      ms = r.ms;
+      output = r.output;
+    } catch (err) {
+      output = String(err?.message || err);
+    }
+    return sendJson(res, 200, { ok: true, built, ms, output, dropped: data.dropped });
+  }
+
+  // ---- 冰室精华（src/data/salon.json：成员 / 年代 / 精华）----
+  // 「成员」和「精华」两个面板都写这一个文件（精华里只存 memberId，
+  // 名字和头像全在 members 里现查），所以这里也是**逐块 merge**：
+  // 请求里没带的块（比如只管成员时的那 735 条精华）原样保留，绝不凭空清空。
+  if (route === '/api/salon' && req.method === 'GET') {
+    return sendJson(res, 200, await readSalon());
+  }
+  if (route === '/api/salon' && req.method === 'POST') {
+    const payload = await readBody(req);
+    const current = await readSalon();
+    const data = cleanSalon(payload, current);
+    try {
+      await fs.copyFile(SALON_FILE, `${SALON_FILE}.bak`);
+    } catch {
+      /* 第一次还没有这个文件，正常 */
+    }
+    await fs.writeFile(SALON_FILE, `${JSON.stringify(data.file, null, 2)}\n`, 'utf8');
+    let built = false;
+    let ms = 0;
+    let output = '';
+    try {
+      const r = await runBuild();
+      built = true;
+      ms = r.ms;
+      output = r.output;
+    } catch (err) {
+      output = String(err?.message || err);
+    }
+    return sendJson(res, 200, {
+      ok: true,
+      built,
+      ms,
+      output,
+      updated: data.file.updated,
+      counts: { members: data.file.members.length, essences: data.file.essences.length },
+      dropped: data.dropped,
+    });
+  }
+
   // ---- 锚点清单（构建产物 dist/anchors.json）----
   // 页面里那些能被跳到的位置：标题（id 就是标题文字）、每个内容块（id="blk-<块id>"）。
   // 编辑器里「选页面里的位置…」那个小面板靠它，所以没有产物时返回空清单 + 一句说明，
@@ -2059,6 +2129,363 @@ async function writeBoards(payload) {
 }
 
 /* ------------------------------------------------------------------
+   首页那四块（src/data/home-widgets.json）
+
+   日历 / 关于我 / 冰室冰山 / 每日精华。站点那边首页、页头的小圆片、
+   /about-me/、/iceberg/ 都直接 import 这个文件，所以编辑器写它就是
+   在写站点数据 —— 必填字段缺了就**整块保持原样**，不能把页面写成一片空白。
+
+   「每日精华」没有独立面板：它只有标题和链接，站点按访问者当天从
+   salon.json 里挑一条来显示，面板要管的是成员表（见下面 salon 那段）。
+   这里写回时把它原样带着走，免得被其他三块的面板顺手抹掉。
+   ------------------------------------------------------------------ */
+const WIDGETS_FILE = path.join(PROJECT_ROOT, 'src', 'data', 'home-widgets.json');
+
+async function readWidgets() {
+  const text = await fs.readFile(WIDGETS_FILE, 'utf8');
+  return JSON.parse(text);
+}
+
+/** 日期键：只认 YYYY-MM-DD，别的当没填 */
+const WIDGET_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * 首页四块的清洗。
+ *
+ * 逐块 merge：请求里**没带**的块（`payload.calendar === undefined`）原样保留；
+ * 带了但必填项不合法（比如 about.title 空了）也退回盘上那一份 —— 标题是页面
+ * 上的大字，空标题只会让人以为站点坏了。
+ *
+ * 日历事件表：键必须是 YYYY-MM-DD，title 必须有（没有 title 的那天在页面上
+ * 只是个普通格子，存它没意义）。href / text 可空，空字符串照样写 ——
+ * 那是「清空这一项」的正常结果，不是缺字段。
+ */
+function cleanWidgets(payload, current) {
+  if (!payload || typeof payload !== 'object') {
+    throw httpError(400, '数据格式不对，需要 { calendar, about, iceberg } 里的任意几块');
+  }
+  const dropped = { events: 0 };
+  const file = {};
+
+  // _readme 是给手改 JSON 的人看的说明书，请求里带新的就用新的（一般不带来）
+  const readme = Array.isArray(payload._readme) ? payload._readme : current._readme;
+  if (Array.isArray(readme)) file._readme = readme;
+
+  const has = (k) => Object.prototype.hasOwnProperty.call(payload, k);
+
+  /* ---- about ---- */
+  if (has('about')) {
+    const raw = payload.about && typeof payload.about === 'object' ? payload.about : {};
+    const title = String(raw.title ?? '').trim();
+    if (!title) throw httpError(400, '「关于我」的标题不能为空');
+    file.about = {
+      title,
+      avatar: String(raw.avatar ?? '').trim(),
+      text: String(raw.text ?? ''),
+      href: String(raw.href ?? '').trim(),
+    };
+  } else if (current.about) {
+    file.about = current.about;
+  }
+
+  /* ---- calendar ---- */
+  if (has('calendar')) {
+    const raw = payload.calendar && typeof payload.calendar === 'object' ? payload.calendar : {};
+    const events = {};
+    for (const [key, val] of Object.entries(raw.events && typeof raw.events === 'object' ? raw.events : {})) {
+      const date = String(key).trim();
+      if (!WIDGET_DATE.test(date) || !val || typeof val !== 'object') { dropped.events++; continue; }
+      const title = String(val.title ?? '').trim();
+      if (!title) { dropped.events++; continue; }
+      events[date] = {
+        title,
+        href: String(val.href ?? '').trim(),
+        text: String(val.text ?? ''),
+      };
+    }
+    file.calendar = {
+      title: String(raw.title ?? '').trim() || '日历',
+      idleText: String(raw.idleText ?? '').trim(),
+      specialText: String(raw.specialText ?? '').trim() || '今天是{title}',
+      events,
+    };
+  } else if (current.calendar) {
+    file.calendar = current.calendar;
+  }
+
+  /* ---- iceberg ---- */
+  if (has('iceberg')) {
+    const raw = payload.iceberg && typeof payload.iceberg === 'object' ? payload.iceberg : {};
+    const title = String(raw.title ?? '').trim();
+    if (!title) throw httpError(400, '「冰室冰山」的标题不能为空');
+    file.iceberg = {
+      title,
+      image: String(raw.image ?? '').trim(),
+      text: String(raw.text ?? '').trim(),
+      href: String(raw.href ?? '').trim(),
+    };
+  } else if (current.iceberg) {
+    file.iceberg = current.iceberg;
+  }
+
+  /* ---- daily：面板不改它，原样带走 ---- */
+  if (has('daily') && payload.daily && typeof payload.daily === 'object') {
+    file.daily = {
+      title: String(payload.daily.title ?? '').trim() || '每日精华',
+      href: String(payload.daily.href ?? '').trim() || '/salon/',
+    };
+  } else if (current.daily) {
+    file.daily = current.daily;
+  }
+
+  return { file, dropped };
+}
+
+/* ------------------------------------------------------------------
+   冰室精华（src/data/salon.json）
+
+   三块数据：
+     members   成员表：id / name / avatar（头像和名字只存这儿）
+     eras      五个年代：id / title / from / to / note
+     essences  精华条目：id / memberIds / kind / date / time / text / images / eraId
+
+   最关键的一条：**精华里只存成员 id（memberIds），不冗余名字和头像**。
+   一条精华可以有多个成员（memberIds 是一个数组，顺序 = 对话里出现的顺序）。
+   站点渲染时（src/utils/salon.ts 的 memberName / memberAvatar）现查成员表，
+   所以这里改一个成员的名字 / 换一张头像，他所有的精华（包括首页那条
+   每日精华）一起跟着变。这条约束靠「写回时只挑白名单字段」来保证 ——
+   前端就算多传个 name 上来也不会被写进 essences。
+
+   eraId 不信任前端传的值，一律**按日期落段**（eras 的 from/to 包含该日期）。
+   数据里存两份真相（日期和年代）迟早会对不上。
+   ------------------------------------------------------------------ */
+const SALON_FILE = path.join(PROJECT_ROOT, 'src', 'data', 'salon.json');
+
+async function readSalon() {
+  const text = await fs.readFile(SALON_FILE, 'utf8');
+  const data = JSON.parse(text);
+  return {
+    _readme: Array.isArray(data._readme) ? data._readme : [],
+    title: String(data.title || '冰室群精华'),
+    updated: String(data.updated || ''),
+    note: String(data.note || ''),
+    eras: Array.isArray(data.eras) ? data.eras : [],
+    members: Array.isArray(data.members) ? data.members : [],
+    essences: Array.isArray(data.essences) ? data.essences : [],
+  };
+}
+
+/** 某一天落在哪个年代里；落不进任何一段就是空串（面板上显示「不在任何年代里」） */
+function eraIdForDate(date, eras) {
+  const d = String(date || '');
+  if (!WIDGET_DATE.test(d)) return '';
+  for (const era of eras) {
+    const from = String(era?.from || '');
+    const to = String(era?.to || '');
+    if (from && to && d >= from && d <= to) return String(era.id || '');
+  }
+  return '';
+}
+
+/**
+ * 精华 / 成员清洗。
+ *
+ * 逐块 merge（同 home-widgets）：请求里没带 members 就不动成员表，
+ * 没带 essences 就不动那 735 条 —— 「成员」面板保存时不会把精华碰掉，
+ * 反过来也一样。
+ *
+ * 只有**结构非法**才丢：精华必须有日期、成员名必须非空。id 缺了或者撞了
+ * 就补一个新的（id 是精华之间互相指认、以及时间轴上 #锚点 的依据，不能丢）。
+ * 成员 id 缺失时补 mNN-xxxx：补出来的 id 在写回前会把引用它的精华一起对齐，
+ * 不会出现「精华指向一个不存在的成员」。
+ */
+function cleanSalon(payload, current) {
+  if (!payload || typeof payload !== 'object') {
+    throw httpError(400, '数据格式不对，需要 { members: [...] } 或 { essences: [...] }');
+  }
+  const dropped = { members: 0, essences: 0 };
+  const has = (k) => Object.prototype.hasOwnProperty.call(payload, k);
+
+  const readme = Array.isArray(payload._readme) ? payload._readme : current._readme;
+  const file = {};
+  if (Array.isArray(readme)) file._readme = readme;
+  file.title = String(payload.title ?? '').trim() || current.title || '冰室群精华';
+  file.note = has('note') ? String(payload.note ?? '') : current.note;
+  // 「保存时 updated 更新成今天」—— 面板改了什么都是改了这一份数据，
+  // 日期跟着变是对的（旧值只在读盘时兜底，写回一律刷新）
+  file.updated = formatDateParts(new Date()).date;
+  file.eras = current.eras;
+
+  /* ---- members ---- */
+  let members;
+  if (has('members')) {
+    members = [];
+    const used = new Set();
+    for (const rm of Array.isArray(payload.members) ? payload.members : []) {
+      if (!rm || typeof rm !== 'object') { dropped.members++; continue; }
+      let id = String(rm.id || '').trim();
+      const name = String(rm.name || '').trim();
+      if (!name) { dropped.members++; continue; }
+      if (!id || used.has(id)) id = newMemberId(used);
+      used.add(id);
+      members.push({ id, name, avatar: String(rm.avatar || '').trim() });
+    }
+  } else {
+    members = current.members.map((m) => ({
+      id: String(m?.id || ''),
+      name: String(m?.name || ''),
+      avatar: String(m?.avatar || ''),
+    }));
+  }
+  file.members = members;
+
+  /* ---- essences ---- */
+  const memberIds = new Set(members.map((m) => m.id));
+  if (has('essences')) {
+    /*
+      `used` 只装**已经收下的**那些 id。
+      千万不能先把整个 payload 的 id 都塞进来"占位" —— 那样下面
+      `used.has(id)` 对每一条都是 true，735 条精华会被整份重新编号
+      （踩过一次：保存一次，全文件的 id 全变了，时间轴上的 #锚点也跟着断）。
+      真撞车（两条同一个 id）在下面按顺序收的时候自然会被发现。
+    */
+    const used = new Set();
+    const rawList = Array.isArray(payload.essences) ? payload.essences : [];
+    const essences = [];
+    /** 盘上那份按 id 索引：用来把编辑器不认识的字段原样带回去（见下面） */
+    const oldById = new Map(
+      (current.essences ?? []).filter((e) => e && e.id).map((e) => [String(e.id), e]),
+    );
+    for (const re of rawList) {
+      if (!re || typeof re !== 'object') { dropped.essences++; continue; }
+      const date = String(re.date || '').trim();
+      if (!WIDGET_DATE.test(date)) { dropped.essences++; continue; }
+      let id = String(re.id || '').trim();
+      if (!id || used.has(id)) id = nextEssenceId(used);
+      used.add(id);
+      const time = String(re.time || '').trim();
+      const item = {
+        id,
+        /*
+          一条精华可以有**多个成员**（比如 2023-07-19 那场完美对话 = 虹星 + 花花）。
+          memberIds 的顺序 = 对话里出现的顺序，所以只做「剔掉不存在的成员 + 去重」，
+          **不排序**。老数据只写了单个 memberId 就归一到 [memberId]；两个都没有
+          就是空数组 —— 空数组合法，绝不能因此把这条精华丢掉。
+        */
+        memberIds: cleanMemberIds(re, memberIds),
+        kind: cleanEssenceKind(re, current),
+        date,
+        time: /^\d{1,2}:\d{2}$/.test(time) ? time : '',
+        text: String(re.text ?? ''),
+        images: (Array.isArray(re.images) ? re.images : []).map((s) => String(s ?? '').trim()).filter(Boolean),
+        eraId: eraIdForDate(date, file.eras),
+      };
+      // OCR 标记：写了才带上（老数据没这一项，不去凭空加）
+      if (re.ocr === true) item.ocr = true;
+      /*
+        这条精华在盘上本来就有的字段，除了上面这些以外**原样带着走**。
+        为什么要留这一手：数据是站点那边生成的，字段会加（`ocr` 就是这么冒出来的）——
+        编辑器不认识的字段一律保留，用户点一次保存就不会把新字段洗掉。
+        新条目（盘上没这个 id）自然没有可带的，只有白名单那几项。
+      */
+      const old = oldById.get(id);
+      if (old) {
+        for (const [k, v] of Object.entries(old)) {
+          if (!(k in item)) item[k] = v;
+        }
+      }
+      essences.push(item);
+    }
+    /*
+      顺序：**照盘上原来的顺序**（也就是客户端传上来的顺序）走，不在这儿重排。
+      站点那边（src/utils/salon.ts）自己会按 日期 → 时刻 → id 排一次，
+      编辑器再排一遍只会让"保存前看一眼、保存后还是那样"变得不成立，
+      而且原样保存也会产生一整份无意义的顺序 diff（踩过一次）。
+      新加的条目排在它被插进去的位置（客户端就是 push 到末尾）。
+    */
+    file.essences = essences;
+  } else {
+    // 没带精华就原样留着，但成员表和 eraId 顺手按现在这份对齐一遍
+    file.essences = current.essences.map((e) => {
+      const item = {
+        id: String(e?.id || ''),
+        memberIds: cleanMemberIds(e, memberIds),
+        kind: cleanEssenceKind(e, current),
+        date: String(e?.date || ''),
+        time: String(e?.time || ''),
+        text: String(e?.text ?? ''),
+        images: Array.isArray(e?.images) ? e.images : [],
+        eraId: eraIdForDate(e?.date, file.eras),
+      };
+      if (e?.ocr === true) item.ocr = true;
+      // 白名单以外的字段（站点那边新加的）原样带着走
+      for (const [k, v] of Object.entries(e ?? {})) if (!(k in item)) item[k] = v;
+      return item;
+    });
+  }
+
+  return { file, dropped };
+}
+
+/**
+ * 精华的种类：只认 text / perfect / ai，别的（含缺省）一律当 text
+ *
+ * `ocr` 不是种类，是"这条是从图片 OCR 出来的"标记（站点生成数据时打的）——
+ * 编辑器不显示它，但写回时**必须原样保留**，所以单独列在这儿。
+ */
+const ESSENCE_KINDS = new Set(['text', 'perfect', 'ai']);
+function cleanEssenceKind(raw, fallbackOwner) {
+  const k = String(raw?.kind ?? '').trim();
+  if (ESSENCE_KINDS.has(k)) return k;
+  // 没写 kind 的老数据：保留它原来那一份里的值，别凭空改写
+  const old = fallbackOwner?.essences?.find?.((e) => e && e.id === raw?.id);
+  const oldKind = String(old?.kind ?? '').trim();
+  return ESSENCE_KINDS.has(oldKind) ? oldKind : 'text';
+}
+
+/**
+ * 一条精华的成员列表。
+ *
+ * 收 `memberIds`（新数据）和 `memberId`（老数据）两种写法：
+ *   · 只保留**成员表里真有**的 id —— 指向已删掉的成员的引用留着也没用，
+ *     站点上一样渲染成「未知成员」，不如在这儿清掉；
+ *   · 去重，但**保持原顺序**（顺序 = 对话里出现的顺序，有意义）；
+ *   · 只传了 memberId 就归一到 [memberId]；
+ *   · 两个都没有 → `[]`。空数组合法，不因此丢这条精华。
+ */
+function cleanMemberIds(raw, validIds) {
+  const out = [];
+  const push = (v) => {
+    const id = String(v ?? '').trim();
+    if (!id || !validIds.has(id) || out.includes(id)) return;
+    out.push(id);
+  };
+  if (Array.isArray(raw?.memberIds)) for (const v of raw.memberIds) push(v);
+  // 老字段兜底：没带 memberIds 时才看 memberId（带了空数组也算「明确说没有成员」）
+  if (!out.length && !Array.isArray(raw?.memberIds)) push(raw?.memberId);
+  return out;
+}
+
+/** 新成员 id：`mNN-xxxx`，和现有那批（m01-4780…）长一样，撞了就再摇一个 */
+function newMemberId(used) {
+  for (let i = 0; i < 200; i++) {
+    const n = String(used.size + 1 + i).padStart(2, '0');
+    const id = `m${n}-${randomBytes(2).toString('hex')}`;
+    if (!used.has(id)) return id;
+  }
+  return `m-${Date.now().toString(36)}`;
+}
+
+/** 新精华 id：现有的是 e0001…e0735，所以从 e0001 往后找第一个没人用的 */
+function nextEssenceId(used) {
+  for (let n = 1; n <= 9999; n++) {
+    const id = `e${String(n).padStart(4, '0')}`;
+    if (!used.has(id)) return id;
+  }
+  return `e-${Date.now().toString(36)}`;
+}
+
+/* ------------------------------------------------------------------
    音乐 / 歌单
 
    数据放在 src/data/music.json：tracks 是曲库，pages 按「页面 key」
@@ -2523,6 +2950,13 @@ async function handleMusicRemove(res, payload) {
 const IMG_DIRS = new Map([
   ['uploads', UPLOAD_DIR],
   ['home', HOME_IMG_DIR],
+  /*
+    冰室精华自带的那些图（public/img/salon/*.jpg）。编辑器里「精华」面板的
+    图片格、「成员」面板的头像、（老数据里的）成员缩略图都指向 /img/salon/...，
+    不放行的话缩略图全是 404 —— 文件明明在磁盘上，只是没暴露出来。
+    只开这一层、只放行图片扩展名，和 uploads / home 一个规矩。
+  */
+  ['salon', path.join(PROJECT_ROOT, 'public', 'img', 'salon')],
 ]);
 
 /**
