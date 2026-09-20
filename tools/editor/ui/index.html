@@ -10,6 +10,22 @@
   <body data-type="posts">
     <!-- ============ 顶栏 ============ -->
     <header class="topbar">
+      <!--
+        左上角总入口：一个按钮调出所有工作面（页面 / 独立页面 / 子版块 / 导航 /
+        时间轴 / 音乐 / 排版），点哪一项就直接切过去。菜单挂在 body 上，
+        所以面板开着的时候它照样浮在最上面，不用先关掉这个再开那个。
+      -->
+      <button
+        type="button"
+        class="btn btn--ghost hub__btn"
+        id="btn-hub"
+        aria-haspopup="true"
+        aria-expanded="false"
+        title="工作台总入口：页面 / 独立页面 / 子版块 / 导航 / 时间轴 / 音乐 / 排版"
+      >
+        <span class="hub__icon" aria-hidden="true">☰</span> 工作台
+      </button>
+
       <div class="topbar__brand">
         <span class="brand__mark" aria-hidden="true"></span>
         <span class="brand__text">
@@ -34,6 +50,9 @@
         </button>
         <button type="button" class="btn btn--ghost" id="btn-timelines" title="新建 / 编辑时间轴">
           时间轴
+        </button>
+        <button type="button" class="btn btn--ghost" id="btn-navs" title="建可复用的导航分类（大分类），页面里引用它">
+          导航
         </button>
         <button type="button" class="btn btn--ghost" id="btn-music" title="给每个页面配一份歌单">
           音乐
@@ -257,6 +276,7 @@
           换父级**不会改 id**（文章归类靠 id），但地址会跟着树变，除非那一项自己写了地址。
           保存后写进 <code>src/data/home-boards.json</code>，重新构建即可生效。
         </p>
+        <span class="wsswitch" data-ws-slot="boards"></span>
         <div id="boards-editor"></div>
         <div class="modal__actions">
           <button type="button" class="btn btn--ghost" data-close="1">取消</button>
@@ -276,10 +296,31 @@
           同一个刻度上两边各挂一个事件，就是双线叙事。
           右边是**实时预览**：改一个字段就跟着变，不用先存盘再打开页面看。
         </p>
+        <span class="wsswitch" data-ws-slot="timelines"></span>
         <div id="tl-editor"></div>
         <div class="modal__actions">
           <button type="button" class="btn btn--ghost" data-close="1">取消</button>
           <button type="button" class="btn btn--primary" id="tl-save">保存并重新构建</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ 导航分类库弹窗 ============ -->
+    <div class="modal" id="navs-modal" hidden>
+      <div class="modal__mask" data-close="1"></div>
+      <div class="modal__panel modal__panel--navs" role="dialog" aria-modal="true" aria-label="导航分类库">
+        <h3 class="modal__title">导航 · 分类库</h3>
+        <p class="hint">
+          导航是<strong>先在这里建分类、页面再引用</strong>：一个大分类（比如「实体」）只录一次，
+          页面里存的是它的 id —— 所以同一个大分类能给好几个页面用（A 页可能挂「甲·乙」、
+          B 页挂「甲·丙」），之后改分类内容，那些页面<strong>一起跟着变</strong>。
+          页面那边在「页面」工作台的内容块里加「＋ 导航」勾选要用哪几个。
+        </p>
+        <span class="wsswitch" data-ws-slot="navs"></span>
+        <div id="navs-editor"></div>
+        <div class="modal__actions">
+          <button type="button" class="btn btn--ghost" data-close="1">取消</button>
+          <button type="button" class="btn btn--primary" id="navs-save">保存并重新构建</button>
         </div>
       </div>
     </div>
@@ -295,6 +336,7 @@
             数据写进 <code>src/data/music.json</code>，音频存在
             <code>public/audio/uploads/</code>。
           </span>
+          <span class="wsswitch" data-ws-slot="music"></span>
         </div>
 
         <p class="hint" id="music-note">
@@ -353,6 +395,7 @@
             左边挑页面，中间加字加图加子页面，右边就是这一页的样子。
             保存会写进 <code>src/data/home-boards.json</code> 并自动重新构建。
           </span>
+          <span class="wsswitch" data-ws-slot="pages"></span>
         </div>
 
         <div class="pstudio">
@@ -369,10 +412,15 @@
           </aside>
 
           <!-- 中：这一页的全部字段 -->
-          <section class="pstudio__col pstudio__col--edit">
+          <section class="pstudio__col pstudio__col--edit" id="pw-edit-col">
             <div id="pw-fields"></div>
 
-            <div class="pw-block">
+            <!--
+              下面这三块（字段 / 内容块 / 子版块）和右栏、状态栏是**可以整块搬到
+              独立页面工作台**去的：那边是同一套编辑控件，搬过去用的是同一份数据，
+              不用维护第二份（见 app.js 的 mountStudioHost）。
+            -->
+            <div class="pw-block" id="pw-content-block">
               <div class="pw-block__head">
                 <span class="pw-block__title">这一页的内容</span>
                 <span class="pw-block__note" id="pw-content-note"></span>
@@ -380,11 +428,15 @@
               <p class="hint">
                 下面这些块就是这一页从上到下的内容。<strong>不写内容</strong>的话，
                 这一页会自动把子版块一条条铺开（见最下面的「子版块」）。
+                <strong>想插在某一段后面</strong>：点那一段头上的「＋」，再点下面那排
+                「＋ 文字 / ＋ 图片 / …」（不点「＋」就还是加在最后）。
+                <strong>想换顺序</strong>：按住那一段头上的 <code>⠿</code> 上下拖，
+                拖到列表上下边缘会自动滚动；也可以在把手上按 ↑ / ↓。
               </p>
               <div id="page-editor"></div>
             </div>
 
-            <div class="pw-block">
+            <div class="pw-block" id="pw-kids-block">
               <div class="pw-block__head">
                 <span class="pw-block__title">这一页的子版块</span>
                 <span class="pw-block__note">顺序就是页面上的顺序</span>
@@ -409,8 +461,8 @@
           </section>
 
           <!-- 右：这一页长什么样 -->
-          <section class="pstudio__col pstudio__col--preview">
-            <div class="pstudio__colhead">
+          <section class="pstudio__col pstudio__col--preview" id="pw-preview-col">
+            <div class="pstudio__colhead" id="pw-preview-head">
               <span id="pw-url" class="pw-url">—</span>
               <button type="button" class="btn btn--ghost boardedit__mini" id="pw-rebuild" title="重新构建站点并刷新右边的预览">
                 重新构建
@@ -418,17 +470,69 @@
               <button type="button" class="btn btn--ghost boardedit__mini" id="pw-open" title="在新标签页里打开这一页">
                 新标签打开
               </button>
+              <button type="button" class="btn btn--ghost boardedit__mini" id="pw-copy-url" title="复制这一页的站内地址（粘到正文链接 / 地图图钉 / 时间轴的跳转地址里）">
+                复制地址
+              </button>
             </div>
-            <div class="pw-frame-wrap">
+            <div class="pw-frame-wrap" id="pw-frame-wrap">
               <iframe id="pw-frame" title="页面预览"></iframe>
             </div>
           </section>
         </div>
 
-        <div class="modal__actions">
+        <div class="modal__actions" id="pw-actions">
           <span class="pstudio__status" id="pw-status"></span>
           <button type="button" class="btn btn--ghost" data-close="1">关闭</button>
           <button type="button" class="btn btn--primary" id="page-save">保存并重新构建</button>
+        </div>
+      </div>
+    </div>
+
+    <!--
+      ============ 独立页面工作台 ============
+      独立页面的专属编辑窗：左边是可搜索的清单，中间改这一页的标题 / 地址 / 正文块，
+      右边是它的样子。中间和右边用的就是上面「页面」工作台那套控件 ——
+      app.js 里 mountStudioHost() 把那些节点整块搬过来用，数据只有 boardsDraft 一份，
+      所以在哪边改都一样，切来切去也不会出两份不一致的草稿。
+    -->
+    <div class="modal" id="solo-modal" hidden>
+      <div class="modal__mask" data-close="1"></div>
+      <div class="modal__panel modal__panel--full" role="dialog" aria-modal="true" aria-label="独立页面">
+        <div class="pstudio__top">
+          <h3 class="modal__title" id="solo-title">独立页面</h3>
+          <span class="pstudio__hint">
+            不挂在任何板块下的页面：首页卡片、目录树、别人的子版块列表、sitemap 里都没有它，
+            页面本身照常生成，只能靠你在别处挂的链接点进来。保存会写进
+            <code>src/data/home-boards.json</code> 并自动重新构建。
+          </span>
+          <span class="wsswitch" data-ws-slot="solo"></span>
+        </div>
+
+        <div class="pstudio">
+          <!-- 左：独立页面清单（可滚动、可按标题/地址筛） -->
+          <aside class="pstudio__col pstudio__col--tree" id="solo-tree-col">
+            <div class="pstudio__colhead">
+              <span>独立页面</span>
+              <em class="solo__count" id="solo-count">0 个</em>
+              <input type="search" id="solo-search" class="input input--sm" placeholder="找标题或地址…" autocomplete="off" />
+            </div>
+
+            <div class="solo__new">
+              <input type="text" id="solo-newname" class="input input--sm" placeholder="新页面叫什么？（比如 about）" autocomplete="off" />
+              <button type="button" class="btn btn--ghost boardedit__mini" id="solo-add">＋ 新建</button>
+            </div>
+
+            <ul class="solo__list" id="solo-list"></ul>
+
+            <p class="hint solo__tip">
+              填个名字就能建一条。名字是英文/数字的话会直接拿来当地址（<code>/about/</code>），
+              中文会自动给个短 id；想换好看点的地址，选中它之后在中间「地址」里手写。
+            </p>
+          </aside>
+
+          <!-- 中 / 右：整块由 app.js 搬过来（见 mountStudioHost） -->
+          <section class="pstudio__col pstudio__col--edit" id="solo-edit-col"></section>
+          <section class="pstudio__col pstudio__col--preview" id="solo-preview-col"></section>
         </div>
       </div>
     </div>
@@ -448,6 +552,7 @@
           每一块版块、每一张子页面卡都能<strong>单独选中单独拖</strong>。
           <strong>想加新的字、图、子页面，用顶栏的「页面」</strong>。
         </p>
+        <span class="wsswitch" data-ws-slot="layout"></span>
         <div class="layoutbar">
           <label class="layoutbar__pick">
             页面
@@ -486,6 +591,17 @@
 
     <!-- 隐藏的封面文件输入 -->
     <input type="file" id="cover-file" accept="image/png,image/jpeg,image/gif,image/webp,image/svg+xml" hidden />
+
+    <!--
+      总入口的清单。挂在 body 上而不是顶栏里：顶栏有 z-index:5 的层叠上下文，
+      菜单放在里面就会被弹窗（z-index:50）盖住；挂 body 上给个更高的 z-index，
+      面板开着也能点。
+    -->
+    <div class="hubmenu" id="hub-menu" hidden>
+      <p class="hubmenu__head">跳到哪个工作面</p>
+      <ul class="hubmenu__list" id="hub-menu-list"></ul>
+      <p class="hubmenu__foot">切走不丢东西：没保存的改动留在各自的面板里，切回来还在。</p>
+    </div>
 
     <div class="toast" id="toast" hidden></div>
 

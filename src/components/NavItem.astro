@@ -1,0 +1,87 @@
+---
+/**
+ * 导航表里的一个条目：小图标 + 文字，点了跳 href。
+ *
+ * 单独抽出来是因为它现在要被用在两处（子分类直接挂的条目、细分类里的条目）——
+ * 复制两遍那份链接判断迟早会走偏（站内补 base、站外新标签、没地址就不能点）。
+ */
+import { variantUrl } from '../utils/images';
+import { withBase } from '../utils/url';
+
+interface Props {
+  text: string;
+  href?: string;
+  image?: string;
+  tip?: string;
+}
+
+const { text, href = '', image = '', tip = '' } = Astro.props;
+const h = String(href).trim();
+const external = /^https?:/i.test(h);
+/** 站内地址补上 base；站外、锚点、mailto 原样用 */
+const url = h.startsWith('http') || h.startsWith('#') || h.startsWith('mailto:') ? h : withBase(h);
+const title = tip || text;
+---
+
+{
+  h ? (
+    <a class="navblk__item" href={url} title={title} {...external ? { target: '_blank', rel: 'noopener' } : {}}>
+      {image && (
+        <img class="navblk__ico" src={withBase(variantUrl(image, 40))} alt="" loading="lazy" decoding="async" />
+      )}
+      <span class="navblk__text">{text}</span>
+    </a>
+  ) : (
+    <span class="navblk__item navblk__item--plain" title={title}>
+      {image && (
+        <img class="navblk__ico" src={withBase(variantUrl(image, 40))} alt="" loading="lazy" decoding="async" />
+      )}
+      <span class="navblk__text">{text}</span>
+    </span>
+  )
+}
+
+<style>
+  /*
+    条目的样式**必须写在这里**，不能留在 NavBlock.astro 里。
+
+    Astro 的 scoped 样式是"给调用者模板里的元素盖一个 cid"，而子组件的**根元素**
+    会继承**调用者**的 cid（实测：`<Img class="site-brand__logo">` 出来的 <img>
+    带的是 SiteHeader 的 cid，样式也就写在 SiteHeader 里）。
+    所以：
+      · NavBlock 直接渲染 NavItem 时，那个 <a> 带的是 NavBlock 的 cid，样式写在
+        NavBlock 里能命中；
+      · 中间一旦多插一层（比如现在这层 NavItems），<a> 带的就是**中间那层**的 cid，
+        NavBlock 里写的样式会**静默失效** —— 页面不报错，只是条目全变成没样式的链接。
+    结论：谁渲染这些元素，样式就写在谁那儿（NavItems 里的塔吊同理）。
+  */
+  .navblk__item {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.22rem;
+    padding: 0.12rem 0.4rem 0.12rem 0.2rem;
+    border-radius: var(--r-sm);
+    font-size: 0.86rem;
+    line-height: 1.6;
+    color: var(--c-text);
+    text-decoration: none;
+    transition: background var(--t-fast) var(--ease);
+  }
+  a.navblk__item:hover {
+    background: var(--c-accent-soft);
+    color: var(--c-accent);
+  }
+  .navblk__item--plain {
+    color: var(--c-text-muted);
+  }
+  .navblk__ico {
+    width: 18px;
+    height: 18px;
+    flex: none;
+    object-fit: contain;
+    image-rendering: -webkit-optimize-contrast;
+  }
+  .navblk__text {
+    white-space: nowrap;
+  }
+</style>

@@ -29,6 +29,7 @@ import { withBase } from '../utils/url';
 import { enhanceHtml } from '../utils/images';
 import type { BlockItem, SubPost } from '../utils/boardPage';
 import { DEFAULT_LINE_COLOR, isLinkUrl, mapPages, type PageBlock } from '../utils/boards';
+import { headingRe, makeSlugger, plainText } from '../utils/anchors';
 import { refParam, type Timeline } from '../utils/timelines';
 
 interface Props {
@@ -68,33 +69,11 @@ interface TocEntry {
 }
 
 /**
- * 标题文字 -> 锚点 id。
- * 中文原样留着（`## 常规行动` → `#常规行动`），空格变连字符，其余符号去掉。
- * 标题里可能写了 `**粗体**`，那会被渲染成标签，所以先剥一遍标签再算。
+ * 标题文字 -> 锚点 id 的算法（以及"重名加序号"）都在 utils/anchors.ts 里，
+ * 这里只管把 id 写进渲染出来的 HTML —— 编辑器挑锚点用的 dist/anchors.json
+ * 走的是同一个函数，两边算出来的 id 必须一模一样，否则挑出来的链接跳不到。
  */
-function slugify(raw: string): string {
-  const base = raw
-    .replace(/<[^>]*>/g, '')
-    .normalize('NFKC')
-    .trim()
-    .toLowerCase()
-    .replace(/[\s\u3000]+/g, '-')
-    .replace(/[^\p{L}\p{N}_-]+/gu, '')
-    .replace(/-{2,}/g, '-')
-    .replace(/^-+|-+$/g, '');
-  return base || 'section';
-}
-
-/** 同一页里标题重名时依次加 -2、-3，保证 id 不撞 */
-const usedSlugs = new Set<string>();
-function uniqueSlug(raw: string): string {
-  const base = slugify(raw);
-  let slug = base;
-  let n = 2;
-  while (usedSlugs.has(slug)) slug = `${base}-${n++}`;
-  usedSlugs.add(slug);
-  return slug;
-}
+const uniqueSlug = makeSlugger();
 
 const hasToc = blocks.some((b) => b.type === 'toc');
 const tocEntries: TocEntry[] = [];
@@ -172,15 +151,17 @@ function takeHoverCards(text: string): { src: string; cards: string[] } {
 }
 
 /**
- * 渲染一段 Markdown：先还原悬停卡片，再（按需要）给里面的小标题补 id 并记进目录。
+ * 渲染一段 Markdown：先还原悬停卡片，再给里面的小标题补 id 并记进目录。
+ *
+ * 补 id 这件事**每页都做**，不管这页有没有目录块：小标题的 id 现在是
+ * 站内深链接的落点（时间轴的点、地图图钉、导航条目都能带 `#标题` 跳过来），
+ * 没目录的页面照样得能跳。
  *
  * 为什么用正则改 HTML，而不是让 marked 自己吐 id：
  * marked 从 8 开始就不再自动生成标题 id 了，要自己写 renderer / walkTokens。
  * 而这里要的非常窄 —— 实测它输出的标题就是干干净净的 `<h2>…</h2>`
  * （没有属性、不会嵌套），一次 replace 既够用，又不会误伤正文里别的标签；
  * 走 walkTokens 反而得把整段 HTML 重拼一遍，更容易出错。
- *
- * collect 为 false 时跳过补 id：没放目录块的页面，DOM 和以前一样。
  */
 function renderTracked(text: string, collect: boolean): string {
   const { src, cards } = takeHoverCards(text);
@@ -194,8 +175,8 @@ function renderTracked(text: string, collect: boolean): string {
 
   if (!collect) return html;
 
-  return html.replace(/<(h[1-4])>([\s\S]*?)<\/\1>/g, (whole, tag: string, inner: string) => {
-    const plain = inner.replace(/<[^>]*>/g, '').trim();
+  return html.replace(headingRe(), (whole, tag: string, inner: string) => {
+    const plain = plainText(inner);
     if (!plain) return whole;
     const slug = uniqueSlug(plain);
     // h1/h2 当一级，h3/h4 当二级
@@ -217,11 +198,11 @@ const textHtml = new Map<number, string>();
 const columnsHtml = new Map<number, { left: string; right: string }>();
 blocks.forEach((b, i) => {
   if (b.type === 'text') {
-    textHtml.set(i, renderTracked(b.text, hasToc));
+    textHtml.set(i, renderTracked(b.text, true));
   } else if (b.type === 'columns') {
     columnsHtml.set(i, {
-      left: renderTracked(b.left, hasToc),
-      right: renderTracked(b.right, hasToc),
+      left: renderTracked(b.left, true),
+      right: renderTracked(b.right, true),
     });
   }
 });
@@ -298,6 +279,7 @@ const cardsOf = (b: Extract<PageBlock, { type: 'children' }>) => ({
       return (
         <div
           class="pblock"
+          id={`blk-${b.id}`}
           data-edit={`pg-${b.id}`}
           data-block-type={b.type}
           data-tl-param={
@@ -543,7 +525,16 @@ const cardsOf = (b: Extract<PageBlock, { type: 'children' }>) => ({
                                   </svg>
                                 )}
                               </span>
-                              <span class="pmap__pinName">{m.title}</span>
+                              {/*
+                                名字那张小卡。手机端它是"点一下先看信息"的那张卡：
+                                有链接的图钉，卡片里多一行「打开 ›」——
+                                对着它再点一下才真的跳（见下面 is-open 那段样式和脚本）。
+                                鼠标端这一行是 display:none，指上去还是老样子只有名字。
+                              */}
+                              <span class="pmap__pinName">
+                                {m.title}
+                                {m.href && <span class="pmap__pinOpen">打开 ›</span>}
+                              </span>
                             </span>
                           </Tag>
                         );
@@ -636,7 +627,7 @@ const cardsOf = (b: Extract<PageBlock, { type: 'children' }>) => ({
           )}
 
           {/* 导航表：引用「导航分类库」里的几个大分类（分类本身在编辑器里建、可被多页共用） */}
-          {b.type === 'nav' && <NavBlock cats={b.cats} text={b.text} />}
+          {b.type === 'nav' && <NavBlock cats={b.cats} text={b.text} blockId={b.id} />}
         </div>
       );
     })
@@ -716,6 +707,33 @@ const cardsOf = (b: Extract<PageBlock, { type: 'children' }>) => ({
   .pcols__col :global(h4) {
     scroll-margin-top: 5.5rem;
   }
+
+  /*
+    从别处深链接进来时，直接跳到某个块（图片 / 段落 / 地图 / 时间轴……），
+    「#blk-xxx」也要给吸顶页头让位置。
+    跳过来的那一块再闪一下，不然页面已经滚好了，人还不知道落在哪。
+  */
+  .pblock {
+    scroll-margin-top: 5.5rem;
+  }
+  .pblock:target,
+  .ptext :global(h1:target),
+  .ptext :global(h2:target),
+  .ptext :global(h3:target),
+  .ptext :global(h4:target),
+  .pcols__col :global(h2:target),
+  .pcols__col :global(h3:target) {
+    animation: pblockHit 1.8s ease-out;
+  }
+  @keyframes pblockHit {
+    0% {
+      background: rgba(255, 120, 190, 0.2);
+    }
+    100% {
+      background: transparent;
+    }
+  }
+
   .ptext :global(a) {
     color: #ffb3dd;
     text-decoration: underline;
@@ -1197,6 +1215,42 @@ const cardsOf = (b: Extract<PageBlock, { type: 'children' }>) => ({
     opacity: 1;
     visibility: visible;
   }
+  /* 手机端点开的那颗：名字亮着，直到点别处（见脚本里的 is-open） */
+  .pmap__pin.is-open .pmap__pinName {
+    opacity: 1;
+    visibility: visible;
+  }
+  /*
+    名字卡里那行「打开 ›」。鼠标端不显示 —— 指上去就能看见名字，
+    再点一下本来就直接跳了，多这几个字只是噪音。
+  */
+  .pmap__pinOpen {
+    display: none;
+  }
+  /*
+    手机端：图钉点一下先亮名字卡（"万一只是想看这个地方叫什么"），
+    对着卡片里的字再点一下才跳。
+    卡片跟着手指走：竖排在名字下面、窄屏上换行，免得长名字被框裁掉。
+  */
+  @media (hover: none) {
+    .pmap__pin.is-open .pmap__pinName {
+      max-width: 62vw;
+      white-space: normal;
+      text-align: center;
+      /*
+        名字卡平时是 pointer-events: none（鼠标端只是"看着的"，指上去就行）。
+        手机端不行：卡片是**第二下要点的东西**，得能收事件 ——
+        卡片是图钉的子元素，点到它就等于点到图钉，跳转照旧走浏览器默认行为。
+      */
+      pointer-events: auto;
+    }
+    .pmap__pin.is-open .pmap__pinOpen {
+      display: block;
+      margin-top: 0.1rem;
+      color: #ff9ad5;
+      font-size: 0.72rem;
+    }
+  }
   /*
     贴着地图上边缘的钉子：名字翻到钉子下方。
     （哪颗需要翻由脚本量出来，见那边 flipNameIfClipped 的说明。）
@@ -1206,7 +1260,8 @@ const cardsOf = (b: Extract<PageBlock, { type: 'children' }>) => ({
     top: calc(100% + 2px);
   }
   .pmap__pin:hover .pmap__pinArt,
-  .pmap__pin:focus-visible .pmap__pinArt {
+  .pmap__pin:focus-visible .pmap__pinArt,
+  .pmap__pin.is-open .pmap__pinArt {
     transform: scale(1.12);
   }
   .pmap__pin:focus-visible {
@@ -1904,6 +1959,51 @@ const cardsOf = (b: Extract<PageBlock, { type: 'children' }>) => ({
     };
     root.addEventListener('pointerover', onPinFocus);
     root.addEventListener('focusin', onPinFocus);
+
+    /* ---------------- 手机端：点一下先看名字，再点卡片才跳 ---------------- */
+
+    /**
+     * 触屏上点图钉**不直接跳**：先把名字那张卡亮出来
+     * （用户的原话：「万一用户只是想点一下看这个地方叫什么而已」），
+     * 真要跳就对着卡片里的字再点一下。
+     *
+     * 第二下为什么能跳：卡片是图钉（一个有 href 的 `<a>`）的子元素，
+     * 点卡片就等于点图钉本身 —— 这里直接放行，让浏览器按默认行为跳，
+     * 不用自己去改 location，右键复制地址 / 键盘回车那些也就都还在。
+     *
+     * 判断"手机"用 `(hover: none)`（没有悬停能力的设备）：桌面鼠标点一下照旧一次跳，
+     * 不会平白多一次点击；`pointerType` 在真机上不一定报 'touch'，不能只靠它。
+     * 没填链接的图钉也照样亮卡片 —— 那种钉子本来就没地方跳。
+     */
+    const noHover = () => window.matchMedia('(hover: none)').matches;
+    /** 现在亮着名字卡的那颗图钉（同时只亮一颗） */
+    let openPin: HTMLElement | null = null;
+    const closePin = () => {
+      openPin?.classList.remove('is-open');
+      openPin = null;
+    };
+    frame.addEventListener('click', (e) => {
+      if (!noHover()) return;
+      const t = e.target as HTMLElement | null;
+      const pin = t?.closest?.<HTMLElement>('[data-pmap-pin]') ?? null;
+      // 点在图上别处：把卡片收起来
+      if (!pin) {
+        closePin();
+        return;
+      }
+      if (pin === openPin) {
+        // 卡片已经亮着：有链接的这一下就让它跳，没链接的再点一下就收起来
+        if (pin.hasAttribute('href')) return;
+        if (t?.closest?.('.pmap__pinName')) closePin();
+        return;
+      }
+      // 第一下：拦住跳转，只把名字亮出来
+      e.preventDefault();
+      closePin();
+      flipNameIfClipped(pin);
+      pin.classList.add('is-open');
+      openPin = pin;
+    });
 
     /*
       图没量到尺寸之前 layout 算不出来，等它 load。

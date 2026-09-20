@@ -262,7 +262,8 @@ const initialScaleText = `一刻度约 ${
             data-label={p.label}
             data-date={p.shown}
             data-point={p.id}
-            data-href={p.href ? '1' : undefined}
+            /* 存**真链接**（不是 '1' 那种标记）：手机端提示卡里那一行要做成真链接 */
+            data-href={href}
           >
             <CraneTag
               class="tl__crane"
@@ -308,7 +309,7 @@ const initialScaleText = `一刻度约 ${
             <span class="tl__tip" role="tooltip">
               <b>{p.label}</b>
               <em>{p.fuzzy ? '难以考据的时间' : `${p.shown}${p.live ? '（实时）' : ''}`}</em>
-              {p.href && <i>点开看看 ›</i>}
+              {p.href && <i>打开 ›</i>}
             </span>
           </div>
         );
@@ -781,12 +782,114 @@ const initialScaleText = `一刻度约 ${
     font-size: 0.72rem;
     color: #ff9ad5;
   }
+  /*
+    合并成一组的提示：把这一组的名字按时间顺序（早的在上）全列出来 ——
+    合并之后只显示组头那一个名字，另外几条就再也看不到内容了。
+    单点那种横向一行（b + em）保持不变，这里只覆盖 is-group 的情况。
+  */
+  .tl__tip.is-group {
+    display: block;
+    padding: 0.3rem 0.6rem;
+    white-space: normal;
+  }
+  .tl__tipList {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 0.12rem;
+  }
+  .tl__tipList li {
+    display: flex;
+    gap: 0.5rem;
+    align-items: baseline;
+  }
+  /* 组里靠前的几条其实都长在轴上同一个位置，加一列小圆点暗示"这是一堆" */
+  .tl__tipList li:first-child b::before {
+    content: '▾ ';
+    color: #ff9ad5;
+  }
+  .tl__tipMark {
+    margin-left: auto;
+    color: #ff9ad5;
+  }
+  /*
+    提示卡里那一行（名字 + 日期）本身是链接（这个点填了链接才有）：
+    手机端「对着提示文字再点一下」跳的就是它。
+    鼠标端提示卡是 pointer-events: none，这个链接点不到 —— 那没关系，
+    鼠标直接把名字点走就行，这里只是照常显示。
+  */
+  .tl__tipOpen {
+    display: flex;
+    gap: 0.5rem;
+    align-items: baseline;
+    color: inherit;
+    text-decoration: none;
+  }
+  /* 在合并列表的一行里撑满，末尾那个「›」才能靠到最右边（和以前一个样） */
+  .tl__tipList li > .tl__tipOpen {
+    flex: 1;
+  }
   .tl__item:hover .tl__tip {
     opacity: 1;
     visibility: visible;
   }
-  .tl__item:hover .tl__crane {
+  .tl__item:hover .tl__crane,
+  .tl__item.is-open .tl__crane {
     color: #fff2b8;
+  }
+
+  /*
+    ---------- 手机端：点一下先看信息，再点提示卡里的字才跳 ----------
+
+    卡片改成贴在面板底部的浮层：手机屏幕窄，几个点合并成一根塔吊时
+    卡片有好几行，浮在塔吊上方会被 .tl__body 的 overflow: hidden 裁掉一截。
+
+    position: fixed 的包含块是最近的"有 transform 的祖先" —— 正好是
+    .tl__panel（它靠 translateX 推拉），面板在手机上就是整个屏幕（100vw），
+    所以左右留 0.55rem、贴底 0.6rem 就是贴着屏幕底部的一条卡片，
+    同时也就逃出了 .tl__body 的裁切。
+  */
+  @media (hover: none) {
+    .tl__item.is-open .tl__tip {
+      position: fixed;
+      top: auto;
+      left: 0.55rem;
+      right: 0.55rem;
+      /*
+        贴底多高：手机端卡片不能盖住面板底部那排「年代/时刻/事件」开关和比例尺
+        （盖住的话用户点开关会点到卡片上，甚至被卡片里的链接带跑）。
+        具体让开多少由脚本量出来写进 --tl-card-gap（见 measure 里那一段），
+        这里给个兜底值，脚本没跑成也不至于压到开关上。
+      */
+      bottom: var(--tl-card-gap, 3.4rem);
+      z-index: 9;
+      display: block;
+      /*
+        必须是 !important：提示卡平时那个"浮在塔吊上方"的位置是**脚本写进
+        style 的**（`tip.style.transform = 'translate(-50%,-140%) translateY(...)'`，
+        见下面 paint 里那一行），行内样式压不过普通规则。留着它，卡片就会
+        被自己再挪走半个身位（实测偏了 -186, -167px，跑到屏幕外面去）。
+        用 !important 盖掉之后，卡片关掉时行内那行还照旧生效，不用额外记状态。
+      */
+      transform: none !important;
+      max-width: none;
+      white-space: normal;
+      padding: 0.55rem 0.7rem;
+      font-size: 0.84rem;
+      /* 合并成一大组时这一卡可能好几行，兜一层：太高就自己滚，别顶出屏幕 */
+      max-height: 70vh;
+      overflow: auto;
+      pointer-events: auto;
+      opacity: 1;
+      visibility: visible;
+      box-shadow: 0 12px 34px -12px rgb(0 0 0 / 0.85);
+    }
+    /* 手指比鼠标粗：卡片里每一行留出能点的高度 */
+    .tl__item.is-open .tl__tipOpen {
+      padding: 0.2rem 0;
+    }
   }
 
   /*
@@ -1076,6 +1179,13 @@ const initialScaleText = `一刻度约 ${
        当前日期就钉在弧顶上，前后的事件向两边散开或收拢。
      ============================================================ */
   const KEY = 'tl-open-id';
+
+  /**
+   * 提示卡里那句"点了能走"的提示。
+   * 手机端它同时也是一行字的链接（见 `.tl__tipOpen`），所以文案从
+   * 「点开看看」改成「打开」—— 手机上是**真的能点**，不是看着玩的。
+   */
+  const TOUCH_HINT = '打开 ›';
 
   /** 弧顶比两端向左凸出多少（px） */
   const BULGE = 30;
@@ -1590,6 +1700,98 @@ const initialScaleText = `一刻度约 ${
           offsetOf.set(el, g.off[i]);
         });
       }
+
+      paintTips();
+    }
+
+    /**
+     * 提示框内容。
+     *
+     * 单独一个点时就是「名字 + 日期」一行；**几个点合并成一根塔吊时，
+     * 把这一组的名字按时间顺序全列出来**（早的在上、晚的在下，和文字错开的方向一致）——
+     * 以前合并了只有组头那个点的名字能看，另外几条就查不到了。
+     * 每次重排都从 `data-label` / `data-date` 重建一遍（不用 innerHTML 拼字符串），
+     * 所以缩放导致分组变了、实时点日期变了，提示框跟着就对了。
+     *
+     * 有链接的条目，这一行本身做成**真链接**（手机上「对着提示文字再点一下」跳的就是它）：
+     * 鼠标端提示框是 `pointer-events: none`，这个链接点不到，不影响原来"悬停看日期"；
+     * 手机端点开提示后提示框恢复可点（见样式区 `.is-open` 那一段）。
+     */
+    function paintTips() {
+      for (const el of items) {
+        const tip = el.querySelector<HTMLElement>('.tl__tip');
+        if (!tip) continue;
+
+        const anchor = anchorOf.get(el) ?? el;
+        const group = groups.find((g) => g.anchor === anchor);
+        // members 本来就是按时间升序排的（早的在上）
+        const members = group && group.members.length > 1 ? group.members : [el];
+        const grouped = members.length > 1;
+
+        tip.classList.toggle('is-group', grouped);
+        tip.textContent = '';
+
+        if (!grouped) {
+          const row = tipRow(el, false);
+          const link = tipLink(el, row);
+          if (link) {
+            const i = document.createElement('i');
+            i.textContent = TOUCH_HINT;
+            link.append(i);
+            tip.append(link);
+          } else {
+            tip.append(...row);
+          }
+          continue;
+        }
+
+        const ul = document.createElement('ul');
+        ul.className = 'tl__tipList';
+        for (const m of members) {
+          const li = document.createElement('li');
+          const row = tipRow(m, true);
+          const link = tipLink(m, row);
+          if (link) li.append(link);
+          else li.append(...row);
+          ul.append(li);
+        }
+        tip.append(ul);
+      }
+    }
+
+    /** 提示框里的一行：名字 + 日期（难考据的点写那句话）。asList = 在合并列表里，带链接的补个箭头 */
+    function tipRow(el: HTMLElement, asList: boolean): Node[] {
+      const b = document.createElement('b');
+      b.textContent = el.dataset.label ?? '';
+      const em = document.createElement('em');
+      em.textContent = el.dataset.fuzzy === '1' ? '难以考据的时间' : el.dataset.date ?? '';
+      if (asList && el.dataset.href) {
+        const mark = document.createElement('i');
+        mark.className = 'tl__tipMark';
+        mark.textContent = '›';
+        return [b, em, mark];
+      }
+      return [b, em];
+    }
+
+    /**
+     * 把一行提示包成链接（这个点没有链接就返回 null，那行保持纯文字）。
+     *
+     * 链接直接取 `data-href`（服务端已经算好、补过 base 的地址），
+     * 站外那种照旧开新窗口。
+     */
+    function tipLink(el: HTMLElement, kids: Node[]): HTMLAnchorElement | null {
+      const href = el.dataset.href;
+      if (!href) return null;
+      const a = document.createElement('a');
+      a.className = 'tl__tipOpen';
+      a.href = href;
+      if (/^https?:/i.test(href)) {
+        a.target = '_blank';
+        a.rel = 'noopener';
+      }
+      a.append(...kids);
+      return a;
     }
 
     /** 弧上高度 y 处的横坐标 */
@@ -1618,6 +1820,19 @@ const initialScaleText = `一刻度约 ${
         都是按「一屏对应多少参数」现推的，V 多大都自己适配。
       */
       V = Math.max(1, (TICK_STEP * totalDays) / daysPerTick(scale));
+
+      /*
+        手机端那张提示卡贴在面板底部，但得**让开下面那排开关和比例尺**：
+        面板底部依次是「.tl__body（含底部那排年代/时刻/事件开关）」和「.tl__foot（比例尺、日期）」。
+        卡片是 position: fixed（包含块就是面板），所以"贴在离面板底多高"要按面板算 ——
+        量一下开关那一行的顶边，让卡片正好停在它上面。
+        字体大小、缩放、横竖屏都会改这个高度，所以量出来写进 CSS 变量，不写死数字。
+      */
+      const toggles = root.querySelector<HTMLElement>('.tl__toggles');
+      if (toggles && panel) {
+        const gap = panel.getBoundingClientRect().bottom - toggles.getBoundingClientRect().top + 8;
+        if (Number.isFinite(gap) && gap > 0) root.style.setProperty('--tl-card-gap', `${Math.round(gap)}px`);
+      }
 
       // V 定了才能按屏幕距离判断谁和谁挤在一起，所以分组放在最后
       groupItems();
@@ -1859,6 +2074,8 @@ const initialScaleText = `一刻度约 ${
       panel!.hidden = !on;
       tab!.setAttribute('aria-expanded', on ? 'true' : 'false');
       remember(on);
+      // 面板收起来时把手机端那张提示卡一起收掉（下次打开不该还亮着）
+      if (!on) closeTip();
       if (on) {
         // 面板刚显示出来才有尺寸，这时候才量得准
         measure();
@@ -1939,6 +2156,54 @@ const initialScaleText = `一刻度约 ${
     };
     body.addEventListener('pointerup', endDrag);
     body.addEventListener('pointercancel', endDrag);
+
+    /* ---------------- 手机端：先看信息，再点一次才走 ---------------- */
+
+    /**
+     * 触屏上点时间点的名字 / 塔吊**不直接跳**：先把提示卡亮出来
+     * （用户的原话：「万一只是想点一下看这个时间点叫什么而已」），
+     * 真要跳就对着卡片里那行字再点一下 —— 那一行本身是真链接（见 `tipLink`）。
+     *
+     * 怎么判断"手机"：`(hover: none)` —— 没有任何悬停能力的设备（手机 / 平板）。
+     * 用它而不是只看 `pointerType`：`pointerType` 在真机浏览器上不一定报 `touch`，
+     * 而桌面（有鼠标）`(hover: none)` 恒为假，鼠标点一下照旧一次点走，不会多一次点击。
+     */
+    const noHover = () => window.matchMedia('(hover: none)').matches;
+    /** 现在亮着提示卡的那个时间点（同时只亮一个） */
+    let tipItem: HTMLElement | null = null;
+    const closeTip = () => {
+      tipItem?.classList.remove('is-open');
+      tipItem = null;
+    };
+
+    body.addEventListener(
+      'click',
+      (e) => {
+        if (!noHover()) return;
+        const t = e.target as HTMLElement | null;
+        const item = t?.closest?.<HTMLElement>('.tl__item') ?? null;
+        // 点在轴上空白处：把卡片收起来
+        if (!item) {
+          closeTip();
+          return;
+        }
+        // 点的是卡片里那行字 → 放它走（第二下，真跳转）
+        if (t?.closest?.('.tl__tipOpen')) return;
+        // 这个点没填链接，没什么可跳的，也不用亮卡片
+        if (!item.dataset.href) {
+          closeTip();
+          return;
+        }
+        // 卡片已经亮着又点了一次名字：这次不再拦，让它跳
+        if (item === tipItem) return;
+        // 第一下：拦住跳转，只把卡片亮出来
+        e.preventDefault();
+        closeTip();
+        item.classList.add('is-open');
+        tipItem = item;
+      },
+      true
+    );
 
     /*
       比例尺：按在尺子上（或那颗塔吊上）横着拖。

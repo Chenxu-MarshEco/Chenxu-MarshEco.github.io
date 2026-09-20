@@ -6,7 +6,7 @@
  */
 import { getNotes, getPosts } from './content';
 import { toISODate } from './date';
-import { flattenBoards, visibleChildren, type BoardNode, type FlatNode, type PageBlock } from './boards';
+import { flattenBoards, urlTrail, visibleChildren, type BoardNode, type FlatNode, type PageBlock } from './boards';
 import site from '../site.config';
 
 export interface SubPost {
@@ -119,13 +119,28 @@ export async function nodePageData(url: string): Promise<NodePageData | null> {
   if (!flat) return null;
 
   const posts = await articlesByNode();
-  const parentNode = flat.trail.length > 1 ? flat.trail[flat.trail.length - 2] : null;
+
+  /*
+    上级从哪来：
+      · 普通子页面 —— 结构上的父节点（`children` 里那一层）
+      · 「独立页面」这种平铺在顶层、地址却填得很深的 —— 结构上没有父节点，
+        就按**地址前缀**找（`/huaya/years/fenhu/xichenxu` 的上一级是
+        `/huaya/years/fenhu`）。不然面包屑只有它自己、「返回」只能回首页，
+        和地址栏里看到的层级对不上。
+
+    只取结构父节点，不看结构里别的祖先：地址和结构不一致时（独立页面挂深地址），
+    「返回」应该回到**地址上**的上一级，那是读者实际待过的地方。
+  */
+  const parents =
+    flat.trail.length > 1 ? flat.trail.slice(0, -1) : urlTrail(all, flat.url).map((f) => f.node);
+  const trailNodes = [...parents, flat.node];
+  const parentNode = parents.length ? parents[parents.length - 1] : null;
 
   return {
     title: flat.node.title,
     // 页面背景：没有自己的图就沿用所属大板块的
     image: flat.node.image ?? topBoardImage(all, flat.boardId),
-    trail: flat.trail.map((n, i, arr) => {
+    trail: trailNodes.map((n, i, arr) => {
       const f = all.find((x) => x.node === n);
       const last = i === arr.length - 1;
       return last ? { title: n.title } : { title: n.title, url: f?.url };

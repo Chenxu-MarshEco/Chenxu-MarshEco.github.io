@@ -71,6 +71,11 @@ const els = {
   tlEditor: $('tl-editor'),
   tlSave: $('tl-save'),
 
+  btnNavs: $('btn-navs'),
+  navsModal: $('navs-modal'),
+  navsEditor: $('navs-editor'),
+  navsSave: $('navs-save'),
+
   btnPages: $('btn-pages'),
   pagesModal: $('pages-modal'),
   pagesTitle: $('pages-title'),
@@ -89,6 +94,38 @@ const els = {
   pwAddLink: $('pw-addlink'),
   pageEditor: $('page-editor'),
   pageSave: $('page-save'),
+  pwCopyUrl: $('pw-copy-url'),
+  /*
+    「页面」工作台里可以整块搬去独立页面工作台的节点。
+    少一个这里就会是 null，initStudioAnchors 会跳过它 —— 于是搬不过去，
+    独立页面面板中间就空着（踩过一次）。
+  */
+  pwEditCol: $('pw-edit-col'),
+  pwPreviewCol: $('pw-preview-col'),
+  pwContentBlock: $('pw-content-block'),
+  pwKidsBlock: $('pw-kids-block'),
+  pwPreviewHead: $('pw-preview-head'),
+  pwFrameWrap: $('pw-frame-wrap'),
+  pwActions: $('pw-actions'),
+
+  /*
+    独立页面工作台：中间栏和右栏是空的，控件靠 mountStudioHost()
+    从「页面」工作台整块搬过来（见那边的注释）。
+  */
+  soloModal: $('solo-modal'),
+  soloTitle: $('solo-title'),
+  soloCount: $('solo-count'),
+  soloSearch: $('solo-search'),
+  soloNewName: $('solo-newname'),
+  soloAdd: $('solo-add'),
+  soloList: $('solo-list'),
+  soloEditCol: $('solo-edit-col'),
+  soloPreviewCol: $('solo-preview-col'),
+  soloPanel: document.querySelector('#solo-modal .modal__panel'),
+
+  btnHub: $('btn-hub'),
+  hubMenu: $('hub-menu'),
+  hubMenuList: $('hub-menu-list'),
 
   btnMusic: $('btn-music'),
   musicModal: $('music-modal'),
@@ -1022,8 +1059,10 @@ async function insertImageFile(file, fallbackName) {
 /**
  * 从系统剪贴板粘贴的图片没有像样的文件名（都叫 image.png），
  * 按时间戳重新起一个，免得上传目录里一堆同名文件。
+ * 有真名的（比如从资源管理器复制过来的文件）就别动它的名字。
  */
 function renamePasted(file) {
+  if (file && file.name && !/^(image|blob|clipboard)(\.\w+)?$/i.test(file.name)) return file;
   const d = new Date();
   const pad = (n) => String(n).padStart(2, '0');
   const stamp = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}`
@@ -1034,6 +1073,325 @@ function renamePasted(file) {
   } catch {
     return file;   // 极老的浏览器没有 File 构造函数
   }
+}
+
+/* ---------------------------------------------------------------
+   图片接入口：拖进来 / 粘进来（公共层）
+
+   编辑器里好几个地方要收图片：文章 / 手记的封面图、插入图片弹窗、
+   地图换图、页面内容里的图片块、版块 / 导航的标题图（图标）。
+   以前每处各造一个隐藏的 <input type=file>，只有「点按钮 → 系统文件
+   选择器」这一条路；从 QQ 拖一张进来、或者截图后 Ctrl+V，没人接。
+
+   现在这些地方都注册成「接入口」：
+   · <input type=file> 仍然是兜底 —— 它的 change 也由这一层接管，
+     点按钮那条路一个字节都没变，只是这份代码只写一遍；
+   · 拖进来 / 粘进来 / 选文件，最后都汇到同一个 onFiles，
+     里面调的还是同一个 uploadImage()，上传路径只有一条；
+   · 粘贴「给谁」由 resolveImageIntake() 按优先级挑（见那边的注释）。
+
+   以后再加一个上传点，就是 attachImageIntake({...}) 一行的事。
+   正文编辑器（bindImageDropAndPaste）有自己的老一套，没走这里，也没动它。
+   --------------------------------------------------------------- */
+
+const IMAGE_ACCEPT = 'image/png,image/jpeg,image/gif,image/webp,image/svg+xml';
+
+/** 注册过的上传点；被重画掉的（isConnected 为假）会在下一次查表前剔除 */
+const IMAGE_INTAKES = [];
+
+/** 最近一次点过 / 聚焦过的接入口 —— 粘贴优先级 ② 靠它 */
+let lastIntake = null;
+
+/** 看得见才算数：弹窗 [hidden] 挡住、面板重画带走的那种都得排除 */
+function intakeVisible(el) {
+  return Boolean(el && el.isConnected && el.getClientRects().length);
+}
+
+/**
+ * 这个接入口挂在哪个面板里（哪层弹窗；不在弹窗里就是主表单）。
+ * 现算不缓存 —— 页面工作台和独立页面工作台会整块搬运同一批 DOM，
+ * 缓存下来的话搬完就认错门了。
+ */
+function intakePanelOf(el) {
+  return el.closest('.modal') || els.form || document.body;
+}
+
+function pruneIntakes() {
+  for (let i = IMAGE_INTAKES.length - 1; i >= 0; i -= 1) {
+    if (!IMAGE_INTAKES[i].el.isConnected) IMAGE_INTAKES.splice(i, 1);
+  }
+}
+
+function imageFilesOf(list) {
+  return Array.from(list || []).filter((f) => f && /^image\//i.test(f.type || ''));
+}
+
+/** 从 DataTransfer / ClipboardData 里取图片：QQ 截图的图只在 items 里，files 常常是空的 */
+function imageFilesFromTransfer(dt) {
+  if (!dt) return [];
+  const direct = imageFilesOf(dt.files);
+  if (direct.length) return direct;
+  return Array.from(dt.items || [])
+    .filter((it) => it.kind === 'file' && /^image\//i.test(it.type || ''))
+    .map((it) => it.getAsFile())
+    .filter(Boolean);
+}
+
+/**
+ * 兜底：从网页 / QQ 窗口里拖过来的常常是**链接**而不是文件。
+ * 没有文件时从 text/uri-list、text/html 里抠一个像图片的地址出来；
+ * 抠不到就是空字符串，调用方当没这回事，不硬来。
+ */
+function imageLinkFromTransfer(dt) {
+  if (!dt) return '';
+  let uri = '';
+  try {
+    uri = String(dt.getData('text/uri-list') || '').split(/\r?\n/).find((l) => l && !l.startsWith('#')) || '';
+  } catch {
+    uri = '';   // dragover 阶段读 getData 会抛，按没有处理
+  }
+  if (/^data:image\//i.test(uri)) return uri;
+  if (/^https?:\/\//i.test(uri) && /\.(png|jpe?g|gif|webp|avif|svg)(\?|#|$)/i.test(uri)) return uri;
+  let html = '';
+  try {
+    html = String(dt.getData('text/html') || '');
+  } catch {
+    html = '';
+  }
+  // html 里的 <img src> 明摆着是图，就不看扩展名了
+  const m = /<img[^>]+src\s*=\s*["']([^"']+)["']/i.exec(html);
+  return m ? m[1].trim() : '';
+}
+
+/** 这次拖拽值不值得接：有图才接，拖个 pdf 进来就交回浏览器默认行为 */
+function dragAcceptsImage(dt) {
+  if (!dt) return false;
+  const items = Array.from(dt.items || []);
+  const files = items.filter((it) => it.kind === 'file');
+  if (files.length) {
+    const known = files.filter((it) => it.type);
+    if (!known.length) return true;                       // 类型没给，先当能放
+    return known.some((it) => /^image\//i.test(it.type));
+  }
+  if (Array.from(dt.types || []).includes('Files')) return true;
+  // 从网页 / QQ 窗口拖链接：dragover 阶段读不到内容，只能看类型
+  return Array.from(dt.types || []).some((t) => t === 'text/uri-list' || t === 'text/html');
+}
+
+function clearIntakeHighlight() {
+  for (const el of document.querySelectorAll('.intake--dragover')) el.classList.remove('intake--dragover');
+}
+
+/** 往 textarea 的光标处插一段文字（页面里的文字块插图片用），插完让外层状态跟上 */
+function insertIntoTextarea(ta, text) {
+  const start = typeof ta.selectionStart === 'number' ? ta.selectionStart : ta.value.length;
+  const end = typeof ta.selectionEnd === 'number' ? ta.selectionEnd : start;
+  ta.value = ta.value.slice(0, start) + text + ta.value.slice(end);
+  const caret = start + text.length;
+  ta.focus();
+  ta.setSelectionRange(caret, caret);
+  ta.dispatchEvent(new Event('input', { bubbles: true }));   // 让外面那份 block.text 自己更新
+}
+
+/**
+ * 收下若干文件：单值的地方只用第一张（其余明说被忽略），多值的地方全收。
+ * 「忽略了几张」这条压在最后 —— 上传结果那条 toast 已经报过路径了，
+ * 这里再补一句，用户不会漏掉任何一头。
+ */
+async function runIntake(entry, files) {
+  const use = entry.multiple ? files : files.slice(0, 1);
+  try {
+    await entry.onFiles(use);
+  } catch (err) {
+    toast(`上传失败：${err.message}`, true);
+  } finally {
+    if (!entry.multiple && files.length > 1) {
+      toast(`${entry.label}只收一张图，用了第一张，另外 ${files.length - 1} 张忽略了`);
+    }
+  }
+}
+
+/**
+ * 把一个上传点接上「拖进来 / 粘进来 / 选文件」三条路。
+ *
+ * @param {HTMLElement} o.el       接入口范围 —— 拖拽高亮和落点判断都按它算
+ * @param {HTMLInputElement} [o.input]  兜底的 <input type=file>，change 交给这里管
+ * @param {string} [o.accept]      收哪些类型，默认图片
+ * @param {boolean} [o.multiple]   true = 一次能收多张；默认只收第一张
+ * @param {(files: File[]) => any} o.onFiles  拿到文件干什么（里面调 uploadImage）
+ * @param {(url: string) => void} [o.onUrl]   拖进来的是图片链接时当地址填进去
+ * @param {string} [o.hint]        按钮旁边那行小字（不想加字的地方别传）
+ * @param {string} [o.title]       鼠标停在这块上时的提示（el 自己没 title 才写）
+ * @param {string} [o.label]       「只收一张」提示里怎么称呼这块，比如「封面图」
+ * @param {boolean} [o.countsForPaste]  false = 不参与「面板里只有一个上传点」那条兜底
+ */
+function attachImageIntake(o) {
+  const el = o && o.el;
+  if (!el) return null;
+  pruneIntakes();
+
+  const entry = {
+    el,
+    input: o.input || el.querySelector('input[type="file"]'),
+    multiple: Boolean(o.multiple),
+    countsForPaste: o.countsForPaste !== false,
+    label: o.label || '这里',
+    onFiles: o.onFiles,
+    onUrl: o.onUrl,
+  };
+
+  el.dataset.imgIntake = '';
+  el.classList.add('intake');
+  if (o.title && !el.title) el.title = o.title;
+
+  if (o.hint) {
+    const hint = document.createElement('span');
+    hint.className = 'intake__hint';
+    hint.textContent = o.hint;
+    if (entry.input && entry.input.parentNode === el) el.insertBefore(hint, entry.input);
+    else el.appendChild(hint);
+  }
+
+  // ---- 选文件（原来每家自己写的那份 change，收进来只留一份）----
+  if (entry.input) {
+    entry.input.accept = o.accept || IMAGE_ACCEPT;
+    entry.input.addEventListener('change', () => {
+      const files = imageFilesOf(entry.input.files);
+      entry.input.value = '';        // 清掉，同一个文件再选一次也认
+      if (!files.length) return;
+      lastIntake = entry;
+      void runIntake(entry, files);
+    });
+  }
+
+  // ---- 拖进来 ----
+  el.addEventListener('dragenter', (ev) => {
+    if (!dragAcceptsImage(ev.dataTransfer)) return;
+    el.classList.add('intake--dragover');
+  });
+  el.addEventListener('dragover', (ev) => {
+    if (!dragAcceptsImage(ev.dataTransfer)) return;
+    ev.preventDefault();
+    ev.dataTransfer.dropEffect = 'copy';
+    el.classList.add('intake--dragover');
+  });
+  el.addEventListener('dragleave', (ev) => {
+    // 在自家子元素之间挪也会触发 dragleave，用 relatedTarget 挡一下，省得闪
+    if (ev.relatedTarget && el.contains(ev.relatedTarget)) return;
+    el.classList.remove('intake--dragover');
+  });
+  el.addEventListener('drop', async (ev) => {
+    const dt = ev.dataTransfer;
+    if (!dt) return;
+    const files = imageFilesFromTransfer(dt);
+    const link = files.length ? '' : imageLinkFromTransfer(dt);
+    if (!files.length && !link) return;
+    ev.preventDefault();
+    ev.stopPropagation();          // 外层可能也有监听（比如正文那套），别收两遍
+    el.classList.remove('intake--dragover');
+    lastIntake = entry;
+    if (!files.length) {
+      if (entry.onUrl) entry.onUrl(link);
+      else toast('拖进来的是个链接，这里只认图片文件', true);
+      return;
+    }
+    await runIntake(entry, files);
+  });
+
+  IMAGE_INTAKES.push(entry);
+  return entry;
+}
+
+/** 焦点 / 事件正好落在某个接入口里？ */
+function intakeFromNode(node) {
+  if (!(node instanceof Element)) return null;
+  const hit = node.closest('[data-img-intake]');
+  if (!hit || !intakeVisible(hit)) return null;
+  return IMAGE_INTAKES.find((e) => e.el === hit) || null;
+}
+
+/** 正文编辑器（连外壳）自己有拖 / 粘那一套，别抢它的活 */
+function isBodyEditorNode(node) {
+  if (!(node instanceof Element)) return false;
+  return node === els.body || Boolean(node.closest('.editor'));
+}
+
+/** 当前开着的面板：焦点所在的那层弹窗；都没有就退回主表单 */
+function currentIntakePanel() {
+  const focusModal = document.activeElement instanceof Element
+    ? document.activeElement.closest('.modal')
+    : null;
+  if (focusModal && intakeVisible(focusModal)) return focusModal;
+  const open = Array.from(document.querySelectorAll('.modal')).filter(intakeVisible);
+  if (open.length) return open[open.length - 1];
+  return els.form || document.body;
+}
+
+/**
+ * 粘贴的图给谁 —— 按优先级挑：
+ * ① 事件 / 焦点正好落在某个接入口里
+ *    （光标停在「封面图地址」那个输入框里、或者刚点过某一格的按钮）；
+ * ② 最近点过 / 聚焦过的那个接入口，面板还开着、还看得见；
+ * ③ 当前面板里只有一个可见接入口（打开「独立页面」面板直接粘封面走这条）。
+ * 挑不出来返回 null，调用方负责给一句人话提示，不静默吞掉。
+ */
+function resolveImageIntake(node) {
+  pruneIntakes();
+  const direct = intakeFromNode(node) || intakeFromNode(document.activeElement);
+  if (direct) return direct;
+
+  if (lastIntake && intakeVisible(lastIntake.el)) return lastIntake;
+
+  // ③ 只在「有面板开着」时兜底：主界面里正文编辑器才是粘图的正主，别抢
+  const form = els.form || document.body;
+  const panel = currentIntakePanel();
+  if (panel !== form) {
+    const only = IMAGE_INTAKES.filter(
+      (e) => intakePanelOf(e.el) === panel && intakeVisible(e.el) && e.countsForPaste,
+    );
+    if (only.length === 1) return only[0];
+  }
+  return null;
+}
+
+/** 记下最近一次点过 / 聚焦过的接入口（优先级 ②） */
+function bindImageIntakeTracking() {
+  const track = (ev) => {
+    const entry = intakeFromNode(ev.target);
+    if (entry) lastIntake = entry;
+  };
+  document.addEventListener('pointerdown', track, true);
+  document.addEventListener('focusin', track, true);
+  // 拖到窗口外松手时不会有人给自己擦高亮，这里统一收个尾
+  document.addEventListener('dragleave', (ev) => {
+    if (!ev.relatedTarget) clearIntakeHighlight();
+  });
+  document.addEventListener('drop', clearIntakeHighlight, true);
+}
+
+/**
+ * 全局粘贴：只在剪贴板里**真有图片**时才动手。
+ * 纯文字 / HTML 的粘贴一个字节都不碰（输入框里粘文字必须照旧）。
+ */
+function bindImagePasteToIntakes() {
+  document.addEventListener('paste', async (ev) => {
+    const files = imageFilesFromTransfer(ev.clipboardData);
+    if (!files.length) return;
+
+    const direct = intakeFromNode(ev.target) || intakeFromNode(document.activeElement);
+    // 焦点在正文编辑器里又没有明确的上传点 → 交回给老的那套（插到光标处）
+    if (!direct && (isBodyEditorNode(ev.target) || isBodyEditorNode(document.activeElement))) return;
+
+    const entry = direct || resolveImageIntake(null);
+    if (!entry) {
+      ev.preventDefault();
+      toast('不知道该把这张图放哪儿：先点一下「上传 / 选图片」那个按钮，再按 Ctrl+V');
+      return;
+    }
+    ev.preventDefault();
+    lastIntake = entry;
+    await runIntake(entry, files.map((f) => renamePasted(f)));
+  });
 }
 
 function bindImageDropAndPaste() {
@@ -1103,8 +1461,18 @@ function doInsertImage() {
 let boardsDraft = null;
 
 async function openBoardsModal() {
-  els.boardsEditor.textContent = '正在读取…';
+  markWorkspaceActive('boards');
   els.boardsModal.hidden = false;
+  /*
+    已经有草稿就直接画，**不再从盘上读一遍**。
+    重读会把「页面 / 独立页面工作台里改了还没保存」的东西一并冲掉 ——
+    两处共用 boardsDraft，从盘上重读等于把草稿扔了。
+  */
+  if (boardsDraft) {
+    renderBoardsEditor();
+    return;
+  }
+  els.boardsEditor.textContent = '正在读取…';
   try {
     const res = await fetch('/api/boards');
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -1166,6 +1534,151 @@ function boardInput(value, placeholder, onInput) {
 }
 
 /* ---------------------------------------------------------------
+   工作面总入口（左上角那个「工作台」按钮）
+
+   编辑器里能整块干活的地方就这么多：文章/手记、页面、独立页面、子版块、
+   导航、时间轴、音乐、排版。以前想换一个得先把手上这个关掉，页面一多就来回折腾。
+   现在统一从这儿跳：openWorkspace() 先关掉别的面板，再打开目标那个。
+
+   关掉 ≠ 丢改动：每个面板的数据都在各自的内存草稿里（boardsDraft /
+   timelinesDraft / navsDraft / musicDraft / pageDraft），关面板只是 hidden，
+   再打开时读到的是草稿而不是盘上的旧值 —— 这就是「切走再切回来改动还在」。
+   --------------------------------------------------------------- */
+
+const WORKSPACES = [
+  { id: 'docs', label: '文章 / 手记', hint: '回到主界面，继续写文章和手记' },
+  { id: 'pages', label: '页面', hint: '整页编辑：板块树里的每一页' },
+  { id: 'solo', label: '独立页面', hint: '不挂在任何板块下的页面，可搜索的清单' },
+  { id: 'boards', label: '子版块', hint: '首页大板块下面的整棵版块树' },
+  { id: 'navs', label: '导航', hint: '可复用的导航分类库' },
+  { id: 'timelines', label: '时间轴', hint: '新建 / 编辑时间轴' },
+  { id: 'music', label: '音乐', hint: '给每个页面配一份歌单' },
+  { id: 'layout', label: '排版', hint: '拖动 / 缩放页面上的元素' },
+];
+
+/** 现在开着的是哪个工作面；没有面板开着就是主界面 'docs' */
+let activeWorkspace = 'docs';
+
+/** 顶上那条「切换」小按钮亮到当前这个工作面 */
+function markWorkspaceActive(id) {
+  activeWorkspace = id;
+  paintWorkspaceSwitch();
+}
+
+/** 关掉一个工作面。没开着也照常叫 —— 每个 close 都是幂等的。 */
+function closeWorkspace(id) {
+  if (id === 'pages') closePagesView();
+  else if (id === 'solo') closeSoloView();
+  else if (id === 'boards') closeBoardsModal();
+  else if (id === 'navs') closeNavsModal();
+  else if (id === 'timelines') closeTimelinesModal();
+  else if (id === 'music') closeMusicModal();
+  else if (id === 'layout') closeLayoutModal();
+}
+
+/** 关掉除 except 以外的所有面板 */
+function closeOtherWorkspaces(except = '') {
+  for (const ws of WORKSPACES) if (ws.id !== except) closeWorkspace(ws.id);
+}
+
+/**
+ * 打开一个工作面。
+ * 顶栏按钮、总入口菜单、面板里那条「切换」都走这儿，所以不管从哪儿点，
+ * 行为和「先关掉别的」都一致。
+ */
+async function openWorkspace(id) {
+  closeHubMenu();
+  if (id === 'docs') {
+    closeOtherWorkspaces('');
+    markWorkspaceActive('docs');
+    return;
+  }
+  closeOtherWorkspaces(id);
+  if (id === 'pages') await openPagesView();
+  else if (id === 'solo') await openSoloView();
+  else if (id === 'boards') await openBoardsModal();
+  else if (id === 'navs') await openNavsModal();
+  else if (id === 'timelines') await openTimelinesModal();
+  else if (id === 'music') await openMusicModal();
+  else if (id === 'layout') await openLayoutModal();
+}
+
+/** 面板里那条切换条：每个面板顶上都有一个空的 [data-ws-slot]，往里面填按钮 */
+function paintWorkspaceSwitch() {
+  for (const slot of document.querySelectorAll('[data-ws-slot]')) {
+    slot.textContent = '';
+    for (const ws of WORKSPACES) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'wsswitch__btn';
+      b.dataset.ws = ws.id;
+      b.textContent = ws.label;
+      b.title = ws.hint;
+      if (ws.id === activeWorkspace) b.classList.add('is-active');
+      b.addEventListener('click', () => openWorkspace(ws.id));
+      slot.appendChild(b);
+    }
+    const shut = document.createElement('button');
+    shut.type = 'button';
+    shut.className = 'wsswitch__btn wsswitch__btn--close';
+    shut.textContent = '关闭面板';
+    shut.title = '关掉这个面板（没保存的改动留着，再打开还在）';
+    shut.addEventListener('click', () => openWorkspace('docs'));
+    slot.appendChild(shut);
+  }
+}
+
+function buildHubMenu() {
+  const box = els.hubMenuList;
+  if (!box) return;
+  box.textContent = '';
+  for (const ws of WORKSPACES) {
+    const li = document.createElement('li');
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'hubmenu__btn';
+    b.dataset.ws = ws.id;
+    if (ws.id === activeWorkspace) b.classList.add('is-active');
+
+    const label = document.createElement('span');
+    label.className = 'hubmenu__label';
+    label.textContent = ws.label;
+    const hint = document.createElement('em');
+    hint.className = 'hubmenu__hint';
+    hint.textContent = ws.hint;
+    b.append(label, hint);
+    b.addEventListener('click', () => openWorkspace(ws.id));
+    li.appendChild(b);
+    box.appendChild(li);
+  }
+}
+
+function openHubMenu() {
+  if (!els.hubMenu) return;
+  buildHubMenu();
+  els.hubMenu.hidden = false;
+  els.btnHub.setAttribute('aria-expanded', 'true');
+  els.btnHub.classList.add('is-on');
+  // 菜单挂在 body 上（要盖过弹窗），位置得自己按按钮算
+  const r = els.btnHub.getBoundingClientRect();
+  els.hubMenu.style.left = `${Math.max(8, Math.round(r.left))}px`;
+  els.hubMenu.style.top = `${Math.round(r.bottom + 6)}px`;
+}
+
+function closeHubMenu() {
+  if (!els.hubMenu || els.hubMenu.hidden) return;
+  els.hubMenu.hidden = true;
+  els.btnHub.setAttribute('aria-expanded', 'false');
+  els.btnHub.classList.remove('is-on');
+}
+
+function toggleHubMenu() {
+  if (!els.hubMenu) return;
+  if (els.hubMenu.hidden) openHubMenu();
+  else closeHubMenu();
+}
+
+/* ---------------------------------------------------------------
    页面工作台（整页编辑）
 
    这是编辑器里「改页面」的唯一入口，长得跟写文章那边一样：
@@ -1191,6 +1704,7 @@ const BLOCK_LABEL = {
   toc: '目录',
   map: '地图',
   children: '子页面',
+  nav: '导航',
 };
 const TEXT_HINT =
   '支持 Markdown：**粗体**、[链接](地址)、- 列表、![图](/img/uploads/x.png)、## 小标题、[[文字|图片地址]]（悬停出图）、[[文字|图片地址|链接地址]]（悬停出图 + 点击跳转）';
@@ -1208,18 +1722,46 @@ const LAYOUT_HINT = '三列分区要有 4 个以上子版块才生效；这一�
 let pageNode = null;
 let pageDraft = [];
 
+/*
+  「新块插到哪儿」和「拖着换位置」两份临时状态（换页 / 换面板都得清掉）。
+
+  pageInsertAfterId：点了哪张卡片头上的「＋」—— 新块插在它后面。
+    **null 就是老规矩：插到最后**。故意不拿"刚才在哪儿点过一下"当落点：
+    落点要么是明着指定的，要么就在最后面，老用户点底部那排「＋ 文字」的习惯
+    一点都不变，也不会因为光标停在哪一段就偷偷插进正文中间。
+  pageActiveBlockId：鼠标 / 光标最近落在哪张卡片上（"当前这一段"）。
+    只用来高亮和插完滚动，不参与落点计算 —— 见 pageInsertAt()。
+*/
+let pageInsertAfterId = null;
+let pageActiveBlockId = null;
+/** 正在被按住拖的那一块；没在拖就是 null */
+let pageDragId = null;
+/** 拖拽打算落在第几位（「摘掉自己之后」那个数组里的下标） */
+let pageDropAt = -1;
+/** 拖拽期间的临时节点 / 句柄，松手和重画都要清干净 */
+let pageDragBox = null;
+let pageDropLine = null;
+let pageDragRaf = 0;
+let pageDragPointer = null;
+
 /** 工作台里当前选中的节点（和 pageNode 是同一个东西，读起来更像页面） */
 let studioNode = null;
 /** 左栏搜索词 */
 let studioSearch = '';
+/** 独立页面工作台的搜索词 */
+let soloSearch = '';
+/** 上次在独立页面工作台看的是哪一页：来回切面板时别跳回第一条 */
+let lastSoloNode = null;
 
 let blockSeq = 0;
 const newBlockId = (nodeId) => `${nodeId}-p${Date.now().toString(36)}${(blockSeq += 1)}`;
 
 /** 打开工作台。传节点就定位到那一页，不传就用上次看的 / 第一个大板块。 */
 async function openPagesView(node = null) {
+  // 中间/右栏那几块控件可能正被「独立页面」工作台借走，先搬回来
+  mountStudioHost('pages');
+  markWorkspaceActive('pages');
   els.pagesModal.hidden = false;
-  closeBoardsModal();
 
   if (!boardsDraft) {
     els.pwList.textContent = '正在读取版块树…';
@@ -1244,7 +1786,24 @@ async function openPagesView(node = null) {
     /* 忽略：没有时间轴照样能改页面 */
   }
 
-  const want = node || studioNode || pickDefaultPage();
+  /*
+    分类库也拉一把：「＋ 导航」那个块要列出所有大分类才勾得出来。
+    同样拉不到不算致命 —— 块里会提示「先去导航面板建分类」。
+  */
+  try {
+    await loadNavs();
+  } catch {
+    /* 忽略：没有分类库照样能改页面，只是导航块勾不了 */
+  }
+
+  /*
+    默认留在普通页面上：独立页面已经有自己的面板了，在这儿选中它，
+    左栏那棵树里又找不到它，看着像"什么都没选中"。
+  */
+  const want = node
+    || (studioNode && studioNode.standalone !== true ? studioNode : null)
+    || pickDefaultPage();
+  // selectStudioPage 还是同一页时只重画、不重读，中间栏那份草稿不会被冲掉
   selectStudioPage(want);
 }
 
@@ -1283,7 +1842,7 @@ function studioPages() {
 /**
  * 打开工作台时默认选哪一页。
  * 优先普通页面：独立页面不挂在任何板块下，不该抢这个「默认打开」的位置
- * （真要编辑它，左栏下面那一节点一下就到了）。
+ * （真要编辑它，去「独立页面」工作台 —— 它有自己的面板）。
  */
 function pickDefaultPage() {
   const all = studioPages();
@@ -1306,22 +1865,44 @@ function siteLinkStatus(link) {
   return pages.has(clean) || pages.has(`${clean}/`) ? 'ok' : 'missing';
 }
 
-/** 换到某一页：把它的内容读进草稿，然后整屏重画 */
+/**
+ * 换到某一页：把它的内容读进草稿，然后整屏重画。
+ *
+ * 两个「不丢草稿」的关键：
+ *   · 换页之前先把当前这页没保存的块收进它自己的节点（commitPageBlocks）——
+ *     不收的话，切走就再也找不回来了；
+ *   · 还是同一页时**不重读** node.page —— 面板切来切去会重复选中同一页，
+ *     每次重读都等于把中间栏里没保存的改动按原数据抹掉。
+ */
 function selectStudioPage(node) {
   if (!node) return;
+  if (node === pageNode) {
+    renderPageStudio();
+    loadStudioFrame();
+    return;
+  }
+  if (pageNode) commitPageBlocks();
   studioNode = node;
   pageNode = node;
   // 深拷一份块：没点保存之前不该动到原数据
   pageDraft = JSON.parse(JSON.stringify(node.page ?? []));
+  // 换页了：上一页的插入落点和拖拽状态不该漂到这一页来
+  resetPageBlockPlacement();
   renderPageStudio();
   loadStudioFrame();
 }
 
 function renderPageStudio() {
   if (!studioNode) return;
-  els.pagesTitle.textContent = `页面 · ${studioNode.title || studioNode.id || '未命名'}`;
+  const name = studioNode.title || studioNode.id || '未命名';
+  els.pagesTitle.textContent = `页面 · ${name}`;
+  if (studioNode.standalone === true) {
+    lastSoloNode = studioNode;
+    if (els.soloTitle) els.soloTitle.textContent = `独立页面 · ${name}`;
+  }
   renderStudioTree();
   renderStudioStandalone();
+  renderSoloList();
   renderStudioFields();
   renderPageEditor();
   renderStudioKids();
@@ -1335,7 +1916,7 @@ function renderStudioTree() {
 
   /*
     独立页面**不在**这棵树里：它们不挂在任何板块下，
-    在这棵树里出现只会让人以为「它属于哪个板块」。下面单独一栏管它们。
+    在这棵树里出现只会让人以为「它属于哪个板块」。下面那张卡片是它们的入口。
   */
   const all = studioPages().filter((f) => f.node.standalone !== true);
   const kw = studioSearch.trim().toLowerCase();
@@ -1374,7 +1955,7 @@ function renderStudioTree() {
   }
 }
 
-/* ---------- 左栏（下）：独立页面 ----------
+/* ---------- 独立页面（专属工作台） ----------
 
    用户要的是「写文章限制太多，不如直接写页面」，但页面一直以来
    必须挂在某个板块下才建得出来。独立页面就是解这个的：
@@ -1386,7 +1967,11 @@ function renderStudioTree() {
    · 所以它只能靠别处挂的链接点进来（正文链接 / 地图图钉 / 时间轴跳转地址），
      于是「地址好拿、好复制」就是这一节最要紧的事。
 
-   左栏那棵树里**不放**它们（不在任何板块下），这里也**不放**普通板块。
+   以前它们挤在「页面」工作台左栏底下那一小块里，页面一多就翻不动。
+   现在有自己的面板（#solo-modal）：左边是可搜索的清单，中间改标题 / 地址 /
+   正文块，右边是这一页的样子。数据还是 boardsDraft 里那些顶层节点，
+   和「页面」工作台**共用同一份**；中间和右栏的控件是整块搬过来的
+   （见 mountStudioHost），所以两边的行为永远一样，不会各写一套。
    --------------------------------------------------------------- */
 
 /** 独立页面：顶层、`standalone === true` 的那些节点 */
@@ -1472,99 +2057,254 @@ function copyText(text, el) {
   fallback();
 }
 
-/** 一行独立页面：改名 / 改地址 / 编辑 / 删除 / 显示地址 + 一键复制 */
-function standaloneRow(node) {
-  const row = document.createElement('div');
-  row.className = 'pw-solo__item';
-  row.dataset.soloId = node.id;
-  if (node === studioNode) row.classList.add('is-active');
+/**
+ * 独立页面清单里的一行：点一下选中它，右边的「删除」删掉它。
+ *
+ * 改名 / 改地址**不**放在行里做 —— 每一行都带输入框，几十页就挤成一团，
+ * 反而更翻不动（那正是要被改掉的老毛病）。那些字段在中间栏，选中了改。
+ */
+function soloRow(node) {
+  const li = document.createElement('li');
+  li.className = 'solo__row';
+  li.dataset.soloId = node.id;
 
-  /* 第一行：名字 + 编辑 / 删除 */
-  const top = document.createElement('div');
-  top.className = 'pw-solo__top';
+  const pick = document.createElement('button');
+  pick.type = 'button';
+  pick.className = 'solo__item';
+  if (node === studioNode) pick.classList.add('is-active');
+  pick.title = '选中这一页：中间改标题 / 地址 / 正文块，右边看效果';
 
-  const name = boardInput(node.title ?? '', '这一页叫什么', (v) => {
-    node.title = v;
-    markStudioDirty();
-    if (node === studioNode) els.pagesTitle.textContent = `页面 · ${v || node.id || '未命名'}`;
-  });
-  name.classList.add('pw-solo__name');
+  const name = document.createElement('span');
+  name.className = 'solo__name';
+  name.textContent = node.title || '(未命名)';
 
-  const open = document.createElement('button');
-  open.type = 'button';
-  open.className = 'btn btn--ghost boardedit__mini pw-solo__open';
-  open.textContent = '编辑这一页 ›';
-  open.title = '切到它自己的页面继续改（十种内容块、上传图片、时间轴、版式全都照旧）';
-  open.addEventListener('click', () => selectStudioPage(node));
+  const url = document.createElement('em');
+  url.className = 'solo__urltag';
+  const blocks = Array.isArray(node.page) ? node.page.length : 0;
+  url.textContent = blocks ? `${nodeUrl(node)} · ${blocks} 块` : nodeUrl(node);
+
+  pick.append(name, url);
+  pick.addEventListener('click', () => selectSoloPage(node));
 
   const del = document.createElement('button');
   del.type = 'button';
-  del.className = 'btn btn--ghost boardedit__mini boardedit__del pw-solo__del';
+  del.className = 'btn btn--ghost boardedit__mini boardedit__del solo__del';
   del.textContent = '删除';
   del.title = (node.children ?? []).length
     ? '会连同它下面的子版块一起删掉'
     : '删掉这一页（别处链到它的链接会变成 404）';
-  del.addEventListener('click', () => {
-    if ((node.children ?? []).length
-      && !confirm(`「${node.title || node.id}」下面还有 ${node.children.length} 个子版块，一起删掉吗？`)) {
-      return;
-    }
-    const i = boardsDraft.boards.indexOf(node);
-    if (i >= 0) boardsDraft.boards.splice(i, 1);
-    markStudioDirty();
-    if (node === studioNode) {
-      const next = pickDefaultPage();
-      if (next) selectStudioPage(next);
-      else {
-        renderStudioStandalone();
-        renderStudioTree();
-      }
-    } else {
-      renderStudioStandalone();
-      renderStudioTree();
-    }
-  });
+  del.addEventListener('click', () => deleteStandalone(node));
 
-  top.append(name, open, del);
-
-  /* 第二行：地址（可以手写覆盖）+ 现在的站内地址 + 一键复制 */
-  const urlText = document.createElement('code');
-  urlText.className = 'pw-solo__url';
-  const syncUrl = () => {
-    urlText.textContent = nodeUrl(node);
-  };
-
-  const addr = boardInput(node.href ?? '', '地址（留空 = 按 id 自动生成）', (v) => {
-    node.href = v.trim();
-    markStudioDirty();
-    syncUrl();
-  });
-  addr.classList.add('pw-solo__href');
-  addr.title = '想换地址就在这儿手写（比如 /about）；留空就按 id 自动生成';
-  syncUrl();
-
-  const copy = document.createElement('button');
-  copy.type = 'button';
-  copy.className = 'btn btn--ghost boardedit__mini pw-solo__copy';
-  copy.textContent = '复制地址';
-  copy.title = '复制这个站内地址，粘到正文链接 / 地图图钉 / 时间轴的跳转地址里';
-  copy.addEventListener('click', () => copyText(nodeUrl(node), urlText));
-
-  const addrRow = document.createElement('div');
-  addrRow.className = 'pw-solo__addr';
-  const addrCap = document.createElement('span');
-  addrCap.className = 'pw-solo__addrlabel';
-  addrCap.textContent = '站内地址';
-  addrRow.append(addrCap, urlText, copy, addr);
-
-  const tip = document.createElement('p');
-  tip.className = 'hint pw-solo__tip';
-  tip.textContent = '把上面这个地址粘到正文链接 / 地图图钉 / 时间轴的「跳转地址」里，点一下就能进这一页。';
-
-  row.append(top, addrRow, tip);
-  return row;
+  li.append(pick, del);
+  return li;
 }
 
+/** 独立页面清单：按标题 / 地址 / id 筛，一共几条一眼看得出来 */
+function renderSoloList() {
+  const box = els.soloList;
+  if (!box) return;
+  box.textContent = '';
+  const solos = standaloneBoards();
+  if (els.soloCount) els.soloCount.textContent = `${solos.length} 个`;
+
+  const kw = soloSearch.trim().toLowerCase();
+  const shown = kw
+    ? solos.filter((n) => String(n.title ?? '').toLowerCase().includes(kw)
+      || String(n.id ?? '').toLowerCase().includes(kw)
+      || String(n.href ?? '').toLowerCase().includes(kw)
+      || nodeUrl(n).toLowerCase().includes(kw))
+    : solos;
+
+  if (!shown.length) {
+    const li = document.createElement('li');
+    li.className = 'solo__empty';
+    li.textContent = solos.length
+      ? `没有匹配「${soloSearch.trim()}」的页面`
+      : '还没有独立页面。上面填个名字、点「＋ 新建」就有了。';
+    box.appendChild(li);
+    return;
+  }
+  for (const node of shown) box.appendChild(soloRow(node));
+}
+
+/** 在独立页面面板里选中一页 */
+function selectSoloPage(node) {
+  if (!node) return;
+  lastSoloNode = node;
+  // 里面会连清单、字段、正文块、右栏预览一起重画
+  selectStudioPage(node);
+  if (els.soloTitle) els.soloTitle.textContent = `独立页面 · ${node.title || node.id || '未命名'}`;
+}
+
+/** 删掉一条独立页面（下面还挂着子版块时要用户点一下头） */
+function deleteStandalone(node) {
+  if ((node.children ?? []).length
+    && !confirm(`「${node.title || node.id}」下面还有 ${node.children.length} 个子版块，一起删掉吗？`)) {
+    return;
+  }
+  const i = (boardsDraft?.boards ?? []).indexOf(node);
+  if (i < 0) return;
+  boardsDraft.boards.splice(i, 1);
+  markStudioDirty();
+  if (node === pageNode) {
+    /*
+      删的正好是手上这一页：换到剩下第一条独立页面。
+      一条都不剩就把中间栏清空 —— 不清的话，「保存」会把别的页面给存了。
+    */
+    if (lastSoloNode === node) lastSoloNode = null;
+    const next = standaloneBoards()[0] ?? null;
+    if (next) selectSoloPage(next);
+    else clearStudioSelection();
+  } else {
+    renderStudioFields();
+  }
+  renderSoloList();
+  renderStudioStandalone();
+  renderStudioTree();
+}
+
+/** 一条独立页面都不剩时：把中间栏清干净，别留着上一页的字段 */
+function clearStudioSelection() {
+  // 清之前先把手上这页没保存的块收进它自己的节点 —— 否则从这里回到「页面」工作台，那页的改动就白改了
+  if (pageNode) commitPageBlocks();
+  studioNode = null;
+  pageNode = null;
+  pageDraft = [];
+  resetPageBlockPlacement();
+  if (els.soloTitle) els.soloTitle.textContent = '独立页面';
+  els.pwFields.textContent = '';
+  els.pageEditor.textContent = '';
+  els.pwKids.textContent = '';
+  els.pwUrl.textContent = '—';
+  els.pwStatus.textContent = '';
+  els.pwStatus.classList.remove('is-dirty');
+  els.pwFrame.srcdoc = '';
+}
+
+/** 左栏上面那个「＋ 新建」：填个名字就建一条，建完立刻选中、名字就能接着敲 */
+function createStandalone(input) {
+  if (!boardsDraft) return null;
+  const wanted = input.value.trim();
+  const pageTitle = wanted || '新独立页面';
+  const node = { id: newStandaloneId(pageTitle), title: pageTitle, standalone: true, page: [] };
+  // 放到最前面：刚建的在最上面，一眼看到
+  boardsDraft.boards.unshift(node);
+  input.value = '';
+  markStudioDirty();
+  // 新建的别被搜索词挡在清单外面
+  soloSearch = '';
+  if (els.soloSearch) els.soloSearch.value = '';
+  selectSoloPage(node);
+  // 名字选中，接着敲字就是改名
+  const nameIn = els.pwFields.querySelector('input');
+  nameIn?.focus();
+  nameIn?.select?.();
+  return node;
+}
+
+/** 打开独立页面工作台。传节点就定位到那一页，不传就接着上次看的那一页。 */
+async function openSoloView(node = null) {
+  mountStudioHost('solo');
+  markWorkspaceActive('solo');
+  els.soloModal.hidden = false;
+
+  if (!boardsDraft) {
+    els.soloList.textContent = '正在读取版块树…';
+    try {
+      const res = await fetch('/api/boards');
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      boardsDraft = await res.json();
+    } catch (err) {
+      els.soloList.textContent = `读取失败：${err.message}`;
+      return;
+    }
+  }
+
+  // 时间轴、分类库：中间栏那几个下拉要它们才画得出来；拉不到不影响改页面
+  try {
+    await loadTimelines();
+  } catch {
+    /* 忽略 */
+  }
+  try {
+    await loadNavs();
+  } catch {
+    /* 忽略 */
+  }
+
+  const solos = standaloneBoards();
+  if (els.soloSearch) els.soloSearch.value = soloSearch;
+
+  /*
+    选中哪一页：显式指定的 > 上次在这个面板看的那一页 > 手上正编辑的
+    （它本来就是独立页面时）> 第一页。一条都没有就清空中间栏。
+  */
+  const want = node
+    || (solos.includes(lastSoloNode) ? lastSoloNode : null)
+    || (studioNode && studioNode.standalone === true ? studioNode : null)
+    || solos[0]
+    || null;
+  if (want) selectSoloPage(want);
+  else clearStudioSelection();
+  renderSoloList();
+}
+
+/** 关掉独立页面工作台（草稿不丢：改动就在 boardsDraft 里） */
+function closeSoloView() {
+  if (els.soloModal) els.soloModal.hidden = true;
+  els.pwFrame.srcdoc = '';
+  // 控件搬回「页面」工作台，免得下次打开那边中间栏是空的
+  if (studioHost === 'solo') mountStudioHost('pages');
+}
+
+/* ---------- 两个工作台共用同一套编辑控件 ----------
+
+   「页面」和「独立页面」的中间栏、右栏、状态栏是**同一批 DOM 节点**：
+   打开哪个面板就把它们 appendChild 到哪个面板里去 —— 搬的是节点本身，不是复制。
+   这样 boardsDraft / pageDraft / #page-editor 只有一份，
+   两个面板不可能显示得不一样，也不用维护第二套渲染函数。
+
+   搬回去靠事先插好的锚点。不能用记下来的 nextSibling 还原：
+   下一个兄弟自己也被搬走了，insertBefore 会因为参照节点不在父节点下直接抛错。
+   --------------------------------------------------------------- */
+
+/** 'pages' | 'solo'：这批共用控件现在挂在哪个面板里 */
+let studioHost = 'pages';
+const STUDIO_MOVERS = [];
+
+function initStudioAnchors() {
+  const pairs = [
+    [els.pwFields, els.soloEditCol],
+    [els.pwContentBlock, els.soloEditCol],
+    [els.pwKidsBlock, els.soloEditCol],
+    [els.pwPreviewHead, els.soloPreviewCol],
+    [els.pwFrameWrap, els.soloPreviewCol],
+    [els.pwActions, els.soloPanel],
+  ];
+  for (const [el, dest] of pairs) {
+    if (!el || !el.parentNode || !dest) continue;
+    const anchor = document.createElement('span');
+    anchor.className = 'studio-anchor';
+    el.parentNode.insertBefore(anchor, el);
+    STUDIO_MOVERS.push({ el, anchor, dest });
+  }
+}
+
+function mountStudioHost(which) {
+  if (which === studioHost || !STUDIO_MOVERS.length) return;
+  for (const m of STUDIO_MOVERS) {
+    if (which === 'solo') m.dest.appendChild(m.el);
+    else if (m.anchor.parentNode) m.anchor.parentNode.insertBefore(m.el, m.anchor);
+  }
+  studioHost = which;
+  paintWorkspaceSwitch();
+}
+
+/**
+ * 「页面」工作台左栏底下那一小块：现在只是个入口卡片。
+ * 清单本身搬去了独立页面工作台 —— 在这儿塞一整列（还要挨个改名改地址）
+ * 正是「页面一多就翻不动」的老毛病，不如让出一个按钮直接跳过去。
+ */
 function renderStudioStandalone() {
   const box = els.pwSolo;
   if (!box) return;
@@ -1578,66 +2318,24 @@ function renderStudioStandalone() {
   title.textContent = '独立页面';
   const count = document.createElement('em');
   count.className = 'pw-solo__count';
-  count.textContent = solos.length ? `${solos.length} 个` : '';
+  count.textContent = solos.length ? `${solos.length} 个` : '还没有';
   head.append(title, count);
   box.appendChild(head);
+
+  const jump = document.createElement('button');
+  jump.type = 'button';
+  jump.className = 'btn btn--ghost boardedit__mini pw-solo__jump';
+  jump.id = 'pw-solo-jump';
+  jump.textContent = '打开独立页面工作台 ›';
+  jump.title = '独立页面有自己的编辑窗：可搜索的清单 + 标题 / 地址 / 正文块，页面多了也好翻';
+  jump.addEventListener('click', () => openWorkspace('solo'));
+  box.appendChild(jump);
 
   const hint = document.createElement('p');
   hint.className = 'hint pw-solo__hint';
   hint.textContent =
     '不显示在任何板块下：首页卡片、右上角目录树、别人的子版块列表、sitemap 里都没有它，页面本身照常生成。只能靠你在别处挂的链接点进来。';
   box.appendChild(hint);
-
-  /* 新建：填个名字就建一条，建完立刻选中、名字接着就能改 */
-  const newRow = document.createElement('div');
-  newRow.className = 'pw-solo__new';
-  const nameIn = document.createElement('input');
-  nameIn.type = 'text';
-  nameIn.className = 'input input--sm pw-solo__newname';
-  nameIn.placeholder = '新页面叫什么？（比如 about）';
-  nameIn.autocomplete = 'off';
-  nameIn.title =
-    '填个名字就能建一条独立页面。名字是英文/数字的话会直接拿来当地址（/about/），中文会自动给个短 id，之后想换好看的地址就在下面「地址」里手写。';
-  const addBtn = document.createElement('button');
-  addBtn.type = 'button';
-  addBtn.className = 'btn btn--ghost boardedit__mini pw-solo__add';
-  addBtn.textContent = '＋ 新建独立页面';
-  const create = () => {
-    const wanted = nameIn.value.trim();
-    const pageTitle = wanted || '新独立页面';
-    const node = { id: newStandaloneId(pageTitle), title: pageTitle, standalone: true, page: [] };
-    // 放到最前面：刚建的在最上面，一眼看到
-    boardsDraft.boards.unshift(node);
-    nameIn.value = '';
-    markStudioDirty();
-    selectStudioPage(node); // 顺带把左栏、这一节、右栏预览整屏重画
-    // 名字选中，接着敲字就是改名
-    const rowName = els.pwSolo?.querySelector(`.pw-solo__item[data-solo-id="${node.id}"] .pw-solo__name`);
-    rowName?.focus();
-    rowName?.select?.();
-  };
-  addBtn.addEventListener('click', create);
-  nameIn.addEventListener('keydown', (ev) => {
-    if (ev.key === 'Enter') {
-      ev.preventDefault();
-      create();
-    }
-  });
-  newRow.append(nameIn, addBtn);
-  box.appendChild(newRow);
-
-  if (!solos.length) {
-    const none = document.createElement('p');
-    none.className = 'hint pw-solo__empty';
-    none.textContent = '还没有独立页面。上面填个名字、点「＋ 新建独立页面」就有了。';
-    box.appendChild(none);
-    return;
-  }
-
-  const list = document.createElement('div');
-  list.className = 'pw-solo__list';
-  for (const node of solos) list.appendChild(standaloneRow(node));
-  box.appendChild(list);
 }
 
 /* ---------- 中栏（上）：这一页自己的字段 ---------- */
@@ -1671,7 +2369,12 @@ function renderStudioFields() {
   grid.appendChild(pwField('名称', boardInput(node.title ?? '', '这一页叫什么', (v) => {
     node.title = v;
     els.pagesTitle.textContent = `页面 · ${v || node.id || '未命名'}`;
+    if (node.standalone === true && els.soloTitle) {
+      els.soloTitle.textContent = `独立页面 · ${v || node.id || '未命名'}`;
+    }
     renderStudioTree();
+    // 独立页面清单里那一行的名字也跟着变（重建清单不会动到正在打字的这个框）
+    renderSoloList();
     markStudioDirty();
   })));
 
@@ -1684,6 +2387,7 @@ function renderStudioFields() {
     node.href = v.trim();
     markStudioDirty();
     renderStudioTree();
+    renderSoloList();
   }), node.href ? '用的是你写的这个地址' : `现在自动生成的是 ${flattenBoardNodes().find((f) => f.node === node)?.url ?? '—'}`));
 
   const layoutSel = pageSelect(LAYOUTS, node.layout ?? '', (v) => {
@@ -2275,19 +2979,29 @@ function mapFields(block) {
     pick.type = 'button';
     pick.className = 'btn btn--ghost boardedit__mini';
     pick.textContent = page.src ? '换一张地图' : '选地图图';
+    pick.title = '也可以直接把图拖进来，或 QQ 截图后 Ctrl+V';
     pick.addEventListener('click', () => file.click());
-    file.addEventListener('change', async () => {
-      const f = file.files && file.files[0];
-      file.value = '';
-      if (!f) return;
-      try {
-        page.src = await uploadImage(f);
-        toast('地图传好了');
+    // 点按钮 / 拖进来 / 粘进来，最后都走这个 onFiles（里面是同一个 uploadImage）
+    attachImageIntake({
+      el: row,
+      input: file,
+      label: '地图图',
+      onFiles: async ([f]) => {
+        try {
+          page.src = await uploadImage(f);
+          toast('地图传好了');
+          markStudioDirty();
+          redraw();
+        } catch (err) {
+          toast(`传图失败：${err.message}`, true);
+        }
+      },
+      onUrl: (url) => {
+        page.src = url;
+        toast('地图地址已填上（拖进来的是链接）');
         markStudioDirty();
         redraw();
-      } catch (err) {
-        toast(`传图失败：${err.message}`, true);
-      }
+      },
     });
 
     /*
@@ -2635,11 +3349,13 @@ function mapFields(block) {
         if (pin) pin.title = v || '（还没起名）';
       });
 
-      const link = boardInput(m.href ?? '', '点它跳去 /huaya/xxx（可留空）', (v) => {
+      const linkInput = boardInput(m.href ?? '', '点它跳去 /huaya/xxx（可留空）', (v) => {
         m.href = v.trim();
         markStudioDirty();
       });
-      link.setAttribute('list', dlId);
+      linkInput.setAttribute('list', dlId);
+      // 图钉也能直接钉到页面里的某个位置（标题/图片/段落）
+      const link = withAnchorPick(linkInput);
 
       const del = document.createElement('button');
       del.type = 'button';
@@ -2707,6 +3423,130 @@ function mapFields(block) {
   return wrap;
 }
 
+/**
+ * 「导航」块的字段区。
+ *
+ * 这里**只存引用**：勾了哪几个大分类、按什么顺序（`block.cats`）。
+ * 条目的内容全在分类库里 —— 所以这里永远不内联一份条目拷贝，
+ * 页面数据里只有几个 id；改分类内容不用动页面（这正是「可复用导航」的意义）。
+ * 被勾选的分类按 `cats` 的顺序列在下面，可以上下调。
+ */
+function navBlockFields(block) {
+  const wrap = document.createElement('div');
+  wrap.className = 'pblock-edit__body';
+  block.cats = Array.isArray(block.cats) ? block.cats.filter((c) => typeof c === 'string') : [];
+
+  const cats = navsDraft?.categories ?? [];
+
+  const textRow = document.createElement('div');
+  textRow.className = 'pblock-edit__row';
+  const textCap = document.createElement('span');
+  textCap.className = 'pblock-edit__sub';
+  textCap.textContent = '顶栏文字';
+  const text = boardInput(block.text ?? '', '不写就叫「分类」', (v) => {
+    if (v.trim()) block.text = v;
+    else delete block.text;
+  });
+  text.classList.add('pblock-nav__text');
+  textRow.append(textCap, text);
+  wrap.appendChild(textRow);
+
+  if (!cats.length) {
+    const p = document.createElement('p');
+    p.className = 'pblock-edit__hint pblock-nav__empty';
+    p.textContent = '分类库里还是空的。先到顶栏点「导航」建几个大分类，再回来勾选 —— 这里只放引用，条目的内容都在库里。';
+    wrap.appendChild(p);
+    return wrap;
+  }
+
+  const pickCap = document.createElement('p');
+  pickCap.className = 'pblock-edit__hint';
+  pickCap.textContent = '勾选这一页要挂哪几个大分类（内容在顶栏「导航」面板里改，这里只记 id）：';
+  wrap.appendChild(pickCap);
+
+  const pickBox = document.createElement('div');
+  pickBox.className = 'pblock-nav__pick';
+  for (const cat of cats) {
+    const label = document.createElement('label');
+    label.className = 'pblock-nav__check';
+    label.dataset.catId = cat.id;
+    const box = document.createElement('input');
+    box.type = 'checkbox';
+    box.checked = block.cats.includes(cat.id);
+    box.addEventListener('change', () => {
+      const i = block.cats.indexOf(cat.id);
+      if (box.checked && i < 0) block.cats.push(cat.id);
+      if (!box.checked && i >= 0) block.cats.splice(i, 1);
+      // 下面「顺序」那一栏要跟着变，整块重画一次
+      renderPageEditor();
+    });
+    const name = document.createElement('span');
+    name.className = 'pblock-nav__cname';
+    name.textContent = cat.title || '(未命名)';
+    const n = document.createElement('em');
+    n.className = 'pblock-nav__count';
+    n.textContent = `${navItemCount(cat)} 条`;
+    label.append(box, name, n);
+    pickBox.appendChild(label);
+  }
+  wrap.appendChild(pickBox);
+
+  const orderCap = document.createElement('p');
+  orderCap.className = 'pblock-edit__hint';
+  orderCap.textContent = '这一页的顺序（页面上就按这个排；同一个分类在别的页面可以排在别处）：';
+  wrap.appendChild(orderCap);
+
+  const orderBox = document.createElement('div');
+  orderBox.className = 'pblock-nav__order';
+  if (!block.cats.length) {
+    const none = document.createElement('span');
+    none.className = 'pblock-nav__none';
+    none.textContent = '（还没勾分类）';
+    orderBox.appendChild(none);
+  }
+  block.cats.forEach((id, i) => {
+    const cat = cats.find((c) => c.id === id);
+    const row = document.createElement('span');
+    row.className = 'pblock-nav__orow' + (cat ? '' : ' is-missing');
+    row.dataset.catId = id;
+    const name = document.createElement('span');
+    name.className = 'pblock-nav__oname';
+    name.textContent = cat ? cat.title || '(未命名)' : `（库里没有「${id}」）`;
+    if (!cat) {
+      row.title = '这个 id 在分类库里找不到：站点会跳过它（不会因此报错）。要么去库里把它建出来，要么在这儿删掉这个引用。';
+    }
+    const mini = (label, t, fn, cls = '') => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = `btn btn--ghost boardedit__mini ${cls}`.trim();
+      b.textContent = label;
+      b.title = t;
+      b.addEventListener('click', fn);
+      return b;
+    };
+    row.append(
+      name,
+      mini('↑', '往前挪', () => {
+        if (i === 0) return;
+        [block.cats[i - 1], block.cats[i]] = [block.cats[i], block.cats[i - 1]];
+        renderPageEditor();
+      }),
+      mini('↓', '往后挪', () => {
+        if (i === block.cats.length - 1) return;
+        [block.cats[i + 1], block.cats[i]] = [block.cats[i], block.cats[i + 1]];
+        renderPageEditor();
+      }),
+      mini('✕', '不在这页用它了（分类本身还在库里，别的页面照用）', () => {
+        block.cats.splice(i, 1);
+        renderPageEditor();
+      })
+    );
+    orderBox.appendChild(row);
+  });
+  wrap.appendChild(orderBox);
+  return wrap;
+}
+
 /** 一个块的字段区 */
 function blockFields(block) {
   const wrap = document.createElement('div');
@@ -2722,6 +3562,39 @@ function blockFields(block) {
       block.text = ta.value;
     });
     wrap.appendChild(ta);
+
+    /*
+      文字块是 Markdown，图能直接插进去 —— 一次拖 / 粘多张就一次插多行。
+      但它不参与粘贴优先级 ③（countsForPaste: false）：页面里这种文字块常有
+      好几个，算进去的话「面板里只有一个上传点」那条就永远不成立，
+      打开面板直接粘封面反而找不到地方了。
+    */
+    attachImageIntake({
+      el: ta,
+      multiple: true,
+      countsForPaste: false,
+      label: '文字块',
+      title: '也可以直接把图拖进来，或 QQ 截图后 Ctrl+V（一次多张也行）',
+      onFiles: async (files) => {
+        const lines = [];
+        for (const f of files) {
+          try {
+            const p = await uploadImage(f);
+            lines.push(`![${(f.name || '图片').replace(/\.[^.]+$/, '')}](${p})`);
+          } catch (err) {
+            toast(`上传失败：${err.message}`, true);
+          }
+        }
+        if (!lines.length) return;
+        insertIntoTextarea(ta, `\n${lines.join('\n')}\n`);
+        toast(`已插入 ${lines.length} 张图片`);
+      },
+      onUrl: (url) => {
+        insertIntoTextarea(ta, `\n![](${url})\n`);
+        toast('图片地址已插进去（拖进来的是链接）');
+      },
+    });
+
     const hint = document.createElement('p');
     hint.className = 'pblock-edit__hint';
     hint.textContent = TEXT_HINT;
@@ -2757,18 +3630,26 @@ function blockFields(block) {
     pick.type = 'button';
     pick.className = 'btn btn--ghost boardedit__mini';
     pick.textContent = '选图片';
+    pick.title = '也可以直接把图拖进来，或 QQ 截图后 Ctrl+V';
     pick.addEventListener('click', () => file.click());
-    file.addEventListener('change', async () => {
-      const f = file.files && file.files[0];
-      file.value = '';
-      if (!f) return;
-      try {
-        block.src = await uploadImage(f);
+    attachImageIntake({
+      el: row,
+      input: file,
+      label: '图片块',
+      onFiles: async ([f]) => {
+        try {
+          block.src = await uploadImage(f);
+          paint();
+          toast('图片传好了');
+        } catch (err) {
+          toast(`传图失败：${err.message}`, true);
+        }
+      },
+      onUrl: (url) => {
+        block.src = url;
         paint();
-        toast('图片传好了');
-      } catch (err) {
-        toast(`传图失败：${err.message}`, true);
-      }
+        toast('图片地址已填上（拖进来的是链接）');
+      },
     });
 
     const alt = boardInput(block.alt ?? '', '说明文字（可留空）', (v) => {
@@ -2791,9 +3672,12 @@ function blockFields(block) {
       boardInput(block.text ?? '', '链接文字', (v) => {
         block.text = v;
       }),
-      boardInput(block.href ?? '', '地址（站内写 /huaya，站外写 https://…）', (v) => {
-        block.href = v.trim();
-      })
+      // 链接块也能直接指到页面里的某个标题/图片/段落
+      withAnchorPick(
+        boardInput(block.href ?? '', '地址（站内写 /huaya，站外写 https://…）', (v) => {
+          block.href = v.trim();
+        })
+      )
     );
     wrap.appendChild(row);
     return wrap;
@@ -2885,6 +3769,15 @@ function blockFields(block) {
     return wrap;
   }
 
+  /*
+    导航块：**引用**分类库里的几个大分类，不是把条目拷一份进来。
+    页面里存的就是 `cats`（分类 id 的列表，顺序 = 页面上的顺序），
+    所以分类内容改了不用动任何页面（保存分类时服务端会重新构建）。
+  */
+  if (block.type === 'nav') {
+    return navBlockFields(block);
+  }
+
   if (block.type === 'map') {
     wrap.appendChild(mapFields(block));
     return wrap;
@@ -2915,6 +3808,298 @@ function blockFields(block) {
   return wrap;
 }
 
+/* ---------------------------------------------------------------
+   内容块的两个「少点几下」：插到指定位置 / 按住拖着换位置
+
+   以前想在中间插一张图，只能点底部「＋ 图片」（永远插到最后），再一路点 ↑
+   把它挪上去 —— 内容一多就是几十下。这里补两条路：
+
+   · 每张卡片头上一个「＋」＝「新块插在这一块后面」，点了会在那张卡下面
+     画一条落点提示；底部那排「＋ 文字 / ＋ 图片 / …」就插在那个位置。
+     没点过「＋」还是老规矩：插到最后。
+   · 每张卡片头上一个把手（⠿），按住上下拖就能换位置，拖到列表上下边缘
+     会自动滚动，松手落位。
+
+   拖拽用 pointer 事件自己写，**不用 HTML5 拖放**：内容区里"拖图片进来"
+   是要上传的（见上面「图片接入口」那一层），两套拖拽共用 dataTransfer
+   会打架 —— 从 QQ 拖张图进来可能变成把卡片挪走。所以把手上的事件一律
+   stopPropagation，把手之外（输入框、按钮）一个监听都不加：
+   在输入框里选字还是选字。
+   --------------------------------------------------------------- */
+
+/** 拖到离列表上下边缘这么近就开始自动滚 */
+const PAGE_DRAG_EDGE = 48;
+/** 自动滚动每帧最多滚这么多像素（贴得越近越快） */
+const PAGE_DRAG_SPEED = 18;
+
+/** 新块该插到第几位（splice 的下标）；-1 = 照老规矩插到最后 */
+function pageInsertAt() {
+  if (!pageInsertAfterId) return -1;
+  const i = pageDraft.findIndex((b) => b.id === pageInsertAfterId);
+  // 那一块被删了 / 换页了 → 落点作废，退回「插到最后」，绝不插到别人后面去
+  return i < 0 ? -1 : i + 1;
+}
+
+/** 底部「添加：」那一排旁边那行小字：现在会插到哪儿 */
+function pageInsertNote() {
+  const at = pageInsertAt();
+  if (at < 0) return '点某一段头上的「＋」＝ 新块插在它后面；不点就还是加在最后。';
+  const b = pageDraft[at - 1];
+  return `将插到第 ${at} 段（${BLOCK_LABEL[b.type] || b.type}）后面；再点一次那个「＋」就改回插到最后。`;
+}
+
+/** 换页 / 清空时把落点和拖拽状态一起收掉：上一页的插入点不该漂到下一页 */
+function resetPageBlockPlacement() {
+  pageInsertAfterId = null;
+  pageActiveBlockId = null;
+  stopPageBlockDrag();
+}
+
+/** 这一块的卡片元素（id 里可能有中文和特殊字符，不拿它拼选择器） */
+function pageBlockEl(blockId) {
+  return (
+    Array.from(els.pageEditor.querySelectorAll('.pblock-edit')).find(
+      (b) => b.dataset.blockId === blockId,
+    ) || null
+  );
+}
+
+/** 现在列表里所有卡片（可以排除正在拖的那一张） */
+function pageCardEls(exceptId = '') {
+  return Array.from(els.pageEditor.querySelectorAll('.pblock-edit')).filter(
+    (b) => b.dataset.blockId !== exceptId,
+  );
+}
+
+/**
+ * 把草稿里第 from 块挪到「摘掉自己之后」的第 to 位。返回真的动了没有。
+ * 顺序就是页面上的顺序，改完重画一次就完事。
+ */
+function movePageDraft(from, to) {
+  if (from < 0 || from >= pageDraft.length) return false;
+  if (!Number.isFinite(to)) return false;
+  to = Math.max(0, Math.min(pageDraft.length - 1, to));
+  if (to === from) return false;
+  const [block] = pageDraft.splice(from, 1);
+  pageDraft.splice(to, 0, block);
+  return true;
+}
+
+/** 新加 / 挪过的那一块滚进视野并闪一下：内容一多，不指一下根本找不着它落在哪儿 */
+function revealPageBlock(blockId) {
+  const box = pageBlockEl(blockId);
+  if (!box) return;
+  box.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  box.classList.remove('is-new');
+  void box.offsetWidth;                 // 强制重排：连插两次也能各闪一遍
+  box.classList.add('is-new');
+  window.setTimeout(() => box.classList.remove('is-new'), 1200);
+}
+
+/** 键盘换位之后把焦点还给同一块的把手：连着按 ↑↑↑ 才顺 */
+function focusPageGrip(blockId) {
+  const grip = pageBlockEl(blockId)?.querySelector('.pblock-edit__grip');
+  if (grip) grip.focus({ preventScroll: true });
+  revealPageBlock(blockId);
+}
+
+/**
+ * 把某一块上移 / 下移一格。卡片头上的 ↑ ↓ 和把手上的方向键都走这里，
+ * 所以「换位置」只有一条路径：改草稿 → 标脏 → 重画。
+ */
+function moveBlockBy(blockId, delta, refocusGrip = false) {
+  const from = pageDraft.findIndex((b) => b.id === blockId);
+  if (from < 0) return;
+  if (!movePageDraft(from, from + delta)) return;
+  pageActiveBlockId = blockId;
+  markStudioDirty();
+  renderPageEditor();
+  if (refocusGrip) focusPageGrip(blockId);
+  else revealPageBlock(blockId);
+}
+
+/**
+ * 内容块列表里那个能滚动的祖先：拖到上下边缘时要滚的是它。
+ * 页面工作台和独立页面工作台是同一批 DOM 搬来搬去，写死某一层会在另一边滚不动。
+ */
+function pageEditorScroller() {
+  for (let el = els.pageEditor.parentElement; el; el = el.parentElement) {
+    const oy = getComputedStyle(el).overflowY;
+    if ((oy === 'auto' || oy === 'scroll') && el.scrollHeight > el.clientHeight + 1) return el;
+  }
+  return document.scrollingElement || document.documentElement;
+}
+
+/**
+ * 指针在 clientY：这块松手会落到第几位。
+ * 数的是「指针在多少张卡片的**中线**以下」—— 排除自己，得到的就是摘掉自己
+ * 之后那个数组里的下标（0..n），splice 直接用，不用再补正。
+ */
+function pageDropIndexAt(clientY) {
+  const cards = pageCardEls(pageDragId);
+  let idx = 0;
+  for (const card of cards) {
+    const r = card.getBoundingClientRect();
+    if (clientY > r.top + r.height / 2) idx += 1;
+  }
+  return idx;
+}
+
+/** 落点线：绝对定位在 #page-editor 里，**不占布局** */
+function ensurePageDropLine() {
+  if (pageDropLine && pageDropLine.isConnected) return pageDropLine;
+  pageDropLine = document.createElement('div');
+  pageDropLine.className = 'pblock-dropline';
+  pageDropLine.setAttribute('aria-hidden', 'true');
+  const tag = document.createElement('span');
+  tag.className = 'pblock-dropline__tag';
+  pageDropLine.appendChild(tag);
+  els.pageEditor.appendChild(pageDropLine);
+  return pageDropLine;
+}
+
+/**
+ * 把落点线画到该在的位置。
+ *
+ * 线是绝对定位的（不占布局）：要是让它占布局，线一插进去后面的卡片就往下挪，
+ * 下一次 pointermove 算出来的落点又跳回去，指示线会在两格之间来回抖。
+ */
+function paintPageDropLine(clientY) {
+  if (!pageDragId) return;
+  const cards = pageCardEls(pageDragId);
+  const idx = pageDropIndexAt(clientY);
+  const box = els.pageEditor.getBoundingClientRect();
+  // 有下一张就贴它的上沿，没有就贴最后一张的下沿
+  const y = idx < cards.length
+    ? cards[idx].getBoundingClientRect().top
+    : cards.length
+      ? cards[cards.length - 1].getBoundingClientRect().bottom
+      : box.bottom;
+  const line = ensurePageDropLine();
+  line.style.top = `${y - box.top + els.pageEditor.scrollTop}px`;
+  const tag = line.querySelector('.pblock-dropline__tag');
+  if (tag) tag.textContent = `放到这里（第 ${idx + 1} 位）`;
+  pageDropAt = idx;
+}
+
+/**
+ * 拖到列表上下边缘时自己滚 —— 内容多的时候不滚就永远拖不到头。
+ * 用 rAF 循环而不是只在 pointermove 里滚：鼠标顶着边缘不动时也得继续滚。
+ */
+function pageDragAutoScroll() {
+  pageDragRaf = 0;
+  if (!pageDragId || !pageDragPointer) return;
+  const scroller = pageEditorScroller();
+  const isDoc = scroller === document.scrollingElement || scroller === document.documentElement;
+  const rect = isDoc
+    ? { top: 0, bottom: window.innerHeight }
+    : scroller.getBoundingClientRect();
+  const y = pageDragPointer.y;
+  let dy = 0;
+  if (y < rect.top + PAGE_DRAG_EDGE) {
+    dy = -Math.ceil(((rect.top + PAGE_DRAG_EDGE - y) / PAGE_DRAG_EDGE) * PAGE_DRAG_SPEED);
+  } else if (y > rect.bottom - PAGE_DRAG_EDGE) {
+    dy = Math.ceil(((y - (rect.bottom - PAGE_DRAG_EDGE)) / PAGE_DRAG_EDGE) * PAGE_DRAG_SPEED);
+  }
+  if (dy) {
+    const before = scroller.scrollTop;
+    scroller.scrollTop = before + dy;
+    if (scroller.scrollTop !== before) paintPageDropLine(y);
+  }
+  pageDragRaf = requestAnimationFrame(pageDragAutoScroll);
+}
+
+function onPageDragMove(ev) {
+  if (!pageDragId) return;
+  ev.preventDefault();
+  pageDragPointer = { x: ev.clientX, y: ev.clientY };
+  paintPageDropLine(ev.clientY);
+}
+
+/** 松手：真把顺序换过来（原地放下不算改动，不标脏） */
+function onPageDragEnd(ev) {
+  if (!pageDragId) return;
+  if (ev.type === 'pointercancel') {
+    stopPageBlockDrag();
+    return;
+  }
+  const from = pageDraft.findIndex((b) => b.id === pageDragId);
+  const to = pageDropAt;
+  stopPageBlockDrag();
+  if (from < 0) return;
+  if (!movePageDraft(from, to)) return;
+  pageActiveBlockId = pageDraft[to].id;
+  markStudioDirty();
+  renderPageEditor();
+  revealPageBlock(pageDraft[to].id);
+}
+
+/** 拖到一半按 Esc：当没拖过 */
+function onPageDragKey(ev) {
+  if (!pageDragId || ev.key !== 'Escape') return;
+  ev.stopPropagation();
+  stopPageBlockDrag();
+}
+
+/** 收尾：线、类名、监听器、rAF 全部还原，松手后不留一点拖拽痕迹 */
+function stopPageBlockDrag() {
+  if (pageDragRaf) {
+    cancelAnimationFrame(pageDragRaf);
+    pageDragRaf = 0;
+  }
+  window.removeEventListener('pointermove', onPageDragMove);
+  window.removeEventListener('pointerup', onPageDragEnd);
+  window.removeEventListener('pointercancel', onPageDragEnd);
+  window.removeEventListener('keydown', onPageDragKey, true);
+  for (const el of document.querySelectorAll('.pblock-edit.is-dragging')) {
+    el.classList.remove('is-dragging');
+  }
+  document.body.classList.remove('pblock-dragging');
+  if (pageDropLine) {
+    pageDropLine.remove();
+    pageDropLine = null;
+  }
+  pageDragId = null;
+  pageDragBox = null;
+  pageDragPointer = null;
+  pageDropAt = -1;
+}
+
+/**
+ * 按住把手：开始拖。
+ * 事件挂在 window 上收尾（不靠 pointer capture）—— 捕获失败、指针划过
+ * 右边预览 iframe 之类的情况下，一样收得到 move / up。
+ */
+function startPageBlockDrag(ev, blockId, box, grip) {
+  if (ev.button !== undefined && ev.button !== 0) return;   // 只接左键 / 触摸
+  ev.preventDefault();       // 别顺手选中文字、别让浏览器起原生拖放
+  ev.stopPropagation();      // 别惊动「图片接入口」那层
+  stopPageBlockDrag();       // 上一次没收干净的先收掉
+  pageDragId = blockId;
+  pageDragBox = box;
+  box.classList.add('is-dragging');
+  document.body.classList.add('pblock-dragging');
+  try {
+    grip.setPointerCapture?.(ev.pointerId);
+  } catch {
+    /* 环境不支持就算了，下面这些监听器挂在 window 上，照样收得到 */
+  }
+  pageDragPointer = { x: ev.clientX, y: ev.clientY };
+  // 顺手把焦点放到把手上（preventDefault 挡掉了浏览器的默认聚焦）：
+  // 拖完想接着按 ↑ / ↓ 换位置，不用再 Tab 一圈
+  try {
+    grip.focus({ preventScroll: true });
+  } catch {
+    grip.focus();   // 老浏览器不认参数就退回默认
+  }
+  paintPageDropLine(ev.clientY);
+  window.addEventListener('pointermove', onPageDragMove);
+  window.addEventListener('pointerup', onPageDragEnd);
+  window.addEventListener('pointercancel', onPageDragEnd);
+  window.addEventListener('keydown', onPageDragKey, true);
+  pageDragRaf = requestAnimationFrame(pageDragAutoScroll);
+}
+
 function renderPageEditor() {
   els.pageEditor.textContent = '';
 
@@ -2928,9 +4113,36 @@ function renderPageEditor() {
   pageDraft.forEach((block, i) => {
     const box = document.createElement('div');
     box.className = 'pblock-edit';
+    // 拖拽、滚动定位、测试都用它认块（序号会变，块 id 不会）
+    box.dataset.blockId = block.id;
+    if (block.id === pageActiveBlockId) box.classList.add('is-active');
+    if (block.id === pageDragId) box.classList.add('is-dragging');
 
     const head = document.createElement('div');
     head.className = 'pblock-edit__head';
+
+    // 把手：按住上下拖就能换位置（键盘聚焦后按 ↑ / ↓ 也一样）。
+    // 只在这个按钮上收事件 —— 别的控件一个都不劫持。
+    const grip = document.createElement('button');
+    grip.type = 'button';
+    grip.className = 'pblock-edit__grip';
+    grip.textContent = '⠿';
+    grip.title = '按住上下拖：换这一块的位置（也可以点它，然后按 ↑ / ↓）；拖到列表上下边缘会自动滚';
+    grip.setAttribute('aria-label', `拖动第 ${i + 1} 段换位置`);
+    grip.addEventListener('pointerdown', (ev) => startPageBlockDrag(ev, block.id, box, grip));
+    grip.addEventListener('keydown', (ev) => {
+      if (ev.key !== 'ArrowUp' && ev.key !== 'ArrowDown') return;
+      ev.preventDefault();
+      moveBlockBy(block.id, ev.key === 'ArrowUp' ? -1 : 1, true);
+    });
+    // 点 / 聚焦哪一张卡片＝「当前这一段」：只做高亮，不改落点（见 pageInsertAt）
+    box.addEventListener('pointerdown', () => {
+      if (pageActiveBlockId === block.id) return;
+      pageActiveBlockId = block.id;
+      for (const card of pageCardEls()) {
+        card.classList.toggle('is-active', card.dataset.blockId === block.id);
+      }
+    });
 
     const n = document.createElement('span');
     n.className = 'pblock-edit__n';
@@ -2948,20 +4160,14 @@ function renderPageEditor() {
     const spacer = document.createElement('span');
     spacer.className = 'pblock-edit__spacer';
 
-    const move = (delta) => {
-      const to = i + delta;
-      if (to < 0 || to >= pageDraft.length) return;
-      [pageDraft[i], pageDraft[to]] = [pageDraft[to], pageDraft[i]];
-      renderPageEditor();
-    };
-
+    // ↑ ↓ 和把手上的方向键走同一条路（moveBlockBy）：改草稿 → 标脏 → 重画
     const up = document.createElement('button');
     up.type = 'button';
     up.className = 'btn btn--ghost boardedit__mini';
     up.textContent = '↑';
     up.title = '上移';
     up.disabled = i === 0;
-    up.addEventListener('click', () => move(-1));
+    up.addEventListener('click', () => moveBlockBy(block.id, -1));
 
     const down = document.createElement('button');
     down.type = 'button';
@@ -2969,7 +4175,27 @@ function renderPageEditor() {
     down.textContent = '↓';
     down.title = '下移';
     down.disabled = i === pageDraft.length - 1;
-    down.addEventListener('click', () => move(1));
+    down.addEventListener('click', () => moveBlockBy(block.id, 1));
+
+    /*
+      「＋」＝新块插在这一块后面。底部那排「＋ 文字 / ＋ 图片 / …」照着这个落点插，
+      不用先加到最下面再一路点 ↑。再点一次就取消（改回插到最后）。
+    */
+    const ins = document.createElement('button');
+    ins.type = 'button';
+    ins.className = 'btn btn--ghost boardedit__mini pblock-edit__ins';
+    ins.textContent = '＋';
+    const insOn = block.id === pageInsertAfterId;
+    ins.classList.toggle('is-on', insOn);
+    ins.setAttribute('aria-pressed', insOn ? 'true' : 'false');
+    ins.title = insOn
+      ? '新内容就插在这一段后面（再点一次取消，改回插到最后）'
+      : '在这一段下面插入新内容：点它，再点底部那排「＋ 文字 / ＋ 图片 / …」';
+    ins.addEventListener('click', () => {
+      pageActiveBlockId = block.id;
+      pageInsertAfterId = insOn ? null : block.id;
+      renderPageEditor();
+    });
 
     const del = document.createElement('button');
     del.type = 'button';
@@ -2977,10 +4203,17 @@ function renderPageEditor() {
     del.textContent = '删除';
     del.addEventListener('click', () => {
       pageDraft.splice(i, 1);
+      // 落点正好是删掉的那一块：顺位交给顶上来的下一块（没有下一块就退回插到最后）
+      if (pageInsertAfterId === block.id) {
+        const next = pageDraft[i] || pageDraft[i - 1];
+        pageInsertAfterId = next ? next.id : null;
+      }
+      if (pageActiveBlockId === block.id) pageActiveBlockId = null;
+      markStudioDirty();
       renderPageEditor();
     });
 
-    head.append(n, type, idTag, spacer, up, down, del);
+    head.append(grip, n, type, idTag, spacer, ins, up, down, del);
     box.appendChild(head);
     box.appendChild(blockFields(block));
 
@@ -3006,6 +4239,25 @@ function renderPageEditor() {
     }
 
     els.pageEditor.appendChild(box);
+
+    // 落点提示：明着画在会插进去的那条缝上，一眼看得出新内容会落在哪儿
+    if (block.id === pageInsertAfterId) {
+      const mark = document.createElement('div');
+      mark.className = 'pblock-insmark';
+      const tag = document.createElement('span');
+      tag.className = 'pblock-insmark__tag';
+      tag.textContent = `新内容将插到第 ${i + 1} 段后面`;
+      const back = document.createElement('button');
+      back.type = 'button';
+      back.className = 'btn btn--ghost boardedit__mini';
+      back.textContent = '改回插到最后';
+      back.addEventListener('click', () => {
+        pageInsertAfterId = null;
+        renderPageEditor();
+      });
+      mark.append(tag, back);
+      els.pageEditor.appendChild(mark);
+    }
   });
 
   // 添加新块
@@ -3026,6 +4278,8 @@ function renderPageEditor() {
     ['video', '视频', () => ({ id: newBlockId(pageNode.id), type: 'video', src: '', caption: '' })],
     ['posts', '文章', () => ({ id: newBlockId(pageNode.id), type: 'posts', text: '' })],
     ['toc', '目录', () => ({ id: newBlockId(pageNode.id), type: 'toc', text: '' })],
+    // 导航：引用分类库里的大分类（页面里只存 id，条目内容在库里）
+    ['nav', '导航', () => ({ id: newBlockId(pageNode.id), type: 'nav', cats: [], text: '' })],
     // 地图是分页的，新建时就直接建成分页形状（别再造老那种 src+markers 挂在块上的了）
     ['map', '地图', () => ({ id: newBlockId(pageNode.id), type: 'map', pages: [] })],
   ];
@@ -3035,11 +4289,28 @@ function renderPageEditor() {
     btn.className = 'btn btn--ghost';
     btn.textContent = `＋ ${label}`;
     btn.addEventListener('click', () => {
-      pageDraft.push(make());
+      const made = make();
+      const at = pageInsertAt();
+      // 指定了「插在某段后面」就插在那儿，否则照老规矩插到最后
+      if (at < 0) pageDraft.push(made);
+      else pageDraft.splice(at, 0, made);
+      // 落点跟着往下走一格：连着插两三段都落在同一处后面，顺序才顺
+      pageInsertAfterId = made.id;
+      pageActiveBlockId = made.id;
+      markStudioDirty();
       renderPageEditor();
+      revealPageBlock(made.id);
     });
     addRow.appendChild(btn);
   }
+
+  // 这一排现在往哪儿插：没点过某一段头上的「＋」就还是老规矩 —— 加在最后
+  const note = document.createElement('span');
+  note.className = 'pblock-add__note';
+  note.id = 'page-insert-note';
+  note.textContent = pageInsertNote();
+  addRow.appendChild(note);
+
   els.pageEditor.appendChild(addRow);
 }
 
@@ -3050,9 +4321,11 @@ function commitPageBlocks() {
     if (b.type === 'text') return String(b.text ?? '').trim();
     if (b.type === 'image') return String(b.src ?? '').trim();
     if (b.type === 'link') return String(b.text ?? '').trim() && String(b.href ?? '').trim();
-    // 分隔线、目录和「文章」块本身就有意义
-    // （一条线、一份自动生成的目录、一列这一页的文章），不因为它「空」就删掉
-    if (b.type === 'divider' || b.type === 'posts' || b.type === 'toc') return true;
+    // 分隔线、目录、「文章」块和**导航块**本身就有意义
+    // （一条线、一份自动生成的目录、一列这一页的文章、一组分类引用），
+    // 不因为它们「空」就删掉 —— 导航块尤其不能删：cats 还没勾完就被丢掉，
+    // 用户会以为「加了块它自己没了」。
+    if (b.type === 'divider' || b.type === 'posts' || b.type === 'toc' || b.type === 'nav') return true;
     if (b.type === 'columns') return String(b.left ?? '').trim() || String(b.right ?? '').trim();
     if (b.type === 'video') return String(b.src ?? '').trim();
     /*
@@ -3079,7 +4352,24 @@ function commitPageBlocks() {
  * （服务端 cleanNode 会原样保留）。页面上这张图就是卡片左边那格；
  * 没设的话用渐变兜底，不会是块空白。
  */
-function boardCoverControl(node, onChange = renderBoardsEditor) {
+/**
+ * 图片控件：缩略图 + 选图 + 去掉。
+ *
+ * 图传到 public/img/uploads/ 下，路径写进节点的 `image` 字段
+ * （服务端 cleanNode / cleanNavs 都会原样保留）。页面上这张图就是卡片左边那格；
+ * 没设的话用渐变兜底，不会是块空白。
+ *
+ * `opts` 只改文案：导航条目那边叫「图标」，版块 / 页面那边叫「封面图」，
+ * 逻辑是同一套，就不用写第二份了。
+ */
+function boardCoverControl(node, onChange = renderBoardsEditor, opts = {}) {
+  const label = {
+    pick: '封面图',
+    pickTitle: '给这个版块选一张封面（页面上卡片左边那张图）',
+    empty: '还没有封面图',
+    clear: '去掉图',
+    ...opts,
+  };
   const wrap = document.createElement('span');
   wrap.className = 'boardedit__cover';
 
@@ -3090,7 +4380,7 @@ function boardCoverControl(node, onChange = renderBoardsEditor) {
     thumb.title = node.image;
   } else {
     thumb.classList.add('boardedit__thumb--empty');
-    thumb.title = '还没有封面图';
+    thumb.title = label.empty;
   }
 
   const file = document.createElement('input');
@@ -3101,27 +4391,34 @@ function boardCoverControl(node, onChange = renderBoardsEditor) {
   const pick = document.createElement('button');
   pick.type = 'button';
   pick.className = 'btn btn--ghost boardedit__mini';
-  pick.textContent = node.image ? '换图' : '封面图';
-  pick.title = '给这个版块选一张封面（页面上卡片左边那张图）';
+  pick.textContent = node.image ? (label.pick === '图标' ? '换图标' : '换图') : label.pick;
+  pick.title = `${label.pickTitle}；也可以直接把图拖进来，或 QQ 截图后 Ctrl+V`;
   pick.addEventListener('click', () => file.click());
 
-  file.addEventListener('change', async () => {
-    const f = file.files && file.files[0];
-    file.value = '';
-    if (!f) return;
-    try {
-      node.image = await uploadImage(f);
+  attachImageIntake({
+    el: wrap,
+    input: file,
+    label: label.pick,
+    onFiles: async ([f]) => {
+      try {
+        node.image = await uploadImage(f);
+        onChange();
+        toast(`${label.pick}传好了，记得保存`);
+      } catch (err) {
+        toast(`传图失败：${err.message}`, true);
+      }
+    },
+    onUrl: (url) => {
+      node.image = url;
       onChange();
-      toast('封面图传好了，记得保存');
-    } catch (err) {
-      toast(`传图失败：${err.message}`, true);
-    }
+      toast(`${label.pick}地址已填上，记得保存（拖进来的是链接）`);
+    },
   });
 
   const clear = document.createElement('button');
   clear.type = 'button';
   clear.className = 'btn btn--ghost boardedit__mini';
-  clear.textContent = '去掉图';
+  clear.textContent = label.clear;
   clear.hidden = !node.image;
   clear.addEventListener('click', () => {
     delete node.image;
@@ -3428,9 +4725,11 @@ async function loadTimelines() {
 }
 
 async function openTimelinesModal() {
+  markWorkspaceActive('timelines');
   els.tlEditor.textContent = '正在读取…';
   els.tlModal.hidden = false;
   try {
+    // loadTimelines 有缓存：已经有草稿就直接用内存里那份，不重读、不冲掉没保存的改动
     await loadTimelines();
     if (tlIndex >= timelinesDraft.timelines.length) tlIndex = 0;
     renderTimelineEditor();
@@ -3787,6 +5086,247 @@ function dateField(value, onInput, opts = {}) {
   return wrap;
 }
 
+/* ---------------------------------------------------------------
+   锚点（跳到页面里的具体位置）
+
+   站点构建时会导出 `dist/anchors.json`：每个页面里能跳到的位置 —— 标题
+   （id 就是标题文字，中文原样）、每个内容块（id = blk-<块id>）。
+   编辑器里所有填链接的地方都挂一个「选位置…」按钮，选中之后把 href 拼成
+   `/页面路径/#锚点id`，省得手打中文 id。
+
+   清单是**构建产物**，所以刚改过页面内容、还没重新构建时它是旧的 ——
+   面板里明说了这一点，读不到也只是一句提示（不是报错）。
+   --------------------------------------------------------------- */
+
+/** 锚点清单缓存（面板上有「刷新清单」） */
+let anchorsCache = null;
+
+async function loadAnchors({ force = false } = {}) {
+  if (anchorsCache && !force) return anchorsCache;
+  const res = await fetch('/api/anchors', { cache: 'no-store' });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  anchorsCache = await res.json();
+  return anchorsCache;
+}
+
+/**
+ * 「选位置…」那个小按钮。
+ * `getValue()` 拿当前值（用来预选），`apply(href)` 把选中的地址写回去
+ * （清空时给空串）。
+ */
+function anchorPickButton(getValue, apply) {
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'btn btn--ghost boardedit__mini anchorpick__open';
+  btn.textContent = '选位置…';
+  btn.title = '选一个页面里的标题 / 图片 / 段落，自动拼成「/页面/#锚点」；清单来自上次构建';
+  btn.addEventListener('click', (ev) => {
+    ev.preventDefault();
+    openAnchorPicker({ current: typeof getValue === 'function' ? getValue() : '', onPick: apply });
+  });
+  return btn;
+}
+
+/** 把「输入框 + 选位置按钮」包成一行 */
+function withAnchorPick(input) {
+  const wrap = document.createElement('span');
+  wrap.className = 'linkpick';
+  const btn = anchorPickButton(
+    () => input.value,
+    (href) => {
+      input.value = href;
+      // 走一遍输入框自己的事件：各处的 onInput / 校验都会跟着跑
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.focus();
+    }
+  );
+  wrap.append(input, btn);
+  return wrap;
+}
+
+let anchorPickerBusy = false;
+
+/** 那个「先选页面、再选位置」的面板 */
+async function openAnchorPicker({ current = '', onPick } = {}) {
+  if (anchorPickerBusy) return;
+  anchorPickerBusy = true;
+  document.querySelector('.anchorpick')?.remove();
+
+  const mask = document.createElement('div');
+  mask.className = 'anchorpick';
+  const panel = document.createElement('div');
+  panel.className = 'anchorpick__panel';
+  mask.appendChild(panel);
+  document.body.appendChild(mask);
+
+  const close = () => {
+    mask.remove();
+    anchorPickerBusy = false;
+  };
+  mask.addEventListener('click', (ev) => {
+    if (ev.target === mask) close();
+  });
+
+  const head = document.createElement('div');
+  head.className = 'anchorpick__head';
+  const title = document.createElement('h4');
+  title.className = 'anchorpick__title';
+  title.textContent = '选页面里的位置';
+  const mkBtn = (text, t, fn) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'btn btn--ghost boardedit__mini';
+    b.textContent = text;
+    b.title = t;
+    b.addEventListener('click', fn);
+    return b;
+  };
+  const refresh = mkBtn('刷新清单', '重新读一次 dist/anchors.json（刚重新构建过就点它）', () => load(true));
+  const clear = mkBtn('清空链接', '把这个链接清空', () => {
+    onPick?.('');
+    close();
+  });
+  const shut = mkBtn('关闭', '关掉这个面板', close);
+  head.append(title, refresh, clear, shut);
+  panel.appendChild(head);
+
+  const note = document.createElement('p');
+  note.className = 'hint anchorpick__note';
+  panel.appendChild(note);
+
+  const body = document.createElement('div');
+  body.className = 'anchorpick__body';
+  const left = document.createElement('div');
+  left.className = 'anchorpick__col';
+  const right = document.createElement('div');
+  right.className = 'anchorpick__col';
+  body.append(left, right);
+  panel.appendChild(body);
+
+  const search = document.createElement('input');
+  search.type = 'search';
+  search.className = 'input input--sm';
+  search.placeholder = '找页面…';
+  search.autocomplete = 'off';
+  left.appendChild(search);
+  const pageList = document.createElement('div');
+  pageList.className = 'anchorpick__list';
+  left.appendChild(pageList);
+
+  const rightCap = document.createElement('p');
+  rightCap.className = 'anchorpick__sub';
+  rightCap.textContent = '左边先选一个页面';
+  right.appendChild(rightCap);
+  const anchorList = document.createElement('div');
+  anchorList.className = 'anchorpick__list';
+  right.appendChild(anchorList);
+
+  /** 这一页的锚点列出来，点一个就拼好地址 */
+  const showAnchors = (page, preselectId = '') => {
+    anchorList.textContent = '';
+    rightCap.textContent = page ? `${page.title || '(没标题)'}　${page.href}` : '左边先选一个页面';
+    if (!page) return;
+    const anchors = Array.isArray(page.anchors) ? page.anchors : [];
+    if (!anchors.length) {
+      const p = document.createElement('p');
+      p.className = 'hint';
+      p.textContent = '这一页里没有能跳的位置（标题和内容块都会出现在这儿）。';
+      anchorList.appendChild(p);
+      return;
+    }
+    for (const a of anchors) {
+      const item = document.createElement('button');
+      item.type = 'button';
+      item.className = 'anchorpick__item' + (a.id === preselectId ? ' is-active' : '');
+      item.dataset.anchorId = a.id;
+      const text = document.createElement('span');
+      text.className = 'anchorpick__text';
+      const label = String(a.text ?? '').trim();
+      text.textContent = label || (a.kind === 'image' ? '（图片）' : `（${a.kind || '块'}）`);
+      const kind = document.createElement('em');
+      kind.className = 'anchorpick__kind';
+      kind.textContent = a.kind || '';
+      item.append(text, kind);
+      item.title = `${page.href}#${a.id}`;
+      item.addEventListener('click', () => {
+        onPick?.(`${page.href}#${a.id}`);
+        close();
+      });
+      anchorList.appendChild(item);
+    }
+  };
+
+  const showPages = (pages, preselect = current) => {
+    pageList.textContent = '';
+    if (!pages.length) {
+      const p = document.createElement('p');
+      p.className = 'hint';
+      p.textContent = '清单里没有页面。';
+      pageList.appendChild(p);
+      showAnchors(null);
+      return;
+    }
+    let hitBtn = null;
+    let hitPage = null;
+    let hitAnchor = '';
+    for (const page of pages) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'anchorpick__page';
+      btn.dataset.href = page.href;
+      const t = document.createElement('span');
+      t.className = 'anchorpick__ptitle';
+      t.textContent = page.title || page.href;
+      const u = document.createElement('em');
+      u.className = 'anchorpick__phref';
+      u.textContent = `${page.href} · ${Array.isArray(page.anchors) ? page.anchors.length : 0} 处`;
+      btn.append(t, u);
+      // 当前地址已经指到这一页（可能还带 #锚点）就预选上
+      const cur = String(preselect ?? '');
+      const [curPath, curHash] = cur.split('#');
+      if (
+        !hitBtn &&
+        curPath &&
+        (curPath === page.href || `${curPath}/` === page.href || curPath === String(page.href).replace(/\/$/, ''))
+      ) {
+        hitBtn = btn;
+        hitPage = page;
+        hitAnchor = curHash || '';
+      }
+      btn.addEventListener('click', () => {
+        for (const other of pageList.querySelectorAll('.anchorpick__page')) other.classList.toggle('is-active', other === btn);
+        showAnchors(page);
+      });
+      pageList.appendChild(btn);
+    }
+    const first = pageList.querySelector('.anchorpick__page');
+    (hitBtn || first)?.classList.add('is-active');
+    showAnchors(hitPage || pages[0], hitAnchor);
+  };
+
+  const load = async (force) => {
+    note.textContent = '正在读取锚点清单…';
+    try {
+      const data = await loadAnchors({ force });
+      note.textContent =
+        data.note ||
+        '清单来自上次构建（dist/anchors.json）：刚改过页面内容的话，先「保存并重新构建」再来选。';
+      showPages(Array.isArray(data.pages) ? data.pages : []);
+    } catch (err) {
+      note.textContent = `读不到锚点清单：${err.message}`;
+      showPages([]);
+    }
+  };
+
+  search.addEventListener('input', () => {
+    const kw = search.value.trim().toLowerCase();
+    const pages = anchorsCache?.pages ?? [];
+    showPages(kw ? pages.filter((p) => `${p.title ?? ''} ${p.href ?? ''}`.toLowerCase().includes(kw)) : pages, '');
+  });
+
+  await load(false);
+}
+
 /**
  * 这个地址存下去会不会被服务端丢掉。
  *
@@ -3803,16 +5343,17 @@ function linkLooksOk(raw) {
 }
 
 /**
- * 链接输入框（时间点 / 时间段里那个「跳去哪」）。
+ * 链接输入框（时间点 / 时间段 / 导航条目里那个「跳去哪」）。
  * 就是普通文本框，只是顺手把不合规的地址标红。
+ * `opts.anchor` 打开时多一个「选位置…」按钮（跳到页面里的具体标题/图片/段落）。
  */
-function linkField(value, placeholder, onInput) {
+function linkField(value, placeholder, onInput, opts = {}) {
   const el = boardInput(value, placeholder, (v) => {
     el.classList.toggle('is-bad', !linkLooksOk(v));
     onInput(v);
   });
   el.classList.toggle('is-bad', !linkLooksOk(value));
-  return el;
+  return opts.anchor ? withAnchorPick(el) : el;
 }
 
 /* ===============================================================
@@ -4822,7 +6363,7 @@ function renderTimelineEditor() {
     const href = linkField(p.href ?? '', '点它跳去哪（/huaya/xxx，留空就点不动）', (v) => {
       p.href = v;
       scheduleTlPreview();
-    });
+    }, { anchor: true });
 
     const del = document.createElement('button');
     del.type = 'button';
@@ -4987,7 +6528,7 @@ function renderTimelineEditor() {
     const href = linkField(s.href ?? '', '点它跳去哪（/huaya/xxx，留空就点不动）', (v) => {
       s.href = v;
       scheduleTlPreview();
-    });
+    }, { anchor: true });
 
     const del = document.createElement('button');
     del.type = 'button';
@@ -5087,6 +6628,815 @@ async function saveTimelines() {
       toast('时间轴已保存并重新构建，刷新页面就能看到');
     } else {
       toast('时间轴已保存，但重新构建没成功 —— 去启动器里点一下「保存并重新构建」', true);
+    }
+  } catch (err) {
+    toast(`保存失败：${err.message}`, true);
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = wasText;
+    }
+  }
+}
+
+/* ---------------------------------------------------------------
+   导航分类库
+
+   和「时间轴」一个套路：**先在这里建可复用的东西，页面里只引用**。
+
+   这里可复用的单位是「大分类」（category）。用户的原话是：有些条目对应的
+   页面既属于 A 大分类又属于 B 大分类 —— A 页的导航可能是「甲 + 乙」、
+   B 页是「甲 + 丙」，甲里那几十条条目只该录一次。所以页面内容块里存的
+   只是一个 id 列表（`{ type:'nav', cats:[…] }`），改分类内容不用动页面：改一次，
+   所有引用它的页面一起变（保存时服务端会顺手重新构建一遍）。
+
+   结构和时间轴面板一样：左栏清单、中栏编辑、右栏实时预览。
+   --------------------------------------------------------------- */
+
+/** 库里那份草稿：{ _readme?: string[], categories: [...] } */
+let navsDraft = null;
+/** 服务端算出来的「哪些页面引用了哪些分类」（按盘上那份 home-boards.json） */
+let navsPages = [];
+/** 当前在看第几个大分类 */
+let navIndex = 0;
+
+async function loadNavs() {
+  if (navsDraft) return navsDraft;
+  const res = await fetch('/api/navs');
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const data = await res.json();
+  navsDraft = data.navs && typeof data.navs === 'object' ? data.navs : { categories: [] };
+  if (!Array.isArray(navsDraft.categories)) navsDraft.categories = [];
+  navsPages = Array.isArray(data.pages) ? data.pages : [];
+  return navsDraft;
+}
+
+async function openNavsModal() {
+  markWorkspaceActive('navs');
+  els.navsEditor.textContent = '正在读取…';
+  els.navsModal.hidden = false;
+  try {
+    // 同上：loadNavs 有缓存，重开面板不会把没保存的分类改动冲掉
+    await loadNavs();
+    if (navIndex >= navsDraft.categories.length) navIndex = 0;
+    /*
+      顺手把版块树拉一把：条目里的站内地址要能查「站里到底有没有这一页」，
+      查不了就别乱标红（那比不标更糟）。
+    */
+    if (!boardsDraft) {
+      try {
+        const res = await fetch('/api/boards');
+        if (res.ok) boardsDraft = await res.json();
+      } catch {
+        /* 忽略：没有版块树照样能编辑分类，只是不做「站内没这一页」的提示 */
+      }
+    }
+    renderNavEditor();
+  } catch (err) {
+    els.navsEditor.textContent = `读取失败：${err.message}`;
+  }
+}
+
+function closeNavsModal() {
+  els.navsModal.hidden = true;
+}
+
+const navCatSeq = () => Date.now().toString(36) + Math.floor(Math.random() * 1e3);
+const newNavCatId = () => `navcat-${navCatSeq()}`;
+const newNavGroupId = (cat) => {
+  const used = new Set((cat.groups ?? []).map((g) => g.id));
+  let id = `g-${navCatSeq()}`;
+  while (used.has(id)) id = `g-${navCatSeq()}`;
+  return id;
+};
+/** 细分类 id：**只要求在同一条子分类内唯一** */
+const newNavSubgroupId = (group) => {
+  const used = new Set((group.subgroups ?? []).map((s) => s.id));
+  let id = `s-${navCatSeq()}`;
+  while (used.has(id)) id = `s-${navCatSeq()}`;
+  return id;
+};
+/** 条目 id：整个大分类里不撞（子分类的和细分类里的一起算） */
+const newNavItemId = (cat) => {
+  const used = new Set();
+  for (const g of cat.groups ?? []) {
+    for (const it of g.items ?? []) used.add(it.id);
+    for (const sg of g.subgroups ?? []) for (const it of sg.items ?? []) used.add(it.id);
+  }
+  let id = `i-${navCatSeq()}`;
+  while (used.has(id)) id = `i-${navCatSeq()}`;
+  return id;
+};
+
+/** 这个分类里一共多少条目（子分类直接挂的 + 细分类里的，左栏「N 条」用） */
+const navItemCount = (cat) =>
+  (cat.groups ?? []).reduce(
+    (n, g) => n + (g.items ?? []).length + (g.subgroups ?? []).reduce((m, s) => m + (s.items ?? []).length, 0),
+    0
+  );
+
+/** 引用这个分类的页面（服务端按盘上那份数据算的） */
+const navUsedBy = (catId) => navsPages.filter((p) => (p.cats ?? []).includes(catId));
+
+/**
+ * 让「导航」面板里改一个条目的站内地址时能给点提示。
+ *
+ * 只在版块树已经拉回来的时候才判断 —— 没拉到就一律不标（
+ * 否则每个 `/xxx` 都会被说成「站里没有这一页」，比不提示更误导）。
+ */
+function navHrefStatus(href) {
+  if (!boardsDraft) return 'unknown';
+  return siteLinkStatus(href);
+}
+
+function renderNavEditor() {
+  const box = els.navsEditor;
+  box.textContent = '';
+  const cats = navsDraft?.categories ?? [];
+
+  const grid = document.createElement('div');
+  grid.className = 'nv-edit';
+  const left = document.createElement('div');
+  left.className = 'nv-edit__col nv-edit__cats';
+  const mid = document.createElement('div');
+  mid.className = 'nv-edit__col nv-edit__main';
+  const pv = document.createElement('div');
+  pv.className = 'nv-edit__col nv-pv';
+  grid.append(left, mid, pv);
+  box.appendChild(grid);
+
+  /* ---- 左栏：大分类清单 ---- */
+  const head = document.createElement('div');
+  head.className = 'nv-head';
+  const hTitle = document.createElement('span');
+  hTitle.className = 'nv-head__title';
+  hTitle.textContent = '大分类';
+  const hCount = document.createElement('em');
+  hCount.className = 'nv-head__count';
+  hCount.textContent = cats.length ? `${cats.length} 个` : '';
+  head.append(hTitle, hCount);
+  left.appendChild(head);
+
+  const addCat = document.createElement('button');
+  addCat.type = 'button';
+  addCat.className = 'btn btn--ghost boardedit__mini nv-addcat';
+  addCat.textContent = '＋ 新建大分类';
+  addCat.title = '大分类就是可以整个搬进页面的单位（比如「实体」）';
+  addCat.addEventListener('click', () => {
+    const cat = { id: newNavCatId(), title: '新分类', groups: [] };
+    navsDraft.categories.push(cat);
+    navIndex = navsDraft.categories.length - 1;
+    renderNavEditor();
+  });
+  left.appendChild(addCat);
+
+  if (!cats.length) {
+    const none = document.createElement('p');
+    none.className = 'hint nv-empty';
+    none.textContent = '还没有分类。点上面「＋ 新建大分类」开始 —— 建好之后到「页面」工作台的内容块里加「＋ 导航」，勾选要用哪几个。';
+    left.appendChild(none);
+  }
+
+  const list = document.createElement('div');
+  list.className = 'nv-cats';
+  cats.forEach((cat, i) => {
+    const row = document.createElement('div');
+    row.className = 'nv-cat' + (i === navIndex ? ' is-active' : '');
+    row.dataset.catId = cat.id;
+
+    const pick = document.createElement('button');
+    pick.type = 'button';
+    pick.className = 'nv-cat__pick';
+    const name = document.createElement('span');
+    name.className = 'nv-cat__name';
+    name.textContent = cat.title || '(未命名)';
+    const meta = document.createElement('em');
+    meta.className = 'nv-cat__meta';
+    const used = navUsedBy(cat.id).length;
+    meta.textContent = `${navItemCount(cat)} 条${used ? ` · 被 ${used} 个页面引用` : ' · 还没页面用'}`;
+    pick.append(name, meta);
+    pick.addEventListener('click', () => {
+      navIndex = i;
+      renderNavEditor();
+    });
+    row.appendChild(pick);
+
+    const ops = document.createElement('div');
+    ops.className = 'nv-cat__ops';
+    const mini = (text, title, fn, cls = '') => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = `btn btn--ghost boardedit__mini ${cls}`.trim();
+      b.textContent = text;
+      b.title = title;
+      b.addEventListener('click', fn);
+      return b;
+    };
+    ops.append(
+      mini('↑', '往前挪（页面上的顺序按页面自己排，这里只管清单）', () => {
+        if (i === 0) return;
+        [cats[i - 1], cats[i]] = [cats[i], cats[i - 1]];
+        navIndex = i - 1;
+        renderNavEditor();
+      }),
+      mini('↓', '往后挪', () => {
+        if (i === cats.length - 1) return;
+        [cats[i + 1], cats[i]] = [cats[i], cats[i + 1]];
+        navIndex = i + 1;
+        renderNavEditor();
+      }),
+      mini('复制', '整份复制一份（条目也一样），改个名字就是另一个分类', () => {
+        const copy = JSON.parse(JSON.stringify(cat));
+        copy.id = newNavCatId();
+        copy.title = `${cat.title} 副本`;
+        // 子分类和条目的 id 也重新发一遍，免得两份撞 id
+        for (const g of copy.groups ?? []) {
+          g.id = newNavGroupId(copy);
+          for (const it of g.items ?? []) it.id = newNavItemId(copy);
+        }
+        navsDraft.categories.splice(i + 1, 0, copy);
+        navIndex = i + 1;
+        renderNavEditor();
+      }),
+      mini('删除', '删掉这个分类', () => {
+        const usedPages = navUsedBy(cat.id);
+        if (usedPages.length) {
+          const names = usedPages.map((p) => p.title || p.id).join('、');
+          if (!confirm(`「${cat.title}」还被 ${usedPages.length} 个页面引用着：\n${names}\n\n删掉之后那几页的导航里就会少这一节（页面本身不会坏）。确定删吗？`)) {
+            return;
+          }
+        } else if (!confirm(`删掉大分类「${cat.title}」？`)) {
+          return;
+        }
+        cats.splice(i, 1);
+        navIndex = Math.max(0, Math.min(navIndex, cats.length - 1));
+        renderNavEditor();
+      }, 'boardedit__del')
+    );
+    row.appendChild(ops);
+    list.appendChild(row);
+  });
+  left.appendChild(list);
+
+  /* ---- 中栏：选中的大分类 ---- */
+  const cat = cats[navIndex];
+  if (!cat) {
+    const p = document.createElement('p');
+    p.className = 'hint';
+    p.textContent =
+      '左边还没有分类。点「＋ 新建大分类」建一个（比如「实体」），再往里加子分类和条目。';
+    mid.appendChild(p);
+    paintNavPreview(pv);
+    return;
+  }
+
+  const top = document.createElement('div');
+  top.className = 'nv-fields';
+  top.append(
+    nvField('分类名字', boardInput(cat.title ?? '', '比如 实体', (v) => {
+      cat.title = v;
+      // 只刷新左栏和预览，别整块重画（正在打字）
+      renderNavCatsOnly();
+      paintNavPreview(pv);
+    }), '页面上那一节的标题'),
+    nvField('说明', boardInput(cat.note ?? '', '可选：这一节下面那句小字', (v) => {
+      if (v.trim()) cat.note = v;
+      else delete cat.note;
+      paintNavPreview(pv);
+    }))
+  );
+  mid.appendChild(top);
+
+  const idLine = document.createElement('p');
+  idLine.className = 'hint nv-idline';
+  idLine.textContent = `分类 id：${cat.id}（页面里引用的就是这个，别改）`;
+  mid.appendChild(idLine);
+
+  const gHead = document.createElement('div');
+  gHead.className = 'nv-head';
+  const gTitle = document.createElement('span');
+  gTitle.className = 'nv-head__title';
+  gTitle.textContent = '子分类';
+  const gCount = document.createElement('em');
+  gCount.className = 'nv-head__count';
+  gCount.textContent = `${(cat.groups ?? []).length} 个`;
+  gHead.append(gTitle, gCount);
+  mid.appendChild(gHead);
+
+  const groupsBox = document.createElement('div');
+  groupsBox.className = 'nv-groups';
+  cat.groups ??= [];
+  cat.groups.forEach((g, gi) => groupsBox.appendChild(navGroupBox(cat, g, gi, pv)));
+  mid.appendChild(groupsBox);
+
+  const addGroup = document.createElement('button');
+  addGroup.type = 'button';
+  addGroup.className = 'btn btn--ghost boardedit__mini nv-addgroup';
+  addGroup.textContent = '＋ 加子分类';
+  addGroup.addEventListener('click', () => {
+    cat.groups.push({ id: newNavGroupId(cat), title: '新子分类', items: [] });
+    renderNavEditor();
+  });
+  mid.appendChild(addGroup);
+
+  paintNavPreview(pv);
+}
+
+/** 只重画左栏清单（改名字时用，避免把正在打字的输入框换掉） */
+function renderNavCatsOnly() {
+  const box = els.navsEditor.querySelector('.nv-cats');
+  if (!box) return renderNavEditor();
+  const cats = navsDraft?.categories ?? [];
+  box.textContent = '';
+  cats.forEach((cat, i) => {
+    const row = document.createElement('div');
+    row.className = 'nv-cat' + (i === navIndex ? ' is-active' : '');
+    row.dataset.catId = cat.id;
+    const name = document.createElement('span');
+    name.className = 'nv-cat__name';
+    name.textContent = cat.title || '(未命名)';
+    const meta = document.createElement('em');
+    meta.className = 'nv-cat__meta';
+    const used = navUsedBy(cat.id).length;
+    meta.textContent = `${navItemCount(cat)} 条${used ? ` · 被 ${used} 个页面引用` : ' · 还没页面用'}`;
+    const pick = document.createElement('button');
+    pick.type = 'button';
+    pick.className = 'nv-cat__pick';
+    pick.append(name, meta);
+    pick.addEventListener('click', () => {
+      navIndex = i;
+      renderNavEditor();
+    });
+    row.appendChild(pick);
+    box.appendChild(row);
+  });
+}
+
+/** `pwField` 的导航面板版本（不依赖 .pw-grid 那一套） */
+function nvField(labelText, control, hint) {
+  const wrap = document.createElement('label');
+  wrap.className = 'nv-field';
+  wrap.dataset.field = labelText;
+  const cap = document.createElement('span');
+  cap.className = 'nv-field__label';
+  cap.textContent = labelText;
+  wrap.append(cap, control);
+  if (hint) {
+    const h = document.createElement('span');
+    h.className = 'nv-field__hint';
+    h.textContent = hint;
+    wrap.appendChild(h);
+  }
+  return wrap;
+}
+
+/** 一个子分类：名字 + 直接挂的条目 + 再往下一层的「细分类」 */
+function navGroupBox(cat, g, gi, pv) {
+  const box = document.createElement('div');
+  box.className = 'nv-group';
+  box.dataset.groupId = g.id;
+
+  const top = document.createElement('div');
+  top.className = 'nv-group__top';
+  const title = boardInput(g.title ?? '', '子分类名字，比如 友好生物', (v) => {
+    g.title = v;
+    paintNavPreview(pv);
+  });
+  title.classList.add('nv-group__name');
+  g.items ??= [];
+  g.subgroups ??= [];
+
+  const mini = (text, t, fn, cls = '') => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = `btn btn--ghost boardedit__mini ${cls}`.trim();
+    b.textContent = text;
+    b.title = t;
+    b.addEventListener('click', fn);
+    return b;
+  };
+  top.append(
+    title,
+    mini('↑', '往前挪', () => {
+      if (gi === 0) return;
+      [cat.groups[gi - 1], cat.groups[gi]] = [cat.groups[gi], cat.groups[gi - 1]];
+      renderNavEditor();
+    }),
+    mini('↓', '往后挪', () => {
+      if (gi === cat.groups.length - 1) return;
+      [cat.groups[gi + 1], cat.groups[gi]] = [cat.groups[gi], cat.groups[gi + 1]];
+      renderNavEditor();
+    }),
+    mini('删除', '删掉这个子分类和里面的条目 / 细分类', () => {
+      const n = g.items.length + g.subgroups.length;
+      if (n && !confirm(`「${g.title}」里还有 ${g.items.length} 条条目、${g.subgroups.length} 个细分类，一起删掉吗？`)) return;
+      cat.groups.splice(gi, 1);
+      renderNavEditor();
+    }, 'boardedit__del')
+  );
+  box.appendChild(top);
+
+  /*
+    直接挂在子分类下的条目。有细分类时这块也留着 ——
+    站点那边两种都渲染（先铺直接挂的条目，再铺细分类）。
+  */
+  const directWrap = document.createElement('div');
+  directWrap.className = 'nv-slot';
+  if (g.subgroups.length) {
+    const cap = document.createElement('p');
+    cap.className = 'nv-slot__cap';
+    cap.textContent = '直接挂在这个子分类下的条目（页面上排在细分类前面）';
+    directWrap.appendChild(cap);
+  }
+  const items = document.createElement('div');
+  items.className = 'nv-items';
+  g.items.forEach((it, ii) => items.appendChild(navItemRow(cat, g, it, ii, pv)));
+  directWrap.appendChild(items);
+  const addItem = mini('＋ 加条目', '加一条「图标 + 文字」，点文字跳到地址', () => {
+    g.items.push({ id: newNavItemId(cat), text: '新条目' });
+    renderNavEditor();
+  });
+  addItem.classList.add('nv-additem');
+  directWrap.appendChild(addItem);
+  box.appendChild(directWrap);
+
+  /* ---- 再往下一层：细分类（比如「友好生物」下面再分「无伤害能力」…） ---- */
+  const subsBox = document.createElement('div');
+  subsBox.className = 'nv-subs';
+  g.subgroups.forEach((sg, si) => subsBox.appendChild(navSubgroupBox(cat, g, sg, si, pv)));
+  box.appendChild(subsBox);
+
+  const addSub = mini('＋ 细分类', '在「' + (g.title || '这个子分类') + '」下面再分一层（第三级，只做这一层）', () => {
+    g.subgroups.push({ id: newNavSubgroupId(g), title: '新细分类', items: [] });
+    renderNavEditor();
+  });
+  addSub.classList.add('nv-addsub');
+  box.appendChild(addSub);
+  return box;
+}
+
+/** 一个细分类（第三级）：名字 + 它自己的条目 */
+function navSubgroupBox(cat, g, sg, si, pv) {
+  const box = document.createElement('div');
+  box.className = 'nv-sub';
+  box.dataset.subgroupId = sg.id;
+  sg.items ??= [];
+
+  const top = document.createElement('div');
+  top.className = 'nv-sub__top';
+  const title = boardInput(sg.title ?? '', '细分类名字，比如 无伤害能力', (v) => {
+    sg.title = v;
+    paintNavPreview(pv);
+  });
+  title.classList.add('nv-sub__name');
+
+  const mini = (text, t, fn, cls = '') => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = `btn btn--ghost boardedit__mini ${cls}`.trim();
+    b.textContent = text;
+    b.title = t;
+    b.addEventListener('click', fn);
+    return b;
+  };
+  top.append(
+    title,
+    mini('↑', '往前挪', () => {
+      if (si === 0) return;
+      [g.subgroups[si - 1], g.subgroups[si]] = [g.subgroups[si], g.subgroups[si - 1]];
+      renderNavEditor();
+    }),
+    mini('↓', '往后挪', () => {
+      if (si === g.subgroups.length - 1) return;
+      [g.subgroups[si + 1], g.subgroups[si]] = [g.subgroups[si], g.subgroups[si + 1]];
+      renderNavEditor();
+    }),
+    mini('删除', '删掉这个细分类和它的条目', () => {
+      if (sg.items.length && !confirm(`「${sg.title}」里还有 ${sg.items.length} 条条目，一起删掉吗？`)) return;
+      g.subgroups.splice(si, 1);
+      renderNavEditor();
+    }, 'boardedit__del')
+  );
+  box.appendChild(top);
+
+  const items = document.createElement('div');
+  items.className = 'nv-items';
+  sg.items.forEach((it, ii) => items.appendChild(navItemRow(cat, sg, it, ii, pv)));
+  box.appendChild(items);
+
+  const addItem = mini('＋ 加条目', '加一条「图标 + 文字」，点文字跳到地址', () => {
+    sg.items.push({ id: newNavItemId(cat), text: '新条目' });
+    renderNavEditor();
+  });
+  addItem.classList.add('nv-additem');
+  box.appendChild(addItem);
+  return box;
+}
+
+/**
+ * 一条条目：文字 / 地址 / 图标 / 提示 / 上下移 / 删除。
+ * `holder` 是挂着 `items` 的那一层 —— 子分类（第二级）或细分类（第三级）都用它，
+ * 所以三级下来只有这一份条目编辑器。
+ */
+function navItemRow(cat, holder, it, ii, pv) {
+  const row = document.createElement('div');
+  row.className = 'nv-item';
+  row.dataset.itemId = it.id;
+
+  const top = document.createElement('div');
+  top.className = 'nv-item__top';
+
+  const text = boardInput(it.text ?? '', '条目文字（点它跳转）', (v) => {
+    it.text = v;
+    paintNavPreview(pv);
+  });
+  text.classList.add('nv-item__text');
+
+  const href = linkField(it.href ?? '', '地址（/huaya/xxx 或 https://…，留空就只是看看）', (v) => {
+    if (v.trim()) it.href = v;
+    else delete it.href;
+    paintNavPreview(pv);
+    renderNavItemWarn(row, it);
+  }, { anchor: true });
+  href.classList.add('nv-item__href');
+
+  const mini = (label, t, fn, cls = '') => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = `btn btn--ghost boardedit__mini ${cls}`.trim();
+    b.textContent = label;
+    b.title = t;
+    b.addEventListener('click', fn);
+    return b;
+  };
+  top.append(
+    text,
+    href,
+    mini('↑', '往前挪', () => {
+      if (ii === 0) return;
+      [holder.items[ii - 1], holder.items[ii]] = [holder.items[ii], holder.items[ii - 1]];
+      renderNavEditor();
+    }),
+    mini('↓', '往后挪', () => {
+      if (ii === holder.items.length - 1) return;
+      [holder.items[ii + 1], holder.items[ii]] = [holder.items[ii], holder.items[ii + 1]];
+      renderNavEditor();
+    }),
+    mini('删除', '删掉这一条', () => {
+      holder.items.splice(ii, 1);
+      renderNavEditor();
+    }, 'boardedit__del')
+  );
+  row.appendChild(top);
+
+  const bar = document.createElement('div');
+  bar.className = 'nv-item__bar';
+  bar.appendChild(
+    boardCoverControl(it, () => renderNavEditor(), {
+      pick: it.image ? '换图标' : '图标',
+      pickTitle: '条目左边那个小图标（可选）',
+      empty: '还没有图标',
+      clear: '去掉图标',
+    })
+  );
+  const tip = boardInput(it.tip ?? '', '提示（可选：鼠标移上去显示）', (v) => {
+    if (v.trim()) it.tip = v;
+    else delete it.tip;
+    paintNavPreview(pv);
+  });
+  tip.classList.add('nv-item__tip');
+  bar.appendChild(tip);
+  const warn = document.createElement('span');
+  warn.className = 'nv-item__warn';
+  bar.appendChild(warn);
+  row.appendChild(bar);
+  renderNavItemWarn(row, it);
+  return row;
+}
+
+/** 站内地址查不到就标一句（只在版块树已加载时判断，免得误报） */
+function renderNavItemWarn(row, it) {
+  const warn = row.querySelector('.nv-item__warn');
+  if (!warn) return;
+  warn.textContent = '';
+  const href = String(it.href ?? '').trim();
+  if (!href || navHrefStatus(href) !== 'missing') return;
+  warn.textContent = `⚠ 站内没有「${href}」这一页，点它会 404`;
+}
+
+/** 右栏：尽量照站点样子的示意图 */
+function paintNavPreview(host) {
+  host.textContent = '';
+  const cats = navsDraft?.categories ?? [];
+
+  const head = document.createElement('div');
+  head.className = 'nv-pv__head';
+  head.textContent = '预览（示意）';
+  host.appendChild(head);
+
+  if (!cats.length) {
+    const p = document.createElement('p');
+    p.className = 'hint';
+    p.textContent = '还没有分类，没什么可预览的。';
+    host.appendChild(p);
+    return;
+  }
+
+  const blk = document.createElement('div');
+  blk.className = 'nv-pv__blk';
+
+  const bar = document.createElement('div');
+  bar.className = 'nv-pv__bar';
+  const barLabel = document.createElement('span');
+  barLabel.className = 'nv-pv__barLabel';
+  barLabel.textContent = '分类';
+  barLabel.title = '页面块里可以改成别的字（比如「导航」「图鉴」）';
+  bar.appendChild(barLabel);
+  cats.forEach((c, i) => {
+    if (i) {
+      const dot = document.createElement('span');
+      dot.className = 'nv-pv__dot';
+      dot.textContent = '·';
+      bar.appendChild(dot);
+    }
+    const a = document.createElement('a');
+    a.className = 'nv-pv__barLink';
+    a.href = `#navcat-${c.id}`;
+    a.textContent = c.title || '(未命名)';
+    a.addEventListener('click', (ev) => ev.preventDefault());
+    bar.appendChild(a);
+  });
+  blk.appendChild(bar);
+
+  for (const c of cats) {
+    const details = document.createElement('details');
+    details.className = 'nv-pv__cat';
+    details.open = true;
+    const sum = document.createElement('summary');
+    sum.className = 'nv-pv__summary';
+    const t = document.createElement('span');
+    t.className = 'nv-pv__catTitle';
+    t.textContent = c.title || '(未命名)';
+    const fold = document.createElement('span');
+    fold.className = 'nv-pv__fold';
+    fold.textContent = '收起 / 展开';
+    sum.append(t, fold);
+    details.appendChild(sum);
+
+    const body = document.createElement('div');
+    body.className = 'nv-pv__body';
+    if (c.note) {
+      const note = document.createElement('p');
+      note.className = 'nv-pv__note';
+      note.textContent = c.note;
+      body.appendChild(note);
+    }
+    if (!(c.groups ?? []).length) {
+      const none = document.createElement('p');
+      none.className = 'nv-pv__note';
+      none.textContent = '（这个分类还没有子分类）';
+      body.appendChild(none);
+    }
+    /* 一条条目的样子（子分类直接挂的、细分类里的共用这一份） */
+    const pvItem = (it) => {
+      const href = String(it.href ?? '').trim();
+      const el = document.createElement(href ? 'a' : 'span');
+      el.className = `nv-pv__item${href ? '' : ' nv-pv__item--plain'}`;
+      if (href) {
+        el.href = href;
+        // 预览里点它别真跳走（要看地址对不对，悬停有 title 就够了）
+        el.addEventListener('click', (ev) => ev.preventDefault());
+      }
+      el.title = it.tip || href || it.text || '';
+      if (it.image) {
+        const img = document.createElement('img');
+        img.className = 'nv-pv__icon';
+        img.src = it.image;
+        img.alt = '';
+        el.appendChild(img);
+      }
+      const span = document.createElement('span');
+      span.className = 'nv-pv__text';
+      span.textContent = it.text || '(未命名)';
+      el.appendChild(span);
+      return el;
+    };
+    const pvEmpty = () => {
+      const empty = document.createElement('span');
+      empty.className = 'nv-pv__emptyItem';
+      empty.textContent = '（空）';
+      return empty;
+    };
+
+    /*
+      一个子分类 = 一整行：最左边是它的名字（有细分类时纵跨整组），
+      右边一列一列地铺：先「直接挂的条目」（留一格空标签，好和细分类对齐），
+      再每个细分类一格（细分类名 + 它自己的条目）。
+      和页面上 NavBlock.astro 的排法一致。
+    */
+    for (const g of c.groups ?? []) {
+      const gItems = g.items ?? [];
+      const subs = g.subgroups ?? [];
+      const rowEl = document.createElement('div');
+      rowEl.className = `nv-pv__row${subs.length ? ' nv-pv__row--nest' : ''}`;
+      const label = document.createElement('div');
+      label.className = 'nv-pv__label';
+      label.textContent = g.title || '(未命名子分类)';
+      const cells = document.createElement('div');
+      cells.className = 'nv-pv__cells';
+
+      if (gItems.length) {
+        const cell = document.createElement('div');
+        cell.className = 'nv-pv__cell';
+        // 有细分类时留一格空标签：直接挂的条目就和细分类的条目对齐了
+        if (subs.length) {
+          const pad = document.createElement('span');
+          pad.className = 'nv-pv__sublabel';
+          cell.appendChild(pad);
+        }
+        const items = document.createElement('div');
+        items.className = 'nv-pv__items';
+        gItems.forEach((it) => items.appendChild(pvItem(it)));
+        cell.appendChild(items);
+        cells.appendChild(cell);
+      }
+
+      for (const sg of subs) {
+        const cell = document.createElement('div');
+        cell.className = 'nv-pv__cell';
+        cell.dataset.subgroupId = sg.id;
+        const sl = document.createElement('span');
+        sl.className = 'nv-pv__sublabel';
+        sl.textContent = sg.title || '(未命名细分类)';
+        const items = document.createElement('div');
+        items.className = 'nv-pv__items';
+        const sItems = sg.items ?? [];
+        if (!sItems.length) items.appendChild(pvEmpty());
+        sItems.forEach((it) => items.appendChild(pvItem(it)));
+        cell.append(sl, items);
+        cells.appendChild(cell);
+      }
+
+      if (!gItems.length && !subs.length) {
+        const items = document.createElement('div');
+        items.className = 'nv-pv__items';
+        items.appendChild(pvEmpty());
+        cells.appendChild(items);
+      }
+
+      rowEl.append(label, cells);
+      body.appendChild(rowEl);
+    }
+    details.appendChild(body);
+    blk.appendChild(details);
+  }
+
+  host.appendChild(blk);
+  const note = document.createElement('p');
+  note.className = 'hint nv-pv__tip';
+  note.textContent =
+    '页面上的样子（示意）：顶栏是这一页挂了哪几个大分类，每个分类一整节可以收起/展开；一行一个子分类（名字在左边、纵跨整组），它右边先铺直接挂的条目、再铺细分类（细分类名 + 它自己的条目）——「图标 + 文字」点文字跳地址。';
+  host.appendChild(note);
+}
+
+async function saveNavs() {
+  const btn = els.navsSave;
+  const wasText = btn?.textContent ?? '';
+  try {
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = '正在保存…';
+    }
+    const res = await fetch('/api/navs', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ _readme: navsDraft._readme, categories: navsDraft.categories }),
+    });
+    const data = await res.json();
+    if (!res.ok || !data.ok) throw new Error(data.error || `HTTP ${res.status}`);
+
+    const d = data.dropped ?? {};
+    const lost = [];
+    if (d.categories) lost.push(`${d.categories} 个大分类`);
+    if (d.groups) lost.push(`${d.groups} 个子分类`);
+    if (d.subgroups) lost.push(`${d.subgroups} 个细分类`);
+    if (d.items) lost.push(`${d.items} 条条目`);
+
+    // 拿服务端那份重新渲染，界面上看到的和落盘的一致
+    navsDraft = null;
+    await loadNavs();
+    if (navIndex >= navsDraft.categories.length) navIndex = Math.max(0, navsDraft.categories.length - 1);
+    renderNavEditor();
+
+    if (data.built) {
+      toast(
+        `导航已保存并重新构建（${data.ms} ms）` +
+          (lost.length
+            ? `；有 ${lost.join('、')} 没存下（只有没名字的分类/子分类、没文字的条目、不合法的地址会被丢 —— 空分类现在会原样留着）`
+            : '')
+      );
+    } else {
+      toast(`导航已保存，但重新构建没成功：${String(data.output || '').split('\n')[0]}`, true);
     }
   } catch (err) {
     toast(`保存失败：${err.message}`, true);
@@ -5613,12 +7963,43 @@ function bindLayoutNumbers() {
 }
 
 async function openLayoutModal() {
+  markWorkspaceActive('layout');
   els.layoutModal.hidden = false;
+  /*
+    每次打开都重新载一页会很稳，但**等于把拖动结果全扔了**。
+    所以载过一次就一直用着：iframe 只是被藏起来，没被销毁，
+    草稿由 layoutDrafts 记着（见 loadLayoutPage / closeLayoutModal）。
+  */
+  if (layoutLoadedPage === layoutPage) return;
   await loadLayoutPage(layoutPage);
+}
+
+/**
+ * 每个页面类型在 iframe 里改过、还没保存的排版草稿。
+ *
+ * 排版的改动只活在 iframe 里，而换页、关面板都会把 iframe 重新载一次；
+ * 不先收一把，用户拖了半天的位置一关面板就没了。
+ */
+const layoutDrafts = new Map();
+/** iframe 里现在载着的是哪一类页面（没载就是 null） */
+let layoutLoadedPage = null;
+
+/** 把 iframe 里现在的排版结果收进草稿 */
+function stashLayoutDraft() {
+  if (!layoutLoadedPage) return;
+  const win = els.layoutFrame.contentWindow;
+  if (!win || !win.__layoutApi) return;
+  try {
+    layoutDrafts.set(layoutLoadedPage, JSON.parse(JSON.stringify(win.__layoutApi.state)));
+  } catch {
+    /* iframe 已经走了 / 读不到：收不到就算了，别把整件事弄挂 */
+  }
 }
 
 /** 把某个页面类型的样板页载进 iframe */
 async function loadLayoutPage(page) {
+  // 换页之前先把上一页的改动收起来，不然换过去就找不回来了
+  stashLayoutDraft();
   layoutPage = page;
   els.layoutPage.value = page;
   els.layoutPick.textContent = '正在载入页面…';
@@ -5661,8 +8042,10 @@ async function loadLayoutPage(page) {
     html = html.replace(/<\/body>/i, `<script>${LAYOUT_SCRIPT}<\/script></body>`);
 
     els.layoutFrame.srcdoc = html;
+    layoutLoadedPage = page; // layout-ready 回来时要按这一页的草稿还原
     els.layoutPick.textContent = '点一个元素选中它';
   } catch (err) {
+    layoutLoadedPage = null;
     els.layoutPick.textContent = `载入失败：${err.message}`;
     els.layoutPick.style.color = 'var(--danger, #b4443a)';
   }
@@ -5699,6 +8082,8 @@ async function saveLayout() {
     if (!res.ok || !data.ok) throw new Error(data.error || `HTTP ${res.status}`);
     layoutState = data;
     closeLayoutModal();
+    // 存进去的草稿就算用完了：再打开时该显示盘上的值
+    layoutDrafts.delete(layoutPage);
     toast('排版已保存，重新构建后生效');
   } catch (err) {
     toast(`保存失败：${err.message}`, true);
@@ -5706,8 +8091,11 @@ async function saveLayout() {
 }
 
 function closeLayoutModal() {
+  // 先收草稿再拆 iframe —— 反过来就什么都收不到了
+  stashLayoutDraft();
   els.layoutModal.hidden = true;
   els.layoutFrame.srcdoc = '';
+  layoutLoadedPage = null;
   layoutPicked = null;
   if (els.layoutNum) els.layoutNum.hidden = true;
 }
@@ -5936,6 +8324,7 @@ async function loadMusic() {
 }
 
 async function openMusicModal() {
+  markWorkspaceActive('music');
   els.musicModal.hidden = false;
   els.musicLog.hidden = true;
   els.musicLog.textContent = '';
@@ -5944,11 +8333,17 @@ async function openMusicModal() {
   els.musicLib.textContent = '';
   setMusicStatus('正在读取歌单…');
   try {
-    await loadMusic();
+    /*
+      已经有草稿就不重新拉一次：重拉会把「排好的顺序、选好的第一首」
+      全按盘上的旧值覆盖掉 —— 切面板不该丢改动。想放弃改动就刷新页面。
+    */
+    if (!musicDraft) await loadMusic();
     els.musicSearch.value = musicSearch;
     renderMusic();
     setMusicStatus(
-      `已读取：曲库 ${musicDraft.tracks.length} 首，单首上限 ${Math.round(musicLimits.maxBytes / 1024 / 1024)}MB`
+      musicDirty
+        ? '有没保存的改动 —— 点右下角「保存并重新构建」才会进网站'
+        : `已读取：曲库 ${musicDraft.tracks.length} 首，单首上限 ${Math.round(musicLimits.maxBytes / 1024 / 1024)}MB`
     );
   } catch (err) {
     setMusicStatus(`读取失败：${err.message}`, true);
@@ -6420,6 +8815,26 @@ async function saveMusic() {
    --------------------------------------------------------------- */
 
 function bindEvents() {
+  /*
+    先把「页面 / 独立页面」两套面板共用的那几块控件插好锚点，
+    之后才能在两个面板之间来回搬（见 mountStudioHost）。
+  */
+  initStudioAnchors();
+  paintWorkspaceSwitch();
+
+  // 左上角总入口：点开是工作面清单，点哪项直接切过去
+  els.btnHub.addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    toggleHubMenu();
+  });
+  // 点别处、或者窗口大小变了，就把清单收起来（位置是算出来的，留着会错位）
+  document.addEventListener('click', (ev) => {
+    if (els.hubMenu.hidden) return;
+    if (ev.target.closest?.('#hub-menu') || ev.target.closest?.('#btn-hub')) return;
+    closeHubMenu();
+  });
+  window.addEventListener('resize', closeHubMenu);
+
   // 类型标签
   els.typeTabs.addEventListener('click', (ev) => {
     const tab = ev.target.closest('.tab');
@@ -6457,21 +8872,31 @@ function bindEvents() {
     onFormChanged();
   });
 
-  // 封面按钮
+  // 封面：按钮 / 拖进来 / 粘进来，三条路都汇到下面这个 onFiles
   els.btnCoverUpload.addEventListener('click', () => els.coverFile.click());
-  els.coverFile.addEventListener('change', async () => {
-    const file = els.coverFile.files && els.coverFile.files[0];
-    els.coverFile.value = '';
-    if (!file) return;
-    try {
-      const p = await uploadImage(file);
-      els.cover.value = p;
+  attachImageIntake({
+    el: els.cover.closest('.cover') || els.cover,
+    input: els.coverFile,
+    label: '封面图',
+    hint: '可拖入图片，或 QQ 截图后 Ctrl+V',
+    onFiles: async ([file]) => {
+      try {
+        const p = await uploadImage(file);
+        els.cover.value = p;
+        updateCoverPreview();
+        onFormChanged();
+        toast(`封面已上传：${p}`);
+      } catch (err) {
+        toast(`上传失败：${err.message}`, true);
+      }
+    },
+    // 从网页 / QQ 窗口拖过来的是链接，就当地址填进去
+    onUrl: (url) => {
+      els.cover.value = url;
       updateCoverPreview();
       onFormChanged();
-      toast(`封面已上传：${p}`);
-    } catch (err) {
-      toast(`上传失败：${err.message}`, true);
-    }
+      toast('封面地址已填上（拖进来的是链接，不是图片文件）');
+    },
   });
   els.btnCoverClear.addEventListener('click', () => {
     els.cover.value = '';
@@ -6550,24 +8975,35 @@ function bindEvents() {
     if (state.previewOn) renderPreview();
   });
 
-  // 拖拽 / 粘贴插图
+  // 拖拽 / 粘贴插图（正文编辑器自己的那一套）
   bindImageDropAndPaste();
 
-  // 图片弹窗
+  // 其它上传点（封面、插入图片弹窗、地图、图片块、图标）的拖 / 粘入口
+  bindImageIntakeTracking();
+  bindImagePasteToIntakes();
+
+  // 图片弹窗：上传那一格也接拖 / 粘
   els.modalPick.addEventListener('click', () => els.modalFile.click());
-  els.modalFile.addEventListener('change', async () => {
-    const file = els.modalFile.files && els.modalFile.files[0];
-    els.modalFile.value = '';
-    if (!file) return;
-    els.modalUploadHint.textContent = '正在上传……';
-    try {
-      const p = await uploadImage(file);
-      els.modalUrl.value = p;
-      if (!els.modalAlt.value) els.modalAlt.value = file.name.replace(/\.[^.]+$/, '');
-      els.modalUploadHint.textContent = `已上传：${p}`;
-    } catch (err) {
-      els.modalUploadHint.textContent = `上传失败：${err.message}`;
-    }
+  attachImageIntake({
+    el: els.modalPick.closest('.field') || els.modalFile.parentNode,
+    input: els.modalFile,
+    label: '插入图片',
+    hint: '可拖入图片，或 QQ 截图后 Ctrl+V',
+    onFiles: async ([file]) => {
+      els.modalUploadHint.textContent = '正在上传……';
+      try {
+        const p = await uploadImage(file);
+        els.modalUrl.value = p;
+        if (!els.modalAlt.value) els.modalAlt.value = file.name.replace(/\.[^.]+$/, '');
+        els.modalUploadHint.textContent = `已上传：${p}`;
+      } catch (err) {
+        els.modalUploadHint.textContent = `上传失败：${err.message}`;
+      }
+    },
+    onUrl: (url) => {
+      els.modalUrl.value = url;
+      els.modalUploadHint.textContent = '已填上拖进来的图片链接';
+    },
   });
   els.modalInsert.addEventListener('click', doInsertImage);
   els.imgModal.addEventListener('click', (ev) => {
@@ -6575,25 +9011,54 @@ function bindEvents() {
   });
 
   // 子版块编辑
-  els.btnBoards.addEventListener('click', openBoardsModal);
+  els.btnBoards.addEventListener('click', () => openWorkspace('boards'));
   els.boardsSave.addEventListener('click', () => saveBoards());
   els.boardsModal.addEventListener('click', (ev) => {
     if (ev.target.dataset && ev.target.dataset.close) closeBoardsModal();
   });
 
   // 时间轴
-  els.btnTimelines.addEventListener('click', openTimelinesModal);
+  els.btnTimelines.addEventListener('click', () => openWorkspace('timelines'));
   els.tlSave.addEventListener('click', saveTimelines);
   els.tlModal.addEventListener('click', (ev) => {
     if (ev.target.dataset && ev.target.dataset.close) closeTimelinesModal();
   });
 
+  // 导航分类库
+  els.btnNavs.addEventListener('click', () => openWorkspace('navs'));
+  els.navsSave.addEventListener('click', saveNavs);
+  els.navsModal.addEventListener('click', (ev) => {
+    if (ev.target.dataset && ev.target.dataset.close) closeNavsModal();
+  });
+
   // 页面工作台
-  els.btnPages.addEventListener('click', () => openPagesView());
+  els.btnPages.addEventListener('click', () => openWorkspace('pages'));
   els.pageSave.addEventListener('click', saveStudio);
   els.pwSearch.addEventListener('input', () => {
     studioSearch = els.pwSearch.value;
     renderStudioTree();
+  });
+  els.pwCopyUrl.addEventListener('click', () => copyText(els.pwUrl.textContent, els.pwUrl));
+
+  // 独立页面工作台（和「页面」共用同一批控件，所以复用的是同一批方法）
+  els.soloAdd.addEventListener('click', () => createStandalone(els.soloNewName));
+  els.soloNewName.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Enter') {
+      ev.preventDefault();
+      createStandalone(els.soloNewName);
+    }
+  });
+  // 清单可能有几十条，筛选也加一层防抖（和左栏搜索一个道理）
+  let soloSearchTimer = null;
+  els.soloSearch.addEventListener('input', () => {
+    clearTimeout(soloSearchTimer);
+    soloSearchTimer = setTimeout(() => {
+      soloSearch = els.soloSearch.value;
+      renderSoloList();
+    }, 120);
+  });
+  els.soloModal.addEventListener('click', (ev) => {
+    if (ev.target.dataset && ev.target.dataset.close) closeSoloView();
   });
   els.pwAddKid.addEventListener('click', () => {
     if (!studioNode) return;
@@ -6636,7 +9101,7 @@ function bindEvents() {
   });
 
   // 音乐 / 歌单
-  els.btnMusic.addEventListener('click', openMusicModal);
+  els.btnMusic.addEventListener('click', () => openWorkspace('music'));
   els.musicSave.addEventListener('click', saveMusic);
   els.musicUpload.addEventListener('click', () => els.musicFile.click());
   els.musicFile.addEventListener('change', () => uploadMusicFiles(els.musicFile.files));
@@ -6658,7 +9123,7 @@ function bindEvents() {
   });
 
   // 排版
-  els.btnLayout.addEventListener('click', openLayoutModal);
+  els.btnLayout.addEventListener('click', () => openWorkspace('layout'));
   els.layoutPage.addEventListener('change', () => loadLayoutPage(els.layoutPage.value));
   bindLayoutNumbers();
   if (els.layoutSample) {
@@ -6708,14 +9173,33 @@ function bindEvents() {
       return;
     }
     if (d.type === 'layout-ready') {
-      // 以服务端存下来的值为准覆盖 iframe 里读到的初始值 ——
-      // 页面可能还没重新构建，内联样式是旧的。
+      /*
+        以服务端存下来的值为准覆盖 iframe 里读到的初始值 ——
+        页面可能还没重新构建，内联样式是旧的。
+        然后，如果这一类页面有**没保存的草稿**（拖过但没点保存），
+        再用草稿盖一遍：草稿比盘上的新，切面板回来必须还是那个样子。
+      */
       const win = els.layoutFrame.contentWindow;
-      if (!win || !win.__layoutApi || !layoutState) return;
-      const saved = (layoutState.pages || {})[layoutPage] || {};
+      if (!win || !win.__layoutApi) return;
+      const saved = (layoutState?.pages || {})[layoutPage] || {};
       for (const [key, v] of Object.entries(saved)) {
         win.__layoutApi.applyKey(key, v);
       }
+      // 到这里 iframe 里的 state 就是「盘上那份」；拿它当基准判断草稿动过没有
+      const baseline = JSON.parse(JSON.stringify(win.__layoutApi.state));
+      const draftState = layoutDrafts.get(layoutPage);
+      if (!draftState) return;
+      for (const [key, v] of Object.entries(draftState)) {
+        win.__layoutApi.applyKey(key, v);
+      }
+      const changed = Object.keys(draftState).some((k) => {
+        const a = draftState[k] || {};
+        const b = baseline[k] || {};
+        return (a.dx || 0) !== (b.dx || 0) || (a.dy || 0) !== (b.dy || 0)
+          || (a.s || 1) !== (b.s || 1) || (a.w || 0) !== (b.w || 0) || (a.h || 0) !== (b.h || 0);
+      });
+      if (changed) els.layoutPick.textContent = '有改动，记得保存';
+      return;
     }
   });
   els.modalUrl.addEventListener('keydown', (ev) => {
@@ -6728,6 +9212,10 @@ function bindEvents() {
   // 快捷键
   window.addEventListener('keydown', (ev) => {
     const mod = ev.ctrlKey || ev.metaKey;
+    if (ev.key === 'Escape' && !els.hubMenu.hidden) {
+      closeHubMenu();
+      return;
+    }
     if (ev.key === 'Escape' && !els.imgModal.hidden) {
       closeImageModal();
       return;

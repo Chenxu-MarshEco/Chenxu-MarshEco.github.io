@@ -376,6 +376,38 @@ export function findByUrl(boards: BoardNode[], url: string): FlatNode | undefine
   return flattenBoards(boards).find((f) => f.url === url);
 }
 
+/**
+ * 地址切成几段：`/huaya/years/fenhu` -> `['huaya','years','fenhu']`。
+ *
+ * 两个路由（`/[board]/` 和 `/[board]/[...path]/`）按**段数**分工，
+ * 面包屑和「返回」也按段数逐级找上级 —— 所以这段逻辑只写在这里一处。
+ */
+export const urlSegs = (url: string): string[] => url.split('/').filter(Boolean);
+
+/**
+ * 地址上的上级：拿 URL 的前缀逐级去找**真实存在**的节点。
+ *
+ * 为什么不能只看结构上的 `children`：**「独立页面」是平铺在顶层数组里的**
+ * （`standalone: true`），但它可以把 `href` 填成一个更深的地址 ——
+ * 用户就是这么用的：`/huaya/years/fenhu/xichenxu` 这种"地址上属于纷湖、
+ * 但不挂在任何列表里"的页面。这种页面结构上没有上一级，地址上却有
+ * （`/huaya/years/fenhu` 就是纷湖）。面包屑和「返回」按地址算，
+ * 才和地址栏里看到的层级一致。
+ *
+ * 前缀里某一级不存在（比如 `/huaya/xyz/abc`，而 `/huaya/xyz` 没建过）就跳过它，
+ * 继续往上找 —— 不会因为地址写深了就整页没有上一级。
+ */
+export function urlTrail(all: readonly FlatNode[], url: string): FlatNode[] {
+  const segs = urlSegs(url);
+  const out: FlatNode[] = [];
+  for (let i = 1; i < segs.length; i++) {
+    const prefix = `/${segs.slice(0, i).join('/')}`;
+    const hit = all.find((f) => f.url === prefix);
+    if (hit) out.push(hit);
+  }
+  return out;
+}
+
 /** 顶层大板块（首页那两块） */
 export const topBoards = (boards: BoardNode[]): BoardNode[] => boards;
 

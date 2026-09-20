@@ -1,6 +1,231 @@
 {
   "boards": [
     {
+      "id": "page-mu9hfl5z",
+      "title": "虹星家",
+      "subtitle": "",
+      "image": "",
+      "standalone": true,
+      "href": "/huaya/years/fenhu/hoshihome",
+      "timeline": "tl-mu94ko3q566",
+      "page": [
+        {
+          "id": "page-mu9hfl5z-pmu9hnjkm7",
+          "type": "toc"
+        },
+        {
+          "id": "page-mu9hfl5z-pmu9hoa069",
+          "type": "text",
+          "text": "## 主要建筑"
+        },
+        {
+          "id": "page-mu9hfl5z-pmu9hojfa10",
+          "type": "text",
+          "text": "## 溪流之外的轶事\n- 虹星家一楼的猫咖曾被隰辰煦质疑为何会有骷髅头。虹星的答复是用来做咖啡杯。\n- \n- 冰室在讨论决战原版冷门生物之巅时，虹星误以为骆驼是1.20之后才出现的生物，然而虹星家门口其实就拴着一只骆驼，甚至在结档时骑着骆驼一起拍了合照。"
+        },
+        {
+          "id": "page-mu9hfl5z-pmu9i0iba11",
+          "type": "nav",
+          "cats": [
+            "navcat-mu9dgbej916"
+          ],
+          "text": "导航"
+        }
+      ]
+    },
+    {
+      "id": "page-mu9fd13e",
+      "title": "隰辰煦家",
+      "subtitle": "",
+      "image": "",
+      "standalone": true,
+      "href": "/huaya/years/fenhu/xichenxuhome",
+      "timeline": "tl-mu94ko3q566",
+      "page": [
+        {
+          "id": "page-mu9fd13e-pmu9fe6pt11",
+          "type": "toc"
+        },
+        {
+          "id": "page-mu9fd13e-pmu9fe7a112",
+          "type": "text",
+          "text": "## 主要建筑"
+        },
+        {
+          "id": "page-mu9fd13e-pmu9jbq2s2",
+          "type": "map",
+          "pages": [
+            {
+              "id": "page-mu9fd13e-pmu9jbq2s2-pmu9jbuws1919",
+              "src": "/img/uploads/20260920-1609-0bbc-414dc64f934a69d9217d332c73a06b11.jpg",
+              "markers": [
+                {
+                  "id": "page-mu9fd13e-pmu9jbq2s2-mmu9jd1jx2679",
+                  "kind": "building",
+                  "x": 72.38,
+                  "y": 75.03,
+                  "title": "海龟农场"
+                },
+                {
+                  "id": "page-mu9fd13e-pmu9jbq2s2-mmu9jd2lh1423",
+                  "kind": "building",
+                  "x": 70.68,
+                  "y": 51.09,
+                  "title": "自动熔炉组"
+                },
+                {
+                  "id": "page-mu9fd13e-pmu9jbq2s2-mmu9jd3tx5287",
+                  "kind": "building",
+                  "x": 63.41,
+                  "y": 54.08,
+                  "title": "嗅探兽农场"
+                },
+                {
+                  "id": "page-mu9fd13e-pmu9jbq2s2-mmu9jd5yl2595",
+                  "kind": "building",
+                  "x": 59.21,
+                  "y": 39.12,
+                  "title": "纷湖公共仓库"
+                },
+                {
+                  "id": "page-mu9fd13e-pmu9jbq2s2-mmu9jd7d89388",
+                  "kind": "building",
+                  "x": 57.74,
+                  "y": 29.9,
+                  "title": "龙蛋祭坛"
+                },
+                {
+                  "id": "page-mu9fd13e-pmu9jbq2s2-mmu9jd85o1011",
+                  "kind": "building",
+                  "x": 52.75,
+                  "y": 23.67,
+                  "title": "地狱门"
+                },
+                {
+                  "id": "page-mu9fd13e-pmu9jbq2s2-mmu9jd92c4002",
+                  "kind": "building",
+                  "x": 48.89,
+                  "y": 13.44,
+                  "title": "信标高塔"
+                },
+                {
+                  "id": "page-mu9fd13e-pmu9jbq2s2-mmu9je78l6294",
+                  "kind": "building",
+                  "x": 48.32,
+                  "y": 31.89,
+                  "title": "地铁口"
+                },
+                {
+                  "id": "page-mu9fd13e-pmu9jbq2s2-mmu9jea2t5189",
+                  "kind": "building",
+                  "x": 45.14,
+                  "y": 29.9,
+                  "title": "主宅"
+                },
+                {
+                  "id": "page-mu9fd13e-pmu9jbq2s2-mmu9jeat98601",
+                  "kind": "building",
+                  "x": 43.33,
+                  "y": 33.89,
+                  "title": "猫爬架"
+                },
+                {
+                  "id": "page-mu9fd13e-pmu9jbq2s2-mmu9jec4s3677",
+                  "kind": "building",
+                  "x": 41.51,
+                  "y": 24.16,
+                  "title": "TNT复制机纪念馆"
+                },
+                {
+                  "id": "page-mu9fd13e-pmu9jbq2s2-mmu9jefgc4789",
+                  "kind": "building",
+                  "x": 37.2,
+                  "y": 26.16,
+                  "title": "磨坊风车"
+                },
+                {
+                  "id": "page-mu9fd13e-pmu9jbq2s2-mmu9jeg4e7849",
+                  "kind": "building",
+                  "x": 36.4,
+                  "y": 34.14,
+                  "title": "马厩"
+                },
+                {
+                  "id": "page-mu9fd13e-pmu9jbq2s2-mmu9jegz11812",
+                  "kind": "building",
+                  "x": 33.91,
+                  "y": 26.41,
+                  "title": "苔藓机"
+                },
+                {
+                  "id": "page-mu9fd13e-pmu9jbq2s2-mmu9jeiud7026",
+                  "kind": "building",
+                  "x": 40.38,
+                  "y": 17.18,
+                  "title": "刷石机"
+                },
+                {
+                  "id": "page-mu9fd13e-pmu9jbq2s2-mmu9jf51w4986",
+                  "kind": "building",
+                  "x": 63.98,
+                  "y": 23.67,
+                  "title": "结档大圆环"
+                },
+                {
+                  "id": "page-mu9fd13e-pmu9jbq2s2-mmu9jgf456294",
+                  "kind": "building",
+                  "x": 54.45,
+                  "y": 31.39,
+                  "title": "悦灵小屋"
+                },
+                {
+                  "id": "page-mu9fd13e-pmu9jbq2s2-mmu9jitud9461",
+                  "kind": "building",
+                  "x": 51.04,
+                  "y": 37.13,
+                  "title": "美西螈池塘"
+                },
+                {
+                  "id": "page-mu9fd13e-pmu9jbq2s2-mmu9jp7ot4234",
+                  "kind": "building",
+                  "x": 82.82,
+                  "y": 76.77,
+                  "title": "前往集中营的桥"
+                }
+              ],
+              "lines": [],
+              "text": "隰辰煦家的全貌。"
+            }
+          ]
+        },
+        {
+          "id": "page-mu9fd13e-pmu9jlnlv3",
+          "type": "text",
+          "text": "### 主宅\n最早建成的建筑，曾经短暂地拥有过樱花屋顶形态。"
+        },
+        {
+          "id": "page-mu9fd13e-pmu9js3d74",
+          "type": "image",
+          "src": "/img/uploads/20260920-1621-a66d-b36eb2193cce0fa3afb6dcc9307d1648.jpg",
+          "alt": "樱花形态的主宅",
+          "width": "wide"
+        },
+        {
+          "id": "page-mu9fd13e-pmu9hjdjz5",
+          "type": "text",
+          "text": "## 溪流之外的轶事\n- 起初隰辰煦真的有过使用樱花木做屋顶的想法，但是因为樱花木颜色过于鲜艳，在与虹星一起综合考量过后还是放弃了，使用白桦木制作了屋顶。然而之后的事情大家也都清楚，隰辰煦已经彻底樱堕落。\n"
+        },
+        {
+          "id": "page-mu9fd13e-pmu9i2ect12",
+          "type": "nav",
+          "cats": [
+            "navcat-mu9dgbej916"
+          ],
+          "text": "导航"
+        }
+      ]
+    },
+    {
       "id": "yongcheng",
       "title": "甬城晴雨",
       "subtitle": "甬神晴奇雨仰",
@@ -145,7 +370,16 @@
                 {
                   "id": "huaya-r1-1-pmu6pt4252",
                   "type": "text",
-                  "text": "20260917 详细构建了花娅陌域下的各种板块，接下来的日子里开始编写。"
+                  "text": "2026.9.17 详细构建了花娅陌域下的各种板块，接下来的日子里开始编写。"
+                },
+                {
+                  "id": "huaya-r1-1-pmu9hh2cn3",
+                  "type": "divider"
+                },
+                {
+                  "id": "huaya-r1-1-pmu9hh3124",
+                  "type": "text",
+                  "text": "2026.9.20 用了几天一边编写一边完善功能，目前地图，时间轴，目录，导航跳转等功能都已完备。"
                 }
               ]
             },
@@ -235,14 +469,16 @@
                           "kind": "building",
                           "x": 52.58,
                           "y": 71.84,
-                          "title": "虹星家"
+                          "title": "虹星家",
+                          "href": "/huaya/years/fenhu/hoshihome"
                         },
                         {
                           "id": "huaya-r2-1-pmu5a6gq03-mmu5aaez51",
                           "kind": "building",
                           "x": 64.21,
                           "y": 29.37,
-                          "title": "隰辰煦家"
+                          "title": "隰辰煦家",
+                          "href": "/huaya/years/fenhu/xichenxuhome"
                         },
                         {
                           "id": "huaya-r2-1-pmu5a6gq03-mmu5aap1d2",
@@ -576,6 +812,50 @@
                       "text": "纷湖中后期的地图。很遗憾因为过于古早，服务器结档时的高清地图已经遗失。"
                     }
                   ]
+                },
+                {
+                  "id": "huaya-r2-1-pmu9eqg8p1",
+                  "type": "divider"
+                },
+                {
+                  "id": "huaya-r2-1-pmu9erqne2",
+                  "type": "text",
+                  "text": "## 重要事件"
+                },
+                {
+                  "id": "huaya-r2-1-pmu9esei93",
+                  "type": "divider"
+                },
+                {
+                  "id": "huaya-r2-1-pmu9eshe24",
+                  "type": "text",
+                  "text": "## 溪流之外的轶事"
+                },
+                {
+                  "id": "huaya-r2-1-pmu9esvsi5",
+                  "type": "divider"
+                },
+                {
+                  "id": "huaya-r2-1-pmu9esy4h6",
+                  "type": "text",
+                  "text": "## 画廊"
+                },
+                {
+                  "id": "huaya-r2-1-pmu9fa4wh7",
+                  "type": "divider"
+                },
+                {
+                  "id": "huaya-r2-1-pmu9fu78g13",
+                  "type": "text",
+                  "text": "## 导航"
+                },
+                {
+                  "id": "huaya-r2-1-pmu9fa5wp8",
+                  "type": "nav",
+                  "cats": [
+                    "navcat-mu9dgbej916"
+                  ],
+                  "text": "导航"
                 }
               ],
               "timeline": "tl-mu94ko3q566",

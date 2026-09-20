@@ -32,6 +32,24 @@ export interface NavGroup {
   id: string;
   /** 子分类的名字，比如「友好生物」 */
   title: string;
+  /** 直接挂在这个子分类下的条目 */
+  items: NavItem[];
+  /**
+   * 再往下一层：子分类里还能细分，比如「友好生物」下面再分
+   * 「无伤害能力 / 无攻击行为 / 攻击非玩家 / 条件敌对」，每条各自挂条目。
+   *
+   * 为什么只做这一层而不是无限嵌套：目录页那种导航实际用到的就是三级
+   * （大分类 → 子分类 → 细分类 → 条目）。结构留成"每层都能再带一层"，
+   * 以后真要第四层，渲染和编辑器再各加一层就行。
+   * 一个子分类可以同时有 items 和 subgroups（两种都会渲染，items 在前）。
+   */
+  subgroups?: NavSubGroup[];
+}
+
+/** 子分类下面再细分的那一层 */
+export interface NavSubGroup {
+  id: string;
+  title: string;
   items: NavItem[];
 }
 
@@ -64,17 +82,21 @@ export const getNavCategory = (id: string): NavCategory | undefined =>
  * 丢掉而不是报错：分类被删掉之后，旧页面里的引用就成了悬空指针 ——
  * 那时候应该只是少一块，而不是整站构建失败（和 timelines 那边
  * "找不到的时间点就跳过"一个规矩）。
+ *
+ * 还没录入条目的大分类也一并跳过：用户是"先把分类想好、条目以后再写"，
+ * 所以库里存着一个空分类是正常状态。页面引用到它，不该在正文里留一个
+ * 空壳（标题下面什么都没有，看着像坏了），等条目补上自然就出现了。
  */
 export function navCatsFor(cats: readonly string[] | undefined | null): NavCategory[] {
   if (!Array.isArray(cats)) return [];
   const out: NavCategory[] = [];
   for (const id of cats) {
     const c = getNavCategory(String(id));
-    if (c && !out.includes(c)) out.push(c);
+    if (c && countNavItems(c) > 0 && !out.includes(c)) out.push(c);
   }
   return out;
 }
 
-/** 这个分类里一共有多少条目（编辑器列表里显示个数用） */
+/** 这个分类里一共有多少条目（编辑器列表里显示个数用；细分类那一层也算） */
 export const countNavItems = (c: NavCategory): number =>
-  c.groups.reduce((n, g) => n + g.items.length, 0);
+  c.groups.reduce((n, g) => n + g.items.length + (g.subgroups ?? []).reduce((m, s) => m + s.items.length, 0), 0);

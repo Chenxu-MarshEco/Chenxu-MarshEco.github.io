@@ -844,6 +844,21 @@ body[data-preview="off"] .col--preview {
   background: var(--accent-soft);
 }
 
+/* ---------- 图片接入口（封面、弹窗、地图、图片块、图标）----------
+   拖到能收图的范围上就给点反馈，用虚线圈出来，松手前就知道会落到哪。 */
+.intake--dragover {
+  outline: 2px dashed var(--accent);
+  outline-offset: 2px;
+  border-radius: 6px;
+  background: var(--accent-soft);
+}
+/* 按钮旁边那行「可拖入图片…」，比正式说明再轻一点，别太吵 */
+.intake__hint {
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-faint);
+}
+
 /* ---------- 右栏预览 ---------- */
 .col__head--preview {
   display: flex;
@@ -976,8 +991,12 @@ body[data-preview="off"] .col--preview {
 
 /* ---------- 弹窗 ---------- */
 .modal {
+  /* 从顶栏下面开始铺：总入口按钮和「保存 / 预览 / 主题」在面板开着时照样点得到 */
   position: fixed;
-  inset: 0;
+  top: var(--topbar-h);
+  left: 0;
+  right: 0;
+  bottom: 0;
   z-index: 50;
   display: flex;
   align-items: center;
@@ -1243,14 +1262,12 @@ body[data-type="notes"] .field--posts-only {
 }
 
 /* ---------------------------------------------------------------
-   左栏（下）：独立页面
-   挂在树下面单独一段 —— 它们不在任何板块下，所以不混进上面那棵树。
+   「页面」工作台左栏（下）：独立页面入口卡片
+   清单本身搬去了独立页面工作台（#solo-modal）—— 在这儿塞一整列，
+   页面一多就翻不动，正是要改掉的老毛病。
 --------------------------------------------------------------- */
 #pw-standalone {
-  flex: 0 1 auto;
-  min-height: 0;
-  max-height: 52%;
-  overflow-y: auto;
+  flex: 0 0 auto;
   padding: 8px 8px 10px;
   border-top: 1px solid var(--border);
   background: var(--surface-2);
@@ -1273,81 +1290,232 @@ body[data-type="notes"] .field--posts-only {
   font-style: normal;
   color: var(--text-muted);
 }
-.pw-solo__hint,
-.pw-solo__tip,
-.pw-solo__empty {
+.pw-solo__hint {
   margin: 0;
   font-size: 11px;
   line-height: 1.6;
   color: var(--text-muted);
 }
-.pw-solo__new {
+.pw-solo__jump {
+  width: 100%;
+  justify-content: center;
+}
+
+/* ---------------------------------------------------------------
+   独立页面工作台（#solo-modal）左栏清单
+   可滚动、可按标题 / 地址筛；一行只放「名字 + 地址」，点一下选中。
+--------------------------------------------------------------- */
+.solo__count {
+  font-style: normal;
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.solo__new {
   display: flex;
   gap: 4px;
+  padding: 8px 8px 0;
+  flex: 0 0 auto;
 }
-.pw-solo__new .input {
+.solo__new .input {
   flex: 1 1 auto;
   min-width: 0;
 }
-.pw-solo__list {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
+.solo__tip {
+  margin: 0;
+  padding: 0 8px 8px;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--text-muted);
+  flex: 0 0 auto;
 }
-.pw-solo__item {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+.solo__list {
+  list-style: none;
+  margin: 0;
   padding: 6px;
-  border: 1px solid var(--border);
-  border-radius: var(--r-sm);
-  background: var(--surface);
+  overflow-y: auto;
+  flex: 1 1 auto;
+  min-height: 0;
 }
-.pw-solo__item.is-active {
+.solo__row {
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+  margin-bottom: 4px;
+}
+.solo__item {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-align: left;
+  padding: 6px 8px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.solo__item:hover {
+  background: var(--surface-2);
+}
+.solo__item.is-active {
   border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent, #7a3f9d) 18%, transparent);
   box-shadow: inset 2px 0 0 var(--accent, #7a3f9d);
 }
-.pw-solo__top {
-  display: flex;
-  align-items: center;
+.solo__name {
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.solo__urltag {
+  font-size: 11px;
+  font-style: normal;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.solo__del {
+  flex: 0 0 auto;
+  align-self: center;
+}
+.solo__empty {
+  padding: 10px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-muted);
+}
+
+/* ---------------------------------------------------------------
+   工作面总入口（左上角「工作台」按钮 + 清单）
+--------------------------------------------------------------- */
+.hub__btn {
+  flex: none;
   gap: 4px;
 }
-.pw-solo__name {
-  flex: 1 1 auto;
-  min-width: 0;
+.hub__icon {
+  opacity: 0.75;
 }
-.pw-solo__addr {
+/* 清单挂在 body 上：顶栏有个 z-index:5 的层叠上下文，
+   放在顶栏里就会被弹窗（z-index:50）盖住，面板开着就点不到了。 */
+.hubmenu {
+  position: fixed;
+  z-index: 70;
+  width: 260px;
+  max-height: min(70vh, 520px);
+  overflow-y: auto;
+  padding: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  box-shadow: var(--shadow);
+}
+.hubmenu[hidden] {
+  display: none;
+}
+.hubmenu__head {
+  margin: 2px 4px 6px;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: var(--text-faint);
+}
+.hubmenu__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.hubmenu__btn {
   display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  text-align: left;
+  padding: 7px 9px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.hubmenu__btn:hover {
+  background: var(--surface-2);
+}
+.hubmenu__btn.is-active {
+  background: var(--accent-soft);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+.hubmenu__label {
+  font-size: 13px;
+}
+.hubmenu__hint {
+  font-size: 11px;
+  font-style: normal;
+  color: var(--text-muted);
+}
+.hubmenu__foot {
+  margin: 8px 4px 2px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--text-faint);
+}
+
+/* ---------------------------------------------------------------
+   面板里的「切换」条：在独立页面面板里也能直接跳去导航 / 时间轴…
+--------------------------------------------------------------- */
+.wsswitch {
+  display: inline-flex;
   align-items: center;
   gap: 4px;
   flex-wrap: wrap;
 }
-.pw-solo__addrlabel {
-  flex: none;
-  font-size: 11px;
+.wsswitch__btn {
+  padding: 3px 9px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
   color: var(--text-muted);
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
 }
-/* 站内地址：等宽 + 可选中，剪贴板用不了时就是靠选中它兜底 */
-.pw-solo__url {
-  flex: 0 1 auto;
-  min-width: 0;
-  max-width: 100%;
-  padding: 2px 6px;
-  border: 1px dashed var(--border-strong);
-  border-radius: var(--r-sm);
-  font-family: var(--font-mono, monospace);
-  font-size: 11px;
+.wsswitch__btn:hover {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+.wsswitch__btn.is-active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
   color: var(--accent);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  user-select: all;
 }
-.pw-solo__href {
-  flex: 1 1 120px;
-  min-width: 0;
-  padding: 4px 6px;
-  font-size: 11px;
+.wsswitch__btn--close {
+  border-style: dashed;
+}
+
+/* 控件搬家时留在原地的锚点：只用来记位置，不占地方 */
+.studio-anchor {
+  display: none;
+}
+
+/* ---------------------------------------------------------------
+   独立页面工作台的面板尺寸：和「页面」工作台一样铺满
+--------------------------------------------------------------- */
+#solo-modal .modal__panel {
+  max-width: min(1680px, 97vw);
+  width: 97vw;
+  height: min(92vh, calc(100vh - var(--topbar-h) - 28px));
+  display: flex;
+  flex-direction: column;
+}
+#pages-modal .modal__panel {
+  height: min(92vh, calc(100vh - var(--topbar-h) - 28px));
 }
 
 /* 中栏：字段 */
@@ -1872,6 +2040,123 @@ body[data-type="notes"] .field--posts-only {
 }
 .pblock-add__label {
   font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* ---------- 内容块：插到指定位置 / 按住把手拖着换位置 ---------- */
+
+/* 落点线（.pblock-dropline）是绝对定位的，得有个基准 */
+#page-editor {
+  position: relative;
+}
+
+/*
+  抽屉把手：只在这一小块上收 pointerdown。卡片别处（输入框、按钮）
+  一个监听都不加 —— 在输入框里选字必须还是选字。
+*/
+.pblock-edit__grip {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: var(--text-faint);
+  font-size: 13px;
+  line-height: 1;
+  cursor: grab;
+  touch-action: none;   /* 手指拖把手时别让整页跟着滚 */
+  user-select: none;
+}
+.pblock-edit__grip:hover {
+  color: var(--accent);
+  background: var(--surface-2);
+}
+.pblock-edit__grip:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+body.pblock-dragging,
+body.pblock-dragging * {
+  cursor: grabbing !important;
+  user-select: none;
+}
+
+/* 正在拖的那一张：半透明，一眼看出它在"被拿起来" */
+.pblock-edit.is-dragging {
+  opacity: 0.45;
+  border-style: dashed;
+  border-color: var(--accent);
+}
+
+/* 当前这一段（鼠标 / 光标停过的卡片） */
+.pblock-edit.is-active {
+  border-color: var(--border-strong);
+}
+
+/* 新加 / 刚挪过来的那一块：闪一下，知道它落在哪儿了 */
+.pblock-edit.is-new {
+  animation: pblock-new 1.2s ease-out;
+}
+@keyframes pblock-new {
+  0% { box-shadow: 0 0 0 2px var(--accent); }
+  100% { box-shadow: 0 0 0 2px transparent; }
+}
+
+/* 拖拽时的落点线：绝对定位，不占布局（占布局会在两格之间来回抖） */
+.pblock-dropline {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--accent);
+  pointer-events: none;
+}
+.pblock-dropline__tag {
+  position: absolute;
+  right: 0;
+  top: -9px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-text);
+  font-size: 10px;
+  line-height: 16px;
+  white-space: nowrap;
+}
+
+/* 卡片头上的「＋」：新块插在这一段后面（.is-on = 现在就插在这儿） */
+.pblock-edit__ins.is-on {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-soft);
+  font-weight: 700;
+}
+
+/* 「新内容将插到第 N 段后面」那条提示，就画在会插进去的那条缝上 */
+.pblock-insmark {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: -4px 0 10px;
+  padding: 4px 8px;
+  border-left: 3px solid var(--accent);
+  border-radius: 0 var(--r-sm) var(--r-sm) 0;
+  background: var(--accent-soft);
+}
+.pblock-insmark__tag {
+  flex: 1 1 auto;
+  font-size: 12px;
+  color: var(--accent);
+}
+
+/* 底部那一排「＋ 文字 / ＋ 图片 / …」下面那行小字：这一排现在会插到哪儿 */
+.pblock-add__note {
+  flex: 1 1 100%;
+  font-size: 11px;
+  line-height: 1.6;
   color: var(--text-muted);
 }
 
@@ -2596,6 +2881,555 @@ body[data-type="notes"] .field--posts-only {
   padding: 12px 18px;
   background: var(--surface);
   border-top: 1px solid var(--border);
+}
+
+/* ---------------------------------------------------------------
+   链接 + 「选位置…」：输入框和按钮并排，外面那层顶替原来输入框占的位置
+--------------------------------------------------------------- */
+.linkpick {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.linkpick .input {
+  flex: 1 1 auto;
+  min-width: 0;
+  width: 100%;
+}
+.linkpick .anchorpick__open {
+  flex: none;
+  white-space: nowrap;
+}
+
+/* 「选页面里的位置」面板 */
+.anchorpick {
+  position: fixed;
+  inset: 0;
+  z-index: 4000;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgba(0, 0, 0, 0.5);
+}
+.anchorpick__panel {
+  width: min(760px, 100%);
+  max-height: 82vh;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  background: var(--surface);
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+}
+.anchorpick__head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.anchorpick__title {
+  flex: 1 1 auto;
+  margin: 0;
+  font-size: 14px;
+  letter-spacing: 0.04em;
+}
+.anchorpick__note {
+  margin: 0;
+}
+.anchorpick__body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
+  gap: 10px;
+  min-height: 0;
+}
+@media (max-width: 700px) {
+  .anchorpick__body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.anchorpick__col {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  min-height: 0;
+}
+.anchorpick__list {
+  flex: 1 1 auto;
+  min-height: 120px;
+  max-height: 52vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+}
+.anchorpick__page,
+.anchorpick__item {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+  padding: 5px 7px;
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.anchorpick__page:hover,
+.anchorpick__item:hover {
+  background: var(--surface);
+}
+.anchorpick__page.is-active,
+.anchorpick__item.is-active {
+  border-color: var(--accent);
+  background: var(--surface);
+}
+.anchorpick__ptitle,
+.anchorpick__text {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.anchorpick__phref,
+.anchorpick__kind {
+  flex: none;
+  font-size: 11px;
+  font-style: normal;
+  color: var(--text-muted);
+}
+.anchorpick__sub {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* ---------------------------------------------------------------
+   导航分类库面板：左栏分类清单 / 中栏子分类 + 条目 / 右栏预览
+--------------------------------------------------------------- */
+.modal__panel--navs {
+  width: min(1360px, calc(100vw - 24px));
+  max-width: 1360px;
+  max-height: 88vh;
+  overflow-y: auto;
+}
+.modal__panel--navs .modal__actions {
+  position: sticky;
+  bottom: -18px;
+  margin: 0 -18px -18px;
+  padding: 12px 18px;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+}
+.nv-edit {
+  display: grid;
+  grid-template-columns: minmax(210px, 15rem) minmax(0, 1.15fr) minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+}
+@media (max-width: 1100px) {
+  .nv-edit {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.nv-edit__col {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+}
+.nv-head {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.nv-head__title {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+}
+.nv-head__count {
+  font-size: 11px;
+  font-style: normal;
+  color: var(--text-muted);
+}
+.nv-empty {
+  margin: 0;
+}
+.nv-cats {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.nv-cat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px 6px;
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+}
+.nv-cat.is-active {
+  border-color: var(--accent);
+  box-shadow: inset 2px 0 0 var(--accent, #7a3f9d);
+}
+.nv-cat__pick {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  padding: 2px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.nv-cat__name {
+  font-size: 13px;
+}
+.nv-cat__meta {
+  font-size: 11px;
+  font-style: normal;
+  color: var(--text-muted);
+}
+.nv-cat__ops {
+  display: flex;
+  gap: 3px;
+  flex-wrap: wrap;
+}
+.nv-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
+  gap: 8px;
+}
+.nv-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.nv-field__label {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.nv-field__hint {
+  font-size: 11px;
+  color: var(--text-muted);
+  opacity: 0.85;
+}
+.nv-idline {
+  margin: 0;
+  font-family: var(--font-mono, monospace);
+  font-size: 11px;
+  word-break: break-all;
+}
+.nv-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.nv-group {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 6px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--r-sm);
+}
+.nv-group__top {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.nv-group__name {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.nv-items {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+/* 子分类里「直接挂的条目」那一块（有细分类时给它一行小标题） */
+.nv-slot {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.nv-slot__cap {
+  margin: 0;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+/* 再往下一层：细分类（第三级）—— 左边一条竖线，看得出来是「挂在上面那个子分类下」 */
+.nv-subs {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.nv-sub {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 5px 6px;
+  border-left: 3px solid var(--border-strong);
+  border-radius: 0 var(--r-sm) var(--r-sm) 0;
+  background: color-mix(in srgb, var(--surface-2) 55%, transparent);
+}
+.nv-sub__top {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.nv-sub__name {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 12px;
+}
+.nv-addsub {
+  align-self: flex-start;
+}
+.nv-item {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 4px 5px;
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+}
+.nv-item__top {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.nv-item__text {
+  flex: 1 1 8rem;
+  min-width: 0;
+}
+.nv-item__href {
+  flex: 1 1 10rem;
+  min-width: 0;
+  font-size: 11px;
+}
+.nv-item__bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.nv-item__tip {
+  flex: 1 1 10rem;
+  min-width: 0;
+  font-size: 11px;
+  padding: 3px 5px;
+}
+.nv-item__warn {
+  font-size: 11px;
+  color: var(--danger);
+}
+.nv-additem {
+  align-self: flex-start;
+}
+.nv-pv {
+  gap: 6px;
+}
+.nv-pv__head {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+}
+.nv-pv__blk {
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: 8px;
+  background: var(--surface-2);
+}
+.nv-pv__bar {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  flex-wrap: wrap;
+  padding-bottom: 6px;
+  margin-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+}
+.nv-pv__barLabel {
+  font-weight: 600;
+  color: var(--text-muted);
+}
+.nv-pv__barLink {
+  color: var(--accent);
+  text-decoration: none;
+}
+.nv-pv__dot {
+  color: var(--text-muted);
+}
+.nv-pv__cat {
+  margin-bottom: 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: 4px 6px;
+  background: var(--surface);
+}
+.nv-pv__summary {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px;
+  cursor: pointer;
+  font-size: 13px;
+}
+.nv-pv__fold {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+.nv-pv__body {
+  padding-top: 6px;
+}
+.nv-pv__note {
+  margin: 0 0 6px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.nv-pv__row {
+  display: grid;
+  grid-template-columns: minmax(4.5rem, auto) minmax(0, 1fr);
+  gap: 6px;
+  align-items: baseline;
+  padding: 2px 0;
+}
+/*
+  有细分类的那一行：父级名字那一格**纵跨整组**（右边画一条竖线，
+  一眼看出右边那几格都属于它），右边再一列列铺：细分类名 | 条目。
+*/
+.nv-pv__row--nest {
+  align-items: stretch;
+}
+.nv-pv__row--nest .nv-pv__label {
+  border-right: 2px solid var(--border-strong);
+  padding-right: 8px;
+}
+.nv-pv__label {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.nv-pv__cells {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.nv-pv__cell {
+  display: grid;
+  grid-template-columns: minmax(4.5rem, auto) minmax(0, 1fr);
+  gap: 6px;
+  align-items: baseline;
+}
+.nv-pv__sublabel {
+  font-size: 11px;
+  color: var(--text-muted);
+  border-left: 2px solid var(--border);
+  padding-left: 6px;
+  align-self: stretch;
+}
+/* 直接挂的条目那一格故意留的空标签：占位而已，别画竖线 */
+.nv-pv__sublabel:empty {
+  border-left: 0;
+  padding-left: 0;
+}
+.nv-pv__items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+}
+.nv-pv__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--accent);
+  text-decoration: none;
+}
+.nv-pv__item--plain {
+  color: var(--text-muted);
+}
+.nv-pv__icon {
+  width: 16px;
+  height: 16px;
+  object-fit: contain;
+  border-radius: 3px;
+}
+.nv-pv__emptyItem {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.nv-pv__tip {
+  margin: 0;
+}
+
+/* 页面内容块里的「导航」块（勾选分类 + 这一页的顺序） */
+.pblock-nav__text {
+  flex: 1 1 12rem;
+}
+.pblock-nav__pick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin-bottom: 6px;
+}
+.pblock-nav__check {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.pblock-nav__count {
+  font-size: 11px;
+  font-style: normal;
+  color: var(--text-muted);
+}
+.pblock-nav__order {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.pblock-nav__orow {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.pblock-nav__orow.is-missing {
+  color: var(--danger);
+}
+.pblock-nav__oname {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 12px;
+}
+.pblock-nav__none {
+  font-size: 11px;
+  color: var(--text-muted);
 }
 
 /* 页面工作台里「对应时间」那一行 */.pblock-edit__row--time {

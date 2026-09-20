@@ -10,22 +10,41 @@
 import BoardLayout from '../../layouts/BoardLayout.astro';
 import NodeView from '../../components/NodeView.astro';
 import site from '../../site.config';
-import { flattenBoards, type BoardNode } from '../../utils/boards';
+import { flattenBoards, urlSegs, type BoardNode } from '../../utils/boards';
 import { nodePageData } from '../../utils/boardPage';
 import { getTimeline, refParam } from '../../utils/timelines';
 
 export async function getStaticPaths() {
   const all = flattenBoards(site.homeBoards as BoardNode[]);
+  /*
+    这个路由吃**两段以上**的地址（`/[board]/[...path]`）。
+    按地址段数分而不是按树的层级分：子页面当然是多段，但「独立页面」
+    可以是 depth 0 却挂着深地址（`/huaya/years/fenhu/xichenxu`）——
+    那种也该由这里生成，而不是被塞进只认一段的 [board] 路由里
+    （塞进去参数就带斜杠了，构建会崩在「Missing parameter: board」）。
+  */
+  const seen = new Set<string>();
   return all
-    // 链接版块不生成页面（点了直接跳走），所以这里要排掉
-    .filter((f) => f.depth > 0 && !f.external)
-    .map((f) => {
-      const segs = f.url.split('/').filter(Boolean);
-      return {
-        params: { board: segs[0], path: segs.slice(1).join('/') },
-        props: { url: f.url },
-      };
-    });
+    // 链接版块点了就跳走，不给它建页面
+    .filter((f) => !f.external)
+    .map((f) => ({ f, segs: urlSegs(f.url) }))
+    .filter(({ segs }) => segs.length > 1)
+    /*
+      地址撞了（比如独立页面手填的地址撞上某个子页面）：只留第一个，
+      但**在构建日志里喊一声** —— 悄悄少一页比构建失败更难查。
+    */
+    .filter(({ f }) => {
+      if (!seen.has(f.url)) {
+        seen.add(f.url);
+        return true;
+      }
+      console.warn(`[页面地址撞了] ${f.url} 被两个节点同时占了，这里只生成了先出现的那个（${f.node.id}）`);
+      return false;
+    })
+    .map(({ f, segs }) => ({
+      params: { board: segs[0], path: segs.slice(1).join('/') },
+      props: { url: f.url },
+    }));
 }
 
 const { url } = Astro.props;

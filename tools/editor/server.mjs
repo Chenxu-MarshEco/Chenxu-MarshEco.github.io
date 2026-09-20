@@ -953,6 +953,51 @@ async function handleApi(req, res, url) {
     return sendJson(res, 200, { ok: true, timelines: data.timelines.length, dropped: data.dropped });
   }
 
+  // ---- 导航分类库（独立的一份数据，见下面 NAVS_FILE 那段的说明）----
+  // 和「音乐」一样，POST 会顺手重新构建：分类是给页面块引用的，
+  // 改一次要让所有引用它的页面一起变，不重建的话页面还是旧的。
+  if (route === '/api/navs' && req.method === 'GET') {
+    return sendJson(res, 200, { ok: true, navs: await readNavs(), pages: await navRefs() });
+  }
+  if (route === '/api/navs' && req.method === 'POST') {
+    const payload = await readBody(req);
+    // 请求里没带 _readme 就用文件里现有的那份（那是给手改 JSON 的人看的说明书）
+    const current = await readNavs();
+    const data = cleanNavs(payload, current._readme);
+    try {
+      await fs.copyFile(NAVS_FILE, `${NAVS_FILE}.bak`);
+    } catch {
+      /* 第一次还没有这个文件，正常 */
+    }
+    await fs.writeFile(NAVS_FILE, `${JSON.stringify(data.file, null, 2)}\n`, 'utf8');
+
+    /*
+      写完就重建。构建失败**不算保存失败** —— 数据已经落盘了，
+      把日志尾巴原样带回去让编辑器报给用户（和页面工作台一个态度：
+      存下去的东西不能因为构建失败就让人以为没存）。
+    */
+    let built = false;
+    let ms = 0;
+    let output = '';
+    try {
+      const r = await runBuild();
+      built = true;
+      ms = r.ms;
+      output = r.output;
+    } catch (err) {
+      output = String(err?.message || err);
+    }
+    return sendJson(res, 200, { ok: true, built, ms, output, dropped: data.dropped });
+  }
+
+  // ---- 锚点清单（构建产物 dist/anchors.json）----
+  // 页面里那些能被跳到的位置：标题（id 就是标题文字）、每个内容块（id="blk-<块id>"）。
+  // 编辑器里「选页面里的位置…」那个小面板靠它，所以没有产物时返回空清单 + 一句说明，
+  // 绝不 500 —— 没构建过是很正常的状态（刚克隆下来、或者刚改完还没保存）。
+  if (route === '/api/anchors' && req.method === 'GET') {
+    return sendJson(res, 200, await readAnchors());
+  }
+
   // ---- 排版微调（首页元素的相对偏移与缩放）----
   if (route === '/api/layout' && req.method === 'GET') {
     return sendJson(res, 200, await readLayout());
@@ -1384,6 +1429,200 @@ function cleanTimelines(payload) {
   return { timelines, dropped };
 }
 
+/* ------------------------------------------------------------------
+   导航分类库（src/data/navs.json）
+
+   和时间轴一个道理：**先建可复用的单位，页面里只引用**。
+   这里可复用的单位是「大分类」（category）。用户的原话是：有些条目对应的
+   页面既属于 A 大分类又属于 B 大分类 —— A 页的导航可能是「甲 + 乙」、
+   B 页是「甲 + 丙」，甲里那几十条条目只该录一次。所以页面块里存的是
+   `{ id, type:'nav', cats:[分类 id…] }`，改一次分类、所有引用它的页面一起变。
+   ------------------------------------------------------------------ */
+const NAVS_FILE = path.join(PROJECT_ROOT, 'src', 'data', 'navs.json');
+
+/**
+ * 读分类库。
+ *
+ * 文件坏了 / 还没建都当**空库**（不抛错）：分类库挂了不该让整个「导航」
+ * 面板打不开 —— 那样用户连修都没法修。真正的解析错误在 POST 的写回里
+ * 会体现出来（写回的是清洗后的干净数据）。
+ */
+async function readNavs() {
+  try {
+    const data = JSON.parse(await fs.readFile(NAVS_FILE, 'utf8'));
+    const out = { categories: Array.isArray(data?.categories) ? data.categories : [] };
+    if (Array.isArray(data?._readme)) out._readme = data._readme;
+    return out;
+  } catch {
+    return { categories: [] };
+  }
+}
+
+/**
+ * 分类库清洗。
+ *
+ * 结构是**三层**：categories[ 大分类 ] → groups[ 子分类 ] → subgroups[ 细分类 ] → items[ 条目 ]。
+ * （子分类自己也能直接挂条目 —— 一个子分类可以同时有 items 和 subgroups，
+ * 站点渲染时先铺直接挂的条目、再铺细分类。）
+ *
+ * 规则（和契约、和 navs.json 里那份 `_readme` 一致）：
+ *   · 大分类必须有 id + title，**id 全库唯一** —— 页面就是靠 id 引它的
+ *   · 子分类必须有 id + title，id **只要求在大分类内唯一**（`_readme` 就是这么写的）
+ *   · 细分类必须有 id + title，id **只要求在同一条子分类内唯一**；只做这一层，
+ *     不再往下嵌；`subgroups` 缺省或空数组时**不写这个字段**（老数据逐字节不变）
+ *   · 条目必须有 id + text（id 只在**同一个列表里**不撞就行：同一条目出现在
+ *     两个子分类 / 两个细分类里很常见，这时 id 一样也不该把谁丢掉）；
+ *     href 走和别处同一套地址校验（非法就丢这个字段，条目还在），image / tip 可选
+ *   · **只有结构非法才丢**：不是对象 / id 空 / title 空 / id 撞了。
+ *     「空」不算非法 —— 先建好分类、条目以后慢慢填是最正常的工作流，
+ *     以前这里把空分类/空子分类当垃圾丢掉，用户建完点保存东西就没了。
+ *   · 空数组的字段不写（`subgroups` 空了不写这个字段，老数据逐字节不变）；
+ *     但 `items` 一直写（站点读 `g.items.length`，少这个字段会报错）
+ *   · `_readme`（那份字段说明）原样保留，别弄丢
+ *
+ * 字段顺序照现状来（group: id/title/items/subgroups，subgroup: id/title/items），
+ * 所以老数据过一遍不会因为顺序变化产生无意义的 diff。
+ */
+function cleanNavs(payload, fallbackReadme) {
+  const dropped = { categories: 0, groups: 0, subgroups: 0, items: 0 };
+  const categories = [];
+  const usedCat = new Set();
+
+  /** 一个列表（子分类的 items 或细分类的 items）里的条目：同一套规则走两遍 */
+  const cleanItems = (rawItems, usedI) => {
+    const items = [];
+    for (const ri of Array.isArray(rawItems) ? rawItems : []) {
+      if (!ri || typeof ri !== 'object') { dropped.items++; continue; }
+      const iid = String(ri.id || '').trim();
+      const text = String(ri.text || '').trim();
+      if (!iid || !text || usedI.has(iid)) { dropped.items++; continue; }
+      usedI.add(iid);
+      const item = { id: iid, text };
+      const href = cleanLink(ri.href);
+      if (href) item.href = href;
+      const image = String(ri.image || '').trim();
+      if (image) item.image = image;
+      const tip = String(ri.tip || '').trim();
+      if (tip) item.tip = tip;
+      items.push(item);
+    }
+    return items;
+  };
+
+  for (const rc of Array.isArray(payload?.categories) ? payload.categories : []) {
+    if (!rc || typeof rc !== 'object') { dropped.categories++; continue; }
+    const id = String(rc.id || '').trim();
+    const title = String(rc.title || '').trim();
+    if (!id || !title || usedCat.has(id)) { dropped.categories++; continue; }
+
+    const groups = [];
+    const usedG = new Set();
+    for (const rg of Array.isArray(rc.groups) ? rc.groups : []) {
+      if (!rg || typeof rg !== 'object') { dropped.groups++; continue; }
+      const gid = String(rg.id || '').trim();
+      const gtitle = String(rg.title || '').trim();
+      if (!gid || !gtitle || usedG.has(gid)) { dropped.groups++; continue; }
+
+      const items = cleanItems(rg.items, new Set());
+
+      // 再往下一层：细分类（只做这一层，不再嵌）
+      const subgroups = [];
+      const usedS = new Set();
+      for (const rs of Array.isArray(rg.subgroups) ? rg.subgroups : []) {
+        if (!rs || typeof rs !== 'object') { dropped.subgroups++; continue; }
+        const sid = String(rs.id || '').trim();
+        const stitle = String(rs.title || '').trim();
+        if (!sid || !stitle || usedS.has(sid)) { dropped.subgroups++; continue; }
+        // 还没有条目的细分类**照样留着** —— 见下面那段「空的不再丢」
+        usedS.add(sid);
+        subgroups.push({ id: sid, title: stitle, items: cleanItems(rs.items, new Set()) });
+      }
+
+      usedG.add(gid);
+      /*
+        空**不再**等于非法。
+
+        用户的原话：「我在导航里创建了新大分类和子分类以后，如果里面没有加入
+        具体的条目，点击保存创建会直接失败……我很多时候需要先想好分类再写入
+        具体条目」。所以现在只有**结构非法**才丢（不是对象 / id 空 / title 空 /
+        id 撞了），没有条目的子分类、既没条目也没细分类的子分类、
+        没有子分类的大分类**一律原样保留**，等他慢慢往里填。
+
+        空数组的字段还是不写：`subgroups` 空了就不写这个字段（老数据逐字节不变）。
+        `items` 例外，**一直写**（哪怕是 `[]`）—— 站点那边 NavBlock 读的是
+        `g.items.length` / `sg.items.length`，少这个字段会直接报错。
+      */
+      const group = { id: gid, title: gtitle, items };
+      if (subgroups.length) group.subgroups = subgroups;
+      groups.push(group);
+    }
+    usedCat.add(id);
+
+    const cat = { id, title };
+    const note = String(rc.note || '').trim();
+    if (note) cat.note = note;
+    cat.groups = groups;
+    categories.push(cat);
+  }
+
+  const file = {};
+  const readme = Array.isArray(payload?._readme) ? payload._readme : fallbackReadme;
+  if (Array.isArray(readme)) file._readme = readme;
+  file.categories = categories;
+  return { file, dropped };
+}
+
+/**
+ * 锚点清单：`dist/anchors.json`（站点构建时导出）。
+ *
+ * 形状：`{ pages: [ { href, title, anchors: [ { id, text, kind } ] } ] }`
+ * —— `id` 就是页面里的 `id="…"`（标题是原样的中文标题，块是 `blk-<块id>`），
+ * `kind` 是 h2/h3/image/text/… 这类，`text` 是给人看的标签。
+ *
+ * 读不到 / 坏了都返回**空清单 + 一句说明**：这是构建产物，没构建过很正常，
+ * 不该让「选位置」那个按钮变成报错弹窗。
+ */
+async function readAnchors() {
+  const file = path.join(PROJECT_ROOT, 'dist', 'anchors.json');
+  try {
+    const data = JSON.parse(await fs.readFile(file, 'utf8'));
+    const pages = Array.isArray(data?.pages) ? data.pages : [];
+    return { ok: true, pages };
+  } catch {
+    return { ok: true, pages: [], note: '还没有构建产物，先保存并重新构建一次' };
+  }
+}
+
+/**
+ * 哪些页面引用了哪些大分类。
+ *
+ * 读的是**盘上那份** home-boards.json：分类库和页面是分开保存的，
+ * 用户要知道的是「保存之后有哪些页面会跟着变」，而不是「草稿里现在怎样」。
+ * 导航面板左栏显示「被 N 个页面引用」、删分类前告诉用户是哪几页，都用它。
+ */
+async function navRefs() {
+  let boards = [];
+  try {
+    const data = await readBoards();
+    boards = Array.isArray(data?.boards) ? data.boards : [];
+  } catch {
+    return [];
+  }
+  const out = [];
+  for (const f of flatBoardPages(boards)) {
+    const cats = [];
+    for (const b of Array.isArray(f.node?.page) ? f.node.page : []) {
+      if (!b || b.type !== 'nav') continue;
+      for (const c of Array.isArray(b.cats) ? b.cats : []) {
+        const s = String(c ?? '').trim();
+        if (s && !cats.includes(s)) cats.push(s);
+      }
+    }
+    if (cats.length) out.push({ id: f.id, title: f.title, url: f.url, cats });
+  }
+  return out;
+}
+
 /**
  * 递归清理一个节点。
  *
@@ -1554,6 +1793,29 @@ function cleanBlocks(raw, ownerId) {
       // 目录块自己不写内容（标题是从别处的「## 小标题」收集来的），
       // 只有「目录」这两个字本身可以改，所以 text 可选
       const block = { id, type };
+      const text = String(b.text || '').trim();
+      if (text) block.text = text;
+      pushBlock(block);
+      return;
+    }
+
+    if (type === 'nav') {
+      /*
+        导航块：**引用**分类库里的几个大分类（`cats` 就是分类 id 的列表，
+        顺序 = 页面上的显示顺序）。这里存的是一串 id，不是条目的拷贝 ——
+        改分类内容不用动页面，这正是「可复用导航」的全部意义。
+
+        `cats` 里**故意保留库里暂时不存在的 id**：作者可能先把引用写进页面、
+        再去库里建那个分类；站点那边认不出来的 id 直接跳过，不会因此构建失败。
+        （时间轴那边「找不到的时间点就跳过」也是这个态度。）
+      */
+      const cats = [];
+      for (const c of Array.isArray(b.cats) ? b.cats : []) {
+        const s = String(c ?? '').trim();
+        if (s && !cats.includes(s)) cats.push(s);
+      }
+      const block = { id, type, cats };
+      // 顶栏那行字（不写就是「分类」）
       const text = String(b.text || '').trim();
       if (text) block.text = text;
       pushBlock(block);
@@ -1890,7 +2152,7 @@ function flatBoardPages(boards) {
     if (isBoardLink(link)) return;
     const href = String(node.href ?? '').trim();
     const url = href || (depth === 0 ? `/${boardSegment(id, parentId)}` : `${parentUrl}/${boardSegment(id, parentId)}`);
-    out.push({ url, title: title || url });
+    out.push({ url, title: title || url, id, node });
     for (const child of Array.isArray(node.children) ? node.children : []) {
       walk(child, id, url, depth + 1);
     }

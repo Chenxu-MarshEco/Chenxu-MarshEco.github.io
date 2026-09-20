@@ -17,7 +17,69 @@
     "",
     "顺序就是页面上显示的顺序（分类、子分类、条目都按数组顺序排）。",
     "页面块里 cats 的顺序说了算：同一个分类在 A 页放前面、在 B 页放后面都行。",
+    "groups[].subgroups 是可选的第三级（细分类）：例如「友好生物」下面再分「无伤害能力 / 攻击非玩家」，每条各自挂 items。",
+    "一个子分类可以同时有 items 和 subgroups（页面先铺 items、再铺细分类）。只做这一级，不再往下嵌。",
     "这个文件由编辑器的「导航」面板写入，也可以手改（改完要重新构建）。"
   ],
-  "categories": []
+  "categories": [
+    {
+      "id": "navcat-mu9dgbej916",
+      "title": "纷湖",
+      "groups": [
+        {
+          "id": "g-mu9dgecb94",
+          "title": "建筑",
+          "items": [
+            {
+              "id": "i-mu9fozxc460",
+              "text": "隰辰煦家",
+              "href": "/huaya/years/fenhu/xichenxuhome#blk-page-mu9fd13e-pmu9fe6pt11"
+            },
+            {
+              "id": "i-mu9fq0ns677",
+              "text": "虹星家",
+              "href": "/huaya/years/fenhu/hoshihome#blk-page-mu9hfl5z-pmu9hnjkm7"
+            },
+            {
+              "id": "i-mu9fqaq0754",
+              "text": "吉吉家"
+            },
+            {
+              "id": "i-mu9fqdfc604",
+              "text": "Raw家"
+            },
+            {
+              "id": "i-mu9fqh8h286",
+              "text": "桑芙家"
+            },
+            {
+              "id": "i-mu9fqk60441",
+              "text": "SSW家"
+            },
+            {
+              "id": "i-mu9fqpag544",
+              "text": "光子家"
+            },
+            {
+              "id": "i-mu9fqsu8157",
+              "text": "村民集中营"
+            },
+            {
+              "id": "i-mu9fqwzt144",
+              "text": "冰道船地铁"
+            },
+            {
+              "id": "i-mu9fr94o452",
+              "text": "结档大圆环"
+            }
+          ]
+        },
+        {
+          "id": "g-mu9dgooj20",
+          "title": "事件",
+          "items": []
+        }
+      ]
+    }
+  ]
 }

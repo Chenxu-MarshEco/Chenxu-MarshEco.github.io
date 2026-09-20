@@ -16,25 +16,25 @@
  * 键盘（Tab + 回车）和读屏软件也天然认它。
  */
 import { navCatsFor } from '../utils/navs';
-import { variantUrl } from '../utils/images';
-import { withBase } from '../utils/url';
+import NavItems from './NavItems.astro';
 
 interface Props {
   /** 这个块引用哪几个大分类（顺序就是显示顺序） */
   cats?: string[];
   /** 顶栏那行字，不写就叫「分类」 */
   text?: string;
+  /**
+   * 这个块的 id（页面块自带的那个）。
+   * 只用来拼锚点：同一个大分类被两个块引到同一页时，
+   * 光用分类 id 当锚点会出现重复 id，顶栏那两个跳转就会都跳到第一个去。
+   */
+  blockId?: string;
 }
 
-const { cats = [], text } = Astro.props;
+const { cats = [], text, blockId = '' } = Astro.props;
 const list = navCatsFor(cats);
-
-/** 站内地址补上 base；站外和锚点原样用 */
-const hrefOf = (href: string) => {
-  const h = String(href).trim();
-  return h.startsWith('http') || h.startsWith('#') || h.startsWith('mailto:') ? h : withBase(h);
-};
-const isExternal = (href: string) => /^https?:/i.test(String(href).trim());
+/** 这一块里某个大分类的锚点 id（分类 id 已经带 navcat- 前缀，这里不再重复加） */
+const anchorOf = (catId: string) => `${blockId ? `${blockId}-` : ''}${catId}`;
 ---
 
 {
@@ -47,7 +47,7 @@ const isExternal = (href: string) => /^https?:/i.test(String(href).trim());
           {list.map((cat, i) => (
             <>
               {i > 0 && <span class="navblk__barDot">·</span>}
-              <a class="navblk__barLink" href={`#navcat-${cat.id}`}>
+              <a class="navblk__barLink" href={`#${anchorOf(cat.id)}`}>
                 {cat.title}
               </a>
             </>
@@ -56,7 +56,7 @@ const isExternal = (href: string) => /^https?:/i.test(String(href).trim());
       </div>
 
       {list.map((cat) => (
-        <details class="navblk__cat" id={`navcat-${cat.id}`} data-navcat={cat.id} open>
+        <details class="navblk__cat" id={anchorOf(cat.id)} data-navcat={cat.id} open>
           <summary class="navblk__summary">
             <span class="navblk__catTitle">{cat.title}</span>
             {/* 收起 / 展开的提示：两个词都写出来，靠 details[open] 决定显示哪个 */}
@@ -70,43 +70,39 @@ const isExternal = (href: string) => /^https?:/i.test(String(href).trim());
             {cat.note && <p class="navblk__note">{cat.note}</p>}
             {cat.groups.length === 0 && <p class="navblk__note">（这个分类还没有子分类）</p>}
             {cat.groups.map((g) => (
-              <div class="navblk__row" data-navgroup={g.id}>
+              /*
+                一个子分类。可能直接挂条目，也可能再细分一层
+                （「友好生物」下面再分「无伤害能力 / 无攻击行为 / 攻击非玩家 / 条件敌对」）。
+                两种都在时：先铺直接挂的条目（细分那层要缩进，所以它的标签留一格空），
+                再铺细分类。父级名字在最左一列、纵跨整组 —— 和用户给的例图一个排法。
+              */
+              <div
+                class:list={['navblk__row', (g.subgroups?.length ?? 0) > 0 && 'navblk__row--nest']}
+                data-navgroup={g.id}
+              >
                 <div class="navblk__label">{g.title}</div>
-                <div class="navblk__items">
-                  {g.items.length === 0 && <span class="navblk__empty">（空）</span>}
-                  {g.items.map((it) =>
-                    it.href ? (
-                      <a
-                        class="navblk__item"
-                        href={hrefOf(it.href)}
-                        title={it.tip || it.text}
-                        {...isExternal(it.href) ? { target: '_blank', rel: 'noopener' } : {}}
-                      >
-                        {it.image && (
-                          <img
-                            class="navblk__ico"
-                            src={withBase(variantUrl(it.image, 40))}
-                            alt=""
-                            loading="lazy"
-                            decoding="async"
-                          />
-                        )}
-                        <span class="navblk__text">{it.text}</span>
-                      </a>
-                    ) : (
-                      <span class="navblk__item navblk__item--plain" title={it.tip || it.text}>
-                        {it.image && (
-                          <img
-                            class="navblk__ico"
-                            src={withBase(variantUrl(it.image, 40))}
-                            alt=""
-                            loading="lazy"
-                            decoding="async"
-                          />
-                        )}
-                        <span class="navblk__text">{it.text}</span>
-                      </span>
-                    )
+                <div class="navblk__cells">
+                  {g.items.length > 0 && (
+                    <div class="navblk__cell">
+                      {(g.subgroups?.length ?? 0) > 0 && <span class="navblk__sublabel" aria-hidden="true" />}
+                      <div class="navblk__items">
+                        <NavItems items={g.items} />
+                      </div>
+                    </div>
+                  )}
+                  {(g.subgroups ?? []).map((sg) => (
+                    <div class="navblk__cell" data-navsubgroup={sg.id}>
+                      <span class="navblk__sublabel">{sg.title}</span>
+                      <div class="navblk__items">
+                        {sg.items.length === 0 && <span class="navblk__empty">（空）</span>}
+                        <NavItems items={sg.items} />
+                      </div>
+                    </div>
+                  ))}
+                  {g.items.length === 0 && (g.subgroups?.length ?? 0) === 0 && (
+                    <div class="navblk__items">
+                      <span class="navblk__empty">（空）</span>
+                    </div>
                   )}
                 </div>
               </div>
@@ -241,51 +237,54 @@ const isExternal = (href: string) => /^https?:/i.test(String(href).trim());
     color: var(--c-accent);
     letter-spacing: 0.04em;
   }
+
+  /* ---------- 子分类再细分一层（友好生物 → 无伤害能力 / 攻击非玩家…） ---------- */
+  /* 细分类竖着排成一列，父级名字在左边一列纵跨整组（和例图一个排法） */
+  .navblk__cells {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .navblk__cell {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.6rem;
+    padding: 0.12rem 0;
+  }
+  .navblk__cell + .navblk__cell {
+    border-top: 1px dashed var(--c-border);
+  }
+  .navblk__sublabel {
+    flex: none;
+    width: 7rem;
+    font-size: 0.8rem;
+    line-height: 1.7;
+    color: var(--c-text-muted);
+    letter-spacing: 0.03em;
+  }
   .navblk__items {
     flex: 1;
     min-width: 0;
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 0.25rem 0.15rem;
+    /*
+      条目之间的横向间隔：条目本身排得紧，真正拉开距离的是那对小塔吊
+      （`.navblk__sep` 自己带左右 margin，见 NavItems.astro）——
+      以前这里是 0.15rem，两条之间只隔 2px，字看着就黏成一团了。
+      纵向留 0.34rem：换行之后两行之间也要透气。
+    */
+    gap: 0.34rem 0.1rem;
   }
   .navblk__empty {
     font-size: 0.8rem;
     color: var(--c-text-faint);
   }
 
-  /* ---------- 条目：图标 + 文字 ---------- */
-  .navblk__item {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.22rem;
-    padding: 0.12rem 0.4rem 0.12rem 0.2rem;
-    border-radius: var(--r-sm);
-    font-size: 0.86rem;
-    line-height: 1.6;
-    color: var(--c-text);
-    text-decoration: none;
-    transition: background var(--t-fast) var(--ease);
-  }
-  a.navblk__item:hover {
-    background: var(--c-accent-soft);
-    color: var(--c-accent);
-  }
-  .navblk__item--plain {
-    color: var(--c-text-muted);
-  }
-  .navblk__ico {
-    width: 18px;
-    height: 18px;
-    flex: none;
-    object-fit: contain;
-    image-rendering: -webkit-optimize-contrast;
-  }
-  .navblk__text {
-    white-space: nowrap;
-  }
+  /* 条目自己的样式在 NavItem.astro 里（谁渲染的元素谁管样式，见那边的说明） */
 
-  /* 窄屏：子分类名单独占一行，别把条目挤成一条线 */
+  /* 窄屏：子分类名单独占一行，别把条目挤成一条线（细分那层同理） */
   @media (max-width: 34rem) {
     .navblk__row {
       flex-direction: column;
@@ -294,6 +293,18 @@ const isExternal = (href: string) => /^https?:/i.test(String(href).trim());
     .navblk__label {
       width: auto;
       line-height: 1.5;
+    }
+    .navblk__cell {
+      flex-direction: column;
+      gap: 0.1rem;
+    }
+    .navblk__sublabel {
+      width: auto;
+      line-height: 1.4;
+    }
+    /* 手机上窄，塔吊之间那点空收一收，一行好放下更多条目 */
+    .navblk__items {
+      gap: 0.3rem 0.06rem;
     }
   }
 </style>
