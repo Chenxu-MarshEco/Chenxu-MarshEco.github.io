@@ -2,9 +2,13 @@
 /**
  * 首页「每日精华」（右下角那一块）。
  *
- * 两件：
+ * 三件：
  *   · 标题「每日精华」本身是个链接 -> /salon/（冰室精华页）
  *   · 标题下面那条随机精华：成员头像 + 成员 + 时间 + 内容（文字或图片）
+ *   · **点这一条直接跳到冰室精华页里它的位置**（用户要求：
+ *     「点击每日精华就会直接跳转到精华页里这句精华的位置」）——
+ *     就是 `/salon/#<那条的 id>`：精华页每条都带 `id`，那边本来就有
+ *     hash 深链接（`:target` 高亮 + 让开吸顶页头的 `scroll-margin-top`）。
  *
  * "随机"是按**访问者当天**挑的（utils/daily.ts 那套哈希）：
  *   构建期先按构建那天渲染一条（不跑 JS 也看得见、搜索引擎也抓得到），
@@ -26,6 +30,9 @@ const pickPeople = pick ? membersOf(pick) : [];
 const pickName = pick ? memberName(pick) : '';
 /** 图片走站点图片管线（客户端重挑时用的是 /salon.json 里同样处理过的地址） */
 const pickImage = pick?.images[0] ? variantUrl(pick.images[0], 500) : '';
+/** 这一条在精华页里的地址（点卡片跳过去就落在这儿） */
+const pickHref = pick ? `${href}#${pick.id}` : '';
+const pickLabel = pick ? `跳到冰室精华里的这一条：${pickName} ${pick.date}` : '';
 ---
 
 <section class="daily" data-daily data-built={builtOn} aria-labelledby="daily-title">
@@ -36,7 +43,17 @@ const pickImage = pick?.images[0] ? variantUrl(pick.images[0], 500) : '';
     <a class="daily__more" href={href}>看全部 ›</a>
   </header>
 
-  <article class="daily__card" data-daily-card>
+  {/*
+    整张卡是一个链接（不是里面再套链接）：点它 = 跳到精华页里这一条。
+    `data-daily-link` 是给客户端重挑那条路用的（换了一条，href 也要跟着换）。
+  */}
+  <a
+    class="daily__card"
+    data-daily-card
+    data-daily-link
+    href={pick ? pickHref : undefined}
+    aria-label={pick ? pickLabel : undefined}
+  >
     {
       pick ? (
         <>
@@ -72,7 +89,7 @@ const pickImage = pick?.images[0] ? variantUrl(pick.images[0], 500) : '';
         <p class="daily__text">还没有精华：去编辑器的「精华」面板里添一条。</p>
       )
     }
-  </article>
+  </a>
 </section>
 
 <script>
@@ -117,6 +134,14 @@ const pickImage = pick?.images[0] ? variantUrl(pick.images[0], 500) : '';
           `<time class="daily__time">${esc(pick.date)}${pick.time ? ' ' + esc(pick.time) : ''}</time></div>` +
           (pick.text ? `<blockquote class="daily__text">${esc(pick.text)}</blockquote>` : '') +
           (pick.image ? `<img class="daily__pic" src="${escAttr(pick.image)}" alt="" loading="lazy" decoding="async">` : '');
+        /*
+          换了一条，跳转地址也要跟着换：点这张卡是跳到精华页里**这一条**的位置。
+          `/salon/#<id>` —— 精华页每条都带 id，那边本来就有 hash 深链接。
+        */
+        if (pick.id) {
+          card.setAttribute('href', `${withBase('/salon/')}#${pick.id}`);
+          card.setAttribute('aria-label', `跳到冰室精华里的这一条：${pick.member} ${pick.date}`);
+        }
       })
       .catch(() => {
         /* 拿不到就留着服务端渲染的那条，不影响别的 */
@@ -177,6 +202,7 @@ const pickImage = pick?.images[0] ? variantUrl(pick.images[0], 500) : '';
     会看到一条**没样式**的精华（这个坑本站踩过一次，见 HOME 日历那边）。
   */
   :global(.daily__card) {
+    display: block;
     flex: 1;
     min-height: 0;
     /* 卡片变扁了（和日历一样高）：内容一律在这块里裁掉，不许撑破卡片 */
@@ -185,6 +211,20 @@ const pickImage = pick?.images[0] ? variantUrl(pick.images[0], 500) : '';
     border: 1px solid rgba(255, 120, 190, 0.3);
     border-radius: 12px;
     background: rgba(12, 2, 20, 0.5);
+    /* 整张卡是个链接（点它跳到精华页里这一条）：别带下划线、别换字色 */
+    text-decoration: none;
+    color: inherit;
+    transition: border-color 0.14s ease, background 0.14s ease;
+  }
+  /* 能点：指上去亮一下（和站里别的卡片一个手感） */
+  :global(a.daily__card:hover),
+  :global(a.daily__card:focus-visible) {
+    border-color: rgba(255, 120, 190, 0.75);
+    background: rgba(24, 3, 36, 0.72);
+  }
+  :global(a.daily__card:focus-visible) {
+    outline: 2px solid rgba(255, 120, 190, 0.75);
+    outline-offset: 2px;
   }
   :global(.daily__who) {
     display: flex;

@@ -96,6 +96,27 @@ const events = cal.events ?? {};
     let month = now.getMonth(); // 0-11
     const todayKey = ymd(now);
 
+    /*
+      事件表按**月-日**匹配，年份不参与判断 —— 这就是编辑器「日历」面板里那句提示
+      （「写 2024-06-04 就是每年的 6 月 4 日都会变色（不看年份）」）承诺的行为。
+
+      ⚠ 以前这里是拿「当前年份 + 月日」去 events 里查**完整日期**，于是
+      用户按"生日"填的 2004-07-14、2003-08-30 这些永远查不到 ——
+      页面上那一天永远不变色（用户就是因此说"特殊日期的图标没有发生变化"）。
+      现在建一张「月-日 → 事件」的表：同一天有好几条时，优先取"正好写的是今年"的那条。
+    */
+    const mdOf = (key: string) => String(key).slice(5); // YYYY-MM-DD -> MM-DD
+    const byMd = new Map<string, { key: string; ev: CalEvent; exact: boolean }>();
+    for (const [key, ev] of Object.entries(cfg.events)) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(key)) continue;
+      const md = mdOf(key);
+      const exact = key.startsWith(`${now.getFullYear()}-`);
+      const prev = byMd.get(md);
+      if (!prev || (exact && !prev.exact)) byMd.set(md, { key, ev, exact });
+    }
+    /** 这一天有没有特殊日子（按 MM-DD 查） */
+    const eventOn = (key: string) => byMd.get(mdOf(key)) ?? null;
+
     const paint = () => {
       if (!grid) return;
       const first = new Date(year, month, 1);
@@ -107,24 +128,35 @@ const events = cal.events ?? {};
       for (let i = 0; i < lead; i++) cells.push('<span class="cal__pad"></span>');
       for (let day = 1; day <= daysInMonth; day++) {
         const key = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-        const ev = cfg.events[key];
+        const hit = eventOn(key);
+        const ev = hit?.ev;
         const isToday = key === todayKey;
         const cls = ['cal__day'];
         if (ev) cls.push('cal__day--event');
         if (isToday) cls.push('cal__day--today');
         const num = `<span class="cal__num">${day}</span>`;
-        const label = ev?.title ? `${key} ${ev.title}` : key;
+        /*
+          悬停/聚焦时弹的那句话（自绘的卡片，不是浏览器那个白底 title）。
+          写法按用户要求：
+            · 普通日  -> 就写这一天（2026-09-21）
+            · 特殊日  -> 「{事件名} {填的那个日期}」，例如「桑芙的生日 2003-08-30」
+          ⚠ **不要再把后端那串原样端出来**（以前是「2026-08-30 桑芙的生日（填的是 2003-08-30）」，
+          又长又像 debug 输出；用户原话：「太赤裸太丑了」）。
+        */
+        const label = ev?.title ? (hit && hit.key !== key ? `${ev.title} ${hit.key}` : ev.title) : key;
+        const tip = `<span class="cal__tip" aria-hidden="true">${label}</span>`;
         cells.push(
           ev?.href
-            ? `<a class="${cls.join(' ')}" href="${ev.href}" title="${label}" aria-label="${label}">${num}</a>`
-            : `<span class="${cls.join(' ')}" title="${label}" aria-label="${label}">${num}</span>`
+            ? `<a class="${cls.join(' ')}" href="${ev.href}" aria-label="${label}">${num}${tip}</a>`
+            : `<span class="${cls.join(' ')}" aria-label="${label}">${num}${tip}</span>`
         );
       }
       grid.innerHTML = cells.join('');
       if (monthLab) monthLab.textContent = `${year} 年 ${month + 1} 月`;
 
       if (todayBox) {
-        const ev = cfg.events[todayKey];
+        const hit = eventOn(todayKey);
+        const ev = hit?.ev;
         todayBox.textContent = ev
           ? (ev.text || cfg.specialText.replace('{title}', ev.title || ''))
           : cfg.idleText;
@@ -162,11 +194,12 @@ const events = cal.events ?? {};
     flex-direction: column;
     height: 100%;
     /*
-      格子直径**固定 24px**（不随卡片宽度长）：卡片宽度是"和甬城晴雨一样宽"（452），
-      格子要是还按 aspect-ratio 跟着宽度长，整块会变成 452×450 的方块，一点不"扁"。
-      ⚠ 这个值同时被 home-widgets-check 盯着（手机端格子不能小于 24px，太小认不出圆）。
+      图钉"头"的宽度。整枚图钉 = 头 + 下面 5px 的尖头，所以一排的高度是
+      `--cal-cell + 5px`（行高 auto，由图钉自己撑）。
+      ⚠ 固定 20px，不随卡片宽度长：卡片宽度是"和甬城晴雨一样宽"（452），
+      图钉再跟着宽度长的话整块会变成大方块，一点不"扁"。
     */
-    --cal-cell: 24px;
+    --cal-cell: 20px;
     /*
       下边距 2.75rem 是**给右下角那个小框留的位**：小框高约 28px、离底 0.65rem(10.4px)，
       两者加起来 38.4px —— 下边距小于它，最后一排格子就会压到小框上
@@ -231,9 +264,16 @@ const events = cal.events ?? {};
   .cal__week {
     flex: none;
   }
-  /* 格子行高就是一圈圆的大小；剩下的高度留给卡片自己（不拉伸圆圈） */
+  /*
+    行高交给图钉（`auto` 也行，但这里**写死 6 行**）：
+    一个月最多跨 6 个星期，可 5 行的月份占的地方少一截 ——
+    而这一行的高度是和「冰室冰山 / 每日精华」共用的，于是翻到 8 月（6 行）
+    整排卡片一起长高、翻回 9 月又缩回去（用户实测到的）。
+    把 6 行的高度**先占住**，翻月时这一屏一个像素都不动。
+  */
   .cal__grid {
     flex: 0 1 auto;
+    grid-template-rows: repeat(6, var(--cal-cell));
     grid-auto-rows: var(--cal-cell);
     margin-top: 0.2rem;
     min-height: 0;
@@ -247,60 +287,137 @@ const events = cal.events ?? {};
   }
 
   /*
+    悬停那句话（自绘）：**照抄时间轴那块提示卡的皮**
+    （.tl__tip：深紫底 + 粉边 + 粉字 + 7px 圆角），
+    这样站上鼠标时弹出来的是"网页的一部分"，而不是浏览器那个白底 title。
+    用户原话：「鼠标指针指到特殊日期和普通日期 都像时间轴一样弹出一个
+    符合整体网页UI风格的日期 不要像现在这样是白板」。
+  */
+  :global(.cal__tip) {
+    position: absolute;
+    left: 50%;
+    bottom: calc(100% + 6px);
+    transform: translateX(-50%);
+    z-index: 6;
+    padding: 0.2rem 0.55rem;
+    border-radius: 7px;
+    border: 1px solid rgba(255, 120, 190, 0.6);
+    background: rgba(24, 3, 36, 0.96);
+    color: #ffd9ef;
+    font-size: 0.76rem;
+    line-height: 1.5;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity 0.14s ease, visibility 0.14s ease;
+  }
+  /*
+    ⚠ 这两条要整条写进 :global()。
+    `.cal__tip` 和 `.cal__day` 一样是**脚本拼出来的**，身上没有 data-astro-cid-*；
+    写成 `:global(.cal__day:hover) .cal__tip` 的话后半截仍然被作用域加上属性选择器，
+    一个都命不中 —— 表现就是"卡片有、皮也对，但怎么指都不出来"（这一轮真踩到了）。
+  */
+  :global(.cal__day:hover .cal__tip),
+  :global(.cal__day:focus-visible .cal__tip) {
+    opacity: 1;
+    visibility: visible;
+  }
+  :global(.cal__day--event .cal__tip) {
+    border-color: rgba(255, 180, 70, 0.7);
+    color: #ffe9c0;
+  }
+  /* 鼠标指到哪一格，那一格浮在上面（提示卡别被旁边的格子压住） */
+  :global(.cal__day:hover),
+  :global(.cal__day:focus-visible) {
+    z-index: 5;
+  }
+
+  /*
     ⚠ 下面这些「一天」的样式必须写成 :global()。
     格子是**页面脚本**生成的（grid.innerHTML），生成出来的元素身上没有
     Astro 的 data-astro-cid-* 作用域属性，写成普通选择器一个都命不中 ——
     页面不报错，只是日历变成一堆没样式的数字（这个坑本站踩过一次）。
+
+    一天 = 一枚小图钉的"头"，画法和**地图里的图钉完全一套**（用户要求：
+    「把普通日期的样子改成地图里建筑图钉的样子 特殊日期改成区域图钉的样子」）：
+      普通日  建筑图钉：粉色渐变 + 横向格栅的**方头**（border-radius 8px）
+      特殊日  区域图钉：落日橙黄渐变 + **圆头**（border-radius 50%）
+    数字写在"头"里（地图那边头里画的是一台塔吊）。
+    ⚠ 用户后来要求**去掉向下的小尖头**，所以现在没有 ::after 那个三角了 ——
+    一天就是一个 20×20 的头。
   */
   :global(.cal__day),
   :global(.cal__pad) {
-    aspect-ratio: 1;
-    width: min(100%, var(--cal-cell));
+    position: relative;
+    /* --cal-cell 就是这一格的大小（宽 = 高） */
+    width: var(--cal-cell);
+    height: var(--cal-cell);
     justify-self: center;
+    align-self: center;
+    transition: transform 0.12s ease, filter 0.12s ease;
+  }
+  /* 头 */
+  :global(.cal__day)::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    /* 建筑图钉那套粉（和 PageContent.astro 里 .pmap__pinArt::before 一模一样） */
+    background: linear-gradient(180deg, #ffd9ef 0%, #ff9ad5 34%, #ff4fa3 68%, #a80058 100%);
+    border-radius: 8px;
+    /* 横向格栅：也是地图图钉头上那套 */
+    -webkit-mask: repeating-linear-gradient(180deg, #000 0 2px, transparent 2px 3.2px);
+    mask: repeating-linear-gradient(180deg, #000 0 2px, transparent 2px 3.2px);
+  }
+  /* 普通日：粉色那点投影（地图里建筑图钉也是这个） */
+  :global(.cal__day) {
+    --cal-shadow: drop-shadow(0 2px 5px rgba(255, 40, 130, 0.55));
+    filter: var(--cal-shadow);
+  }
+  :global(.cal__day:hover) {
+    transform: translateY(-2px);
+  }
+
+  /* 数字：写在"头"里，居中 */
+  :global(.cal__num) {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: var(--cal-cell);
+    height: var(--cal-cell);
     display: flex;
     align-items: center;
     justify-content: center;
-  }
-  :global(.cal__day) {
-    position: relative;
-    border-radius: 50%;
-    border: 1px solid rgba(255, 120, 190, 0.55);
-    background:
-      repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.16) 0 1px, transparent 1px 4px),
-      repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.16) 0 1px, transparent 1px 4px),
-      radial-gradient(circle at 35% 30%, rgba(255, 150, 205, 0.95), rgba(214, 60, 140, 0.75));
-    color: #fff;
-    font-size: 0.72rem;
+    font-size: 0.7rem;
     font-variant-numeric: tabular-nums;
-    text-decoration: none;
-    box-shadow: 0 0 0 1px rgba(255, 79, 163, 0.25), 0 3px 10px -6px rgb(0 0 0 / 0.9);
-    transition: transform 0.12s ease, box-shadow 0.12s ease;
-  }
-  :global(.cal__day:hover) {
-    transform: translateY(-1px);
-    box-shadow: 0 0 0 1px rgba(255, 79, 163, 0.5), 0 6px 14px -6px rgb(0 0 0 / 0.9);
-  }
-  :global(.cal__num) {
-    position: relative;
+    color: #fff;
     text-shadow: 0 0 6px rgba(140, 0, 70, 0.9);
   }
 
-  /* 今天：外面套一圈落日黄的光环 */
+  /* 今天：外面套一圈落日黄的光（不是描边圈 —— 头上有 mask，box-shadow 会被裁掉） */
   :global(.cal__day--today) {
-    box-shadow: 0 0 0 2px #ffd447, 0 0 14px -2px rgba(255, 180, 60, 0.9);
+    --cal-shadow: drop-shadow(0 2px 5px rgba(255, 40, 130, 0.55)) drop-shadow(0 0 4px #ffd447);
   }
 
-  /* 特殊日子：蒸汽波日落橙黄（粉 -> 橙 -> 黄），可以点进去 */
+  /*
+    特殊日子 = 区域图钉：圆头 + 落日橙黄（粉→橙→黄）。
+    这条要写在 .cal__day 那些规则**后面**（同特异性，靠顺序覆盖）。
+  */
+  :global(.cal__day--event)::before {
+    background: linear-gradient(180deg, #fff2b8 0%, #ffd447 32%, #ff9d2e 66%, #e04a08 100%);
+    border-radius: 50%;
+  }
   :global(.cal__day--event) {
-    border-color: rgba(255, 212, 71, 0.85);
-    background:
-      repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.2) 0 1px, transparent 1px 4px),
-      repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.2) 0 1px, transparent 1px 4px),
-      linear-gradient(160deg, #fff2b8 0%, #ffd447 32%, #ff9a3c 68%, #ff5f6d 100%);
+    --cal-shadow: drop-shadow(0 2px 5px rgba(255, 150, 40, 0.6));
+  }
+  :global(.cal__day--event.cal__day--today) {
+    --cal-shadow: drop-shadow(0 2px 5px rgba(255, 150, 40, 0.6)) drop-shadow(0 0 4px #ffd447);
+  }
+  /* 特殊日子上的数字：黄底上用深色（不然白字压黄底几乎看不见） */
+  :global(.cal__day--event .cal__num) {
     color: #4a1200;
     font-weight: 700;
-  }
-  :global(.cal__day--event .cal__num) {
     text-shadow: 0 1px 0 rgba(255, 255, 255, 0.45);
   }
 

@@ -151,4 +151,34 @@ const aboutAvatar = aboutAvatarRaw ? variantUrl(aboutAvatarRaw, 400) : '';
       padding-right: 0.28rem;
     }
   }
+
+  /*
+    深色页面（首页 / 大板块页）上换个皮：和右上角那排控件
+    （回到顶部 / 音量 / 目录）**完全同一套配色** —— 深紫半透明底 + 粉边 + 粉字 + 一点模糊。
+    数值直接抄 BoardDrawer.astro 里的 `body.is-board .corner__btn`，
+    免得两处各写一套、改一处忘一处。
+
+    ⚠ 浅色页面（文章 / 手记 / 列表）**继续用页面那套浅色令牌**：那些页头压的是浅底，
+    在这里换成深色反而突兀。用户说的是首页左上角那个不对劲。
+  */
+  :global(body.is-home) .about-pill,
+  :global(body.is-board) .about-pill {
+    background: rgba(38, 4, 52, 0.72);
+    border-color: rgba(255, 120, 190, 0.5);
+    color: #ffd9ef;
+    backdrop-filter: blur(4px);
+  }
+  :global(body.is-home) .about-pill:hover,
+  :global(body.is-home) .about-pill:focus-visible,
+  :global(body.is-board) .about-pill:hover,
+  :global(body.is-board) .about-pill:focus-visible {
+    background: rgba(46, 6, 62, 0.82);
+    border-color: rgba(255, 160, 210, 0.95);
+    color: #fff;
+  }
+  /* 里面那个圆圈也跟着走（没传头像时那个占位圈别还是浅色的） */
+  :global(body.is-home) .about-pill__face,
+  :global(body.is-board) .about-pill__face {
+    background: rgba(24, 3, 36, 0.9);
+  }
 </style>

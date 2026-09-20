@@ -248,6 +248,36 @@ const firstParam = list.length && tl ? (params.get(list[0].id) ?? 0) : 0;
   document.fonts?.ready?.then(queueMeasure);
 
   /* ============================================================
+     0.5 带 hash 进来的：直接落在那一条上，别从页面顶上滑过来
+     ------------------------------------------------------------
+     首页「每日精华」点一下就是 `/salon/#e0158` 这种地址（用户要的跳转）。
+     而全站 `html { scroll-behavior: smooth }` 对**片段跳转**也生效 ——
+     浏览器会从顶部开始"平滑"滚过去，可这一页有 30 万像素高，
+     实测滚了 3 秒还差 2870px 没到（等于没跳到）。
+     所以这里在页面加载完之后把落点**直接做掉**（instant）；只在"刚进页面"
+     这一小段时间里管，用户自己滚起来之后就不再插手。
+     ============================================================ */
+  const landOnHash = () => {
+    const raw = location.hash.replace(/^#/, '');
+    if (!raw) return;
+    let el: HTMLElement | null = null;
+    try {
+      el = document.getElementById(decodeURIComponent(raw));
+    } catch {
+      el = document.getElementById(raw);
+    }
+    if (!el || !el.classList.contains('salon__item')) return;
+    /* block: 'start' 会照顾 scroll-margin-top（让开吸顶的页头和搜索栏） */
+    el.scrollIntoView({ behavior: 'instant' as ScrollBehavior, block: 'start' });
+  };
+  window.addEventListener('load', () => {
+    landOnHash();
+    /* 字体分片 / 图片到位可能再挪一点位置，稍后再钉一次 */
+    window.setTimeout(landOnHash, 600);
+  });
+  document.fonts?.ready?.then(landOnHash);
+
+  /* ============================================================
      1. 左边那条时间轴：点刻度 / 点塔吊 → 跳到离那儿最近的一条精华
      ------------------------------------------------------------
      用户的要求：

@@ -153,12 +153,19 @@ try {
       card1: r('.boards .board:nth-child(1)'), card2: r('.boards .board:nth-child(2)'),
       calDays: document.querySelectorAll('.cal__day').length,
       dayW: q('.cal__day') ? Math.round(q('.cal__day').getBoundingClientRect().width) : null,
+      dayH: q('.cal__day') ? Math.round(q('.cal__day').getBoundingClientRect().height) : null,
+      /* 一天现在是一枚"图钉"（地图图钉那套）：头上带格栅、下面有尖头 */
+      dayHeadMask: q('.cal__day')
+        ? (getComputedStyle(q('.cal__day'), '::before').webkitMaskImage || getComputedStyle(q('.cal__day'), '::before').maskImage)
+        : null,
       pill: r('.about-pill'),
     };
   })()`);
   check('手机端首页：不横向溢出', mHome.overflow <= 1, JSON.stringify({ overflow: mHome.overflow }));
   check('手机端首页：新增三块竖着堆叠（单列）', !/\\s/.test(mHome.cols || '') && mHome.cal && mHome.ice && mHome.daily && mHome.cal.w > 300 && mHome.cal.x < 30, JSON.stringify({ cols: mHome.cols, cal: mHome.cal, ice: mHome.ice, daily: mHome.daily }));
-  check('手机端首页：日历格子仍然排得开（7 列、圆还认得出来）', mHome.calDays >= 28 && mHome.dayW >= 24, JSON.stringify({ days: mHome.calDays, dayW: mHome.dayW }));
+  check('手机端首页：日历格子仍然排得开（7 列，图钉头还认得出来、没被压扁）',
+    mHome.calDays >= 28 && mHome.dayW >= 18 && mHome.dayH === mHome.dayW && /repeating-linear-gradient/.test(mHome.dayHeadMask || ''),
+    JSON.stringify({ days: mHome.calDays, dayW: mHome.dayW, dayH: mHome.dayH }));
   check('手机端首页：原来两张板块卡没被挤坏（还是两张、竖着堆叠）', mHome.cards === 2 && mHome.card2 && mHome.card1 && mHome.card2.y > mHome.card1.y && mHome.boards.w > 300, JSON.stringify({ cards: mHome.cards, card1: mHome.card1, card2: mHome.card2 }));
   check(
     '手机端首页：关于我小圆片在页头里、贴着左边那一组（没被挤到右边）',

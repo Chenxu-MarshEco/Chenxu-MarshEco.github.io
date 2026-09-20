@@ -344,20 +344,29 @@ try {
     const ev = document.querySelector('.cal__day--event');
     const today = document.querySelector('.cal__day--today');
     const plain = [...document.querySelectorAll('.cal__day')].find((d) => !d.classList.contains('cal__day--event') && !d.classList.contains('cal__day--today'));
-    const cs = (el) => getComputedStyle(el);
+    /* 一天的画在那两个伪元素上：::before 是"头"（渐变+圆角+格栅），::after 是朝下的尖头 */
+    const cs = (el, p) => getComputedStyle(el, p);
+    const bgOf = (el) => (el ? cs(el, '::before').backgroundImage : null);
     return {
       eventCount: document.querySelectorAll('.cal__day--event').length,
       todayCount: document.querySelectorAll('.cal__day--today').length,
-      evText: ev && ev.textContent.trim(),
+      /* 数字只读 .cal__num：那一格里还挂着一张自绘的提示卡（悬停才显示） */
+      evText: ev && (ev.querySelector('.cal__num') || {}).textContent,
+      evTipText: ev && (ev.querySelector('.cal__tip') || {}).textContent,
       evHref: ev && ev.getAttribute('href'),
-      evTitle: ev && ev.getAttribute('title'),
+      evTitle: ev && ev.getAttribute('aria-label'),
       evIsToday: !!(ev && ev.classList.contains('cal__day--today')),
-      evBg: ev && cs(ev).backgroundImage.slice(0, 400),
-      evRadius: ev && cs(ev).borderRadius,
+      evBg: (bgOf(ev) || '').slice(0, 400),
+      evRadius: ev && cs(ev, '::before').borderRadius,
+      evTip: ev && cs(ev, '::after').borderTopColor,
+      evTipW: ev && cs(ev, '::after').borderTopWidth,
       evW: ev && Math.round(ev.getBoundingClientRect().width),
-      evHue: ev && HUE(cs(ev).backgroundImage),
-      plainBg: plain && cs(plain).backgroundImage.slice(0, 400),
-      plainHue: plain && HUE(cs(plain).backgroundImage),
+      evH: ev && Math.round(ev.getBoundingClientRect().height),
+      evHue: ev && HUE(bgOf(ev) || ''),
+      plainBg: (bgOf(plain) || '').slice(0, 400),
+      plainRadius: plain && cs(plain, '::before').borderRadius,
+      plainTip: plain && cs(plain, '::after').borderTopColor,
+      plainHue: plain && HUE(bgOf(plain) || ''),
       todayText: (document.querySelector('.cal__today') || {}).textContent,
       gridDays: document.querySelectorAll('.cal__day').length,
       width: innerWidth,
@@ -366,15 +375,25 @@ try {
   check(`日历：当月 ${cal.gridDays} 格，其中今天 1 格、特殊日子 1 格`,
     cal.gridDays >= 28 && cal.todayCount === 1 && cal.eventCount === 1 && cal.evIsToday === true,
     JSON.stringify({ days: cal.gridDays, today: cal.todayCount, event: cal.eventCount }));
-  check(`日历：今天那格显示 ${todayNum}、title 里带事件名、可点向 /salon/`,
+  check(`日历：今天那格显示 ${todayNum}、aria-label 里带事件名、可点向 /salon/`,
     cal.evText === String(todayNum) && (cal.evTitle ?? '').includes('篠雨的生日') && cal.evHref === '/salon/',
     JSON.stringify({ text: cal.evText, title: cal.evTitle, href: cal.evHref }));
-  check(`日历：特殊日子是蒸汽波橙黄（量到 ${cal.evHue.length} 个橙色渐变停点），普通日子不是`,
-    cal.evHue.length >= 1 && cal.plainHue.length === 0,
-    `特殊=${JSON.stringify(cal.evHue)} 普通=${JSON.stringify(cal.plainHue)}`);
-  check('日历：圆角栅格圆的形状（border-radius 50% 级别 + 格子尺寸量出来）',
-    /50%|9999px|999px/.test(cal.evRadius) || parseFloat(cal.evRadius) >= 12,
-    `radius=${cal.evRadius} ${cal.evW}px`);
+  /*
+    提示卡的规则：**填的日期和显示的那天不一样时**才把它带上
+    （生日那种「桑芙的生日 2003-08-30」就是这么来的）。
+    这条 E2E 写的事件就是"今年今天"，所以只显示名字 —— 「2004 年那一天」那种
+    带日期的情形由 home-calendar-check.mjs 钉着。
+  */
+  check('日历：那一格里挂着自绘的悬停提示卡（同一天的写法只显示名字）',
+    cal.evTipText === '篠雨的生日',
+    JSON.stringify({ tip: cal.evTipText }));
+  check(`日历：特殊日子是区域图钉那套橙黄（量到 ${cal.evHue.length} 个橙色停点 + 圆头），普通日子是建筑图钉那套粉（0 个橙色停点 + 方头）`,
+    cal.evHue.length >= 1 && cal.plainHue.length === 0 && /50%/.test(cal.evRadius) &&
+      /rgb\(255, 217, 239\)/.test(cal.plainBg || '') && parseFloat(cal.plainRadius) >= 8,
+    `特殊=${JSON.stringify(cal.evHue)} 普通=${JSON.stringify(cal.plainHue)}；特殊头 ${cal.evRadius}；普通头 ${cal.plainRadius} 底 ${(cal.plainBg || '').slice(0, 48)}`);
+  check('日历：一天的形状是一个"头"（20×20，用户后来要求把向下的尖头去掉了）',
+    cal.evW === cal.evH && parseFloat(cal.evTipW) === 0 && parseFloat(cal.evRadius) >= 8,
+    `特殊那格 ${cal.evW}×${cal.evH}，尖头 ${cal.evTipW}，头圆角 ${cal.evRadius}`);
   check('日历：右下角小框写的是「今天是篠雨的生日」',
     cal.todayText === '今天是篠雨的生日', JSON.stringify(cal.todayText));
 
@@ -392,7 +411,7 @@ try {
   });
   await cdp.goto('/', 1200);
   const box2 = await cdp.ev(`(() => ({ text: (document.querySelector('.cal__today') || {}).textContent,
-    event: document.querySelectorAll('.cal__day--event').length, orange: /255,\\s*(15[0-9]|2[0-9][0-9])/.test(getComputedStyle(document.querySelector('.cal__day--event')).backgroundImage) }))()`);
+    event: document.querySelectorAll('.cal__day--event').length, orange: /255,\\s*(15[0-9]|2[0-9][0-9])/.test(getComputedStyle(document.querySelector('.cal__day--event'), '::before').backgroundImage) }))()`);
   check('日历：那一格填了「自定义文案」就用它（面板上说明过的口子，不算串文案）',
     rw2.json?.built === true && box2.text === '验收写的事件' && box2.event === 1,
     JSON.stringify({ text: box2.text, ms: rw2.json?.ms }));

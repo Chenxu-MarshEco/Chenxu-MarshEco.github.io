@@ -267,6 +267,27 @@ const bad = Object.entries(contrast).filter(([, v]) => v !== null && v < 4.5);
 check('三张小卡上的文字在深色底上都读得清（对比度 ≥ 4.5）', bad.length === 0,
   bad.length ? `不达标：${bad.map(([k, v]) => `${k}=${v}`).join('、')}` : '全部达标');
 
+/*
+  左上角「关于我」那个小圆片：深色页面上要和右上角那排控件
+  （回到顶部 / 音量 / 目录）**同一套配色**（用户要求）。
+  形状本来就不同（一个是胶囊，一个是方角按钮），所以这里比的是配色三样：
+  底色 / 边框色 / 文字色。
+*/
+const pillVsCorner = await cdp.ev(`(() => {
+  const pill = document.querySelector('.about-pill');
+  const btn = document.querySelector('.corner__btn');
+  if (!pill || !btn) return null;
+  const pick = (el) => { const cs = getComputedStyle(el); return { bg: cs.backgroundColor, border: cs.borderTopColor, color: cs.color }; };
+  return { pill: pick(pill), corner: pick(btn) }; })()`);
+console.log('\n关于我 vs 右上角控件：', JSON.stringify(pillVsCorner));
+check('左上角「关于我」的配色和右上角控件一致（底色 / 边框 / 文字三样都一样）',
+  !!pillVsCorner && pillVsCorner.pill.bg === pillVsCorner.corner.bg &&
+    pillVsCorner.pill.border === pillVsCorner.corner.border && pillVsCorner.pill.color === pillVsCorner.corner.color,
+  JSON.stringify(pillVsCorner));
+check('「关于我」不再是浅色底（浅粉底 + 深琥珀字那套只留给浅色文章页）',
+  !!pillVsCorner && !/232, 208, 221|253, 247, 251/.test(pillVsCorner.pill.bg) && !/70, 40, 15/.test(pillVsCorner.pill.color),
+  JSON.stringify(pillVsCorner?.pill));
+
 /* 手机端 */
 await cdp.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 2, mobile: true });
 await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
@@ -420,6 +441,49 @@ check('每日精华：内容没有溢出那张内卡片（超出的会被裁掉�
 check('每日精华：标题和成员头像都在卡里', inside.dailyTitleInside === true && inside.dailyFacesInside === true);
 check('冰室冰山：图在上面、标题在下面（没叠在一起），标题也在卡里', inside.iceBodyBelowArt === true && inside.iceTitleInside === true,
   `图高 ${inside.iceArtH}px`);
+
+/* ================================================================
+ * H. 每日精华：点整张卡 → 跳到精华页里**这一条**的位置
+ * ----------------------------------------------------------------
+ * 用户要求：「每日精华增加一个跳转功能 点击每日精华就会直接跳转到精华页里
+ *           这句精华的位置」。
+ * 验法：主页上读那张卡的 href（应该是 /salon/#<id>）→ 核对 /salon/ 里真有这个 id
+ *      → 真点一下 → 落到 /salon/ 且 hash 就是它、那一条真的在视口里（被 :target 高亮）。
+ * ================================================================ */
+console.log('\n================ H. 每日精华点进去 ================');
+await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
+await cdp.goto('/');
+const dailyCard = await cdp.ev(`(() => {
+  const a = document.querySelector('a.daily__card');
+  if (!a) return null;
+  a.scrollIntoView({ block: 'center', behavior: 'instant' });
+  const b = a.getBoundingClientRect();
+  return { href: a.getAttribute('href'), label: a.getAttribute('aria-label'), text: a.textContent.slice(0, 40),
+    x: Math.round(b.left + b.width / 2), y: Math.round(b.top + b.height / 2), w: Math.round(b.width), h: Math.round(b.height) }; })()`);
+console.log('每日精华那张卡：', JSON.stringify(dailyCard));
+check('每日精华整张卡是链接，指向 /salon/#<某条精华的 id>',
+  !!dailyCard && /^\/salon\/#e\d{3,}$/.test(dailyCard.href || ''), JSON.stringify(dailyCard?.href));
+const jumpId = String(dailyCard?.href || '').split('#')[1] || '';
+/* 那个 id 在精华页里真的存在（不然跳过去是空的） */
+const salonHtml = fs.readFileSync(path.join(root, 'salon', 'index.html'), 'utf8');
+check(`跳过去的目标（#${jumpId}）在精华页里真的存在`, !!jumpId && salonHtml.includes(`id="${jumpId}"`),
+  `精华页 HTML 里找 id="${jumpId}"：${salonHtml.includes(`id="${jumpId}"`)}`);
+/* 真点一下 */
+await cdp.click(dailyCard.x, dailyCard.y);
+await sleep(3000);
+const landed = await cdp.ev(`(() => {
+  const el = document.getElementById(${JSON.stringify(jumpId)});
+  const r = el ? el.getBoundingClientRect() : null;
+  return { path: location.pathname, hash: location.hash, y: Math.round(scrollY),
+    top: r ? Math.round(r.top) : null, inView: !!r && r.top > -80 && r.top < innerHeight * 0.8,
+    isTarget: el ? el.matches(':target') : false,
+    date: el ? ((el.querySelector('.salon__time') || {}).textContent || null) : null }; })()`);
+console.log('点进去以后：', JSON.stringify(landed));
+check('点一下就跳到了冰室精华页，并且带上了那一条的 hash',
+  landed.path === '/salon/' && landed.hash === `#${jumpId}`, `${landed.path}${landed.hash}`);
+check('落在**那条精华**上：它在视口里、而且是 :target（会闪一下高亮）',
+  landed.inView === true && landed.isTarget === true, `那条的顶边 ${landed.top}px / 视口 900px`);
+check('这一趟没有 JS 报错', cdp.errors.length === 0, cdp.errors.slice(0, 2).join(' | '));
 
 try { await cdp.send('Browser.close'); } catch { /* ignore */ }
 chrome.kill();

@@ -9369,7 +9369,7 @@ function renderCalendarPanel() {
           markPanelDirty(status, 'widgets');
           renderCalendarPanel();
         }),
-        '日历按 YYYY-MM-DD 匹配，年份不参与判断。日期直接敲数字就行。',
+        '日历按**月-日**匹配，年份不参与判断（填 2004-07-14 就是每年 7 月 14 日都会变色）。日期直接敲数字就行。',
       )
     );
     fields.appendChild(
