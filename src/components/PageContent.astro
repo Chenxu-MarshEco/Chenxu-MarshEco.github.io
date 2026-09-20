@@ -1104,6 +1104,25 @@ const cardsOf = (b: Extract<PageBlock, { type: 'children' }>) => ({
     width: 0;
     height: 0;
     text-decoration: none;
+    /*
+      图钉上的字不参与"选取文字"（用户要求）：
+      地图是可以按住拖动/缩放的一层，手指或鼠标在图上拖的时候，
+      浏览器默认会把划过的文字一起选中，屏幕上留一片蓝色高亮，
+      手机上还会弹出"复制/搜索"菜单，很碍事。
+    */
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+  }
+  /*
+    整张地图也一样：拖地图、滚轮缩放的时候不该把任何文字框住。
+    （取景框和跟着 transform 走的那一层都要，图钉在 stage 里。）
+  */
+  .pmap__frame,
+  .pmap__stage {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
   }
   .pmap__pinBox {
     position: absolute;

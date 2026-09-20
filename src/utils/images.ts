@@ -55,6 +55,20 @@ export function imageItem(src?: string | null): ImageItem | null {
   return item && item.variants.length ? item : null;
 }
 
+/**
+ * 一张图**原始**的宽高（连"没进变体清单、原样发"的小图也有）。
+ *
+ * 给 `<img width height>` 用：浏览器拿到宽高就会在图片下载期间先把位置留出来，
+ * 图到位时不会把下面的内容顶下去。冰室精华页有 291 张截图 + 784 条内容，
+ * 一张不留位就是一次全页重排 —— 那正是"越滚越卡、还老是跳"的来源。
+ * 没进过图片管线（清单里没有）就返回 null，页面照常出图，只是没有预留尺寸。
+ */
+export function imageDims(src?: string | null): { w: number; h: number } | null {
+  if (!src || /^(https?:)?\/\//.test(src) || src.startsWith('data:')) return null;
+  const it = manifest()?.[src];
+  return it && it.w && it.h ? { w: it.w, h: it.h } : null;
+}
+
 /** 从大到小挑一个宽度不小于 need 的档；都不够就用最大的那档 */
 export function pickVariant(item: ImageItem, need: number): ImageVariant {
   const sorted = [...item.variants].sort((a, b) => a.w - b.w);

@@ -5,19 +5,20 @@
  * 数据全在 `src/data/salon.json`（由群精华导出文件整理而来，见 utils/salon.ts）。
  *
  * 三件事和用户的要求一一对应：
- *   1. **左边那条时间轴常驻**：用的是站点自己的时间轴组件，`pinned` 模式 ——
+ *   1. **左边那条时间轴常驻**：用的是站点自己的时间轴组件，`pinned + fill` 模式 ——
  *      不走右边滑出的抽屉、没有书签、没有关闭按钮，一进页面就是开的；
- *      点轴上的日期会跳到当天**最近的那条精华**（每个日期的点 href 指向当天第一条）。
- *   2. **搜索保留**：按 / 聚焦，边打边筛，右上角显示命中数。
+ *      高度由这一页给（`--tl-panel-h`），电脑端撑到一屏几乎占满，
+ *      手机端吸在屏幕上半部分。点轴上的刻度或塔吊都跳到最近的那条精华。
+ *   2. **搜索保留**：按 / 聚焦，边打边筛，右上角显示命中数；两端都吸顶常驻。
  *   3. **每条精华 = 成员 + 时间 + 内容**：成员名和头像都从成员表现查
  *      （所以编辑器里给成员改名/换头像，这里和历史所有精华一起变）。
  *
- * 原导出文件自带的「时间轴 / 文字 / AI / 完美分类」都按用户要求去掉了：
- * 分类那两块在整理数据时就没要（见 .tmp 里的抽取脚本），时间轴换成了本站这条。
+ * 观感按用户要求走**页面风格**（和「隰辰煦家」那种大板块子页面一套）：
+ * 深紫底 #1e0730 + 粉边 + 渐变玻璃块 + 粉字白标题，
+ * 不再是文章那种「浅粉底 + 深琥珀字」的配色（那是 BaseLayout 默认那套）。
  */
 import BaseLayout from '../layouts/BaseLayout.astro';
 import Timeline from '../components/Timeline.astro';
-import site from '../site.config';
 import {
   salonEssences,
   salonEras,
@@ -32,7 +33,7 @@ import {
   membersOf,
 } from '../utils/salon';
 import { getTimeline } from '../utils/timelines';
-import { variantUrl } from '../utils/images';
+import { variantUrl, imageDims } from '../utils/images';
 
 /*
   左边那条时间轴：编辑器里选中的那一条，**原样**渲染。
@@ -53,14 +54,14 @@ const firstParam = list.length && tl ? (params.get(list[0].id) ?? 0) : 0;
 <BaseLayout
   title={salonTitle}
   description={`${salonTitle}：冰室群里的精华消息，${list.length} 条，${salonUpdated} 前更新。`}
-  bodyClass="is-salon"
+  bodyClass="is-board is-salon"
 >
   <div class="salon">
     <aside class="salon__side">
       {tl ? (
         <div class="salon__tl" data-salon-tl data-tl-id={tl.id}>
-          {/* 原样放上去：不传任何会改它的东西，只给宽度 */}
-          <Timeline timeline={tl} pinned={true} defaultParam={firstParam} />
+          {/* 原样放上去：不传任何会改它的东西，只给它宽度和一个高度 */}
+          <Timeline timeline={tl} pinned={true} fill={true} defaultParam={firstParam} />
         </div>
       ) : (
         <p class="salon__tlNone">
@@ -68,9 +69,12 @@ const firstParam = list.length && tl ? (params.get(list[0].id) ?? 0) : 0;
           编辑器的「精华」面板里可以选一条站点已有的时间轴放上来（<b>原样放，不改一个字</b>）。
         </p>
       )}
-      <p class="salon__sideNote">
-        成员 {salonMembers.length} 人 · 精华 {list.length} 条<br />
-        {tl ? <>点轴上的刻度（或塔吊）直接跳到离那天最近的一条精华</> : <>还没有选时间轴</>}
+      {/*
+        这行说明放在轴的**下面**：放上面会把轴往下推，一进页面（还没滚的时候）
+        轴底下那条比例尺就被裁在屏幕外了 —— 实测"拖比例尺滑块"那条验收就是这么挂的。
+      */}
+      <p class="salon__sideNote" title={`成员 ${salonMembers.length} 人 · 精华 ${list.length} 条`}>
+        {tl ? <>点<b>刻度</b>或<b>塔吊</b> → 跳到最近的一条精华</> : <>还没有选时间轴</>}
       </p>
     </aside>
 
@@ -78,9 +82,17 @@ const firstParam = list.length && tl ? (params.get(list[0].id) ?? 0) : 0;
       <header class="salon__head">
         <h1 class="salon__title">{salonTitle}</h1>
         <p class="salon__meta">
-          共 {list.length} 条 · 截至 {salonUpdated}
+          共 {list.length} 条 · 成员 {salonMembers.length} 人 · 截至 {salonUpdated}
           {salonNote && <span class="salon__note">　{salonNote}</span>}
         </p>
+      </header>
+
+      {/*
+        搜索栏从页头里挪出来单独一层：它要**无论怎么翻都留在屏幕里**
+        （电脑和手机都要），而 sticky 只能在自己父元素的范围内粘住 ——
+        留在 .salon__head 里的话，页头一滚过去它就跟着走了。
+      */}
+      <div class="salon__searchBar">
         <div class="salon__searchBox">
           <input
             id="salon-q"
@@ -91,7 +103,7 @@ const firstParam = list.length && tl ? (params.get(list[0].id) ?? 0) : 0;
           />
           <span id="salon-hit" class="salon__hit" aria-live="polite"></span>
         </div>
-      </header>
+      </div>
 
       <div class="salon__list" id="salon-list">
         {
@@ -153,25 +165,34 @@ const firstParam = list.length && tl ? (params.get(list[0].id) ?? 0) : 0;
 
                   {e.text && <blockquote class="salon__text">{e.text}</blockquote>}
 
-                  {e.images.map((src) => (
-                    /* aria-label：图片本身 alt 是空的（截图内容说不清），
-                       链接又只有一张图，读屏会只念"链接"—— 补一句人能听懂的 */
-                    <a
-                      class="salon__pic"
-                      href={src}
-                      target="_blank"
-                      rel="noopener"
-                      aria-label={`查看大图：${name} ${e.date}`}
-                    >
-                      {/*
-                        走站点的图片管线（多尺寸 WebP/AVIF）：
-                        variantUrl 在清单里查不到这张图时会退化成原图，所以
-                        没跑过 `pnpm images` 也不会挂 —— 但部署流程是跑管线的，
-                        线上实际拿到的就是压过的那一档（246 张原图共 8.4MB）。
-                      */}
-                      <img src={variantUrl(src, 800)} alt="" loading="lazy" decoding="async" />
-                    </a>
-                  ))}
+                  {e.images.map((src) => {
+                    /*
+                      宽高一定要写（`imageDims` 从图片管线的清单里取，连"原样发"的小图也有）：
+                      浏览器拿到宽高就会先把位置留出来，图到位的时候不会把
+                      下面的几百条一起顶下去 —— 页面一边滚一边跳版就是这么来的。
+                    */
+                    const dim = imageDims(src);
+                    return (
+                      /* aria-label：图片本身 alt 是空的（截图内容说不清），
+                         链接又只有一张图，读屏会只念"链接"—— 补一句人能听懂的 */
+                      <a
+                        class="salon__pic"
+                        href={src}
+                        target="_blank"
+                        rel="noopener"
+                        aria-label={`查看大图：${name} ${e.date}`}
+                      >
+                        <img
+                          src={variantUrl(src, 800)}
+                          width={dim?.w}
+                          height={dim?.h}
+                          alt=""
+                          loading="lazy"
+                          decoding="async"
+                        />
+                      </a>
+                    );
+                  })}
                 </article>
               </>
             );
@@ -185,18 +206,61 @@ const firstParam = list.length && tl ? (params.get(list[0].id) ?? 0) : 0;
 
 <script>
   /* ============================================================
-     左边那条时间轴：点刻度 → 跳到离那天最近的一条精华
+     0. 「粘在哪儿」这件事量出来，别写死
      ------------------------------------------------------------
-     用户的要求只有这一条：
+     页头的高度会随字号、语言、窗口宽度变（窄到一定程度导航会换行），
+     左边那条轴和搜索栏的吸顶位置都得以它为准。
+     量出来写进 CSS 变量：--salon-top（吸顶要让开多少）、
+     --salon-note（轴上面那行说明占多高，轴的高度要把它减掉）。
+     ============================================================ */
+  const root = document.documentElement;
+  const sideNote = document.querySelector<HTMLElement>('.salon__sideNote');
+
+  const measureSticky = () => {
+    const header = document.querySelector<HTMLElement>('.site-header');
+    const bar = document.querySelector<HTMLElement>('.salon__searchBar');
+    const axis = document.querySelector<HTMLElement>('.salon__tl');
+    const mobile = window.matchMedia('(max-width: 880px)').matches;
+    const top = Math.round((header?.getBoundingClientRect().height ?? 0) + 10);
+    const note = Math.round(sideNote?.getBoundingClientRect().height ?? 0);
+    const barH = Math.round(bar?.getBoundingClientRect().height ?? 0);
+    const axisH = Math.round(axis?.getBoundingClientRect().height ?? 0);
+    root.style.setProperty('--salon-top', `${top}px`);
+    root.style.setProperty('--salon-note', `${note}px`);
+    /*
+      「跳过去以后那一条要落在哪儿」= 它得从所有吸顶的东西下面露出来：
+      页头 + 搜索栏（两端都有），手机端还要加轴上那一块。
+    */
+    root.style.setProperty('--salon-jump-gap', `${Math.round(top + barH + (mobile ? axisH : 0) + 10)}px`);
+  };
+  measureSticky();
+  /* 尺寸一变就重量（防抖到下一帧，免得拖窗口时连着量几十遍） */
+  let measureQueued = false;
+  const queueMeasure = () => {
+    if (measureQueued) return;
+    measureQueued = true;
+    requestAnimationFrame(() => {
+      measureQueued = false;
+      measureSticky();
+    });
+  };
+  window.addEventListener('resize', queueMeasure);
+  document.fonts?.ready?.then(queueMeasure);
+
+  /* ============================================================
+     1. 左边那条时间轴：点刻度 / 点塔吊 → 跳到离那儿最近的一条精华
+     ------------------------------------------------------------
+     用户的要求：
        「点击时间轴上的刻度，就跳到离那个日期最近的精华消息；
          点刻度即可，或是点时间轴上原本就有的塔吊图标」
 
-     所以这里**不动那条时间轴的任何数据/画法**（点、段、塔吊、比例尺都是它自己的），
-     只是接管"点上去"这一下：
-       · 被点的刻度带着 `data-param`（它在这条轴上的位置 0~1，服务端算好的）；
-       · 每条精华带着 `data-tl-param`（同一条轴上的位置，也是同一套算法）；
-       · 两个 param 差最小的那条精华，就是"离这个刻度最近"的那条 → 滚过去 + 闪一下。
-     用位置比而不是比日期：轴上可能有没有日期的「难以考据」点，比位置对它们也成立。
+     两条路都接上：
+       · **刻度**：刻度是轴上一整条 SVG path，没有"哪一个"可言，
+         所以由时间轴组件按坐标反推出"点到了轴上的哪个位置"，
+         发一个 `tl:pick`（detail.param ∈ 0~1）；这里接住它，找 param 最近的那条。
+       · **塔吊 / 名字**：那是 `.tl__item`，本身带 data-param，直接用它自己的。
+     两边都靠「位置」比而不是比日期：轴上可能有没有日期的「难以考据」点，
+     比位置对它们也成立。
      ============================================================ */
   const tlBox = document.querySelector<HTMLElement>('[data-salon-tl]');
   const tlList = document.getElementById('salon-list');
@@ -207,19 +271,42 @@ const firstParam = list.length && tl ? (params.get(list[0].id) ?? 0) : 0;
       .map((el) => ({ el, t: Number(el.dataset.tlParam) }))
       .filter((r) => Number.isFinite(r.t));
 
-    /** 落到某条精华上：滚过去 + 闪一下 + 把地址栏的 hash 也换掉（好复制给别人） */
+    /** 离某个位置最近的那条精华 */
+    const nearest = (want: number) => {
+      let best: (typeof params)[number] | null = null;
+      let bestD = Infinity;
+      for (const p of params) {
+        const d = Math.abs(p.t - want);
+        if (d < bestD) {
+          bestD = d;
+          best = p;
+        }
+      }
+      return best;
+    };
+
+    /**
+     * 落到某条精华上：滚过去 + 闪一下 + 把地址栏的 hash 也换掉（好复制给别人）。
+     *
+     * 让开多少 = 吸顶的那些东西实际占了多高（`--salon-jump-gap`，量出来的）：
+     *   电脑端是页头 + 搜索栏；手机端还要加上面那条轴。
+     * 写死一个数字在手机上会正好把落点压在轴底下（等于"点了没反应"）。
+     */
+    const gapOf = () =>
+      parseFloat(getComputedStyle(root).getPropertyValue('--salon-jump-gap')) || 88;
+
     const jumpTo = (el: HTMLElement) => {
       /*
-        自己算目标位置再 scrollTo，比 scrollIntoView 可控：
-        `scroll-margin-top` 那 5.5rem 是给吸顶页头留的，这里直接减掉同样的量。
+        自己算目标位置再 scrollTo，比 scrollIntoView 可控。
         平滑滚动偶尔会被打断（这条轴自己也在跟着页面滚），所以 1.2 秒后检查一次 ——
         还没到就把"到位"这件事直接做掉，绝不留下"点了但停在半路"。
       */
-      const topOf = () => Math.max(0, el.getBoundingClientRect().top + window.scrollY - 88);
+      const topOf = () => Math.max(0, el.getBoundingClientRect().top + window.scrollY - gapOf());
       window.scrollTo({ top: topOf(), behavior: 'smooth' });
       window.setTimeout(() => {
         const r = el.getBoundingClientRect();
-        if (r.top < -40 || r.top > window.innerHeight * 0.5) {
+        const want = gapOf();
+        if (r.top < want - 60 || r.top > window.innerHeight * 0.5) {
           window.scrollTo({ top: topOf(), left: 0, behavior: 'instant' as ScrollBehavior });
         }
       }, 1200);
@@ -236,8 +323,9 @@ const firstParam = list.length && tl ? (params.get(list[0].id) ?? 0) : 0;
     };
 
     /**
-     * 手机上（没有悬停能力）保留原来的"两下"：第一下只弹提示卡，第二下点卡片里那行字才跳。
-     * 桌面鼠标一下就跳 —— 用户的原话是"点刻度即可"。
+     * 手机上（没有悬停能力）点**塔吊/名字**保留原来的"两下"：
+     * 第一下只弹提示卡，第二下点卡片里那行字才跳（用户当初要的）。
+     * 电脑鼠标一下就跳。刻度没有卡片，两边都是一下。
      */
     const noHover = () => window.matchMedia('(hover: none)').matches;
 
@@ -253,23 +341,23 @@ const firstParam = list.length && tl ? (params.get(list[0].id) ?? 0) : 0;
         if (!Number.isFinite(want)) return;
         // 抢在时间轴自己的锚点跳转之前接管（默认是跳到轴数据里那个 href）
         ev.preventDefault();
-        let best = params[0];
-        let bestD = Math.abs(best.t - want);
-        for (const p of params) {
-          const d = Math.abs(p.t - want);
-          if (d < bestD) {
-            bestD = d;
-            best = p;
-          }
-        }
-        jumpTo(best.el);
+        const best = nearest(want);
+        if (best) jumpTo(best.el);
       },
       true
     );
+
+    /* 刻度：时间轴把"点到了哪个位置"报上来，这里找最近的那条 */
+    tlBox.addEventListener('tl:pick', (ev) => {
+      const want = Number((ev as CustomEvent<{ param?: number }>).detail?.param);
+      if (!Number.isFinite(want) || !params.length) return;
+      const best = nearest(want);
+      if (best) jumpTo(best.el);
+    });
   }
 
   /* ============================================================
-     搜索 + 按 / 聚焦
+     2. 搜索 + 按 / 聚焦
      ------------------------------------------------------------
      纯前端筛：精华是一次性静态渲染出来的（搜索引擎也看得到），
      这里只是给它加一层"边打边筛"。用 textContent 当检索文本 ——
@@ -286,6 +374,14 @@ const firstParam = list.length && tl ? (params.get(list[0].id) ?? 0) : 0;
     const eras = Array.from(list.querySelectorAll<HTMLElement>('.salon__era'));
     // 每条精华预先算好检索文本，省得每敲一个字就把 textContent 取一遍
     const hay = items.map((el) => (el.textContent || '').toLowerCase());
+
+    /**
+     * 筛完告诉时间轴"布局变了"：它缓存了一份各条精华的位置用来联动弧顶，
+     * 藏掉几百条之后那份缓存就过期了。
+     */
+    const askReindex = () => {
+      tlBox?.dispatchEvent(new CustomEvent('tl:reindex'));
+    };
 
     const apply = () => {
       const kw = q.value.trim().toLowerCase();
@@ -316,6 +412,7 @@ const firstParam = list.length && tl ? (params.get(list[0].id) ?? 0) : 0;
       });
       if (hit) hit.textContent = kw ? `命中 ${shown} / ${items.length} 条` : '';
       if (empty) empty.hidden = !(kw && shown === 0);
+      askReindex();
     };
 
     q.addEventListener('input', apply);
@@ -339,87 +436,147 @@ const firstParam = list.length && tl ? (params.get(list[0].id) ?? 0) : 0;
 </script>
 
 <style>
+  /* ============================================================================
+   *  观感：站点「大板块子页面」那一套（深紫底 + 粉边 + 渐变玻璃块）
+   *  ---------------------------------------------------------------------------
+   *  用户原话：「精华页面的整体风格不对，不应该使用文章风格的配色，
+   *            而应该用页面风格，例如纷湖下的页面隰辰煦家那样的网站整体风格」
+   *  所以这里不再用 BaseLayout 那套「浅粉底 #e8d0dd + 深琥珀字 #46280f」的文章配色，
+   *  换成和 /huaya/years/fenhu/xichenxuhome 一样的：底 #1e0730、
+   *  块 = linear-gradient(rgba(46,8,70,.78), rgba(20,3,34,.78)) + 1px 粉边 +
+   *  14px 圆角，正文 rgba(255,236,248,.9)，链接/日期 #ffb3dd，
+   *  标题纯白 + 粉色外发光（数值都是从那一页量出来的）。
+   *  另外给 body 一个兜底底色（和 BoardLayout 里那句同理：背景图之外的地方也得是深的）。
+   * ========================================================================= */
+  :global(body.is-salon) {
+    background-color: #1e0730;
+  }
+
   .salon {
     display: flex;
     gap: clamp(1.2rem, 2.6vw, 2.6rem);
     align-items: flex-start;
     max-width: 1240px;
     margin: 0 auto;
-    padding: clamp(1.2rem, 3vh, 2.4rem) clamp(0.9rem, 2.4vw, 1.6rem) 5rem;
+    /*
+      上边距刻意给 0：左边的轴要"一屏几乎占满"，它的起点就必须紧贴站点页头 ——
+      页头自己（sticky）已经占了一段高度，这里再加一截留白，
+      轴就会被推到屏幕外一截（底部的比例尺看不见）。留白改加在右栏上。
+    */
+    padding: 0 clamp(0.9rem, 2.4vw, 1.6rem) 5rem;
   }
 
   /* 左边那条轴常驻：滚页面时它跟着停住，不用滚回去看 */
   .salon__side {
     flex: 0 0 clamp(260px, 27vw, 330px);
     position: sticky;
-    top: 1.2rem;
+    top: var(--salon-top, 5.5rem);
     align-self: flex-start;
   }
-  /* 放所选时间轴的框：高度交给组件自己（它内部按 clamp 定死，弧线几何要用） */
+  /*
+    放所选时间轴的框。
+    高度**由这一页给死**：`.tl.is-pinned.is-fill` 读 `--tl-panel-h`，
+    轴的弧线几何是按 .tl__body 的实际高度算的（measure() 里 H = body.clientHeight），
+    不给高度会算成 0、整条轴塌成一个点。
+    一屏占满 = 视口高 - 让开的页头 - 上面那行说明 - 一点点余量；
+    两种写法：先 vh 兜底，认识 dvh 的浏览器（手机地址栏收放时更准）用 dvh。
+  */
   .salon__tl {
+    --tl-panel-h: calc(100vh - var(--salon-top, 5.5rem) - var(--salon-note, 1.4rem) - 0.5rem);
+    --tl-panel-h: calc(100dvh - var(--salon-top, 5.5rem) - var(--salon-note, 1.4rem) - 0.5rem);
     width: 100%;
   }
   /* 还没选时间轴时的说明（编辑器里选完就换成轴） */
   .salon__tlNone {
     margin: 0;
     padding: 1rem 0.9rem;
-    border: 1px dashed var(--c-border-strong);
-    border-radius: 12px;
+    border: 1px dashed rgba(255, 120, 190, 0.45);
+    border-radius: 14px;
+    background: rgba(22, 3, 36, 0.6);
     font-size: 0.8rem;
     line-height: 1.8;
-    color: var(--c-text-faint);
+    color: rgba(255, 226, 244, 0.72);
     text-align: center;
   }
   .salon__sideNote {
-    margin: 0.7rem 0 0;
-    font-size: 0.78rem;
-    line-height: 1.7;
-    color: var(--c-text-faint);
+    margin: 0.45rem 0 0;
+    font-size: 0.76rem;
+    line-height: 1.4;
+    color: rgba(255, 226, 244, 0.62);
     text-align: center;
+    /* 太长会自动省略，别把轴的高度吃掉 */
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  .salon__sideNote b {
+    color: #ffb3dd;
+    font-weight: 500;
   }
 
   .salon__main {
     flex: 1 1 auto;
     min-width: 0;
+    /* 右栏的留白（左栏不留，理由见 .salon 的 padding） */
+    padding-top: clamp(1rem, 2.4vh, 1.8rem);
   }
 
   .salon__head {
-    margin-bottom: 1.2rem;
+    margin-bottom: 0.9rem;
   }
   .salon__title {
     margin: 0;
+    font-family: var(--font-display);
     font-size: clamp(1.7rem, 3.4vw, 2.5rem);
-    letter-spacing: 0.06em;
+    letter-spacing: 0.12em;
     color: #fff;
-    text-shadow: 0 0 12px rgba(255, 79, 163, 0.65);
+    text-shadow:
+      0 0 10px rgba(255, 79, 163, 0.9),
+      0 0 28px rgba(212, 0, 123, 0.7);
   }
   .salon__meta {
     margin: 0.5rem 0 0;
     font-size: 0.86rem;
     line-height: 1.7;
-    color: var(--c-text-muted);
+    color: rgba(255, 226, 244, 0.72);
   }
   .salon__note {
-    color: var(--c-text-faint);
+    color: rgba(255, 226, 244, 0.55);
   }
 
+  /* ---------- 搜索栏：两端都吸顶，无论怎么翻都留在屏幕里 ---------- */
+  .salon__searchBar {
+    position: sticky;
+    top: var(--salon-top, 5.5rem);
+    z-index: 20;
+    margin: 0 -0.2rem;
+    padding: 0.5rem 0.2rem 0.6rem;
+    /*
+      不透明（不用 backdrop-filter）：这一页有 17 万像素高、784 条，
+      每帧再让浏览器去模糊一遍背后的内容是纯浪费；用实色 + 一条渐变收边，
+      效果几乎一样，滚动时不用重算。
+    */
+    background: #1e0730;
+  }
   .salon__searchBox {
     position: relative;
-    margin-top: 0.9rem;
   }
   .salon__search {
     width: 100%;
     box-sizing: border-box;
     padding: 0.55rem 0.8rem;
-    border: 1px solid var(--c-border-strong);
+    border: 1px solid rgba(255, 120, 190, 0.45);
     border-radius: 10px;
-    background: var(--c-bg-sunken);
-    color: var(--c-text);
+    background: rgba(22, 3, 36, 0.92);
+    color: #ffe6f6;
     font: inherit;
     font-size: 0.94rem;
   }
+  .salon__search::placeholder {
+    color: rgba(255, 226, 244, 0.42);
+  }
   .salon__search:focus-visible {
-    outline: 2px solid var(--c-accent);
+    outline: 2px solid rgba(255, 120, 190, 0.75);
     outline-offset: 1px;
   }
   .salon__hit {
@@ -428,43 +585,56 @@ const firstParam = list.length && tl ? (params.get(list[0].id) ?? 0) : 0;
     top: 50%;
     transform: translateY(-50%);
     font-size: 0.78rem;
-    color: var(--c-accent);
+    color: #ffb3dd;
     pointer-events: none;
   }
 
   /* ---------- 年代 / 日期小标题 ---------- */
   .salon__era {
-    margin: 2.6rem 0 0.6rem;
+    margin: 2.4rem 0 0.6rem;
     padding-bottom: 0.35rem;
-    border-bottom: 2px solid rgba(255, 120, 190, 0.35);
+    border-bottom: 1px solid rgba(255, 120, 190, 0.4);
+    font-family: var(--font-display);
     font-size: 1.3rem;
-    letter-spacing: 0.08em;
-    color: var(--c-accent);
+    letter-spacing: 0.1em;
+    color: #fff;
+    text-shadow: 0 0 12px rgba(255, 79, 163, 0.75);
   }
   .salon__date {
     margin: 1.6rem 0 0.5rem;
     font-size: 0.92rem;
     letter-spacing: 0.1em;
-    color: var(--c-text-faint);
+    color: #ffb3dd;
   }
 
   /* ---------- 一条精华 ---------- */
   .salon__item {
     margin: 0 0 0.9rem;
     padding: 0.7rem 0.9rem 0.8rem;
-    border: 1px solid var(--c-border);
-    border-left: 3px solid rgba(255, 120, 190, 0.5);
-    border-radius: 12px;
-    background: var(--c-bg-raised);
-    /* 时间轴点日期跳过来时，别让吸顶页头压住 */
-    scroll-margin-top: 5.5rem;
+    border: 1px solid rgba(255, 120, 190, 0.42);
+    border-left: 3px solid rgba(255, 120, 190, 0.6);
+    border-radius: 14px;
+    background: linear-gradient(180deg, rgba(46, 8, 70, 0.78), rgba(20, 3, 34, 0.78));
+    /*
+      带 hash 直接进来时（比如别人发你 /salon/#e0012）不让吸顶的页头/搜索栏压住它。
+      让开多少由脚本量出来（--salon-jump-gap）：电脑端是页头 + 搜索栏，
+      手机端还要加上面那条轴。
+    */
+    scroll-margin-top: var(--salon-jump-gap, 5.5rem);
+    /*
+      让浏览器把每一条**当成一个独立的盒子**（布局/绘制/样式都不外溢）：
+      改一条的样式不用回头算别的，画的也只有看得见的那几条。
+      这和上面说的 content-visibility 不是一回事 —— 它**不改变元素的位置和大小**，
+      所以左边那条轴按位置联动照样准（content-visibility 会改，所以不能用）。
+    */
+    contain: content;
     /*
       ⚠ 这里**不要**加 content-visibility: auto。
       试过（735 条跳过屏幕外渲染，确实省），但屏幕外的条目只剩"估算高度"，
       左边那条时间轴是按各条的**实际位置**算"当前滚到哪一段"的 ——
       实测轴上的日期比列表里正在看的那条**早 3 天**（2026-07-11 vs 2026-07-14）。
       轴的日期要跟眼睛看到的一致比省那点渲染重要，所以撤掉了。
-      （真要再优化，得给每条写接近真实高度的 contain-intrinsic-size 才行。）
+      （真到了非加不可那天，得给每条写接近真实高度的 contain-intrinsic-size 才行。）
     */
   }
   .salon__item:target {
@@ -478,10 +648,10 @@ const firstParam = list.length && tl ? (params.get(list[0].id) ?? 0) : 0;
   }
   @keyframes salonHit {
     0% {
-      background: rgba(255, 120, 190, 0.18);
+      background: linear-gradient(180deg, rgba(255, 120, 190, 0.28), rgba(255, 120, 190, 0.1));
     }
     100% {
-      background: var(--c-bg-raised);
+      background: linear-gradient(180deg, rgba(46, 8, 70, 0.78), rgba(20, 3, 34, 0.78));
     }
   }
 
@@ -514,19 +684,21 @@ const firstParam = list.length && tl ? (params.get(list[0].id) ?? 0) : 0;
     flex: none;
     border-radius: 50%;
     object-fit: cover;
-    border: 1px solid rgba(255, 120, 190, 0.5);
-    background: var(--c-bg-sunken);
+    border: 1px solid rgba(255, 120, 190, 0.6);
+    background: rgba(22, 3, 36, 0.9);
   }
   .salon__avatar--none {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    color: var(--c-accent);
+    color: #ffb3dd;
     font-size: 0.8rem;
   }
   .salon__name {
-    color: #fff;
+    color: #ffe6f6;
+    font-weight: 500;
     letter-spacing: 0.04em;
+    text-shadow: 0 0 10px rgba(255, 79, 163, 0.5);
   }
   /* 截图 OCR 转录的条目挂一个小标签，让人知道这段字不是手打的 */
   .salon__badge {
@@ -540,19 +712,20 @@ const firstParam = list.length && tl ? (params.get(list[0].id) ?? 0) : 0;
   }
   .salon__time {
     margin-left: auto;
-    color: var(--c-text-faint);
+    color: rgba(255, 226, 244, 0.55);
     font-variant-numeric: tabular-nums;
   }
 
   .salon__text {
     margin: 0.5rem 0 0;
     padding: 0.5rem 0.75rem;
-    border-left: 3px solid rgba(255, 120, 190, 0.35);
+    border-left: 3px solid rgba(255, 120, 190, 0.45);
     border-radius: 0 8px 8px 0;
-    background: var(--c-bg-sunken);
-    color: var(--c-text);
+    background: rgba(10, 0, 18, 0.5);
+    color: rgba(255, 236, 248, 0.9);
     font-size: 0.92rem;
     line-height: 1.8;
+    letter-spacing: 0.02em;
     white-space: pre-wrap;
     word-break: break-word;
   }
@@ -563,25 +736,59 @@ const firstParam = list.length && tl ? (params.get(list[0].id) ?? 0) : 0;
   }
   .salon__pic img {
     display: block;
+    /* 给了 width/height 就必须配 height:auto，否则属性里的原始高度会顶死人 */
+    height: auto;
     max-width: min(100%, 520px);
-    border: 1px solid var(--c-border-strong);
+    border: 1px solid rgba(255, 120, 190, 0.42);
     border-radius: 10px;
   }
 
   .salon__empty {
     margin: 1.5rem 0;
-    color: var(--c-text-muted);
+    color: rgba(255, 226, 244, 0.72);
   }
 
-  /* ---------- 窄屏：轴挪到上面，别占着一整列 ---------- */
+  /* ============================================================================
+   * 窄屏：轴挪到上面、吸在屏幕上半部分；搜索栏吸在轴的下面
+   * ---------------------------------------------------------------------------
+   *  用户原话：「在手机端下翻看精华时又无法显示，应当在手机端始终保持在屏幕上半部分。
+   *            同时搜索栏应当也在电脑端和手机端都可以无论怎么翻都随时保持在屏幕内」
+   *  所以窄屏下这两块都改成 sticky：轴占上面 40dvh（不到一半），
+   *  搜索栏紧贴在轴下方 —— 两个都一直在，正文从它们下面穿过去。
+   * ========================================================================= */
   @media (max-width: 880px) {
     .salon {
       flex-direction: column;
+      /* 上面那条轴占多高：不到一半，留出下面的正文。两种写法见上（vh 兜底 + dvh） */
+      --salon-axis-h: 46vh;
+      --salon-axis-h: 46dvh;
     }
+    /*
+      轴这一块吸在顶上（让开站点页头）。给它实色底：
+      正文会从它下面滚过去，透了就会两串字叠在一起。
+    */
     .salon__side {
-      position: static;
+      position: sticky;
+      top: var(--salon-top, 3.6rem);
+      z-index: 25;
       flex: none;
       width: 100%;
+      padding-top: 0.5rem;
+      background: #1e0730;
+    }
+    /* 手机上那行说明让给正文（空间本来就不够） */
+    .salon__sideNote {
+      display: none;
+    }
+    .salon__tl {
+      --tl-panel-h: var(--salon-axis-h, 40dvh);
+    }
+    .salon__head {
+      margin-top: 0.9rem;
+    }
+    /* 搜索栏吸在「页头 + 轴」下面，一直看得见 */
+    .salon__searchBar {
+      top: calc(var(--salon-top, 3.6rem) + var(--salon-axis-h, 40dvh) + 0.3rem);
     }
   }
 </style>

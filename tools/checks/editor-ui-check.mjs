@@ -404,20 +404,41 @@ try {
     tlBox.ok === true && tlBox.value === readTl() && tlBox.options.length === tlIds.length + 1,
     JSON.stringify(tlBox));
 
+  /*
+    ⚠ 这一步必须**等界面空下来**再动第二次：
+    「保存并重新构建」按下去之后按钮会变成「正在保存…」、面板还会整块重画
+    （saveSalon 里 `await loadSalon()`），保存 + 构建要好几秒。
+    直接找按钮会扑空（报"找不到「保存并重新构建」"，而其实只是正在保存中），
+    所以这里先轮询等一个**可点的**保存按钮，再重新查一次 select/按钮（旧引用可能已经被重画掉）。
+  */
   const setTl = async (id) => cdp.ev(`(async () => {
     const panel = () => [...document.querySelectorAll('.wpanel')].find((el) => el.getBoundingClientRect().height > 0);
+    const findSave = () => {
+      const w = panel();
+      const bar = w && w.querySelector('.wpanel__bar');
+      const b = bar && [...bar.querySelectorAll('button')].find((x) => x.textContent.trim() === '保存并重新构建');
+      return b && !b.disabled ? b : null;
+    };
+    const t0 = Date.now();
+    while (!findSave()) {
+      if (Date.now() - t0 > 60000) return { ok: false, why: '等了 60 秒也没等到可点的「保存并重新构建」',
+        status: [...document.querySelectorAll('.wpanel__status')].map((s) => s.textContent).filter(Boolean) };
+      await new Promise((r) => setTimeout(r, 300));
+    }
     const w = panel();
     const box = [...w.querySelectorAll('.wbox')].find((b) => ((b.querySelector('.wbox__title') || {}).textContent || '').includes('时间轴'));
+    if (!box) return { ok: false, why: '面板里找不到「左边那条时间轴」那一块' };
     const sel = box.querySelector('select');
     const set = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set;
     set.call(sel, ${JSON.stringify(id)});
     sel.dispatchEvent(new Event('change', { bubbles: true }));
     await new Promise((r) => setTimeout(r, 400));
-    const status = [...w.querySelectorAll('.wpanel__status')].map((s) => s.textContent).filter(Boolean);
-    const save = [...w.querySelector('.wpanel__bar').querySelectorAll('button')].find((b) => b.textContent.trim() === '保存并重新构建');
+    const status = [...panel().querySelectorAll('.wpanel__status')].map((s) => s.textContent).filter(Boolean);
+    const save = findSave();
     if (!save) return { ok: false, why: '找不到「保存并重新构建」', value: sel.value, status };
+    const value = sel.value;
     save.click();
-    return { ok: true, value: sel.value, status }; })()`);
+    return { ok: true, value, status }; })()`);
 
   const other = tlIds.find((id) => id !== readTl());
   const sw1 = await setTl(other);

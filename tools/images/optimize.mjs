@@ -126,6 +126,26 @@ async function walk(dir, out = []) {
   return out;
 }
 
+/**
+ * 只读宽高（不编码）。
+ *
+ * 给「原样发」的小图用：它们不生成变体，但渲染层**仍然需要宽高**去写
+ * `<img width height>` —— 少了这个，图一到位就把下面的内容顶下去，
+ * 页面一边滚一边跳版（冰室精华页 784 条 + 291 张截图，跳起来受不了）。
+ * EXIF 带旋转的（手机竖拍）宽高要对调，和 encodeItem 里一个道理。
+ */
+async function dimsOf(sharp, abs) {
+  try {
+    const meta = await sharp(abs, { failOn: 'none' }).metadata();
+    const rotated = [5, 6, 7, 8].includes(meta.orientation);
+    const w = rotated ? meta.height : meta.width;
+    const h = rotated ? meta.width : meta.height;
+    return w && h ? { w, h } : null;
+  } catch {
+    return null;
+  }
+}
+
 /** 这份图该出哪些宽度档 */
 function planWidths(origWidth) {
   const cap = Math.min(origWidth, CFG.maxWidth);
@@ -293,10 +313,23 @@ export async function optimizeAll(opts = {}) {
       const prev = prevItems[key];
       if (stat.size < CFG.minBytes) {
         stats.skipped++;
-        // 小图不生成变体，但清单里留一条「原样发」的记录，渲染层好知道尺寸
+        /*
+          小图不生成变体，但清单里留一条「原样发」的记录 ——
+          尺寸必须有：渲染层要靠它给 <img> 写 width/height，不然图一到位就跳版。
+          上次已经量过（prev.w/h）就直接复用，别再开一次 sharp。
+        */
+        let pw = prev?.w ?? null;
+        let ph = prev?.h ?? null;
+        if (!pw || !ph) {
+          const d = await dimsOf(sharp, abs);
+          if (d) {
+            pw = d.w;
+            ph = d.h;
+          }
+        }
         next[key] = {
           key, src: key, passthrough: true,
-          w: prev?.w ?? null, h: prev?.h ?? null,
+          w: pw, h: ph,
           hasAlpha: prev?.hasAlpha ?? false,
           variants: [], fallback: { url: key, bytes: stat.size }, lqip: '',
           source: { bytes: stat.size, mtimeMs: stat.mtimeMs, cfg: CFG.version },

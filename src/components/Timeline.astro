@@ -38,9 +38,17 @@ interface Props {
    * 高度算的，不给高度会算成 0、整条轴塌成一点。
    */
   pinned?: boolean;
+  /**
+   * **撑满模式**（要和 `pinned` 一起用）：面板高度交给页面用 CSS 变量
+   * `--tl-panel-h` 定，`.tl__body` 用 flex 把剩下的空间吃满 ——
+   * 于是「轴到底有多高」= 页面给的高度减去标题条和页脚，
+   * 想要"一屏几乎占满"（用户要求）就写 `--tl-panel-h: calc(100dvh - …)`。
+   * 不传就是老样子：body 高度写死 clamp(320px,58vh,620px)。
+   */
+  fill?: boolean;
 }
 
-const { timeline: tl, defaultParam = null, pinned = false } = Astro.props;
+const { timeline: tl, defaultParam = null, pinned = false, fill = false } = Astro.props;
 
 /** 站内链接补上 base；站外原样（外链开新窗口，见下面的标记） */
 const linkHref = (href: string) =>
@@ -154,10 +162,11 @@ const initialScaleText = `一刻度约 ${
 ---
 
 <div
-  class:list={['tl', 'is-off-left-moments', 'is-off-right-moments', pinned && 'is-pinned']}
+  class:list={['tl', 'is-off-left-moments', 'is-off-right-moments', pinned && 'is-pinned', fill && 'is-fill']}
   data-tl
   data-tl-id={tl.id}
   data-tl-pinned={pinned ? '1' : undefined}
+  data-tl-fill={fill ? '1' : undefined}
   data-tl-min={spanMin}
   data-tl-max={spanMax}
   data-tl-grad={gradId}
@@ -489,6 +498,34 @@ const initialScaleText = `一刻度约 ${
   .tl.is-pinned .tl__body {
     flex: none;
     height: clamp(320px, 58vh, 620px);
+  }
+
+  /*
+    撑满模式：面板高度由页面给（`--tl-panel-h`），轴自己 flex 吃掉剩下的。
+    这样「轴占满一屏」这句话只需要页面写一个高度，不用把标题条和页脚的高度
+    也一起算进来（它们随语言、字号、横竖屏变，写死一定会错位）。
+  */
+  .tl.is-pinned.is-fill .tl__panel {
+    height: var(--tl-panel-h, auto);
+    min-height: 0;
+  }
+  .tl.is-pinned.is-fill .tl__body {
+    flex: 1 1 auto;
+    height: auto;
+    /* 弧线几何要一个真实高度；太矮会算成一条线，给个下限兜住 */
+    min-height: 140px;
+  }
+
+  /*
+    轴上的字不参与"选取文字"：
+    用户原话「时间轴和地图图钉等处的文字不应该被电脑或手机端的选取文字功能框住，
+    会在鼠标和手指拖动时造成困扰」—— 拖轴/拖塔吊的时候最明显，
+    一拖就选中一串日期，松手还留一片高亮。手机上长按还会弹出复制菜单。
+  */
+  .tl {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
   }
   .tl.is-pinned .tl__tab,
   .tl.is-pinned .tl__close {
@@ -2100,24 +2137,68 @@ const initialScaleText = `一刻度约 ${
       页面上认领了时间点/时间段的成分都带 data-tl-param。
       取「最靠近视口中线」的那个，把弧顶挪过去 ——
       于是滚到某段文字/某个视频，轴就停在那一点。
+
+      ⚠ 性能：以前这里是**每滚一下就对着所有成分量一遍 getBoundingClientRect**。
+      冰室精华页有 784 条，等于每滚一下强制同步布局 784 次 ——
+      实测滚 24 下 = 18816 次 rect，CPU 采样里浏览器内部（布局/绘制）占了 34%，
+      那页"卡到几乎翻不动"的头号原因就在这。
+
+      现在分两层：
+        · 位置只在「布局真的变了」的时候重量一次（第一次、改窗口、图到位、字体到位、
+          页面自己喊一声 tl:reindex），量完存成一条**按文档顺序递增**的中心线数组；
+        · 滚动时只在这条数组上二分（纯算术，一次布局都不碰）。
+      代价从「每次滚动 784 次 rect」变成「每次滚动 0 次」。
     */
     const marked = Array.from(document.querySelectorAll<HTMLElement>('[data-tl-param]'));
     let activeEl: HTMLElement | null = null;
+    /** 每条成分中线的文档 y（随文档顺序递增），null = 还没量过 */
+    let idxMid: number[] | null = null;
+    let idxDirty = true;
+    const markDirty = () => {
+      idxDirty = true;
+    };
+
+    function ensureIndex() {
+      if (!idxDirty && idxMid && idxMid.length === marked.length) return;
+      const sy = window.scrollY;
+      idxMid = marked.map((el) => {
+        const r = el.getBoundingClientRect();
+        return r.top + sy + r.height / 2;
+      });
+      idxDirty = false;
+    }
+
+    /** 缓存里谁离视口中线最近（二分；位置是"文档坐标"，滚页面不影响它） */
+    function nearestIndex() {
+      ensureIndex();
+      const arr = idxMid;
+      if (!arr || !arr.length) return -1;
+      const target = window.scrollY + window.innerHeight / 2;
+      let lo = 0;
+      let hi = arr.length - 1;
+      while (lo < hi) {
+        const m = (lo + hi) >> 1;
+        if (arr[m] < target) lo = m + 1;
+        else hi = m;
+      }
+      let best = lo;
+      let bestD = Math.abs(arr[lo] - target);
+      for (const i of [lo - 1, lo + 1]) {
+        if (i < 0 || i >= arr.length) continue;
+        const d = Math.abs(arr[i] - target);
+        if (d < bestD) {
+          bestD = d;
+          best = i;
+        }
+      }
+      return best;
+    }
 
     function syncFromPage() {
       if (!open || !marked.length) return;
-      const mid = window.innerHeight / 2;
-      let best: HTMLElement | null = null;
-      let bestD = Infinity;
-      for (const el of marked) {
-        const r = el.getBoundingClientRect();
-        if (r.bottom < 0 || r.top > window.innerHeight) continue;
-        const d = Math.abs((r.top + r.bottom) / 2 - mid);
-        if (d < bestD) {
-          bestD = d;
-          best = el;
-        }
-      }
+      const i = nearestIndex();
+      if (i < 0) return;
+      const best = marked[i];
       if (!best || best === activeEl) return;
       activeEl = best;
       const t = Number(best.dataset.tlParam);
@@ -2127,9 +2208,76 @@ const initialScaleText = `一刻度约 ${
       }
     }
 
+    /* 一帧最多同步一次：滚一下可能来好几个 scroll 事件，没必要跟着跑好几遍 */
+    let syncQueued = false;
+    function queueSync() {
+      if (syncQueued) return;
+      syncQueued = true;
+      requestAnimationFrame(() => {
+        syncQueued = false;
+        syncFromPage();
+      });
+    }
+
     if (marked.length) {
-      window.addEventListener('scroll', syncFromPage, { passive: true });
-      window.addEventListener('resize', syncFromPage);
+      window.addEventListener('scroll', queueSync, { passive: true });
+      window.addEventListener('resize', () => {
+        markDirty();
+        queueSync();
+      });
+      /*
+        图片 / 字体到位都可能改文档高度，位置缓存得跟着作废 ——
+        但**只盯那些没写宽高的图**：写了 width/height 的图，浏览器下载期间
+        就已经把位置按比例留好了，图到位那一刻页面高度一点没变，重量纯属白干
+        （冰室精华页 291 张图，每张都触发一次 784 次 rect 的重量，实测滚动里
+        多出 10192 次 rect —— 全是因为这个）。
+      */
+      const needsWatch = marked.some((el) =>
+        Array.from(el.querySelectorAll('img')).some((i) => !(i.getAttribute('width') && i.getAttribute('height')))
+      );
+      if (needsWatch) {
+        for (const el of marked) {
+          for (const img of el.querySelectorAll('img')) {
+            if (!img.complete && !(img.getAttribute('width') && img.getAttribute('height'))) {
+              img.addEventListener(
+                'load',
+                () => {
+                  markDirty();
+                  queueSync();
+                },
+                { once: true }
+              );
+            }
+          }
+        }
+      }
+      document.fonts?.ready?.then(() => {
+        markDirty();
+        queueSync();
+      });
+      /*
+        分量最大的一条保险：**盯住这些成分所在容器的实际高度**。
+        位置缓存怕的就是"布局悄悄变了" —— 比如本站那种按需分片的 CJK 字体，
+        往下滚的时候新字形的分片才下下来，字一换字体、每一行的高度就变了一点，
+        几百行累积起来能差好几天（实测轴上的日期比列表里那条早 1 天）。
+        ResizeObserver 只在**真的变大变小**时回调（滚动本身不触发），
+        所以这条保险几乎不要钱，却能把"缓存过期"这件事兜住。
+      */
+      if (typeof ResizeObserver !== 'undefined') {
+        const watchBox = marked[0].parentElement ?? document.body;
+        new ResizeObserver(() => {
+          markDirty();
+          queueSync();
+        }).observe(watchBox);
+      }
+      /*
+        页面自己改了布局（冰室精华页搜索筛选会藏掉几百条）就在时间轴上发一个
+        `tl:reindex`：位置缓存作废、重新量一遍。
+      */
+      document.addEventListener('tl:reindex', () => {
+        markDirty();
+        queueSync();
+      });
     }
 
     /* ---------------- 开合 ---------------- */
@@ -2160,20 +2308,13 @@ const initialScaleText = `一刻度约 ${
         if (Number.isFinite(def) && defAttr !== '' && defAttr !== undefined) cur = def;
         else if (!Number.isFinite(cur)) cur = 0.5;
         if (marked.length) {
-          const mid = window.innerHeight / 2;
-          let best: HTMLElement | null = null;
-          let bestD = Infinity;
-          for (const el of marked) {
-            const r = el.getBoundingClientRect();
-            const d = Math.abs((r.top + r.bottom) / 2 - mid);
-            if (d < bestD) {
-              bestD = d;
-              best = el;
-            }
+          markDirty();
+          const i = nearestIndex();
+          if (i >= 0) {
+            const t = Number(marked[i].dataset.tlParam);
+            if (Number.isFinite(t)) cur = t;
+            activeEl = marked[i];
           }
-          const t = Number(best?.dataset.tlParam);
-          if (best && Number.isFinite(t)) cur = t;
-          activeEl = best;
         }
         paint();
         if (focus) panel!.focus?.();
@@ -2214,10 +2355,12 @@ const initialScaleText = `一刻度约 ${
       */
       if ((e.target as HTMLElement | null)?.closest?.('a[href], button')) return;
       drag = { id: e.pointerId, y: e.clientY, cur };
+      pickedByDrag = false;
       body.setPointerCapture(e.pointerId);
     });
     body.addEventListener('pointermove', (e) => {
       if (!drag || e.pointerId !== drag.id) return;
+      markDragged(e.clientY);
       cur = Math.max(0, Math.min(1, drag.cur + (drag.y - e.clientY) / V));
       paint();
     });
@@ -2232,6 +2375,65 @@ const initialScaleText = `一刻度约 ${
     };
     body.addEventListener('pointerup', endDrag);
     body.addEventListener('pointercancel', endDrag);
+
+    /* ---------------- 点轴上的刻度：把"点到的是哪个位置"报出去 ---------------- */
+
+    /*
+      用户原话：
+        「点击时间轴上的刻度，就跳转到那个刻度对应的精华附近（例如点击了对应
+          2024.1.14 日的刻度，就跳到离那个日期最近的精华消息，点刻度即可，
+          或是点时间轴上原本就有的塔吊图标）」
+
+      ⚠ 上一版只接管了**事件点/塔吊**（`.tl__item`），刻度根本点不动：
+      刻度不是一个个元素，是**一整条 SVG path**（几十根刻线合在一根 d 里，
+      见 paint() 里的 rulerPath），点上去没有"哪一个刻度"可言，也没有 data-param。
+
+      所以这里按坐标反推：把点投影到弧上 → 得到它在这条轴上的参数 t（0~1），
+      然后广播 `tl:pick`（detail = { param, date, id }）。组件只管"点到了哪一点"，
+      拿它干什么由页面决定 —— 冰室精华页就是"跳到离这个位置最近的那条精华"。
+    */
+    let pickedByDrag = false;
+    const markDragged = (y: number) => {
+      // 拖轴滚动时手指/鼠标会划出一段距离，松手那一下不该当成"点了刻度"。
+      // 阈值不能是 0：鼠标按下时手会抖一两像素，那样就把正常的点击吃掉了。
+      if (drag && Math.abs(y - drag.y) > 6) pickedByDrag = true;
+    };
+
+    /** 把屏幕坐标投影到圆弧上，反推出它在轴上的参数 */
+    function paramAt(clientX: number, clientY: number) {
+      const r = body.getBoundingClientRect();
+      const px = clientX - r.left;
+      const py = clientY - r.top;
+      // 圆心到点的方向上、离圆心 R 的那一点就是弧上的最近点（够准，斜率很缓）
+      const dx = px - cx;
+      const dy = py - cy;
+      const len = Math.hypot(dx, dy);
+      const y = len > 1 ? cy + (R * dy) / len : py;
+      return Math.max(0, Math.min(1, cur + (y - H / 2) / V));
+    }
+
+    const pad = (n: number) => String(n).padStart(2, '0');
+    function dateAt(t: number) {
+      const dt = new Date(Math.round(dayMin + t * (dayMax - dayMin)) * 86400000);
+      return `${dt.getUTCFullYear()}-${pad(dt.getUTCMonth() + 1)}-${pad(dt.getUTCDate())}`;
+    }
+
+    body.addEventListener('click', (ev) => {
+      if (pickedByDrag) {
+        pickedByDrag = false;
+        return;
+      }
+      const el = ev.target as HTMLElement | null;
+      // 点在时间点/链接/开关/比例尺滑块上：那一下有它自己的意思，别抢
+      if (el?.closest?.('a, button, input, [data-tl-item], [data-tl-track]')) return;
+      const t = paramAt(ev.clientX, ev.clientY);
+      root.dispatchEvent(
+        new CustomEvent('tl:pick', {
+          detail: { id: tlId, param: t, date: dateAt(t) },
+          bubbles: true,
+        })
+      );
+    });
 
     /* ---------------- 手机端：先看信息，再点一次才走 ---------------- */
 
