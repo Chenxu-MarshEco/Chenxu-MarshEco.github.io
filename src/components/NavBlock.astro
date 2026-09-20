@@ -1,0 +1,299 @@
+---
+/**
+ * 导航块：把「导航分类库」里的几个**大分类**铺成一整块导航表。
+ *
+ * 数据在 src/data/navs.json（分类库），页面里只存分类 id 的列表 ——
+ * 所以同一个大分类可以被好几个页面共用，改一次全都跟着变；
+ * 条目里的链接指向哪一页都行（包括"独立页面"那种只能靠链接点进来的）。
+ *
+ * 结构照用户给的两张例图：
+ *   顶上一行「分类：甲 · 乙」   —— 点一下跳到对应那一节
+ *   每个大分类一节，可以整节收起 / 展开（原生 <details>，不引 JS）
+ *   节里一行一个子分类：左边子分类名，右边一串「图标 + 文字」的条目
+ *   条目文字点一下就跳到它填的地址（站内 / 站外都认）
+ *
+ * 折叠用原生 <details>：不写一行 JS 就有"展开 / 收起"，
+ * 键盘（Tab + 回车）和读屏软件也天然认它。
+ */
+import { navCatsFor } from '../utils/navs';
+import { variantUrl } from '../utils/images';
+import { withBase } from '../utils/url';
+
+interface Props {
+  /** 这个块引用哪几个大分类（顺序就是显示顺序） */
+  cats?: string[];
+  /** 顶栏那行字，不写就叫「分类」 */
+  text?: string;
+}
+
+const { cats = [], text } = Astro.props;
+const list = navCatsFor(cats);
+
+/** 站内地址补上 base；站外和锚点原样用 */
+const hrefOf = (href: string) => {
+  const h = String(href).trim();
+  return h.startsWith('http') || h.startsWith('#') || h.startsWith('mailto:') ? h : withBase(h);
+};
+const isExternal = (href: string) => /^https?:/i.test(String(href).trim());
+---
+
+{
+  list.length > 0 && (
+    <section class="navblk">
+      {/* 顶栏：这一页挂了哪几个大分类，点一下跳到那一节 */}
+      <div class="navblk__bar">
+        <span class="navblk__barLabel">{text || '分类'}</span>
+        <span class="navblk__barList">
+          {list.map((cat, i) => (
+            <>
+              {i > 0 && <span class="navblk__barDot">·</span>}
+              <a class="navblk__barLink" href={`#navcat-${cat.id}`}>
+                {cat.title}
+              </a>
+            </>
+          ))}
+        </span>
+      </div>
+
+      {list.map((cat) => (
+        <details class="navblk__cat" id={`navcat-${cat.id}`} data-navcat={cat.id} open>
+          <summary class="navblk__summary">
+            <span class="navblk__catTitle">{cat.title}</span>
+            {/* 收起 / 展开的提示：两个词都写出来，靠 details[open] 决定显示哪个 */}
+            <span class="navblk__fold" aria-hidden="true">
+              <span class="navblk__foldClose">收起</span>
+              <span class="navblk__foldOpen">展开</span>
+            </span>
+          </summary>
+
+          <div class="navblk__body">
+            {cat.note && <p class="navblk__note">{cat.note}</p>}
+            {cat.groups.length === 0 && <p class="navblk__note">（这个分类还没有子分类）</p>}
+            {cat.groups.map((g) => (
+              <div class="navblk__row" data-navgroup={g.id}>
+                <div class="navblk__label">{g.title}</div>
+                <div class="navblk__items">
+                  {g.items.length === 0 && <span class="navblk__empty">（空）</span>}
+                  {g.items.map((it) =>
+                    it.href ? (
+                      <a
+                        class="navblk__item"
+                        href={hrefOf(it.href)}
+                        title={it.tip || it.text}
+                        {...isExternal(it.href) ? { target: '_blank', rel: 'noopener' } : {}}
+                      >
+                        {it.image && (
+                          <img
+                            class="navblk__ico"
+                            src={withBase(variantUrl(it.image, 40))}
+                            alt=""
+                            loading="lazy"
+                            decoding="async"
+                          />
+                        )}
+                        <span class="navblk__text">{it.text}</span>
+                      </a>
+                    ) : (
+                      <span class="navblk__item navblk__item--plain" title={it.tip || it.text}>
+                        {it.image && (
+                          <img
+                            class="navblk__ico"
+                            src={withBase(variantUrl(it.image, 40))}
+                            alt=""
+                            loading="lazy"
+                            decoding="async"
+                          />
+                        )}
+                        <span class="navblk__text">{it.text}</span>
+                      </span>
+                    )
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </details>
+      ))}
+    </section>
+  )
+}
+
+<style>
+  /*
+    一块导航表。配色跟着站点走（粉底 + 落日色强调），不照搬例图那个维基蓝 ——
+    例图给的是**结构**：顶栏分类索引、可折叠的大分类、一行一个子分类、
+    条目是「小图标 + 文字」、点文字跳转。这些都在，皮还是花涧堂自己的。
+  */
+  .navblk {
+    margin: 1.4rem 0;
+    border: 1px solid var(--c-border);
+    border-radius: var(--r-lg);
+    background: var(--c-bg-raised);
+    overflow: hidden;
+  }
+
+  /* ---------- 顶栏：分类索引 ---------- */
+  .navblk__bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.35rem;
+    padding: 0.45rem 0.8rem;
+    border-bottom: 1px solid var(--c-border);
+    background: var(--c-bg-sunken);
+    font-size: 0.82rem;
+    color: var(--c-text-muted);
+  }
+  .navblk__barLabel {
+    color: var(--c-accent);
+    letter-spacing: 0.06em;
+  }
+  .navblk__barLink {
+    color: var(--c-text);
+    text-decoration: none;
+    border-bottom: 1px dotted var(--c-border-strong);
+  }
+  .navblk__barLink:hover {
+    color: var(--c-accent);
+    border-bottom-color: var(--c-accent);
+  }
+  .navblk__barDot {
+    opacity: 0.55;
+    margin: 0 0.1rem;
+  }
+
+  /* ---------- 大分类（可折叠） ---------- */
+  .navblk__cat + .navblk__cat {
+    border-top: 1px solid var(--c-border);
+  }
+  .navblk__summary {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 0.8rem;
+    cursor: pointer;
+    list-style: none;
+    background: var(--c-bg-sunken);
+    font-size: 0.92rem;
+    color: var(--c-text);
+  }
+  /* 收起浏览器默认那个三角，自己画一个跟着开合转 */
+  .navblk__summary::-webkit-details-marker {
+    display: none;
+  }
+  .navblk__summary::before {
+    content: '▾';
+    display: inline-block;
+    color: var(--c-accent);
+    transition: rotate var(--t-fast) var(--ease);
+  }
+  .navblk__cat:not([open]) .navblk__summary::before {
+    rotate: -90deg;
+  }
+  .navblk__summary:hover {
+    background: var(--c-accent-soft);
+  }
+  .navblk__summary:focus-visible {
+    outline: 2px solid var(--c-accent);
+    outline-offset: -2px;
+  }
+  .navblk__catTitle {
+    letter-spacing: 0.08em;
+  }
+  .navblk__fold {
+    margin-left: auto;
+    font-size: 0.74rem;
+    color: var(--c-text-faint);
+  }
+  .navblk__foldOpen {
+    display: none;
+  }
+  .navblk__cat:not([open]) .navblk__foldClose {
+    display: none;
+  }
+  .navblk__cat:not([open]) .navblk__foldOpen {
+    display: inline;
+  }
+
+  /* ---------- 子分类一行 ---------- */
+  .navblk__body {
+    padding: 0.5rem 0.8rem 0.7rem;
+  }
+  .navblk__note {
+    margin: 0 0 0.45rem;
+    font-size: 0.82rem;
+    color: var(--c-text-muted);
+  }
+  .navblk__row {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.6rem;
+    padding: 0.3rem 0;
+  }
+  .navblk__row + .navblk__row {
+    border-top: 1px dashed var(--c-border);
+  }
+  .navblk__label {
+    flex: none;
+    width: 8.5rem;
+    font-size: 0.82rem;
+    line-height: 1.7;
+    color: var(--c-accent);
+    letter-spacing: 0.04em;
+  }
+  .navblk__items {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.25rem 0.15rem;
+  }
+  .navblk__empty {
+    font-size: 0.8rem;
+    color: var(--c-text-faint);
+  }
+
+  /* ---------- 条目：图标 + 文字 ---------- */
+  .navblk__item {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.22rem;
+    padding: 0.12rem 0.4rem 0.12rem 0.2rem;
+    border-radius: var(--r-sm);
+    font-size: 0.86rem;
+    line-height: 1.6;
+    color: var(--c-text);
+    text-decoration: none;
+    transition: background var(--t-fast) var(--ease);
+  }
+  a.navblk__item:hover {
+    background: var(--c-accent-soft);
+    color: var(--c-accent);
+  }
+  .navblk__item--plain {
+    color: var(--c-text-muted);
+  }
+  .navblk__ico {
+    width: 18px;
+    height: 18px;
+    flex: none;
+    object-fit: contain;
+    image-rendering: -webkit-optimize-contrast;
+  }
+  .navblk__text {
+    white-space: nowrap;
+  }
+
+  /* 窄屏：子分类名单独占一行，别把条目挤成一条线 */
+  @media (max-width: 34rem) {
+    .navblk__row {
+      flex-direction: column;
+      gap: 0.15rem;
+    }
+    .navblk__label {
+      width: auto;
+      line-height: 1.5;
+    }
+  }
+</style>

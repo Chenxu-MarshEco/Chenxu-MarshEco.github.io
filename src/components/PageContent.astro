@@ -24,6 +24,7 @@
 import { marked } from 'marked';
 import Img from './Img.astro';
 import SubCard from './SubCard.astro';
+import NavBlock from './NavBlock.astro';
 import { withBase } from '../utils/url';
 import { enhanceHtml } from '../utils/images';
 import type { BlockItem, SubPost } from '../utils/boardPage';
@@ -633,6 +634,9 @@ const cardsOf = (b: Extract<PageBlock, { type: 'children' }>) => ({
               ))}
             </div>
           )}
+
+          {/* 导航表：引用「导航分类库」里的几个大分类（分类本身在编辑器里建、可被多页共用） */}
+          {b.type === 'nav' && <NavBlock cats={b.cats} text={b.text} />}
         </div>
       );
     })

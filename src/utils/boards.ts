@@ -73,6 +73,16 @@ export type PageBlock = (
    * cardShape / cardSize（见 BoardNode），单个永远压过整块。
    */
   | { id: string; type: 'children'; shape?: CardShape; size?: CardSize }
+  /**
+   * 导航表：把「导航分类库」（`src/data/navs.json`）里的几个**大分类**铺成一块。
+   *
+   * 只存分类 id，不存条目内容 —— 和时间轴一个道理：分类先建一次，
+   * 页面里只是引用它。所以同一个大分类能被好几个页面共用，
+   * 之后往分类里加条目、改链接，所有引用它的页面一起变。
+   * `cats` 的顺序就是页面上显示的顺序（同一个分类在不同页面可以排在不同位置）。
+   * `text` 是顶栏那行字，不写就叫「分类」。
+   */
+  | { id: string; type: 'nav'; cats: string[]; text?: string }
 ) &
   TimeFields;
 
