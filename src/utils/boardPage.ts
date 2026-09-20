@@ -6,7 +6,7 @@
  */
 import { getNotes, getPosts } from './content';
 import { toISODate } from './date';
-import { flattenBoards, type BoardNode, type FlatNode, type PageBlock } from './boards';
+import { flattenBoards, visibleChildren, type BoardNode, type FlatNode, type PageBlock } from './boards';
 import site from '../site.config';
 
 export interface SubPost {
@@ -133,7 +133,7 @@ export async function nodePageData(url: string): Promise<NodePageData | null> {
     parent: parentNode
       ? { title: parentNode.title, url: all.find((x) => x.node === parentNode)?.url ?? '/' }
       : null,
-    children: (flat.node.children ?? []).map((c) => {
+    children: visibleChildren(flat.node).map((c) => {
       const cf = all.find((x) => x.node === c);
       return {
         id: c.id,
@@ -149,7 +149,7 @@ export async function nodePageData(url: string): Promise<NodePageData | null> {
         timePoint: c.timePoint,
         timeSpan: c.timeSpan,
         url: cf?.url ?? '/',
-        kids: (c.children ?? []).map((g) => {
+        kids: visibleChildren(c).map((g) => {
           const gf = all.find((x) => x.node === g);
           return {
             id: g.id,

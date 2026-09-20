@@ -239,6 +239,19 @@ export interface BoardNode {
    */
   link?: string;
   /**
+   * **独立页面**：不挂在任何版块下面，站内的目录树 / 首页卡片 / 任何"子版块"
+   * 列表里都不会出现它 —— 只能靠别处给它挂的那个链接点进来
+   * （正文里的链接、时间轴上某个点的跳转地址、地图图钉…都行）。
+   *
+   * 为什么这么设计：文章那套（frontmatter + 列表页）管得太多，写一页"就放在那儿
+   * 给人看"的东西不如直接建页面；但普通页面必须挂在某个版块下才生得出来，
+   * 于是给它一个 `standalone: true`：**页面照旧生成**（地址还是推导出来的
+   * `/<id>`），只是**不被任何列表收录**。
+   *
+   * 只写在**顶层**（`boards` 数组里）才有意义 —— 树里看不见的子树等于不存在。
+   */
+  standalone?: boolean;
+  /**
    * 这一页用哪条时间轴（`src/data/timelines.json` 里的 id）。
    *
    * 放在页面上而不是时间轴上，是因为「哪些页共用一条轴」是页面的属性：
@@ -354,9 +367,32 @@ export function findByUrl(boards: BoardNode[], url: string): FlatNode | undefine
 }
 
 /** 顶层大板块（首页那两块） */
-export function topBoards(boards: BoardNode[]): BoardNode[] {
-  return boards;
-}
+export const topBoards = (boards: BoardNode[]): BoardNode[] => boards;
+
+/**
+ * 这一页是不是「独立页面」（不挂在任何版块下面、只能靠链接点进来）。
+ * 见 `BoardNode.standalone` 的注释。
+ */
+export const isStandalone = (node: { standalone?: boolean } | null | undefined): boolean =>
+  node?.standalone === true;
+
+/**
+ * 能出现在首页卡片 / 目录树里的顶层板块。
+ *
+ * **独立页面必须从这里滤掉**：它们和两大板块平级躺在 `boards` 数组里
+ * （那是为了借用同一套地址推导与页面生成），但按定义不该被任何列表收录。
+ */
+export const visibleBoards = (boards: readonly BoardNode[]): BoardNode[] =>
+  boards.filter((b) => !isStandalone(b));
+
+/**
+ * 一个节点下**可见的**子版块。
+ *
+ * 独立页面不会挂在别人底下（编辑器也只允许它待在顶层），所以这里过滤的是
+ * "万一有人手改了数据" 的情况：挂了也不显示，免得它偷偷冒出来。
+ */
+export const visibleChildren = (node: BoardNode | null | undefined): BoardNode[] =>
+  (node?.children ?? []).filter((c) => !isStandalone(c));
 
 /** 面包屑的一项。最后一项不带 url，表示「当前所在」 */
 export interface Crumb {

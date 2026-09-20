@@ -17,7 +17,7 @@
  * 站里其他页面都是纯静态的，为这一个抽屉引入运行时依赖不划算。
  */
 import site from '../site.config';
-import { flattenBoards, type BoardNode } from '../utils/boards';
+import { flattenBoards, visibleBoards, visibleChildren, type BoardNode } from '../utils/boards';
 import { withBase } from '../utils/url';
 
 interface Props {
@@ -37,7 +37,8 @@ const onPath = new Set(
 );
 
 // 只把顶层大板块交给前端；子层在 HTML 里一次性铺好，用 hidden 控制显隐。
-const boards = site.homeBoards as BoardNode[];
+// 独立页面（standalone）不进目录树 —— 它们只能靠别处挂的链接点进去。
+const boards = visibleBoards(site.homeBoards as BoardNode[]);
 
 const urlOf = (id: string) => all.find((f) => f.node.id === id)?.url ?? '/';
 /** 这一项是不是链接版块（点了跳外链，站里没有它的页面） */
@@ -57,7 +58,8 @@ function renderNodes(nodes: BoardNode[]): string {
     .map((node) => {
       const url = urlOf(node.id);
       const ext = isExternal(node.id);
-      const kids = node.children ?? [];
+      // 子层同样滤掉独立页面（数据被手改时也不会冒出来）
+      const kids = visibleChildren(node);
       const open = onPath.has(node.id);
       const caret = kids.length
         ? `<button type="button" class="tree__caret${open ? ' is-open' : ''}" data-toggle="${esc(node.id)}" aria-label="展开 ${esc(node.title)}" aria-expanded="${open}">▸</button>`

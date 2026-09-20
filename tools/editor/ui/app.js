@@ -76,6 +76,7 @@ const els = {
   pagesTitle: $('pages-title'),
   pwSearch: $('pw-search'),
   pwList: $('pw-list'),
+  pwSolo: $('pw-standalone'),
   pwFields: $('pw-fields'),
   pwKids: $('pw-kids'),
   pwAddKid: $('pw-addkid'),
@@ -1243,8 +1244,7 @@ async function openPagesView(node = null) {
     /* 忽略：没有时间轴照样能改页面 */
   }
 
-  const all = studioPages();
-  const want = node || studioNode || all[0]?.node || null;
+  const want = node || studioNode || pickDefaultPage();
   selectStudioPage(want);
 }
 
@@ -1281,6 +1281,16 @@ function studioPages() {
 }
 
 /**
+ * 打开工作台时默认选哪一页。
+ * 优先普通页面：独立页面不挂在任何板块下，不该抢这个「默认打开」的位置
+ * （真要编辑它，左栏下面那一节点一下就到了）。
+ */
+function pickDefaultPage() {
+  const all = studioPages();
+  return (all.find((f) => f.node.standalone !== true) ?? all[0])?.node ?? null;
+}
+
+/**
  * 站内链接能不能落到一个真页面上。
  *
  * 只查 `/开头` 的：站外地址这边没联网查不了；带扩展名的（.pdf/.png…）
@@ -1311,6 +1321,7 @@ function renderPageStudio() {
   if (!studioNode) return;
   els.pagesTitle.textContent = `页面 · ${studioNode.title || studioNode.id || '未命名'}`;
   renderStudioTree();
+  renderStudioStandalone();
   renderStudioFields();
   renderPageEditor();
   renderStudioKids();
@@ -1322,7 +1333,11 @@ function renderStudioTree() {
   const box = els.pwList;
   box.textContent = '';
 
-  const all = studioPages();
+  /*
+    独立页面**不在**这棵树里：它们不挂在任何板块下，
+    在这棵树里出现只会让人以为「它属于哪个板块」。下面单独一栏管它们。
+  */
+  const all = studioPages().filter((f) => f.node.standalone !== true);
   const kw = studioSearch.trim().toLowerCase();
   const shown = kw
     ? all.filter((f) => (f.node.title || '').toLowerCase().includes(kw) || f.url.toLowerCase().includes(kw))
@@ -1357,6 +1372,272 @@ function renderStudioTree() {
     li.appendChild(btn);
     box.appendChild(li);
   }
+}
+
+/* ---------- 左栏（下）：独立页面 ----------
+
+   用户要的是「写文章限制太多，不如直接写页面」，但页面一直以来
+   必须挂在某个板块下才建得出来。独立页面就是解这个的：
+
+   · 数据上是 `home-boards.json` 里一个**顶层节点** + `standalone: true`；
+   · 页面照常生成，地址还是 `/<id>/`（href 可以覆盖）；
+   · 但它**不被任何列表收录** —— 首页那两张卡片、右上角目录树、
+     任何页面的子版块列表、sitemap 都没有它；
+   · 所以它只能靠别处挂的链接点进来（正文链接 / 地图图钉 / 时间轴跳转地址），
+     于是「地址好拿、好复制」就是这一节最要紧的事。
+
+   左栏那棵树里**不放**它们（不在任何板块下），这里也**不放**普通板块。
+   --------------------------------------------------------------- */
+
+/** 独立页面：顶层、`standalone === true` 的那些节点 */
+const standaloneBoards = () => (boardsDraft?.boards ?? []).filter((b) => b && b.standalone === true);
+
+/** 整份数据里用过的所有 id（板块、子版块、独立页面共用同一层命名空间） */
+function allBoardIds() {
+  const ids = new Set();
+  const walk = (list) => {
+    for (const n of list ?? []) {
+      if (n?.id) ids.add(String(n.id));
+      walk(n?.children);
+    }
+  };
+  walk(boardsDraft?.boards);
+  return ids;
+}
+
+/** 名字 → 能当地址用的 id 片段（只留小写字母、数字、横杠；中文之类留不下就给空串） */
+const slugifyId = (s) =>
+  String(s ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/[\s_]+/g, '-')
+    .replace(/[^a-z0-9-]/g, '')
+    .replace(/-+/g, '-')
+    .replace(/^-+|-+$/g, '');
+
+/**
+ * 给新建的独立页面起个 id。
+ * 名字是英文/数字就拿它当 id（地址 /about/ 又短又好记），中文之类留不下
+ * 就退回一个短的随机 id；两条路都保证**全文件唯一**。
+ *
+ * 注意：id 只在建的这一刻定，之后**改名不改 id** —— 地址一变，
+ * 别处已经粘好的链接就全断了（和板块那套「不用标题当 id」一个道理）。
+ */
+function newStandaloneId(title) {
+  const used = allBoardIds();
+  const base = slugifyId(title) || `page-${Date.now().toString(36)}`;
+  if (!used.has(base)) return base;
+  let n = 2;
+  while (used.has(`${base}-${n}`)) n += 1;
+  return `${base}-${n}`;
+}
+
+/** 某个节点（草稿里）现在的站内地址，带尾斜杠 */
+function nodeUrl(node) {
+  const f = flattenBoardNodes().find((x) => x.node === node);
+  const url = f?.url || `/${node?.id ?? ''}`;
+  return url.endsWith('/') ? url : `${url}/`;
+}
+
+/**
+ * 把一段字复制进剪贴板。
+ *
+ * `navigator.clipboard` 在 `http://127.0.0.1` 上算安全上下文，一般能用；
+ * 用不了（浏览器不给权限、页面没焦点、老浏览器）就**把那段字选中**，
+ * 让人自己按 Ctrl+C —— 地址复制不了就等于白显示，总得留条路。
+ */
+function copyText(text, el) {
+  const fallback = () => {
+    try {
+      const sel = window.getSelection();
+      const range = document.createRange();
+      range.selectNodeContents(el);
+      sel.removeAllRanges();
+      sel.addRange(range);
+      toast(`剪贴板用不了（浏览器不让），地址已经选中了，按 Ctrl+C：${text}`, true);
+    } catch {
+      toast(`复制失败，地址在这儿：${text}`, true);
+    }
+  };
+  let p = null;
+  try {
+    if (navigator.clipboard?.writeText) p = navigator.clipboard.writeText(text);
+  } catch {
+    p = null;
+  }
+  if (p && typeof p.then === 'function') {
+    p.then(() => toast(`地址已复制：${text}`), fallback);
+    return;
+  }
+  fallback();
+}
+
+/** 一行独立页面：改名 / 改地址 / 编辑 / 删除 / 显示地址 + 一键复制 */
+function standaloneRow(node) {
+  const row = document.createElement('div');
+  row.className = 'pw-solo__item';
+  row.dataset.soloId = node.id;
+  if (node === studioNode) row.classList.add('is-active');
+
+  /* 第一行：名字 + 编辑 / 删除 */
+  const top = document.createElement('div');
+  top.className = 'pw-solo__top';
+
+  const name = boardInput(node.title ?? '', '这一页叫什么', (v) => {
+    node.title = v;
+    markStudioDirty();
+    if (node === studioNode) els.pagesTitle.textContent = `页面 · ${v || node.id || '未命名'}`;
+  });
+  name.classList.add('pw-solo__name');
+
+  const open = document.createElement('button');
+  open.type = 'button';
+  open.className = 'btn btn--ghost boardedit__mini pw-solo__open';
+  open.textContent = '编辑这一页 ›';
+  open.title = '切到它自己的页面继续改（十种内容块、上传图片、时间轴、版式全都照旧）';
+  open.addEventListener('click', () => selectStudioPage(node));
+
+  const del = document.createElement('button');
+  del.type = 'button';
+  del.className = 'btn btn--ghost boardedit__mini boardedit__del pw-solo__del';
+  del.textContent = '删除';
+  del.title = (node.children ?? []).length
+    ? '会连同它下面的子版块一起删掉'
+    : '删掉这一页（别处链到它的链接会变成 404）';
+  del.addEventListener('click', () => {
+    if ((node.children ?? []).length
+      && !confirm(`「${node.title || node.id}」下面还有 ${node.children.length} 个子版块，一起删掉吗？`)) {
+      return;
+    }
+    const i = boardsDraft.boards.indexOf(node);
+    if (i >= 0) boardsDraft.boards.splice(i, 1);
+    markStudioDirty();
+    if (node === studioNode) {
+      const next = pickDefaultPage();
+      if (next) selectStudioPage(next);
+      else {
+        renderStudioStandalone();
+        renderStudioTree();
+      }
+    } else {
+      renderStudioStandalone();
+      renderStudioTree();
+    }
+  });
+
+  top.append(name, open, del);
+
+  /* 第二行：地址（可以手写覆盖）+ 现在的站内地址 + 一键复制 */
+  const urlText = document.createElement('code');
+  urlText.className = 'pw-solo__url';
+  const syncUrl = () => {
+    urlText.textContent = nodeUrl(node);
+  };
+
+  const addr = boardInput(node.href ?? '', '地址（留空 = 按 id 自动生成）', (v) => {
+    node.href = v.trim();
+    markStudioDirty();
+    syncUrl();
+  });
+  addr.classList.add('pw-solo__href');
+  addr.title = '想换地址就在这儿手写（比如 /about）；留空就按 id 自动生成';
+  syncUrl();
+
+  const copy = document.createElement('button');
+  copy.type = 'button';
+  copy.className = 'btn btn--ghost boardedit__mini pw-solo__copy';
+  copy.textContent = '复制地址';
+  copy.title = '复制这个站内地址，粘到正文链接 / 地图图钉 / 时间轴的跳转地址里';
+  copy.addEventListener('click', () => copyText(nodeUrl(node), urlText));
+
+  const addrRow = document.createElement('div');
+  addrRow.className = 'pw-solo__addr';
+  const addrCap = document.createElement('span');
+  addrCap.className = 'pw-solo__addrlabel';
+  addrCap.textContent = '站内地址';
+  addrRow.append(addrCap, urlText, copy, addr);
+
+  const tip = document.createElement('p');
+  tip.className = 'hint pw-solo__tip';
+  tip.textContent = '把上面这个地址粘到正文链接 / 地图图钉 / 时间轴的「跳转地址」里，点一下就能进这一页。';
+
+  row.append(top, addrRow, tip);
+  return row;
+}
+
+function renderStudioStandalone() {
+  const box = els.pwSolo;
+  if (!box) return;
+  box.textContent = '';
+  const solos = standaloneBoards();
+
+  const head = document.createElement('div');
+  head.className = 'pw-solo__head';
+  const title = document.createElement('span');
+  title.className = 'pw-solo__title';
+  title.textContent = '独立页面';
+  const count = document.createElement('em');
+  count.className = 'pw-solo__count';
+  count.textContent = solos.length ? `${solos.length} 个` : '';
+  head.append(title, count);
+  box.appendChild(head);
+
+  const hint = document.createElement('p');
+  hint.className = 'hint pw-solo__hint';
+  hint.textContent =
+    '不显示在任何板块下：首页卡片、右上角目录树、别人的子版块列表、sitemap 里都没有它，页面本身照常生成。只能靠你在别处挂的链接点进来。';
+  box.appendChild(hint);
+
+  /* 新建：填个名字就建一条，建完立刻选中、名字接着就能改 */
+  const newRow = document.createElement('div');
+  newRow.className = 'pw-solo__new';
+  const nameIn = document.createElement('input');
+  nameIn.type = 'text';
+  nameIn.className = 'input input--sm pw-solo__newname';
+  nameIn.placeholder = '新页面叫什么？（比如 about）';
+  nameIn.autocomplete = 'off';
+  nameIn.title =
+    '填个名字就能建一条独立页面。名字是英文/数字的话会直接拿来当地址（/about/），中文会自动给个短 id，之后想换好看的地址就在下面「地址」里手写。';
+  const addBtn = document.createElement('button');
+  addBtn.type = 'button';
+  addBtn.className = 'btn btn--ghost boardedit__mini pw-solo__add';
+  addBtn.textContent = '＋ 新建独立页面';
+  const create = () => {
+    const wanted = nameIn.value.trim();
+    const pageTitle = wanted || '新独立页面';
+    const node = { id: newStandaloneId(pageTitle), title: pageTitle, standalone: true, page: [] };
+    // 放到最前面：刚建的在最上面，一眼看到
+    boardsDraft.boards.unshift(node);
+    nameIn.value = '';
+    markStudioDirty();
+    selectStudioPage(node); // 顺带把左栏、这一节、右栏预览整屏重画
+    // 名字选中，接着敲字就是改名
+    const rowName = els.pwSolo?.querySelector(`.pw-solo__item[data-solo-id="${node.id}"] .pw-solo__name`);
+    rowName?.focus();
+    rowName?.select?.();
+  };
+  addBtn.addEventListener('click', create);
+  nameIn.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Enter') {
+      ev.preventDefault();
+      create();
+    }
+  });
+  newRow.append(nameIn, addBtn);
+  box.appendChild(newRow);
+
+  if (!solos.length) {
+    const none = document.createElement('p');
+    none.className = 'hint pw-solo__empty';
+    none.textContent = '还没有独立页面。上面填个名字、点「＋ 新建独立页面」就有了。';
+    box.appendChild(none);
+    return;
+  }
+
+  const list = document.createElement('div');
+  list.className = 'pw-solo__list';
+  for (const node of solos) list.appendChild(standaloneRow(node));
+  box.appendChild(list);
 }
 
 /* ---------- 中栏（上）：这一页自己的字段 ---------- */
@@ -3039,7 +3320,8 @@ function renderBoardsEditor() {
 
     const head = document.createElement('div');
     head.className = 'boardedit__head';
-    head.textContent = `大板块　${board.id}`;
+    // 独立页面也在这份数据里（顶层节点），但别让人以为它是「大板块」
+    head.textContent = board.standalone === true ? `独立页面　${board.id}` : `大板块　${board.id}`;
     box.appendChild(head);
 
     // 大板块自己的三个字段。以前这里只显示一行只读文字，名字和地址都改不了。
@@ -3113,6 +3395,28 @@ function renderBoardsEditor() {
 let timelinesDraft = null;
 /** 当前在看第几条轴 */
 let tlIndex = 0;
+/**
+ * 「难考据」的时间点 → 表单里那个位置读数（含数字微调框）的刷新函数。
+ * 预览里拖着塔吊改位置时，左边那一行得跟着变 —— 但表单和预览是分开画的，
+ * 所以用一个表把刷新函数挂上来（每次重建表单时清空）。
+ */
+const tlFuzzyReadouts = new Map();
+/**
+ * 时间点 id → 它切到「难考据」之前填的那个日期（可能是哨兵 `today`）。
+ *
+ * 难考据的点**没有日期**，切过去时数据里的 `date` 要删掉；
+ * 但用户之前填的那个日期不能就这么没了 —— 切回「时刻 / 事件」时
+ * 原样还给他，不然就是白填一遍。
+ */
+const tlDateMemo = new Map();
+/**
+ * 表单里「默认比例尺」那一格的**读数**刷新函数。
+ * 它显示的是「一刻度 ≈ N 天 · 整条轴约几格 · 建议值」，
+ * 而这几样都跟跨度有关 —— 用户改了日期、加了点，读数也得跟着变，
+ * 但那时候表单不会重建，所以把刷新函数挂在这儿，由 `scheduleTlPreview` 顺手调一下。
+ * 只刷读数字，**不碰输入框里的字**（免得跟正在打字的人打架）。
+ */
+let tlScaleHintSync = null;
 
 async function loadTimelines() {
   if (timelinesDraft) return timelinesDraft;
@@ -3162,10 +3466,17 @@ function timeSelect(get, set) {
     if (tl.points.length) {
       const g = document.createElement('optgroup');
       g.label = '时间点';
-      for (const p of [...tl.points].sort((a, b) => String(a.date).localeCompare(String(b.date)))) {
+      // 难考据的点没有日期，排到最后（它们的时间先后是看不出来的）
+      const byDate = (a, b) => {
+        const fa = tlPointKind(a) === 'fuzzy' ? 1 : 0;
+        const fb = tlPointKind(b) === 'fuzzy' ? 1 : 0;
+        if (fa !== fb) return fa - fb;
+        return String(a.date ?? '').localeCompare(String(b.date ?? ''));
+      };
+      for (const p of [...tl.points].sort(byDate)) {
         const o = document.createElement('option');
         o.value = `p:${p.id}`;
-        o.textContent = `${p.date}　${p.label}`;
+        o.textContent = `${tlDateText(p)}　${p.label}`;
         g.appendChild(o);
       }
       sel.appendChild(g);
@@ -3290,6 +3601,10 @@ function isoToday() {
  * 每天跟着变。所以活着的这段时间里日期框是禁用的，只留一个「每天自动（今天）」的占位。
  * 关掉时把**之前填过的那个日期**还给他；要是本来就没填过，就用今天兜底 ——
  * 否则这个点会变成「没有日期」，存盘时会被服务端丢掉。
+ *
+ * `opts.onReady({ set })` 会把一个「从外面写值」的口子交出来：
+ * 时间点切成「难以考据」时整个日期控件被收起来，切回来时得把之前那个日期
+ * 原样塞回去（连「实时」开关的状态一起），光改 input.value 是对不上的。
  */
 function dateField(value, onInput, opts = {}) {
   const live = opts.live === true;
@@ -3441,6 +3756,33 @@ function dateField(value, onInput, opts = {}) {
     }
   });
 
+  /*
+    给外面一个「从别处写值」的口子（时间点那边切类型时要用）：
+    切成「难以考据」时日期框被收起来，切回来得把之前那个日期塞回去 ——
+    直接改 el.value 是不行的，「实时」开关的状态、内部的 lastDate 都会对不上。
+  */
+  opts.onReady?.({
+    /** 塞一个日期（或 `today` 哨兵）进去，框里的字和「实时」开关一起同步 */
+    set(next) {
+      const on = String(next ?? '').trim() === 'today';
+      liveBtn.setAttribute('aria-pressed', on ? 'true' : 'false');
+      el.disabled = on;
+      btn.disabled = on;
+      el.classList.remove('is-bad');
+      if (on) {
+        lastDate = '';
+        el.value = '';
+        el.placeholder = '每天自动（今天）';
+      } else {
+        lastDate = String(next ?? '');
+        el.value = lastDate;
+        lastLen = lastDate.length;
+        el.placeholder = '20230110';
+        cal.value = /^\d{4}-\d{2}-\d{2}$/.test(lastDate) ? lastDate : '';
+      }
+    },
+  });
+
   wrap.append(el, btn, liveBtn, cal);
   return wrap;
 }
@@ -3534,8 +3876,89 @@ function tlDay(date) {
   return Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])) / 86400000;
 }
 
-/** 显示用的日期文案：实时点说人话，别把哨兵字符串露出去 */
-const tlDateText = (p) => (p?.date === 'today' ? '今天（实时）' : p?.date || '（没填日期）');
+/**
+ * 这个时间点是哪一类：`moment`（时刻）/ `event`（事件）/ `fuzzy`（难以考据）。
+ * 没写 kind 的老数据一律当「时刻」—— 和 src/utils/timelines.ts 的 pointKind 一致。
+ */
+const tlPointKind = (p) =>
+  p?.kind === 'event' ? 'event' : p?.kind === 'fuzzy' ? 'fuzzy' : 'moment';
+
+/**
+ * 「难以考据」那个点的位置，0（最早）~ 1（最晚）。
+ * 没写或者写坏了都给 0.5 —— 和服务端清洗、站点 pointParam 一个规矩。
+ */
+function tlFuzzyAt(p) {
+  const n = Number(p?.at);
+  return Number.isFinite(n) ? Math.min(1, Math.max(0, n)) : 0.5;
+}
+
+/** `at` 存进数据前收一下：最多 4 位小数（和服务端一致） */
+const tlRound4 = (n) => Math.round(n * 10000) / 10000;
+
+/** 位置读数，比如 `62.3%` */
+const tlAtText = (p) => `${(tlFuzzyAt(p) * 100).toFixed(1)}%`;
+
+/**
+ * 没填 `tickDays` 时用的默认比例尺（一刻度多少天）。
+ *
+ * 就是页面上那根滑块的默认位置（最左 1 天/格、最右 365 天/格，
+ * 打开时停在正中间）：`1 * (365/1)^0.5 ≈ 19.1` 天/格。
+ * 这里**不写成 19** —— 公式算出来是多少就是多少，老数据看到的
+ * 疏密才和加这个字段之前一模一样。
+ */
+const TL_TICK_FALLBACK = TL_PV.MIN_DAYS * Math.pow(TL_PV.MAX_DAYS / TL_PV.MIN_DAYS, TL_PV.SCALE);
+
+/**
+ * 这条时间轴用的一刻度天数。
+ *
+ * 数据里写了合法的 `tickDays` 就用它，没写（或写了坏值 —— 服务端会丢掉）
+ * 就回到默认那个。`custom` 是用来区分「作者真的填了」和「用的是默认」的：
+ * 只影响读数怎么写，不影响画。
+ */
+function tlTick(tl) {
+  const n = Number(tl?.tickDays);
+  const ok = Number.isFinite(n) && n >= TL_PV.MIN_DAYS && n <= TL_PV.MAX_DAYS;
+  return ok ? { days: n, custom: true } : { days: TL_TICK_FALLBACK, custom: false };
+}
+
+/**
+ * 「一刻度 ≈ N 天」里的那个 N。
+ * 默认那个按老样子取整（19 天），自己填的写到两位小数（2.5 / 1.08）——
+ * 取整会把 2.5 说成 3 天，那就等于骗人了。
+ */
+const tlDaysText = (tick) =>
+  String(tick.custom ? Math.round(tick.days * 100) / 100 : Math.round(tick.days));
+
+/**
+ * 这条轴上有日期的点跨了多少天（难考据的点没日期，不参与）。
+ * 用来给「整条轴大约几格」和「建议比例尺」做参考；算不出来给 0。
+ */
+function tlSpanDays(tl) {
+  const days = (tl?.points ?? []).map((p) => tlDay(p.date)).filter((d) => Number.isFinite(d));
+  if (days.length < 2) return 0;
+  return Math.max(...days) - Math.min(...days);
+}
+
+/**
+ * 按跨度给个建议的一刻度天数：让整条轴大约 24 格格完。
+ * 只是**建议** —— 编辑器不会自己改用户填的值，要点按钮才填进去。
+ */
+function tlSuggestTickDays(spanDays) {
+  if (!(spanDays > 0)) return null;
+  const n = Math.round((spanDays / 24) * 100) / 100;
+  return Math.min(TL_PV.MAX_DAYS, Math.max(TL_PV.MIN_DAYS, n));
+}
+
+/**
+ * 显示用的日期文案：实时点说人话，别把哨兵字符串露出去。
+ * 难考据的点没有日期，就明说「难考据」—— 时间段那两个下拉里也靠它认出来。
+ */
+const tlDateText = (p) =>
+  tlPointKind(p) === 'fuzzy'
+    ? '（难考据）'
+    : p?.date === 'today'
+      ? '今天（实时）'
+      : p?.date || '（没填日期）';
 
 /**
  * 给同一侧的时间段分层：时间上有重叠的排到不同的层。
@@ -3592,8 +4015,78 @@ function scheduleTlPreview() {
   tlPreviewQueued = true;
   requestAnimationFrame(() => {
     tlPreviewQueued = false;
+    // 改日期/增删点都会让跨度变，比例尺那一格的「约几格 / 建议值」得跟着刷
+    tlScaleHintSync?.();
     const host = els.tlEditor?.querySelector('.tl-pv');
     if (host instanceof HTMLElement) paintTimelinePreview(host);
+  });
+}
+
+/**
+ * 让预览里那个「难考据」塔吊能被鼠标 / 手指拖着走。
+ *
+ * 拖动改的是**草稿数据**里这个点的 `at`（0 = 最早，1 = 最晚，和站点一致），
+ * 吸附到 1%；松开就结束。只动这一个点，别的点一个不碰，
+ * 存盘还是走原来那个「保存并重新构建」。
+ *
+ * 拖的过程中**不重画整块预览**：整块重画会把这个正在被拖的元素从 DOM 里摘掉，
+ * `setPointerCapture` 当场失效，后面的事件就再也收不到了。
+ * 所以只就地挪这一个点，松手之后再整体重画一次（合并、文字错开跟着更新）。
+ */
+function attachFuzzyDrag(crane, item, p, side, inner, V, arcX, craneRot) {
+  const clampY = (y) => (y < 0 ? 0 : y > V ? V : y);
+
+  /** 位置写进草稿，并同步左边表单里那个读数 / 数字框 */
+  const apply = (at) => {
+    p.at = tlRound4(at);
+    tlFuzzyReadouts.get(p.id)?.();
+  };
+
+  crane.addEventListener('pointerdown', (ev) => {
+    if (ev.button !== undefined && ev.button !== 0) return; // 只接左键 / 触摸
+    ev.preventDefault(); // 别顺手选中文字、别触发别的交互
+    ev.stopPropagation();
+    // 指针捕获：手指划出预览区、鼠标拖到窗口外面也还收得到事件
+    try {
+      crane.setPointerCapture(ev.pointerId);
+    } catch {
+      /* 环境不支持就算了，事件本来也挂在塔吊自己身上 */
+    }
+    crane.classList.add('is-dragging');
+
+    // 轴那一块的坐标原点：拿它把 clientY 换成轴上的 y
+    const top = inner.getBoundingClientRect().top;
+
+    const move = (e) => {
+      e.preventDefault();
+      const y = clampY(e.clientY - top);
+      // 吸附到 1%，免得存下一堆 0.6234712 这种数
+      apply(Math.round((y / V) * 100) / 100);
+      // 只挪这一个点：位置、塔吊朝向、（读数由 apply 里刷）
+      const py = tlFuzzyAt(p) * V;
+      item.style.top = `${py}px`;
+      item.style.left = `${arcX(py)}px`;
+      crane.style.transform = `rotate(${craneRot(arcX(py), py, side)}rad)`;
+    };
+
+    const end = (e) => {
+      crane.removeEventListener('pointermove', move);
+      crane.removeEventListener('pointerup', end);
+      crane.removeEventListener('pointercancel', end);
+      crane.classList.remove('is-dragging');
+      try {
+        crane.releasePointerCapture(e.pointerId);
+      } catch {
+        /* 上面没捕获成功时这里也会抛，无视 */
+      }
+      crane.title = `按住往上 / 往下拖，改这个「难考据」时间点在轴上的位置（现在 ${tlAtText(p)}）`;
+      // 松手之后整块重画：合并、文字错开、时间段让位都跟着新位置更新
+      scheduleTlPreview();
+    };
+
+    crane.addEventListener('pointermove', move);
+    crane.addEventListener('pointerup', end);
+    crane.addEventListener('pointercancel', end);
   });
 }
 
@@ -3627,20 +4120,33 @@ function paintTimelinePreview(host) {
   host.append(stage, note);
 
   const tl = timelinesDraft?.timelines?.[tlIndex];
-  const points = (tl?.points ?? []).filter((p) => Number.isFinite(tlDay(p.date)));
+  /*
+    能画上轴的点：有日期的，加上「难以考据」那种 —— 它们本来就没有日期，
+    位置在 `at` 里（编辑器里拖出来的）。日期读不出来的点照旧不画。
+  */
+  const points = (tl?.points ?? []).filter(
+    (p) => tlPointKind(p) === 'fuzzy' || Number.isFinite(tlDay(p.date))
+  );
+  const fuzzyPts = points.filter((p) => tlPointKind(p) === 'fuzzy');
 
   if (!tl || !points.length) {
     meta.textContent = '还没有时间点';
     const empty = document.createElement('p');
     empty.className = 'tl-pv__empty';
-    empty.append('加一个填了日期的时间点，', document.createElement('br'), '这里就会画出它在轴上的样子。');
+    empty.append('加一个时间点（「难考据」的不用填日期），', document.createElement('br'), '这里就会画出它在轴上的样子。');
     stage.appendChild(empty);
     note.textContent = '页面上那根轴是「落日色的弧 + 粉色外框」，这里按同一套规则画。';
     return;
   }
 
   const range = tlRange(tl);
-  const daysPerTick = TL_PV.MIN_DAYS * Math.pow(TL_PV.MAX_DAYS / TL_PV.MIN_DAYS, TL_PV.SCALE);
+  /*
+    比例尺：这条轴**自己**的「一刻度多少天」（表单里那个「默认比例尺」）。
+    没填就是页面打开时的默认那个（≈19.1 天/格）——
+    短跨度的轴（比如两个月）把这里调小，预览和访客打开时看到的疏密才一致。
+  */
+  const tick = tlTick(tl);
+  const daysPerTick = tick.days;
   // 整条轴有多高：一刻度 26px，一共 V/26 格，每格 daysPerTick 天
   const V = Math.max(160, (TL_PV.TICK_STEP * range.total) / daysPerTick);
   const W = Math.max(240, stage.clientWidth || TL_PV.WIDTH);
@@ -3653,6 +4159,20 @@ function paintTimelinePreview(host) {
     const d = Math.abs(y - cy);
     const inside = R * R - d * d;
     return cx - Math.sqrt(inside > 0 ? inside : 0);
+  };
+
+  /**
+   * 这个点落在轴上的哪儿（0 = 最早，1 = 最晚）。
+   * 有日期的照旧走上面那条换算（`range.of`，和页面的 paramOf 一个规则）；
+   * 「难以考据」的直接读 `at` —— 它没有日期可换算。
+   */
+  const paramOf = (p) => (tlPointKind(p) === 'fuzzy' ? tlFuzzyAt(p) : range.of(tlDay(p.date)));
+
+  /** 高度 y 处塔吊的朝向（沿弧线的径向朝外），和页面上同一个算法 */
+  const craneRot = (x, y, side) => {
+    const nx = (x - cx) / R;
+    const ny = (y - cy) / R;
+    return side === 'right' ? Math.atan2(-nx, ny) : Math.atan2(nx, -ny);
   };
 
   const canvas = document.createElement('div');
@@ -3698,11 +4218,24 @@ function paintTimelinePreview(host) {
   for (const s of tl.spans ?? []) {
     const a = tl.points.find((p) => p.id === s.from);
     const b = tl.points.find((p) => p.id === s.to);
-    const da = tlDay(a?.date);
-    const db = tlDay(b?.date);
-    if (!Number.isFinite(da) || !Number.isFinite(db)) continue;
-    const lo = Math.min(da, db);
-    const hi = Math.max(da, db);
+    /*
+      端点可以是「难以考据」的点 —— 那种点没有日期，但也有位置（at）。
+      两端都算得出位置就用它们围出区间；只有一端算得出（另一端日期坏了，
+      或者压根不在了）就退化成那一点上的一个点，和站点 spanEdges/spanParam 一个规矩。
+    */
+    const hasPos = (p) => !!p && (tlPointKind(p) === 'fuzzy' || Number.isFinite(tlDay(p.date)));
+    const pa = hasPos(a) ? paramOf(a) : NaN;
+    const pb = hasPos(b) ? paramOf(b) : NaN;
+    let lo;
+    let hi;
+    if (Number.isFinite(pa) && Number.isFinite(pb)) {
+      lo = Math.min(pa, pb);
+      hi = Math.max(pa, pb);
+    } else {
+      const one = !Number.isFinite(pa) && !Number.isFinite(pb) ? 0.5 : Number.isFinite(pa) ? pa : pb;
+      lo = one;
+      hi = one;
+    }
     // 挂哪几侧：数据说了算；老数据没写就按起点那侧（和 spanSides 一个规矩）
     const sides =
       s.side === 'both'
@@ -3717,8 +4250,9 @@ function paintTimelinePreview(host) {
   const spanMarks = [];
   flatSpans.forEach((f, i) => {
     const lane = laneMap.get(String(i)) ?? 0;
-    const t0 = range.of(f.lo);
-    const t1 = range.of(f.hi);
+    // lo / hi 已经是 0~1 的位置（上面换算过了），直接用
+    const t0 = f.lo;
+    const t1 = f.hi;
     const dir = f.side === 'left' ? -1 : 1;
     const off = dir * (TL_PV.BAND_OFFSET + lane * TL_PV.LANE_STEP);
     svg.appendChild(
@@ -3757,14 +4291,15 @@ function paintTimelinePreview(host) {
   inner.appendChild(svg);
 
   /* ---- 时间点：同一侧 + 同一类、挤在一起的合并成一个塔吊（和页面同一套判据） ---- */
+  const asTicks = (list) => list.map((p) => ({ p, y: paramOf(p) * V }));
+  const sideOf = (o) => (o.p.side === 'right' ? 'right' : 'left');
   const groups = { left: [], right: [] };
   for (const side of ['left', 'right']) {
     for (const kind of ['moment', 'event']) {
-      const list = points
-        .map((p) => ({ p, y: range.of(tlDay(p.date)) * V }))
-        .filter((o) => (o.p.side === 'right' ? 'right' : 'left') === side)
+      const list = asTicks(points)
+        .filter((o) => sideOf(o) === side)
         // 时刻和事件分开成组：混在一起并成一摞就看不出大小和颜色了
-        .filter((o) => (o.p.kind === 'event' ? 'event' : 'moment') === kind)
+        .filter((o) => tlPointKind(o.p) === kind)
         .sort((a, b) => a.y - b.y);
       let run = [];
       let lastY = Number.NEGATIVE_INFINITY;
@@ -3778,6 +4313,17 @@ function paintTimelinePreview(host) {
         lastY = o.y;
       }
       flush();
+    }
+    /*
+      「难以考据」的点**各自一组**，不跟谁合并。
+      页面上的合并是为了省地方；但这里每个难考据点都得留出自己的塔吊 ——
+      合并成一摞就只剩组里第一个有塔吊，剩下的根本没得拖，
+      而「拖」正是这类点唯一能调位置的办法。
+    */
+    for (const o of asTicks(fuzzyPts)
+      .filter((o) => sideOf(o) === side)
+      .sort((a, b) => a.y - b.y)) {
+      groups[side].push([o]);
     }
   }
 
@@ -3795,24 +4341,33 @@ function paintTimelinePreview(host) {
 
       group.forEach((o, i) => {
         const off = (i - (group.length - 1) / 2) * TL_PV.LABEL_GAP;
+        const kind = tlPointKind(o.p);
         const item = document.createElement('div');
         item.className = 'tl-pv__item';
         item.dataset.side = side;
-        item.dataset.kind = o.p.kind === 'event' ? 'event' : 'moment';
+        item.dataset.kind = kind;
+        item.dataset.pointId = o.p.id;
         item.style.left = `${x}px`;
         item.style.top = `${y}px`;
 
         if (i === 0) {
-          // 一组只画一个塔吊，方向是那一点的径向（朝外）
-          const nx = (x - cx) / R;
-          const ny = (y - cy) / R;
-          const rot = side === 'right' ? Math.atan2(-nx, ny) : Math.atan2(nx, -ny);
+          // 一组只画一个塔吊（难考据的点一组就一个），方向是那一点的径向（朝外）
           const crane = document.createElement('span');
           crane.className = 'tl-pv__crane';
-          crane.style.transform = `rotate(${rot}rad)`;
+          crane.style.transform = `rotate(${craneRot(x, y, side)}rad)`;
           const cs = svgEl('svg', { viewBox: '0 0 24 24' });
           cs.appendChild(svgEl('path', { d: TL_PV_CRANE }));
+          /*
+            透明的一整块命中区：塔吊是个描边图形，只按笔画判定的话
+            得正好戳在那几根细线上才拖得动。
+          */
+          cs.appendChild(svgEl('rect', { x: 0, y: 0, width: 24, height: 24, fill: 'transparent' }));
           crane.appendChild(cs);
+
+          if (kind === 'fuzzy') {
+            crane.title = `按住往上 / 往下拖，改这个「难考据」时间点在轴上的位置（现在 ${tlAtText(o.p)}）`;
+            attachFuzzyDrag(crane, item, o.p, side, inner, V, arcX, craneRot);
+          }
           item.appendChild(crane);
         }
 
@@ -3864,17 +4419,175 @@ function paintTimelinePreview(host) {
   canvas.appendChild(inner);
   stage.appendChild(canvas);
 
-  const first = points.reduce((a, b) => (tlDay(a.date) <= tlDay(b.date) ? a : b));
-  const lastP = points.reduce((a, b) => (tlDay(a.date) >= tlDay(b.date) ? a : b));
-  const days = Math.round(tlDay(lastP.date) - tlDay(first.date));
+  const dated = points.filter((p) => tlPointKind(p) !== 'fuzzy');
   const merged = [...groups.left, ...groups.right].filter((g) => g.length > 1).length;
-  meta.textContent = `${first.date} → ${lastP.date} · ${points.length} 个点 · 跨 ${days} 天${merged ? ` · ${merged} 处合并` : ''}`;
-  note.textContent = `按页面打开时的默认比例尺画（1 格 ≈ ${Math.round(daysPerTick)} 天），合并和文字间距跟页面上一致；页面上那一屏能滚，这里一次画完整条轴。`;
+  if (dated.length) {
+    const first = dated.reduce((a, b) => (tlDay(a.date) <= tlDay(b.date) ? a : b));
+    const lastP = dated.reduce((a, b) => (tlDay(a.date) >= tlDay(b.date) ? a : b));
+    const days = Math.round(tlDay(lastP.date) - tlDay(first.date));
+    meta.textContent = fuzzyPts.length
+      ? `${first.date} → ${lastP.date} · ${dated.length} 个有日期的点 · 跨 ${days} 天 · 另有 ${fuzzyPts.length} 个难考据点${merged ? ` · ${merged} 处合并` : ''}`
+      : `${first.date} → ${lastP.date} · ${points.length} 个点 · 跨 ${days} 天${merged ? ` · ${merged} 处合并` : ''}`;
+  } else {
+    // 整条轴一个日期都没有：那就只说难考据点，别去 reduce 一个空数组
+    meta.textContent = `${fuzzyPts.length} 个难考据点 · 都没有日期`;
+  }
+  note.textContent =
+    `按这条轴打开时的默认比例尺画（1 格 ≈ ${tlDaysText(tick)} 天），合并和文字间距跟页面上一致；页面上那一屏能滚，这里一次画完整条轴。` +
+    (fuzzyPts.length ? '虚化的塔吊是「难考据」的点：按住它上下拖就能改位置。' : '');
 
   stage.scrollTop = keepScroll;
   stage.addEventListener('scroll', () => {
     host.dataset.scrollTop = String(stage.scrollTop);
   });
+}
+
+/**
+ * 「默认比例尺」那一格：一刻度代表多少天。
+ *
+ * 为什么要有它：页面上打开时停在滑块正中间（≈19 天/格）。一条只有两个月
+ * 跨度的轴用这个比例尺，整条轴才 1 格多高 —— 打开就短得看不清，每次都得手动
+ * 拖滑块。所以每条轴可以自己定一个默认值，访客打开时就是作者看到的疏密。
+ *
+ * 留空 = 不写 `tickDays` = 用默认那个（≈19 天/格），老数据也是这样。
+ * 1~365 之外、或者敲不成数字的，**当场标红**并说明「存下去会当作没填」——
+ * 和服务端一个规矩（那里是直接丢掉这个字段，而不是夹到端点）。
+ *
+ * 只做建议、不自动改用户的值：跨度 ÷ 24 算出来一个「整条轴约 24 格」的值，
+ * 想看就点「整轴铺满」填进去。
+ */
+function tickField(tl) {
+  const wrap = document.createElement('span');
+  wrap.className = 'tickfield';
+
+  const row = document.createElement('span');
+  row.className = 'tickfield__row';
+
+  const num = document.createElement('input');
+  num.type = 'number';
+  num.min = String(TL_PV.MIN_DAYS);
+  num.max = String(TL_PV.MAX_DAYS);
+  num.step = '0.5';
+  num.className = 'input tickfield__num';
+  num.placeholder = String(Math.round(TL_TICK_FALLBACK));
+  num.autocomplete = 'off';
+  /*
+    框里显示数据里那个值（没写就空着 = 用默认）。
+    数据里本来就是个不合法值（手改过 JSON 之类）时也照样显示出来，
+    但**当场标红**并说清「存下去会当作没填」—— 不然框里写着 0、
+    预览却按 19 天画，人会以为哪里坏了。
+  */
+  const rawTick = tl.tickDays;
+  const hasRawTick = rawTick !== undefined && rawTick !== null && rawTick !== '';
+  const rawTickNum = Number(rawTick);
+  const rawTickOk =
+    hasRawTick &&
+    Number.isFinite(rawTickNum) &&
+    rawTickNum >= TL_PV.MIN_DAYS &&
+    rawTickNum <= TL_PV.MAX_DAYS;
+  num.value = hasRawTick ? String(rawTick) : '';
+  num.title =
+    `打开这条时间轴时一刻度代表多少天（${TL_PV.MIN_DAYS}~${TL_PV.MAX_DAYS} 天，可以填小数）。` +
+    `留空 = 用页面默认的（≈${Math.round(TL_TICK_FALLBACK)} 天/格）。` +
+    `只有两个月这种短跨度的轴记得调小 —— 不调的话打开时整条轴只有一两格高，看着很短。`;
+  if (hasRawTick && !rawTickOk) {
+    num.classList.add('is-bad');
+    num.title = `「${rawTick}」不在 ${TL_PV.MIN_DAYS}~${TL_PV.MAX_DAYS} 天里，存下去会当作没填（回到默认 ≈${Math.round(TL_TICK_FALLBACK)} 天/格）。`;
+  }
+
+  const unit = document.createElement('span');
+  unit.className = 'tickfield__unit';
+  unit.textContent = '天 / 格';
+
+  row.append(num, unit);
+  const hint = document.createElement('span');
+  hint.className = 'tickfield__hint';
+  wrap.append(row, hint);
+
+  const suggestBtn = document.createElement('button');
+  suggestBtn.type = 'button';
+  suggestBtn.className = 'btn btn--ghost boardedit__mini';
+  suggestBtn.textContent = '整轴铺满';
+  row.appendChild(suggestBtn);
+
+  const resetBtn = document.createElement('button');
+  resetBtn.type = 'button';
+  resetBtn.className = 'btn btn--ghost boardedit__mini';
+  resetBtn.textContent = '默认';
+  resetBtn.title = `清空 = 不写这个字段，用页面默认的比例尺（≈${Math.round(TL_TICK_FALLBACK)} 天/格）`;
+  row.appendChild(resetBtn);
+
+  /** 跨度、建议值、当前读数 —— 一律现算，别缓存 */
+  const state = () => {
+    const spanDays = tlSpanDays(tl);
+    const tick = tlTick(tl);
+    const suggest = tlSuggestTickDays(spanDays);
+    return { spanDays, tick, suggest };
+  };
+
+  /** 只刷读数（不碰输入框，改日期时也不会把用户正在打的字冲掉） */
+  const syncHint = () => {
+    const { spanDays, tick, suggest } = state();
+    const parts = [`一刻度 ≈ ${tlDaysText(tick)} 天${tick.custom ? '' : '（默认）'}`];
+    if (spanDays > 0) {
+      parts.push(`整条轴约 ${Math.round((spanDays / tick.days) * 10) / 10} 格（跨度 ${spanDays} 天）`);
+      if (suggest !== null) parts.push(`建议 ${suggest} 天/格`);
+    } else {
+      parts.push('这条轴还看不出跨度（要两个以上带日期的点）');
+    }
+    hint.textContent = parts.join(' · ');
+    suggestBtn.disabled = suggest === null;
+    suggestBtn.title =
+      suggest === null
+        ? '这条轴还没有两个带日期的点，算不出建议值'
+        : `填 ${suggest} 天/格：整条轴大约 24 格格完（跨度 ${spanDays} 天 ÷ 24）`;
+  };
+
+  /**
+   * 把输入框里的字落成数据。
+   * 空 → 删掉字段（= 默认）；合法 → 收两位小数写进去；
+   * 不合法 → 也删掉（服务端会丢，这里先说清楚），并把框标红。
+   */
+  const commit = () => {
+    const raw = num.value.trim();
+    if (!raw) {
+      delete tl.tickDays;
+      num.classList.remove('is-bad');
+      num.title = `留空 = 用页面默认的（≈${Math.round(TL_TICK_FALLBACK)} 天/格）`;
+      syncHint();
+      scheduleTlPreview();
+      return;
+    }
+    const n = Number(raw);
+    if (!Number.isFinite(n) || n < TL_PV.MIN_DAYS || n > TL_PV.MAX_DAYS) {
+      delete tl.tickDays;
+      num.classList.add('is-bad');
+      num.title = `「${raw}」不在 ${TL_PV.MIN_DAYS}~${TL_PV.MAX_DAYS} 天里，存下去会当作没填（回到默认 ≈${Math.round(TL_TICK_FALLBACK)} 天/格）。`;
+      syncHint();
+      scheduleTlPreview();
+      return;
+    }
+    tl.tickDays = Math.round(n * 100) / 100;
+    num.classList.remove('is-bad');
+    num.title = '一刻度多少天（1~365，可以填小数）；留空 = 用页面默认的';
+    syncHint();
+    scheduleTlPreview();
+  };
+
+  num.addEventListener('input', commit);
+  resetBtn.addEventListener('click', () => {
+    num.value = '';
+    commit();
+  });
+  suggestBtn.addEventListener('click', () => {
+    const { suggest } = state();
+    if (suggest === null) return;
+    num.value = String(suggest);
+    commit();
+  });
+
+  syncHint();
+  return { el: wrap, syncHint };
 }
 
 /**
@@ -3885,6 +4598,8 @@ function paintTimelinePreview(host) {
 function renderTimelineEditor() {
   const box = els.tlEditor;
   box.textContent = '';
+  // 读数刷新函数是跟着行一起重建的，旧的先扔掉（点删掉了就不会再挂着）
+  tlFuzzyReadouts.clear();
   const list = timelinesDraft?.timelines ?? [];
 
   // 表单这一列；预览那一列在函数末尾按当前数据现画
@@ -3960,6 +4675,7 @@ function renderTimelineEditor() {
   const tl = list[tlIndex];
   if (!tl) {
     // 一条轴都没有：只留提示和「新建」，预览那边自己会说「还没有时间点」
+    tlScaleHintSync = null;
     paintTimelinePreview(pv);
     return;
   }
@@ -3967,6 +4683,9 @@ function renderTimelineEditor() {
   if (!Array.isArray(tl.spans)) tl.spans = [];
 
   /* ---- 基本字段 ---- */
+  const scale = tickField(tl);
+  // 改了日期/增删点 -> 跨度变了，这一格的读数和建议值也要跟着变（见 scheduleTlPreview）
+  tlScaleHintSync = scale.syncHint;
   const row = document.createElement('div');
   row.className = 'tl-edit__row';
   row.append(
@@ -3987,7 +4706,8 @@ function renderTimelineEditor() {
       boardInput(tl.rightName ?? '', '比如 冰室历', (v) => {
         tl.rightName = v;
       })
-    )
+    ),
+    pwField('默认比例尺', scale.el)
   );
   form.appendChild(row);
 
@@ -4021,43 +4741,79 @@ function renderTimelineEditor() {
     side.className = 'input tl-edit__side';
 
     /*
-      时刻还是事件。功能完全一样（左右 / 日期 / 名字 / 链接都能填），
-      差别只在页面上的图标和字号：时刻是大塔吊 + 大字，事件是小粉塔吊 + 小字。
-      「时刻」是默认值 —— 选它就把 kind 字段删掉，老数据不会因为过一遍编辑器
-      就多出一堆 kind:"moment"。
+      时刻 / 事件 / 难以考据（fuzzy）。三种类型功能完全一样
+      （左右、名字、链接都能填），差别只在页面上长什么样：
+        · 时刻 = 大塔吊 + 大字（默认；选它就把 kind 删掉，
+          老数据不会因为过一遍编辑器就多出一堆 kind:"moment"）
+        · 事件 = 小一号的粉色塔吊 + 小字
+        · 难考据 = 查不到具体日期的往事：**没有日期**，
+          位置存在 `at` 里（0 = 最早、1 = 最晚），在右边预览里拖着塔吊定
     */
     const kind = pageSelect(
       [
         ['moment', '时刻'],
         ['event', '事件'],
+        ['fuzzy', '难考据'],
       ],
-      p.kind === 'event' ? 'event' : 'moment',
-      (v) => {
-        if (v === 'event') p.kind = 'event';
-        else delete p.kind;
-        scheduleTlPreview();
-      }
+      tlPointKind(p),
+      (v) => setKind(v)
     );
     kind.className = 'input tl-edit__kind';
-    kind.title = '时刻 = 大塔吊 + 大字；事件 = 小一号的粉色塔吊 + 小字。功能一模一样。';
+    kind.title =
+      '时刻 = 大塔吊 + 大字；事件 = 小一号的粉色塔吊 + 小字；难考据 = 查不到具体日期的往事，没有日期，位置在右边预览里拖着塔吊定。';
 
-    const date = dateField(
-      p.date,
-      (v) => {
-        p.date = v;
+    /*
+      日期那一格。难考据的点整块收起来（不是禁用 —— 用户要的是「没有日期选项了」），
+      换成「位置：xx%」的读数 + 一个能微调的数字框。
+      建日期控件时用记下来的那个日期：这样切回「时刻 / 事件」时框里本来就是对的。
+    */
+    let dateApi = null;
+    const date = dateField(tlPointKind(p) === 'fuzzy' ? (tlDateMemo.get(p.id) ?? '') : p.date, (v) => {
+      p.date = v;
+      refreshSpanOptions();
+      scheduleTlPreview();
+    }, {
+      live: p.date === 'today',
+      onLive: (on, back) => {
+        // 打开时写哨兵 today；关掉时写回具体日期（dateField 保证 back 是个合法日期）
+        p.date = on ? 'today' : back;
         refreshSpanOptions();
         scheduleTlPreview();
       },
-      {
-        live: p.date === 'today',
-        onLive: (on, back) => {
-          // 打开时写哨兵 today；关掉时写回具体日期（dateField 保证 back 是个合法日期）
-          p.date = on ? 'today' : back;
-          refreshSpanOptions();
-          scheduleTlPreview();
-        },
-      }
-    );
+      onReady: (api) => {
+        dateApi = api;
+      },
+    });
+
+    const pos = document.createElement('span');
+    pos.className = 'tl-fuzzypos';
+    const posText = document.createElement('span');
+    posText.className = 'tl-fuzzypos__text';
+    posText.title = '这个「难考据」时间点在这条轴上的位置（0 = 最早，1 = 最晚）。在右边预览里按住那个塔吊上下拖就能改。';
+    const posNum = document.createElement('input');
+    posNum.type = 'number';
+    posNum.min = '0';
+    posNum.max = '100';
+    posNum.step = '0.1';
+    posNum.className = 'input tl-fuzzypos__num';
+    posNum.title = '位置（0~100%）。也可以直接在右边预览里拖着塔吊改。';
+    posNum.addEventListener('input', () => {
+      const n = Number(posNum.value);
+      if (!Number.isFinite(n)) return;
+      p.at = tlRound4(Math.min(1, Math.max(0, n / 100)));
+      posText.textContent = `位置：${tlAtText(p)}`;
+      scheduleTlPreview();
+    });
+    pos.append(posText, posNum);
+
+    /** 把读数 / 数字框刷成数据里的样子（预览里拖塔吊时也调它） */
+    const syncPos = () => {
+      posText.textContent = `位置：${tlAtText(p)}`;
+      // 正在数字框里打字就别去动它，否则光标会乱跳
+      if (document.activeElement !== posNum) posNum.value = String(Math.round(tlFuzzyAt(p) * 1000) / 10);
+    };
+    tlFuzzyReadouts.set(p.id, syncPos);
+
     const label = boardInput(p.label ?? '', '事件名（常驻显示在轴旁边）', (v) => {
       p.label = v;
       refreshSpanOptions();
@@ -4080,30 +4836,79 @@ function renderTimelineEditor() {
       renderTimelineEditor();
     });
 
-    item.append(side, kind, date, label, href, del);
+    // 难考据那行的说明，铺满整行挂在下面（那一格放不下一整句）
+    const hint = document.createElement('p');
+    hint.className = 'hint tl-edit__fuzzyhint';
+    hint.textContent =
+      '时间难考据：没有日期，位置直接在右边预览里按住那个塔吊上下拖（也可以在上面填百分数）。';
+
+    /** 切类型：换掉日期那一格，顺带把日期在数据里存/取 */
+    const setKind = (v) => {
+      const wasFuzzy = tlPointKind(p) === 'fuzzy';
+      if (v === 'fuzzy') {
+        // 把现在这个日期记下来（切回去时还给他），数据里不留 date
+        if (!wasFuzzy) tlDateMemo.set(p.id, p.date === 'today' ? 'today' : p.date || '');
+        p.kind = 'fuzzy';
+        delete p.date;
+        if (!Number.isFinite(Number(p.at))) p.at = 0.5;
+      } else {
+        if (v === 'event') p.kind = 'event';
+        else delete p.kind;
+        delete p.at;
+        // 之前填过的日期还给他；本来没填过就用今天兜底（不然存盘会被丢掉）
+        const back = tlDateMemo.get(p.id);
+        p.date = back ? back : p.date || isoToday();
+        dateApi?.set(p.date);
+      }
+      syncWhen();
+      refreshSpanOptions();
+      scheduleTlPreview();
+    };
+
+    /** 日期那一格显示成日期控件还是「位置」读数 */
+    const syncWhen = () => {
+      const fuzzy = tlPointKind(p) === 'fuzzy';
+      date.classList.toggle('tl-hide', fuzzy);
+      pos.classList.toggle('tl-hide', !fuzzy);
+      hint.classList.toggle('tl-hide', !fuzzy);
+      syncPos();
+    };
+
+    item.append(side, kind, date, pos, label, href, del, hint);
+    syncWhen();
     plist.appendChild(item);
   });
   form.appendChild(plist);
 
-  // 两种时间点各一个按钮 —— 新加的那一刻就带着 kind，省得再加一步去改类型
+  // 三种时间点各一个按钮 —— 新加的那一条就带着 kind，省得再加一步去改类型
   for (const [label, k] of [
     ['＋ 加时刻', 'moment'],
     ['＋ 加事件', 'event'],
+    ['＋ 加难考据', 'fuzzy'],
   ]) {
     const addP = document.createElement('button');
     addP.type = 'button';
     addP.className = 'btn btn--ghost boardedit__mini';
     addP.textContent = label;
     addP.title =
-      k === 'event' ? '加一条「事件」：小一号的粉色塔吊 + 更小的文字' : '加一条「时刻」：大塔吊 + 大字';
+      k === 'event'
+        ? '加一条「事件」：小一号的粉色塔吊 + 更小的文字'
+        : k === 'fuzzy'
+          ? '加一条「难考据」：查不到具体日期的往事，没有日期，位置在右边预览里拖着塔吊定'
+          : '加一条「时刻」：大塔吊 + 大字';
     addP.addEventListener('click', () => {
       const p = {
         id: `${tl.id}-p${Date.now().toString(36)}${tl.points.length}`,
         side: 'left',
-        date: '',
         label: '',
       };
-      if (k === 'event') p.kind = 'event';
+      if (k === 'fuzzy') {
+        p.kind = 'fuzzy';
+        p.at = 0.5;
+      } else {
+        p.date = '';
+        if (k === 'event') p.kind = 'event';
+      }
       tl.points.push(p);
       renderTimelineEditor();
     });
@@ -4118,8 +4923,15 @@ function renderTimelineEditor() {
 
   const slist = document.createElement('div');
   slist.className = 'tl-edit__list';
-  /** 下拉里那条「2023-01-10　冰室成立」的文案 */
-  const optText = (p) => `${tlDateText(p)}　${p.label || '（没填名字）'}`;
+  /**
+   * 下拉里那条「2023-01-10　冰室成立」的文案。
+   * 「难考据」的点没有日期，就缀一个「（难考据）」——
+   * 时间段可以拿它们当端点（站点按它的 at 处理），但得让用户看得出这是哪一种点。
+   */
+  const optText = (p) =>
+    tlPointKind(p) === 'fuzzy'
+      ? `${p.label || '（没填名字）'}（难考据）`
+      : `${tlDateText(p)}　${p.label || '（没填名字）'}`;
 
   tl.spans.forEach((s, i) => {
     const item = document.createElement('div');
@@ -4247,7 +5059,13 @@ async function saveTimelines() {
     await loadTimelines();
     if (tlIndex >= timelinesDraft.timelines.length) tlIndex = Math.max(0, timelinesDraft.timelines.length - 1);
     renderTimelineEditor();
-    closeTimelinesModal();
+    /*
+      这里**故意不关弹窗**。
+      以前存完会 closeTimelinesModal()，看着像"保存 = 完事收工"，
+      但这一下后面还跟着一次重新构建（好几秒），而且改一条轴常常要连着调好几处
+      （加个点、再改个日期、再拖一下位置），每存一次就被关掉、还得重新点开一次
+      ——用户报的就是这个。存完留着，想关自己点右上角那个 ×。
+    */
 
     // 再构建一次，页面上才是刚存的样子（不然得另找地方点「保存并重新构建」）
     let built = false;
@@ -4261,7 +5079,10 @@ async function saveTimelines() {
     }
 
     if (lost.length) {
-      toast(`保存了，但有 ${lost.join('、')} 没存下 —— 多半是缺日期或名字、或者时间段的端点不在了`, true);
+      toast(
+        `保存了，但有 ${lost.join('、')} 没存下 —— 多半是缺名字、日期读不出来、或者时间段的端点不在了（难考据的点没有日期是正常的）`,
+        true
+      );
     } else if (built) {
       toast('时间轴已保存并重新构建，刷新页面就能看到');
     } else {

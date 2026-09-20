@@ -1224,12 +1224,48 @@ function cleanDate(v) {
 }
 
 /**
+ * 「难以考据」那个时间点的位置（`at`）。
+ *
+ * 0 = 最早、1 = 最晚，是这条轴上的比例，最多留 4 位小数。
+ * 数字一律夹进 0~1；**不是数字**（`'abc'`、空串、没填）给 0.5 ——
+ * 位置写坏了也只是站错地方，不该把这个点整个丢掉。
+ *
+ * 只有 `kind: 'fuzzy'` 的点才有这一项，别的点写上来也会被丢掉
+ * （它们的位置由 `date` 决定，多一个 at 只会让数据有两套真相）。
+ */
+function cleanAt(v) {
+  const n = typeof v === 'number' ? v : typeof v === 'string' && v.trim() ? Number(v) : NaN;
+  if (!Number.isFinite(n)) return 0.5;
+  return Math.round(Math.min(1, Math.max(0, n)) * 10000) / 10000;
+}
+
+/**
+ * 这条时间轴的**默认比例尺**：一刻度代表多少天（`tickDays`）。
+ *
+ * 页面上那根滑块的量程就是 1 天/格 ~ 365 天/格，所以这里只收 1~365 的
+ * 有限数字，存之前收到两位小数。
+ *
+ * **非法值一律丢掉**（`'abc'` / `0` / `-3` / `999` / `null`），
+ * 而不是夹到端点 —— 夹端点会让人以为「填错了也还能用」，
+ * 实际上他填的那个值根本不是他要的。丢掉就等于没填，回到默认比例尺。
+ * 返回 `null` 表示「这一项不该写进数据」。
+ */
+function cleanTickDays(v) {
+  const n = typeof v === 'number' ? v : typeof v === 'string' && v.trim() ? Number(v) : NaN;
+  if (!Number.isFinite(n) || n < 1 || n > 365) return null;
+  return Math.round(n * 100) / 100;
+}
+
+/**
  * 时间轴清洗。
  *
  * 时间点和时间段都得活着才有意义：
- *   · 时间点：日期和名字缺一个就丢掉（没有日期排不进轴，没有名字没法显示）
+ *   · 时间点：名字必须有；日期**除了难以考据那种**也必须有
+ *     （没日期排不进轴 —— 但 `kind: 'fuzzy'` 的点本来就没有日期，
+ *     位置由编辑器拖出来的 `at` 定，这种点必须留下）
  *   · 时间段：两端必须都指向**存在的时间点**，否则整段丢掉
- *     （指向一个已经被删掉的点，那段时间就是悬空的）
+ *     （指向一个已经被删掉的点，那段时间就是悬空的）。
+ *     难考据的点也算「存在的时间点」，可以当端点
  */
 function cleanTimelines(payload) {
   if (!payload || !Array.isArray(payload.timelines)) {
@@ -1261,11 +1297,18 @@ function cleanTimelines(payload) {
     if (!id || usedTl.has(id)) id = `tl-${Date.now().toString(36)}-${ti + 1}`;
     usedTl.add(id);
 
+    /*
+      默认比例尺（一刻度多少天）。**合法才写** —— 老数据没这一项，
+      过一遍编辑器不能凭空多出个字段来（不然整个文件全是 diff）。
+      位置放在 rightName 后面，和契约里那份示例一致。
+    */
+    const tickDays = cleanTickDays(raw.tickDays);
     const tl = {
       id,
       title,
       leftName: String(raw.leftName || '').trim() || '左侧',
       rightName: String(raw.rightName || '').trim() || '右侧',
+      ...(tickDays === null ? {} : { tickDays }),
       points: [],
       spans: [],
     };
@@ -1274,16 +1317,40 @@ function cleanTimelines(payload) {
     const rawPoints = Array.isArray(raw.points) ? raw.points : [];
     rawPoints.forEach((pt, pi) => {
       if (!pt || typeof pt !== 'object') { dropped.points++; return; }
-      const date = cleanDate(pt.date);
       const label = String(pt.label || '').trim();
-      if (!date || !label) { dropped.points++; return; }
+      /*
+        类型：时刻（moment）/ 事件（event）/ 难以考据（fuzzy）。
+        只认这三个值，别的（包括老数据里根本没这一项）都当 moment。
+      */
+      const kind =
+        pt.kind === 'event' ? 'event' : pt.kind === 'fuzzy' ? 'fuzzy' : pt.kind === 'moment' ? 'moment' : '';
+      const fuzzy = kind === 'fuzzy';
+      /*
+        难考据的点**没有日期**（写了也丢掉）：它的位置在 `at` 里，
+        由编辑器里拖着塔吊定下来。别的点照旧必须有日期。
+      */
+      const date = fuzzy ? '' : cleanDate(pt.date);
+      if (!label || (!fuzzy && !date)) { dropped.points++; return; }
       let pid = String(pt.id || '').trim();
       if (!pid || usedP.has(pid)) pid = `${id}-p${pi + 1}`;
       usedP.add(pid);
-      const point = { id: pid, side: pt.side === 'right' ? 'right' : 'left', date, label };
-      // 时刻（moment）/ 事件（event）。老数据没这一项，渲染时按「时刻」算，
-      // 所以认不出来就不写这个字段，不去污染数据。
-      if (pt.kind === 'event' || pt.kind === 'moment') point.kind = pt.kind;
+      const point = { id: pid, side: pt.side === 'right' ? 'right' : 'left' };
+      /*
+        字段顺序也是照老数据来的：id / side / date / label / kind / href。
+        老数据过一遍编辑器要能**逐字节原样写回**，不然用户一存盘
+        整个 timelines.json 全是无意义的顺序变化。
+      */
+      if (fuzzy) {
+        point.kind = 'fuzzy';
+        point.at = cleanAt(pt.at);
+        point.label = label;
+      } else {
+        point.date = date;
+        point.label = label;
+        // 时刻（moment）/ 事件（event）。老数据没这一项，渲染时按「时刻」算，
+        // 所以认不出来就不写这个字段，不去污染数据。
+        if (kind) point.kind = kind;
+      }
       // 点一下跳去哪：和地图图钉同一套链接规则（javascript: / data: 一律丢掉）
       const href = cleanLink(pt.href);
       if (href) point.href = href;
@@ -1685,6 +1752,16 @@ async function writeBoards(payload) {
       subtitle: String(b.subtitle || '').trim(),
       image: String(b.image || '').trim(),
     };
+    /*
+      独立页面：不挂在任何板块下的顶层节点。
+      页面照旧生成（地址还是按 id 推的 /<id>，href 可以覆盖），但它**不被
+      任何列表收录** —— 首页那两张卡片、右上角目录树、任何页面的子版块列表、
+      sitemap 全都没有它，只能靠别处挂的链接点进来。
+
+      只有 `true` 才写这个字段：老数据（没这一项）过一遍编辑器逐字节不变。
+      其它处理和不带它的顶层节点一模一样，不去硬塞 children 之类的东西。
+    */
+    if (b.standalone === true) out.standalone = true;
     // 顶层大板块也可以手写地址（甬城晴雨就是 /yongshen 而不是按 id 推的 /yongcheng）
     const href = String(b.href || '').trim();
     if (href) out.href = href;

@@ -19,7 +19,7 @@
  *    进了用别的轴（或没有轴）的页面，自然就是关着的。
  */
 import type { Timeline as TimelineData } from '../utils/timelines';
-import { pointParam, spanEdges, spanParam, spanSides, pointKind, isLiveDate, dateOf, rangeOf, dayOf, assignSpanLanes } from '../utils/timelines';
+import { pointParam, spanEdges, spanParam, spanSides, pointKind, isLiveDate, dateOf, rangeOf, dayOf, assignSpanLanes, scaleParamOf, SCALE_MIN_DAYS, SCALE_MAX_DAYS } from '../utils/timelines';
 import { withBase } from '../utils/url';
 
 interface Props {
@@ -44,18 +44,31 @@ const spanMin = Math.min(range.min, range.max);
 const spanMax = Math.max(range.max, range.min);
 
 /**
- * 时间点：位置、左右、**时刻还是事件**、名字、日期都写进 data-*，脚本照着摆。
- * 两类点走的是同一套代码，只有 CSS 里的图标大小 / 颜色和字号不一样。
+ * 时间点：位置、左右、**哪一类**（时刻 / 事件 / 难以考据）、名字、日期都写进 data-*，
+ * 脚本照着摆。三类点走的是同一套代码，只有 CSS 里的图标、颜色和字号不一样。
  *
  * `day` 和 `live` 是给「实时更新」那几个点准备的：
  *   · day  —— 构建时算出来的天序号（脚本重排整条轴时要拿它当基准）
  *   · live —— 这个点的日期是哨兵 `today`，打开页面时要以**访问者当天**为准
  * 所以日期显示一律用 dateOf(day)，不能直接把 date 印出来（那会是「today」四个字母）。
+ *
+ * 「难以考据」的点**没有日期**：day 是 NaN、live 是 false，位置来自数据里的 `at`
+ * （由编辑器的拖拽定），面板上也就不显示日期，改说一句「时间难考据」。
+ * 它们不参与 rangeOf 的范围计算，所以加多少个都不会把整条轴拉长。
  */
 const points = tl.points
   .map((p) => {
+    const kind = pointKind(p);
     const day = dayOf(p.date);
-    return { ...p, t: pointParam(tl, p), kind: pointKind(p), day, live: isLiveDate(p.date), shown: dateOf(day) };
+    return {
+      ...p,
+      t: pointParam(tl, p),
+      kind,
+      day,
+      live: isLiveDate(p.date ?? ''),
+      shown: kind === 'fuzzy' ? '' : dateOf(day),
+      fuzzy: kind === 'fuzzy',
+    };
   })
   .sort((a, b) => a.t - b.t);
 
@@ -115,6 +128,20 @@ const spanLabels = spans.flatMap((s) =>
 );
 
 const gradId = `tl-arc-${tl.id}`;
+
+/*
+  这条轴打开时的默认比例尺。
+  数据里写了 tickDays 就用它（短跨度的轴自己调小，免得打开只有三格）；
+  没写 / 不合法就回落到滑块正中间（约 19 天/格）—— 老数据行为一模一样。
+  换算成滑块位置写进 data-tl-scale，脚本读它当初值（sessionStorage 里有
+  这条轴的手动值时会盖过它，那还是"用户手动调过就听用户的"）。
+*/
+const scaleParam = scaleParamOf(tl.tickDays);
+const initialScale = scaleParam === null ? 0.5 : scaleParam;
+const initialTickDays = SCALE_MIN_DAYS * Math.pow(SCALE_MAX_DAYS / SCALE_MIN_DAYS, initialScale);
+const initialScaleText = `一刻度约 ${
+  initialTickDays < 10 ? initialTickDays.toFixed(1) : Math.round(initialTickDays)
+} 天`;
 ---
 
 <div
@@ -125,6 +152,7 @@ const gradId = `tl-arc-${tl.id}`;
   data-tl-max={spanMax}
   data-tl-grad={gradId}
   data-tl-default={defaultParam === null ? '' : String(defaultParam)}
+  data-tl-scale={String(initialScale)}
 >
   {/*
     关着的时候只在右边沿露出来的那个书签。
@@ -228,7 +256,8 @@ const gradId = `tl-arc-${tl.id}`;
             data-side={p.side}
             data-kind={p.kind}
             data-param={p.t}
-            data-day={p.day}
+            data-day={p.fuzzy ? undefined : p.day}
+            data-fuzzy={p.fuzzy ? '1' : undefined}
             data-live={p.live ? '1' : undefined}
             data-label={p.label}
             data-date={p.shown}
@@ -243,14 +272,42 @@ const gradId = `tl-arc-${tl.id}`;
               {...ext}
             >
               <svg viewBox="0 0 24 24">
-                <path d="M10.5 20.5V6.5M13.5 20.5V6.5M8.5 20.5h7M12 4v2.5M3.5 9h17M12 4 3.5 9M12 4l8.5 5M17.5 9v4"></path>
+                {p.fuzzy ? (
+                  <>
+                    {/*
+                      「难以考据」的塔吊：罩一层电视雪花屏。
+                      扭曲用 SVG 滤镜（feTurbulence 出噪声 → feDisplacementMap 推描边）
+                      写成**属性**而不是 CSS 的 filter:url()—— 后者在 Safari 上时好时坏，
+                      属性式最稳。滤镜 id 带点的 id：同一页可能有好几个这种点，
+                      id 撞了的话后面那些会一起套用前一个的滤镜。
+                      雪花的"动"由 CSS 里的 .tl__crane::after 扫线负责（见样式区）。
+                    */}
+                    <defs>
+                      <filter id={`tl-noise-${p.id}`} x="-35%" y="-35%" width="170%" height="170%">
+                        <feTurbulence type="fractalNoise" baseFrequency="0.9 0.55" numOctaves="2" seed="7" result="noise" />
+                        <feDisplacementMap
+                          in="SourceGraphic"
+                          in2="noise"
+                          scale="1.7"
+                          xChannelSelector="R"
+                          yChannelSelector="G"
+                        />
+                      </filter>
+                    </defs>
+                    <g filter={`url(#tl-noise-${p.id})`}>
+                      <path d="M10.5 20.5V6.5M13.5 20.5V6.5M8.5 20.5h7M12 4v2.5M3.5 9h17M12 4 3.5 9M12 4l8.5 5M17.5 9v4"></path>
+                    </g>
+                  </>
+                ) : (
+                  <path d="M10.5 20.5V6.5M13.5 20.5V6.5M8.5 20.5h7M12 4v2.5M3.5 9h17M12 4 3.5 9M12 4l8.5 5M17.5 9v4"></path>
+                )}
               </svg>
             </CraneTag>
-            {/* 名字常驻显示；鼠标移上去再补一个日期 */}
+            {/* 名字常驻显示；鼠标移上去再补一个日期（难考据的点补的是那句话） */}
             <NameTag class="tl__name" href={href} {...ext}>{p.label}</NameTag>
             <span class="tl__tip" role="tooltip">
               <b>{p.label}</b>
-              <em>{p.shown}{p.live ? '（实时）' : ''}</em>
+              <em>{p.fuzzy ? '难以考据的时间' : `${p.shown}${p.live ? '（实时）' : ''}`}</em>
               {p.href && <i>点开看看 ›</i>}
             </span>
           </div>
@@ -342,8 +399,8 @@ const gradId = `tl-arc-${tl.id}`;
               aria-labelledby={`tl-scale-label-${tl.id}`}
               aria-valuemin="0"
               aria-valuemax="100"
-              aria-valuenow="50"
-              aria-valuetext="一刻度约 19 天"
+              aria-valuenow={String(Math.round(initialScale * 100))}
+              aria-valuetext={initialScaleText}
             >
               <svg viewBox="0 0 24 24" aria-hidden="true">
                 <path d="M10.5 20.5V6.5M13.5 20.5V6.5M8.5 20.5h7M12 4v2.5M3.5 9h17M12 4 3.5 9M12 4l8.5 5M17.5 9v4"></path>
@@ -556,11 +613,18 @@ const gradId = `tl-arc-${tl.id}`;
     和「真正的大事」分开，也不至于把轴铺满。
     （一开始用的 #ff4fa3 太扎眼，一屏小粉箭头比大字还抢戏；换成樱花粉，
     淡淡的、像飘在轴上的一片花瓣，光晕也跟着调浅。）
+
+    尺寸这一档**「难以考据」也一起用**（用户要求：难考据的图标和文字比例与事件一致，
+    都比时刻小）：所以下面前三条都写成 event + fuzzy 双选择器，
+    颜色 / 光晕 / 雪花那些各是各的。名字的藏显开关也跟着「事件」走（见下面 .is-off-*）。
   */
-  .tl__item[data-kind='event'] .tl__crane {
+  .tl__item[data-kind='event'] .tl__crane,
+  .tl__item[data-kind='fuzzy'] .tl__crane {
     left: -9px;
     width: 18px;
     height: 18px;
+  }
+  .tl__item[data-kind='event'] .tl__crane {
     color: #ffb7c5;
     filter: drop-shadow(0 0 4px rgba(255, 170, 205, 0.8));
   }
@@ -574,10 +638,66 @@ const gradId = `tl-arc-${tl.id}`;
     stroke-linecap: round;
     stroke-linejoin: round;
   }
-  /* 小塔吊线也细一点，不然缩到 18px 会糊成一坨 */
-  .tl__item[data-kind='event'] .tl__crane svg {
+  /* 小塔吊线也粗一点，不然缩到 18px 会糊成一坨 */
+  .tl__item[data-kind='event'] .tl__crane svg,
+  .tl__item[data-kind='fuzzy'] .tl__crane svg {
     stroke-width: 2.8;
   }
+
+  /*
+    「难以考据具体时间」那颗塔吊：**和事件一样大（18px）**，但罩着**电视雪花屏**。
+    描边本身已经被 SVG 滤镜推歪了（见组件里那段 <filter>），
+    这里再盖一层"雪"：一层碎噪点 + 一条条横向扫线，整体用 screen 叠上去，
+    看起来就是一台收不到信号的旧电视。
+    颜色单独用一档淡琥珀色 —— 尺寸归尺寸，还是得让人一眼认出"这是另一种点"。
+
+    动态只动 background-position、作用范围就这 18px 的小图标 ——
+    站里那条"动效只碰 transform/opacity"的规矩是给整屏背景层定的，
+    这么小的元素每帧重画一次可以忽略；「减少动效」偏好里也照旧停掉。
+  */
+  .tl__item[data-kind='fuzzy'] .tl__crane {
+    /*
+      这里**千万别改成 position: relative**：塔吊是个 <span>，基底那条规则用
+      position:absolute 把它块级化了，宽高才吃得住；换成 relative 它就退回行内元素，
+      width/height 全被忽略 —— 实测塔吊变成 0×0（连同里面的 SVG 一起看不见，
+      ::after 那层雪花也只剩 inset:-3px 撑出的 6px 小方块）。
+      absolute 本身就能给 ::after 当包含块，不需要 relative。
+    */
+    color: #ffd9a0;
+    filter: drop-shadow(0 0 4px rgba(255, 220, 160, 0.7));
+  }
+  .tl__item[data-kind='fuzzy'] .tl__crane::after {
+    content: '';
+    position: absolute;
+    inset: -3px;
+    pointer-events: none;
+    border-radius: 3px;
+    background-image:
+      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.95' numOctaves='2'/%3E%3C/filter%3E%3Crect width='24' height='24' filter='url(%23n)'/%3E%3C/svg%3E"),
+      repeating-linear-gradient(
+        180deg,
+        rgba(255, 255, 255, 0.3) 0 1px,
+        rgba(20, 10, 0, 0.16) 1px 3px
+      );
+    background-size: 12px 12px, 100% 4px;
+    mix-blend-mode: screen;
+    opacity: 0.7;
+    animation: tl-noise-roll 0.7s steps(3, end) infinite;
+  }
+  @keyframes tl-noise-roll {
+    from {
+      background-position: 0 0, 0 0;
+    }
+    to {
+      background-position: 7px 5px, 0 12px;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .tl__item[data-kind='fuzzy'] .tl__crane::after {
+      animation: none;
+    }
+  }
+  /* 难考据的点是"大事"那一档：字号和时刻一样 */
 
   /*
     名字常驻显示，横着写（转着写就没法读了）。
@@ -608,8 +728,13 @@ const gradId = `tl-arc-${tl.id}`;
     text-decoration: underline;
     text-underline-offset: 0.2em;
   }
-  /* 「事件」的文字也小一档（页面 0.8rem → 0.68rem），和它那颗小塔吊配一脸 */
-  .tl__item[data-kind='event'] .tl__name {
+  /*
+    「事件」的文字也小一档（页面 0.8rem → 0.68rem），和它那颗小塔吊配一脸。
+    「难以考据」同样是这一档 —— 用户要的是"图标和文字比例和事件一样、比时刻小"，
+    所以尺寸规则两边共用，只有塔吊的颜色 / 雪花是它自己的。
+  */
+  .tl__item[data-kind='event'] .tl__name,
+  .tl__item[data-kind='fuzzy'] .tl__name {
     font-size: 0.68rem;
     letter-spacing: 0.02em;
     color: rgba(255, 217, 239, 0.86);
@@ -774,11 +899,15 @@ const gradId = `tl-arc-${tl.id}`;
     时刻名藏起来，大塔吊照旧（它标着那个时刻在轴上的位置）；
     事件名藏起来，小塔吊照旧；
     年代名藏起来，带子和它的颜色照旧（它标着那段年月有多长）。
+    「难以考据」按**事件**那一档算（它是小塔吊、小字，尺寸和事件一个规格）——
+    不为它单开一个开关，那会把底下那排六个开关的对称布局打破。
   */
   .tl.is-off-left-moments .tl__item[data-side='left'][data-kind='moment'] .tl__name,
   .tl.is-off-right-moments .tl__item[data-side='right'][data-kind='moment'] .tl__name,
   .tl.is-off-left-events .tl__item[data-side='left'][data-kind='event'] .tl__name,
+  .tl.is-off-left-events .tl__item[data-side='left'][data-kind='fuzzy'] .tl__name,
   .tl.is-off-right-events .tl__item[data-side='right'][data-kind='event'] .tl__name,
+  .tl.is-off-right-events .tl__item[data-side='right'][data-kind='fuzzy'] .tl__name,
   .tl.is-off-left-spans .tl__spanName[data-side='left'],
   .tl.is-off-right-spans .tl__spanName[data-side='right'] {
     display: none;
@@ -957,10 +1086,19 @@ const gradId = `tl-arc-${tl.id}`;
   /** 刻度间隔（px，沿轴） */
   const TICK_STEP = 26;
 
-  /** 比例尺的两个端点：最左一刻度 = 一天，最右一刻度 = 一年 */
+  /**
+   * 比例尺的两个端点：最左一刻度 = 一天，最右一刻度 = 一年。
+   * 这两个数必须和 src/utils/timelines.ts 里的 SCALE_MIN_DAYS / SCALE_MAX_DAYS 一致
+   * —— 那边负责把数据里的 `tickDays`（每条轴自己的默认比例尺）换算成滑块位置，
+   * 脚本这边负责反过来换算成"一刻度多少天"。改一边记得改另一边。
+   */
   const SCALE_MIN_DAYS = 1;
   const SCALE_MAX_DAYS = 365;
-  /** 打开时的默认位置：正中间 */
+  /**
+   * 兜底位置：正中间，约 19 天/格。
+   * 只有"数据里没写 tickDays"（老数据）或 sessionStorage 里也没这条轴的手动值时
+   * 才会用到它 —— 也就是说老数据打开的样子和加这个功能之前一模一样。
+   */
   const SCALE_MID = 0.5;
   /**
    * 存滑块位置用的 key。内容和开合状态一样要带上是「哪条时间轴」：
@@ -1108,12 +1246,16 @@ const gradId = `tl-arc-${tl.id}`;
     };
 
     /*
-      从 sessionStorage 里捞上一次拖到的位置。
-      记录里带着「是哪条时间轴」，对不上就当没存过 —— 于是换了一条轴（或
-      进了没挂轴的页面）会回到默认的正中间；还在同一条轴的页面上时，
-      不管面板开过还是关过，位置都还在。
+      这条轴打开时的比例尺初值：**数据里的 tickDays 说了算**（构建期换算好写在
+      data-tl-scale 上），没有就是滑块正中间。
+      然后才轮到 sessionStorage 里这条轴的手动值 —— 用户自己拖过就听用户的，
+      这个优先级和「面板位置」那套一致。
     */
     let scale = SCALE_MID;
+    {
+      const rawDefault = Number(root.dataset.tlScale);
+      if (Number.isFinite(rawDefault)) scale = Math.max(0, Math.min(1, rawDefault));
+    }
     try {
       const raw = sessionStorage.getItem(SCALE_KEY);
       if (raw) {
@@ -1272,6 +1414,12 @@ const gradId = `tl-arc-${tl.id}`;
 
       const dayOfEl = new Map<HTMLElement, number>();
       for (const el of items) {
+        /*
+          「难以考据」的点没有日期，不该被卷进"按今天重排"里：
+          它的位置是作者在编辑器里拖出来的一个比例，重排一次就会跑掉。
+          所以它既不参与范围计算，也不改 data-param（下面那个循环也会跳开它）。
+        */
+        if (el.dataset.fuzzy === '1') continue;
         // 构建时算的 day 写在 data-day 上；实时点换成今天
         const d = el.dataset.live === '1' ? today : Number(el.dataset.day);
         dayOfEl.set(el, Number.isFinite(d) ? d : today);
@@ -1296,6 +1444,7 @@ const gradId = `tl-arc-${tl.id}`;
 
       // 每个点的位置 + 实时点的日期显示
       for (const el of items) {
+        if (el.dataset.fuzzy === '1') continue; // 难考据的点：位置留在原处不动
         const d = dayOfEl.get(el) as number;
         el.dataset.param = String(paramOf(d));
         if (el.dataset.live === '1') {
@@ -1327,6 +1476,13 @@ const gradId = `tl-arc-${tl.id}`;
         if (!a || !b) continue;
         const da = dayOfEl.get(a);
         const db = dayOfEl.get(b);
+        /*
+          端点里有「难以考据」的点时，这里查不到 day（上面把它排除掉了），
+          于是 continue —— 那条时间段就**保留构建期算好的位置**：
+          utils/timelines.ts 的 spanEdges 已经按难考据点的 `at` 算过一遍了，
+          而"按今天重排"只该影响日期类的点。这种段会留在第 0 层
+          （分层是按天数算的，没有天数就没法参与），够用。
+        */
         if (da === undefined || db === undefined) continue;
         el.dataset.tlFrom = String(paramOf(Math.min(da, db)));
         el.dataset.tlTo = String(paramOf(Math.max(da, db)));
@@ -1399,6 +1555,7 @@ const gradId = `tl-arc-${tl.id}`;
         for (const kind of ['moment', 'event']) {
           const list = items
             .filter((el) => (el.dataset.side === 'left' ? 'left' : 'right') === side)
+            .filter((el) => el.dataset.fuzzy !== '1') // 难考据的点从不合并：它那层雪花屏得留着自己那一根
             .filter((el) => (el.dataset.kind === 'event' ? 'event' : 'moment') === kind)
             .map((el) => ({ el, t: Number(el.dataset.param) }))
             .filter((o) => Number.isFinite(o.t))

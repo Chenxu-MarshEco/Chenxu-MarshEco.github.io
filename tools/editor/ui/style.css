@@ -1202,6 +1202,7 @@ body[data-type="notes"] .field--posts-only {
   padding: 6px;
   overflow-y: auto;
   flex: 1 1 auto;
+  min-height: 0;
 }
 .pw-tree__item {
   display: flex;
@@ -1239,6 +1240,114 @@ body[data-type="notes"] .field--posts-only {
   padding: 10px;
   font-size: 12px;
   color: var(--text-muted);
+}
+
+/* ---------------------------------------------------------------
+   左栏（下）：独立页面
+   挂在树下面单独一段 —— 它们不在任何板块下，所以不混进上面那棵树。
+--------------------------------------------------------------- */
+#pw-standalone {
+  flex: 0 1 auto;
+  min-height: 0;
+  max-height: 52%;
+  overflow-y: auto;
+  padding: 8px 8px 10px;
+  border-top: 1px solid var(--border);
+  background: var(--surface-2);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.pw-solo__head {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.pw-solo__title {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+}
+.pw-solo__count {
+  font-size: 11px;
+  font-style: normal;
+  color: var(--text-muted);
+}
+.pw-solo__hint,
+.pw-solo__tip,
+.pw-solo__empty {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--text-muted);
+}
+.pw-solo__new {
+  display: flex;
+  gap: 4px;
+}
+.pw-solo__new .input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.pw-solo__list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.pw-solo__item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+}
+.pw-solo__item.is-active {
+  border-color: var(--accent);
+  box-shadow: inset 2px 0 0 var(--accent, #7a3f9d);
+}
+.pw-solo__top {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.pw-solo__name {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.pw-solo__addr {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.pw-solo__addrlabel {
+  flex: none;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+/* 站内地址：等宽 + 可选中，剪贴板用不了时就是靠选中它兜底 */
+.pw-solo__url {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
+  padding: 2px 6px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--r-sm);
+  font-family: var(--font-mono, monospace);
+  font-size: 11px;
+  color: var(--accent);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  user-select: all;
+}
+.pw-solo__href {
+  flex: 1 1 120px;
+  min-width: 0;
+  padding: 4px 6px;
+  font-size: 11px;
 }
 
 /* 中栏：字段 */
@@ -2070,6 +2179,44 @@ body[data-type="notes"] .field--posts-only {
   gap: 10px;
   margin-bottom: 6px;
 }
+/*
+  「默认比例尺」那一格：数字框 + 「天 / 格」+ 两个快捷按钮，
+  下面一行是现算的读数（一刻度 ≈ N 天 · 整条轴约几格 · 建议值）。
+*/
+.tickfield {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.tickfield__row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.tickfield__num {
+  flex: none;
+  width: 74px;
+  padding: 5px 6px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.tickfield__num.is-bad {
+  border-color: var(--danger);
+  background: var(--danger-soft);
+}
+.tickfield__unit {
+  flex: none;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.tickfield__hint {
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-muted);
+  opacity: 0.85;
+}
 .tl-edit__h {
   margin: 16px 0 6px;
   font-size: 13px;
@@ -2083,7 +2230,7 @@ body[data-type="notes"] .field--posts-only {
   margin-bottom: 8px;
 }
 /*
-  时间点一行：侧 / 时刻·事件 / 日期 / 名字 / 跳转地址 / 删除。
+  时间点一行：侧 / 时刻·事件·难考据 / 日期（或位置）/ 名字 / 跳转地址 / 删除。
   时间段一行：侧 / 名字 / 起点 / 终点 / 跳转地址 / 删除。
   弹窗宽 1180，表单那一列约 766px，这些宽度分得开。
 */
@@ -2104,6 +2251,47 @@ body[data-type="notes"] .field--posts-only {
 .tl-edit__kind {
   padding: 5px 6px;
   font-size: 12px;
+}
+
+/*
+  「难考据」的时间点：日期那一格收起来，换成位置读数 + 数字微调框，
+  下面再铺一整行说明。用 !important 是因为 .datefield / .tl-fuzzypos
+  自己带着 display，光加 hidden 属性盖不住。
+*/
+.tl-hide {
+  display: none !important;
+}
+.tl-fuzzypos {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.tl-fuzzypos__text {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tl-fuzzypos__num {
+  flex: none;
+  width: 62px;
+  padding: 5px 6px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.tl-edit__fuzzyhint {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding-left: 2px;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--text-muted);
 }
 
 /* ---------------------------------------------------------------
@@ -2300,9 +2488,50 @@ body[data-type="notes"] .field--posts-only {
   color: #ff4fa3;
   filter: drop-shadow(0 0 4px rgba(255, 40, 130, 0.85));
 }
+/* 缩到 18px 得把线加粗一点，不然糊成一坨 —— 页面那边也是 2.8 */
+.tl-pv__item[data-kind='event'] .tl-pv__crane svg,
+.tl-pv__item[data-kind='fuzzy'] .tl-pv__crane svg {
+  stroke-width: 2.8;
+}
 .tl-pv__item[data-kind='event'] .tl-pv__name {
   font-size: 0.62rem;
   color: rgba(255, 217, 239, 0.86);
+}
+/*
+  「难考据」：半透明 + 虚线描边的塔吊（页面那边还会罩一层电视雪花，
+  这里只要一眼看出「它跟别的不一样，而且能拖」就够了）。
+  轴是竖着的，所以光标用 grab / grabbing —— 拖的方向是上下。
+
+  尺寸和文字跟「事件」一样（小一号）：用户特意要求过"难考据的图标和文字比例
+  应当和事件一样、比时刻小"，页面那边就是按这个改的，预览得跟着一致 ——
+  不然编辑器里看着和时刻一样大、存下去在页面上却小一圈。
+*/
+.tl-pv__item[data-kind='fuzzy'] .tl-pv__crane {
+  left: -9px;
+  width: 18px;
+  height: 18px;
+  color: #cbb8ff;
+  opacity: 0.85;
+  cursor: grab;
+  /* 拖它的时候别让预览区跟着滚、别顺手选中文字 */
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+/* 小塔吊线也粗一点，和页面上那档一样（上面那条规则已经统一成 2.8） */
+.tl-pv__item[data-kind='fuzzy'] .tl-pv__crane svg {
+  stroke-dasharray: 3 2;
+}
+.tl-pv__item[data-kind='fuzzy'] .tl-pv__crane.is-dragging {
+  cursor: grabbing;
+  opacity: 1;
+  filter: drop-shadow(0 0 7px rgba(203, 184, 255, 0.9));
+}
+.tl-pv__item[data-kind='fuzzy'] .tl-pv__name {
+  font-size: 0.62rem;
+  color: rgba(226, 214, 255, 0.92);
+  text-decoration: underline dotted rgba(203, 184, 255, 0.7);
+  text-underline-offset: 0.18em;
 }
 .tl-pv__item[data-side='left'] .tl-pv__name {
   right: 40px;

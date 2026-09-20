@@ -7,7 +7,7 @@ import { getNotes, getPosts } from '../utils/content';
 import { absoluteUrl } from '../utils/url';
 import { toISODate } from '../utils/date';
 import site from '../site.config';
-import { flattenBoards, type BoardNode } from '../utils/boards';
+import { flattenBoards, isStandalone, type BoardNode } from '../utils/boards';
 
 export const GET: APIRoute = async ({ site: astroSite }) => {
   const entries = [...(await getPosts()), ...(await getNotes())];
@@ -19,8 +19,14 @@ export const GET: APIRoute = async ({ site: astroSite }) => {
     以前是手写死的列表，加一层就漏一个 —— 现在直接从树里推导，
     不会再出现 sitemap 和实际页面不一致的情况。
     feed-check 就是靠比对这两者发现问题的。
+
+    **独立页面（standalone）不收**：它们按定义就是"不挂在任何列表里、
+    只能靠别处的链接点进来"的那种页面，丢进站点地图等于自己把它列出来。
+    （页面本身照旧生成，地址照旧能访问 —— 只是不主动告诉搜索引擎。）
   */
-  const boardPages = flattenBoards(site.homeBoards as BoardNode[]).map((f) => f.url);
+  const boardPages = flattenBoards(site.homeBoards as BoardNode[])
+    .filter((f) => !isStandalone(f.node))
+    .map((f) => f.url);
 
   const allStatic = [...staticPages, ...boardPages];
 

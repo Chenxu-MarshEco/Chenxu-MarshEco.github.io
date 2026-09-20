@@ -27,34 +27,54 @@ export type TimelineSide = 'left' | 'right';
 export type TimelineSpanSide = TimelineSide | 'both';
 
 /**
- * 时间点分两类：
+ * 时间点分三类：
  *
  * - `moment`（**时刻**）：轴上那些「大事」。图标是那颗大一些的落日色塔吊，
  *   文字也大一些。这是最早那版唯一的一种时间点，所以老数据没写 kind 的
  *   一律当 moment。
  * - `event`（**事件**）：同一天里那些零碎的记录。图标是**小一号的粉色塔吊**，
  *   旁边的文字也更小 —— 一眼能和大事件分开，又不至于把轴糊住。
+ * - `fuzzy`（**难以考据具体时间**）：现实里那些查不到确切日期的往事 ——
+ *   只知道大概发生在哪一段，填不出 `yyyy-mm-dd`。这种点**没有日期**，
+ *   位置改用 `at`（这条轴上的 0~1）直接存，由编辑器里"拖着塔吊挪"定下来；
+ *   塔吊上会罩一层电视雪花屏似的扭曲，一眼看出"这儿的年代是糊的"。
  *
- * 两类**功能完全一样**（左右、日期、名字、链接、合并规则都共用一套代码），
- * 差别只在图标大小 / 颜色和字号。
+ * 三类**功能完全一样**（左右、名字、链接、合并规则都共用一套代码），
+ * 差别只在有没有日期、图标长什么样、字号多大。
  */
-export type TimelinePointKind = 'moment' | 'event';
+export type TimelinePointKind = 'moment' | 'event' | 'fuzzy';
 
 export interface TimelinePoint {
   id: string;
   side: TimelineSide;
-  /** 时刻还是事件；没写就是时刻（老数据） */
+  /** 时刻 / 事件 / 难以考据；没写就是时刻（老数据） */
   kind?: TimelinePointKind;
-  /** ISO 日期 `yyyy-mm-dd` */
-  date: string;
+  /**
+   * ISO 日期 `yyyy-mm-dd`，或者 `today` 那个哨兵。
+   * `kind: 'fuzzy'` 的点没有日期（用 `at` 定位）。
+   */
+  date?: string;
+  /**
+   * 只有「难以考据」才有：在这条轴上的位置，0 = 最早、1 = 最晚。
+   * 为什么不用日期反推：这种点压根查不到日期，位置就是**看出来的**，
+   * 由编辑器的拖动直接定，所以存成一个比例最省事，也不会因为
+   * 旁边的时间点增删而跑掉。
+   */
+  at?: number;
   /** 事件名，常驻显示在轴旁边 */
   label: string;
   /** 点它跳去哪：站内写 `/huaya/xxx`，站外写 `https://…`；留空就只是看看名字 */
   href?: string;
 }
 
-/** 这个时间点是「时刻」还是「事件」；没写的（老数据）当时刻 */
-export const pointKind = (p: TimelinePoint): TimelinePointKind => (p.kind === 'event' ? 'event' : 'moment');
+/** 这个时间点是哪一类；没写的（老数据）当时刻 */
+export const pointKind = (p: TimelinePoint): TimelinePointKind =>
+  p.kind === 'event' ? 'event' : p.kind === 'fuzzy' ? 'fuzzy' : 'moment';
+
+/** 是不是「难以考据具体时间」那种没有日期的点 */
+export const isFuzzy = (p: TimelinePoint): boolean => pointKind(p) === 'fuzzy';
+
+const clamp01 = (n: number) => (n < 0 ? 0 : n > 1 ? 1 : n);
 
 export interface TimelineSpan {
   id: string;
@@ -76,8 +96,38 @@ export interface Timeline {
   leftName: string;
   /** 右侧那条线叫什么历 */
   rightName: string;
+  /**
+   * 这条轴**默认的比例尺**：一刻度代表多少天（1 ~ 365）。
+   *
+   * 为什么每条轴要能各调：跨度差别太大了。同一条轴从 2022 排到 2026，
+   * 另一条只跨两个月 —— 都按默认的 19 天/格打开的话，后者整条轴只有三个刻度，
+   * 缩在面板中间一小截，读者每次打开都得自己放大一次。
+   * 不写这个字段就是默认（滑块正中间，约 19 天/格），老数据行为不变。
+   */
+  tickDays?: number;
   points: TimelinePoint[];
   spans: TimelineSpan[];
+}
+
+/**
+ * 底部那根比例尺的量程：最左一刻度 = 一天，最右一刻度 = 一年。
+ * 和 Timeline.astro 里的 SCALE_MIN_DAYS / SCALE_MAX_DAYS 必须一致 ——
+ * 那边是脚本，import 不了 TS，只能各写一份（改一边记得改另一边）。
+ */
+export const SCALE_MIN_DAYS = 1;
+export const SCALE_MAX_DAYS = 365;
+
+/**
+ * 数据里的 `tickDays` → 比例尺刻度位置（0~1）。
+ *
+ * 滑块是**等比**插值（先取对数再线性），所以在对数空间里换算：
+ * t=0 → 1 天/格，t=0.5 → 约 19 天/格（默认），t=1 → 365 天/格。
+ * 值不合法（缺、非数字、越界）一律返回 null，让调用方回落到默认位置。
+ */
+export function scaleParamOf(tickDays?: number | null): number | null {
+  const d = Number(tickDays);
+  if (!Number.isFinite(d) || d < SCALE_MIN_DAYS || d > SCALE_MAX_DAYS) return null;
+  return Math.log(d / SCALE_MIN_DAYS) / Math.log(SCALE_MAX_DAYS / SCALE_MIN_DAYS);
 }
 
 export const timelines: Timeline[] = ((raw as { timelines?: Timeline[] }).timelines ?? []).filter(
@@ -88,7 +138,7 @@ export const getTimeline = (id?: string | null): Timeline | undefined =>
   id ? timelines.find((t) => t.id === id) : undefined;
 
 /** `yyyy-mm-dd` → 天数。算排序和中点用，认不出来给 NaN */
-export function dayOf(date: string): number {
+export function dayOf(date?: string): number {
   const s = String(date ?? '').trim();
   // 「实时」那个时间点：永远算今天（构建那天构建、打开页面那天由脚本重排）
   if (s === TODAY) return todayDay();
@@ -136,7 +186,12 @@ export function dateOf(day: number): string {
  * 只有一个点（或所有点同一天）时，人为撑开一天，不然除数为 0。
  */
 export function rangeOf(tl: Timeline): { min: number; max: number } {
-  const days = tl.points.map((p) => dayOf(p.date)).filter((d) => Number.isFinite(d));
+  // 「难以考据」的点一律不参与：它们没有日期（手改数据时就算留了个旧日期也不认），
+  // 位置是编辑器拖出来的比例，不该影响"这条轴从哪年到哪年"
+  const days = tl.points
+    .filter((p) => !isFuzzy(p))
+    .map((p) => dayOf(p.date))
+    .filter((d) => Number.isFinite(d));
   if (!days.length) return { min: 0, max: 1 };
   let min = Math.min(...days);
   let max = Math.max(...days);
@@ -155,38 +210,53 @@ export function paramOf(tl: Timeline, day: number): number {
   return (day - min) / (max - min);
 }
 
-/** 时间点的位置 */
+/**
+ * 时间点的位置。
+ *
+ * 「难以考据」的点没有日期，位置直接读数据里的 `at`（编辑器拖动定下来的）；
+ * 其余的点照旧按日期在那条轴的比例上算。
+ *
+ * 注意 `rangeOf` 只统计**有日期**的点，所以加几个难考据的点不会把轴拉长 ——
+ * 它们只是被摆在轴上某个位置，不参与"这条轴从哪年到哪年"的计算。
+ */
 export function pointParam(tl: Timeline, p: TimelinePoint): number {
+  if (isFuzzy(p)) {
+    const at = Number(p.at);
+    return Number.isFinite(at) ? clamp01(at) : 0.5;
+  }
   return paramOf(tl, dayOf(p.date));
 }
 
 /**
- * 时间段的位置：取两端日期的中点。
+ * 时间段的位置：取两端**在轴上的位置**的中点。
+ *
+ * 原来是取两个日期的天数中点再换算 —— 因为"天数 → 位置"是线性的，
+ * 两者完全等价；现在改成直接用两端的 `pointParam`，好处是端点也可以是
+ * 「难以考据」那种没有日期的点（它有 `at`，照样算得出中点）。
+ *
  * 页面滚到「对应这个时间段的那个成分」时，轴就停在这个位置。
  */
 export function spanParam(tl: Timeline, s: TimelineSpan): number {
   const a = tl.points.find((p) => p.id === s.from);
   const b = tl.points.find((p) => p.id === s.to);
-  const da = a ? dayOf(a.date) : NaN;
-  const db = b ? dayOf(b.date) : NaN;
-  if (!Number.isFinite(da) && !Number.isFinite(db)) return 0.5;
-  if (!Number.isFinite(da)) return paramOf(tl, db);
-  if (!Number.isFinite(db)) return paramOf(tl, da);
-  return paramOf(tl, (da + db) / 2);
+  if (!a && !b) return 0.5;
+  if (!a) return pointParam(tl, b!);
+  if (!b) return pointParam(tl, a);
+  return (pointParam(tl, a) + pointParam(tl, b)) / 2;
 }
 
 /** 时间段两端的位置（画那条范围带用），排好先后 */
 export function spanEdges(tl: Timeline, s: TimelineSpan): { from: number; to: number } {
   const a = tl.points.find((p) => p.id === s.from);
   const b = tl.points.find((p) => p.id === s.to);
-  const da = a ? dayOf(a.date) : NaN;
-  const db = b ? dayOf(b.date) : NaN;
-  if (!Number.isFinite(da) || !Number.isFinite(db)) {
+  if (!a || !b) {
     const one = spanParam(tl, s);
     return { from: one, to: one };
   }
-  const lo = paramOf(tl, Math.min(da, db));
-  const hi = paramOf(tl, Math.max(da, db));
+  const pa = pointParam(tl, a);
+  const pb = pointParam(tl, b);
+  const lo = Math.min(pa, pb);
+  const hi = Math.max(pa, pb);
   return { from: lo, to: hi };
 }
 

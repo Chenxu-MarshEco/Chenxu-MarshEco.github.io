@@ -5,7 +5,7 @@ import HomeBirds from '../components/HomeBirds.astro';
 import Img from '../components/Img.astro';
 import site from '../site.config';
 import { withBase } from '../utils/url';
-import { flattenBoards, type BoardNode } from '../utils/boards';
+import { flattenBoards, visibleBoards, type BoardNode } from '../utils/boards';
 import { editVars } from '../utils/layout';
 import { bgStyle, coverUrl, variantUrl } from '../utils/images';
 
@@ -205,8 +205,13 @@ const styleOf = (key: string) => editVars('home', key) ?? undefined;
     </header>
 
     <div class="boards" data-edit="boards" style={styleOf('boards')}>
+      {/*
+        只画**非独立页面**的顶层节点。独立页面和两大板块平级躺在数据里
+        （借用同一套地址推导与页面生成），但它按定义不该出现在任何列表里 ——
+        见 utils/boards.ts 的 isStandalone。
+      */}
       {
-        site.homeBoards.map((board) => (
+        visibleBoards(site.homeBoards as BoardNode[]).map((board) => (
           <a class="board" href={withBase(boardUrl(board.id))} id={board.id}>
             <div
               class="board__bg"

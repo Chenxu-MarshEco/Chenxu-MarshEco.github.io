@@ -465,6 +465,133 @@
           "to": "tl-mu6e19cb793-pmu6p6djx56"
         }
       ]
+    },
+    {
+      "id": "tl-mu94ko3q566",
+      "title": "纷鸟衔来的记录",
+      "leftName": "左侧",
+      "rightName": "右侧",
+      "tickDays": 1.3,
+      "points": [
+        {
+          "id": "tl-mu94ko3q566-pmu94l4mu0",
+          "side": "right",
+          "date": "2023-07-08",
+          "label": "虹星的1.20原版服开服"
+        },
+        {
+          "id": "tl-mu94ko3q566-pmu94maau1",
+          "side": "right",
+          "date": "2023-08-03",
+          "label": "虹星的1.20原版服结档"
+        },
+        {
+          "id": "tl-mu94ko3q566-pmu9557id2",
+          "side": "left",
+          "kind": "fuzzy",
+          "at": 0.08,
+          "label": "与樱花的相遇"
+        },
+        {
+          "id": "tl-mu94ko3q566-pmu9576o53",
+          "side": "left",
+          "date": "2023-07-12",
+          "label": "吉吉极限自救",
+          "kind": "event"
+        },
+        {
+          "id": "tl-mu94ko3q566-pmu95maxh4",
+          "side": "left",
+          "kind": "fuzzy",
+          "at": 0.1,
+          "label": "袭击灭村事件"
+        },
+        {
+          "id": "tl-mu94ko3q566-pmu95n51o5",
+          "side": "left",
+          "date": "2023-07-16",
+          "label": "Raw家建成",
+          "kind": "event"
+        },
+        {
+          "id": "tl-mu94ko3q566-pmu95vmg47",
+          "side": "left",
+          "date": "2023-07-14",
+          "label": "拐卖村民",
+          "kind": "event"
+        },
+        {
+          "id": "tl-mu94ko3q566-pmu95xpet8",
+          "side": "left",
+          "kind": "fuzzy",
+          "at": 0.28,
+          "label": "监守者怒斩合金套"
+        },
+        {
+          "id": "tl-mu94ko3q566-pmu962j7w9",
+          "side": "right",
+          "date": "2023-07-13",
+          "label": "纷群群友开始加入纷湖"
+        },
+        {
+          "id": "tl-mu94ko3q566-pmu965eqk10",
+          "side": "left",
+          "kind": "fuzzy",
+          "at": 0.3,
+          "label": "激斗五级袭击"
+        },
+        {
+          "id": "tl-mu94ko3q566-pmu967jpw11",
+          "side": "left",
+          "kind": "fuzzy",
+          "at": 0.83,
+          "label": "十五问的消失"
+        },
+        {
+          "id": "tl-mu94ko3q566-pmu967vmk12",
+          "side": "left",
+          "kind": "fuzzy",
+          "at": 0.62,
+          "label": "冰道地铁大动工"
+        },
+        {
+          "id": "tl-mu94ko3q566-pmu969cck13",
+          "side": "left",
+          "kind": "fuzzy",
+          "at": 0.5,
+          "label": "七人大热睡"
+        },
+        {
+          "id": "tl-mu94ko3q566-pmu96cqt713",
+          "side": "left",
+          "kind": "fuzzy",
+          "at": 0.78,
+          "label": "吉吉做成就虐猫"
+        }
+      ],
+      "spans": [
+        {
+          "id": "tl-mu94ko3q566-smu9527b10",
+          "name": "纷湖",
+          "from": "tl-mu94ko3q566-pmu94l4mu0",
+          "to": "tl-mu94ko3q566-pmu94maau1",
+          "side": "right"
+        },
+        {
+          "id": "tl-mu94ko3q566-smu963omc1",
+          "name": "虹星年代",
+          "from": "tl-mu94ko3q566-pmu94l4mu0",
+          "to": "tl-mu94ko3q566-pmu962j7w9",
+          "side": "right"
+        },
+        {
+          "id": "tl-mu94ko3q566-smu964c902",
+          "name": "纷鸟年代",
+          "from": "tl-mu94ko3q566-pmu962j7w9",
+          "to": "tl-mu94ko3q566-pmu94maau1",
+          "side": "right"
+        }
+      ]
     }
   ],
   "dropped": {
