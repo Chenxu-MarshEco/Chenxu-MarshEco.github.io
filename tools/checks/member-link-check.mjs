@@ -60,6 +60,11 @@ const data = JSON.parse(fs.readFileSync(path.join(proj, 'src/data/salon.json'), 
 const members = data.members.map((m) => ({ ...m, aliases: m.aliases || [] }));
 const manifest = JSON.parse(fs.readFileSync(path.join(proj, 'public/img/opt/manifest.json'), 'utf8'));
 const names = members.map((m) => m.name);
+/* Raw 的特殊化是**数据**（title / sun / zoom），用户会随时改图 —— 所以期望值也从
+   数据 + 清单现算，不写死文件名 */
+const rawMember = members.find((m) => m.name === 'Raw') ?? null;
+const rawAvatarUrl = rawMember ? faceUrlOf(rawMember.avatar, manifest, '/', 200) : '';
+const rawZoomUrl = rawMember && rawMember.zoom ? faceUrlOf(rawMember.zoom, manifest, '/', 480) : rawAvatarUrl;
 
 /* ================================================================
  * A. 重写器单测
@@ -256,19 +261,28 @@ check('Raw 的名片里写着「冰室之主」', titles > 0 && /<span class="me
     zoomFrames === totalMem - faceNone && zoomImgs === zoomFrames,
     `名片 ${totalMem} / 占位 ${faceNone} / 放大框 ${zoomFrames}（图 ${zoomImgs}）`);
 }
-check('★ Raw 的放大图固定是他给的那张（不是头像）',
-  /data-mem="m02-da43"[\s\S]{0,900}?mem__zoomImg" src="[^"]*raw-zoom/.test(rawHtml));
+check('★ Raw 的放大图固定是数据里填的那张（不是他的头像）', (() => {
+  const i = rawHtml.indexOf('data-mem="m02-da43"');
+  if (i < 0) return { ok: false, why: '页面上没有 Raw 的名片' };
+  const slice = rawHtml.slice(i, i + 1200);
+  const hasZoom = slice.includes(`mem__zoomImg" src="${rawZoomUrl}"`);
+  return { ok: hasZoom && rawZoomUrl !== rawAvatarUrl, hasZoom, rawZoomUrl, rawAvatarUrl };
+})().ok === true, (() => {
+  const i = rawHtml.indexOf('data-mem="m02-da43"');
+  const slice = i < 0 ? '' : rawHtml.slice(i, i + 1200);
+  return `期望 ${rawZoomUrl}（头像 ${rawAvatarUrl}），页面里 ${slice.includes(rawZoomUrl) ? '命中' : '没命中'}`;
+})());
 check('别人的放大图就是头像那张（同一个地址，不会再发一次请求）', (() => {
   for (const [, h] of pages) {
     for (const m of h.matchAll(/<img class="mem__face" src="([^"]+)"[^>]*>[\s\S]{0,400}?<img class="mem__zoomImg" src="([^"]+)"/g)) {
-      if (m[1] !== m[2] && !m[2].includes('raw-zoom')) return { ok: false, a: m[1], b: m[2] };
+      if (m[1] !== m[2] && m[2] !== rawZoomUrl) return { ok: false, a: m[1], b: m[2] };
     }
   }
   return { ok: true };
 })().ok === true || true, (() => {
   for (const [, h] of pages) {
     for (const m of h.matchAll(/<img class="mem__face" src="([^"]+)"[^>]*>[\s\S]{0,400}?<img class="mem__zoomImg" src="([^"]+)"/g)) {
-      if (m[1] !== m[2] && !m[2].includes('raw-zoom')) return `${m[1]} vs ${m[2]}`;
+      if (m[1] !== m[2] && m[2] !== rawZoomUrl) return `${m[1]} vs ${m[2]}`;
     }
   }
   return '除 Raw 外都复用头像地址';
@@ -574,6 +588,25 @@ if (mSpot) {
 }
 await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
 
+/* ---- 先量一张普通成员的卡片当基准（Raw 有「称号」那一行，允许高一丢丢）---- */
+const baseCard = await cdp.ev(`(async () => {
+  const el = ${pickVisible('span.mem[data-mem]:not([data-mem="m02-da43"])')};
+  if (!el) return null;
+  const r = el.getBoundingClientRect();
+  /* 直接派一个 pointerover，省得为了量尺寸真的移鼠标 */
+  el.dispatchEvent(new PointerEvent('pointerover', { bubbles: true, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2 }));
+  await new Promise((done) => setTimeout(done, 60));
+  const card = document.querySelector('.memlayer .mem__card');
+  if (!card) return null;
+  const cs = getComputedStyle(card);
+  const cr = card.getBoundingClientRect();
+  return { h: Math.round(cr.height), paddingTop: Math.round(parseFloat(cs.paddingTop)),
+    paddingLeft: Math.round(parseFloat(cs.paddingLeft)), gapToName: Math.round(r.top - cr.bottom) };
+})()`);
+info('普通成员的名片基准：' + JSON.stringify(baseCard));
+await cdp.ev("document.dispatchEvent(new PointerEvent('pointerout', { bubbles: true })); 1");
+await sleep(300);
+
 /* ---- Raw：落日 + 称号 + 他那张放大图 ---- */
 await cdp.goto('/huaya/bingshi/', 1000);
 const rawPt = await cdp.ev(`(() => {
@@ -599,6 +632,10 @@ const rawCard = await cdp.ev(`(() => {
     label: card.querySelector('.mem__label')?.textContent,
     title: card.querySelector('.mem__title')?.textContent,
     zoomSrc: card.querySelector('.mem__zoomImg')?.getAttribute('src'),
+    gapToName: (() => {
+      const mem = document.querySelector('[data-mem="m02-da43"]:hover');
+      return mem ? Math.round(mem.getBoundingClientRect().top - card.getBoundingClientRect().bottom) : null;
+    })(),
   };
 })()`);
 info('Raw 的名片：' + JSON.stringify(rawCard));
@@ -608,7 +645,61 @@ check('★ Raw 的名片上有「落日」那一块，而且是半圆（宽 2 �
 check('★ 落日的横条遮罩 + 落日渐变都在（蒸汽波那套）',
   !!rawCard && /repeating-linear-gradient/.test(rawCard.sun.mask) && /radial-gradient/.test(rawCard.sun.bg));
 check('★ 名片上写着「冰室之主」', rawCard && rawCard.title === '冰室之主', String(rawCard && rawCard.title));
-check('★ Raw 的放大框用的是他那张图（raw-zoom）', /raw-zoom/.test((rawCard && rawCard.zoomSrc) || ''), String(rawCard && rawCard.zoomSrc));
+
+/* ⚠ 这一条是补的坑：落日是绝对定位的，给不给它腾地方全靠卡片的 padding-top。
+   上一版那条 padding 被 `.memlayer .mem__card` 的 padding 简写按特异性压掉了，
+   落日就直接盖在头像和名字上（用户原话："落日没有在卡片上方，而是在中间把字全都挡死"）。
+   所以这里量的是**几何关系**，不是"落日块自己长得对不对"。 */
+const sunLayout = await cdp.ev(`(() => {
+  const card = document.querySelector('.memlayer .mem__card');
+  if (!card) return null;
+  const sun = card.querySelector('.mem__sun');
+  const face = card.querySelector('.mem__face');
+  const meta = card.querySelector('.mem__meta');
+  const cr = card.getBoundingClientRect();
+  const sr = sun.getBoundingClientRect();
+  const fr = face.getBoundingClientRect();
+  const mr = meta.getBoundingClientRect();
+  const cs = getComputedStyle(card);
+  return {
+    cardTop: Math.round(cr.top), cardH: Math.round(cr.height),
+    sunTop: Math.round(sr.top), sunBottom: Math.round(sr.bottom),
+    faceTop: Math.round(fr.top), metaTop: Math.round(mr.top),
+    paddingTop: Math.round(parseFloat(cs.paddingTop)),
+    overlapFace: Math.min(sr.bottom, fr.bottom) - Math.max(sr.top, fr.top) > 0 &&
+      Math.min(sr.right, fr.right) - Math.max(sr.left, fr.left) > 0,
+    overlapMeta: Math.min(sr.bottom, mr.bottom) - Math.max(sr.top, mr.top) > 0 &&
+      Math.min(sr.right, mr.right) - Math.max(sr.left, mr.left) > 0,
+  };
+})()`);
+info('落日和内容的几何关系：' + JSON.stringify(sunLayout));
+/* 用户的要求（原话）："落日在框的上方线条的上面，落日下缘紧贴着框的上方线条，
+   落日不在框里" —— 也就是卡片上边线当地平线，半圆整块待在**卡片外面**的上方。
+   再加上"框的大小应该和别人是一样的"。 */
+check('★ 落日**不在框里**：整块都在卡片上沿之上',
+  !!sunLayout && sunLayout.sunBottom <= sunLayout.cardTop + 1,
+  sunLayout && `落日底 ${sunLayout.sunBottom} / 卡片顶 ${sunLayout.cardTop}`);
+check('★ 落日下缘**紧贴着**卡片上沿那条线（差 ≤ 2px）',
+  !!sunLayout && Math.abs(sunLayout.sunBottom - sunLayout.cardTop) <= 2,
+  sunLayout && `落日底 ${sunLayout.sunBottom} / 卡片顶 ${sunLayout.cardTop}`);
+check('★ 落日没压到框里的任何内容（头像 / 名字）',
+  !!sunLayout && sunLayout.overlapFace === false && sunLayout.overlapMeta === false,
+  sunLayout && `头像顶 ${sunLayout.faceTop}、名字顶 ${sunLayout.metaTop}`);
+check('★ Raw 的框**和别人的一样大**（没有为落日加 padding；只多了「称号」那一行）',
+  !!sunLayout && !!baseCard && sunLayout.paddingTop === baseCard.paddingTop &&
+    Math.abs(sunLayout.cardH - baseCard.h) <= 22,
+  sunLayout && baseCard
+    ? `Raw padding-top ${sunLayout.paddingTop}px、高 ${sunLayout.cardH}；普通成员 padding-top ${baseCard.paddingTop}px、高 ${baseCard.h}`
+    : '没量到基准卡片');
+/* ⚠ 这一条也是用户报出来的：落日那 34px 的"挂高"一度被算进了卡片位置，
+   Raw 的卡片就比别人的高出一整个落日的高度。 */
+check('★ Raw 的卡片离名字的距离和别人一样（落日不能把卡片顶高）',
+  !!rawCard && !!baseCard && rawCard.gapToName !== null &&
+    Math.abs(rawCard.gapToName - baseCard.gapToName) <= 2 && Math.abs(rawCard.gapToName) <= 14,
+  rawCard && baseCard ? `Raw 间距 ${rawCard.gapToName}px、普通成员 ${baseCard.gapToName}px` : '没量到');
+
+check('★ Raw 的放大框用的是数据里填的那张图', !!rawCard && rawCard.zoomSrc === rawZoomUrl,
+  `${rawCard && rawCard.zoomSrc} vs 期望 ${rawZoomUrl}`);
 await cdp.move(5, 5);
 await sleep(400);
 

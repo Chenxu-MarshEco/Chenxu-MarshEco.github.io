@@ -50,11 +50,16 @@
       el.style.left = '0px';
       el.style.top = '0px';
       const cr = el.getBoundingClientRect();
+      /* 「落日」是挂在卡片上沿**之上**的装饰（不占卡片的高度）。
+         ⚠ 它只影响"上面放不下要不要翻到下面"这个判断，**不能**拿它去挪卡片 ——
+         否则 Raw 的卡片会比别人高出一整个落日的高度（用户一眼就看出来了）。
+         正常位置一律是"名字上方 10px"，和别人完全一致。 */
+      const overhang = el.querySelector('.mem__sun') ? 34 : 0;
       const pad = 8;
       let left = r.left + r.width / 2 - cr.width / 2;
       left = Math.max(pad, Math.min(window.innerWidth - cr.width - pad, left));
       let top = r.top - cr.height - 10;
-      if (top < pad) top = Math.min(window.innerHeight - cr.height - pad, r.bottom + 10);
+      if (top - overhang < pad) top = Math.min(window.innerHeight - cr.height - pad, r.bottom + 10);
       el.style.left = `${Math.round(left)}px`;
       el.style.top = `${Math.round(top)}px`;
     };
@@ -99,6 +104,12 @@
       card = el;
       home = mem;
       place(mem, el);
+      /* 头像/放大图是懒加载的：图到齐之后名片可能高了两三像素，
+         那时候之前算好的位置就偏了两像素 —— 图一加载完再摆一次 */
+      for (const img of el.querySelectorAll('img')) {
+        if (img.complete) continue;
+        img.addEventListener('load', () => { if (card === el && home === mem) place(mem, el); }, { once: true });
+      }
     };
 
     document.addEventListener('pointerover', (event) => {

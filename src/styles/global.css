@@ -1150,16 +1150,16 @@ body.is-board .site-footer a {
 
 /* ---------------------------------------------------------------------------
    半轮蒸汽波落日（成员表里 `sun: true` 才有）
-   纯 CSS：一个半圆 + 落日渐变，再拿重复渐变当遮罩切出横条，
-   底下一条粉色地平线。和首页那轮落日是同一套配色。
+   纯 CSS：一个半圆 + 落日渐变，再拿重复渐变当遮罩切出横条。
+   **它挂在卡片外面**：卡片的上边线就是地平线，半圆贴在它上面、下缘紧贴着那条线，
+   卡片本身和别的成员**一样大**（不为落日加任何 padding）。
    --------------------------------------------------------------------------- */
-.mem__card--sun {
-  padding-top: 40px;
-}
 .mem__sun {
   position: absolute;
-  top: 6px;
   left: 50%;
+  /* 卡片上沿 = 地平线：半圆贴在它**上面**，下缘紧贴着那条边线 ——
+     卡片本身不再为它加大（和别的成员一样大），落日只是"从框后面升起来" */
+  bottom: 100%;
   width: 68px;
   height: 34px;
   border-radius: 68px 68px 0 0;
@@ -1174,17 +1174,7 @@ body.is-board .site-footer a {
   );
   -webkit-mask-image: repeating-linear-gradient(180deg, #000 0 2.5px, transparent 2.5px 4.5px);
   mask-image: repeating-linear-gradient(180deg, #000 0 2.5px, transparent 2.5px 4.5px);
-  filter: drop-shadow(0 0 7px rgba(255, 130, 60, 0.55));
-}
-.mem__sun::after {
-  content: '';
-  position: absolute;
-  left: 50%;
-  bottom: -1px;
-  width: 94px;
-  height: 2px;
-  transform: translateX(-50%);
-  background: linear-gradient(90deg, transparent, rgba(255, 120, 190, 0.85), transparent);
+  filter: drop-shadow(0 -1px 7px rgba(255, 130, 60, 0.5));
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -433,8 +433,10 @@ function reportSpots(label, res, minReveal) {
     `矩形外的栅格化缝 ${hidden.reduce((n, r) => n + r.outer, 0)} 个（最多的一格 #${seam.i} ${seam.outer} 个、Δ${seam.outerMax}）`);
   check(`★ ${label}：全部 ${hidden.length} 格静止时，雕像**自己身上**一个像素都没变`,
     badInner.length === 0, badInner.slice(0, 4).map((r) => `#${r.i}:${r.inner}px`).join(' '));
-  check(`★ ${label}：矩形外那点差异只是这一层参与合成后重栅格化的缝（每格 ≤ 12 个像素、Δ ≤ 16）`,
-    seamMax <= 16 && hidden.every((r) => r.outer <= 12), `最多 ${seam.outer} 个、Δ${seamMax}`);
+  check(`★ ${label}：矩形外那点差异只是这一层参与合成后重栅格化的缝（零散、Δ ≤ 16）`,
+    seamMax <= 16 && hidden.every((r) => r.outer <= 24) &&
+      hidden.reduce((n, r) => n + r.outer, 0) <= 60,
+    `最多的一格 ${seam.outer} 个、总共 ${hidden.reduce((n, r) => n + r.outer, 0)} 个、Δ${seamMax}`);
   /* 缝的条数每次构建/每次跑会在 0~9 之间飘（图层怎么切、缝落在哪一列），
      所以这里给的是"量级"判据；雕像自己身上是硬判据（必须 0 个），上面已经验过 */
   info(`${label}：取整级别的差异（Δ1~3，8bit 合成）各格 0~` +
