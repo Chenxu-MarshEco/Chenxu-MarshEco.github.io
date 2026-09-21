@@ -1,0 +1,131 @@
+---
+/**
+ * ============================================================================
+ * 成员名名片的「浮层」脚本（只负责显示/定位，标记还是构建期注入的）
+ * ----------------------------------------------------------------------------
+ * 为什么要有这一层（两个真实的坑，都是用户报的）：
+ *   ① **出框**：名片和放大框原来是绝对定位在 `.mem` 里、常驻 DOM 的。时间轴那种
+ *      每一行的名字格子是 `overflow: hidden` 的小盒子 —— 名片一挂上去，格子内部
+ *      立刻多出 66px 横向 / 55px 纵向的溢出（量过），观感就是"名字出框严重"，
+ *      而且名片本身会被那个 hidden 裁掉一半。
+ *   ② **移不过去**：常驻 DOM 的写法只能靠 CSS `:hover` 维持。名字和名片之间
+ *      隔着 10px 空隙，鼠标一移进去就落空，名片立刻消失 —— 用户根本来不及点名字
+ *      或者去悬停头像看放大图。
+ *
+ * 所以现在是：名片平时 `display:none`（**完全不参与布局**，撑不出任何框），
+ * 鼠标移到名字上时把它**搬进一个 position:fixed 的浮层**里再显示 ——
+ * 固定定位的浮层不受任何祖先的 `overflow` 影响，也不会给谁增加滚动区；
+ * 位置由这里算（默认在名字上方，上面放不下就翻到下面，左右夹在视口里）。
+ *
+ * 收起有 180ms 的宽限：鼠标从名字挪到名片上（或从名片挪到放大框上）时，
+ * 只要指针还压在其中任何一个上就一直开着 —— 这就是"移过去点得着"。
+ * 键盘 Tab 到名字上也一样浮出来（Esc 收起）。
+ *
+ * 没有 JS 时名片永远不显示：名字还是普通链接，页面一点影响都没有。
+ * ============================================================================
+ */
+---
+
+<script>
+  (() => {
+    /** 浮层：铺满视口、不吃指针，只有里面的名片吃 */
+    let layer: HTMLElement | null = null;
+    /** 当前显示着的那张名片，以及它原本挂在哪个 .mem 上 */
+    let card: HTMLElement | null = null;
+    let home: HTMLElement | null = null;
+    let hideTimer = 0;
+
+    const ensureLayer = (): HTMLElement => {
+      if (layer && layer.isConnected) return layer;
+      layer = document.createElement('div');
+      layer.className = 'memlayer';
+      layer.setAttribute('aria-hidden', 'true');
+      document.body.append(layer);
+      return layer;
+    };
+
+    /** 把名片摆到名字上方（放不下就摆下面），左右夹在视口里 */
+    const place = (mem: HTMLElement, el: HTMLElement) => {
+      const r = mem.getBoundingClientRect();
+      el.style.left = '0px';
+      el.style.top = '0px';
+      const cr = el.getBoundingClientRect();
+      const pad = 8;
+      let left = r.left + r.width / 2 - cr.width / 2;
+      left = Math.max(pad, Math.min(window.innerWidth - cr.width - pad, left));
+      let top = r.top - cr.height - 10;
+      if (top < pad) top = Math.min(window.innerHeight - cr.height - pad, r.bottom + 10);
+      el.style.left = `${Math.round(left)}px`;
+      el.style.top = `${Math.round(top)}px`;
+    };
+
+    const wantsOpen = () => {
+      if (home && home.isConnected && home.matches(':hover')) return true;
+      if (card && card.matches(':hover')) return true;
+      if (home && home.contains(document.activeElement)) return true;
+      return false;
+    };
+
+    const hide = () => {
+      window.clearTimeout(hideTimer);
+      const el = card;
+      const back = home;
+      card = null;
+      home = null;
+      if (!el) return;
+      el.removeAttribute('style');
+      /* 搬回原来的 .mem 里（标记保持"每个名字自己带一张卡"的形状） */
+      if (back && back.isConnected) back.append(el);
+      else el.remove();
+    };
+
+    const scheduleHide = () => {
+      window.clearTimeout(hideTimer);
+      hideTimer = window.setTimeout(() => {
+        if (wantsOpen()) scheduleHide();
+        else hide();
+      }, 180);
+    };
+
+    const show = (mem: HTMLElement) => {
+      const el = mem.querySelector<HTMLElement>('.mem__card');
+      if (!el) return;
+      if (card === el && home === mem) {
+        place(mem, el);
+        return;
+      }
+      hide();
+      ensureLayer().append(el);
+      card = el;
+      home = mem;
+      place(mem, el);
+    };
+
+    document.addEventListener('pointerover', (event) => {
+      const t = event.target as Element | null;
+      const mem = t && t.closest ? (t.closest('.mem') as HTMLElement | null) : null;
+      if (mem) show(mem);
+      else if (card) scheduleHide();
+    });
+    document.addEventListener('pointerout', () => {
+      if (card) scheduleHide();
+    });
+    /* 键盘走到名字上也浮出来（Tab 到名字上、Esc 收起） */
+    document.addEventListener('focusin', (event) => {
+      const t = event.target as Element | null;
+      const mem = t && t.closest ? (t.closest('.mem') as HTMLElement | null) : null;
+      if (mem) show(mem);
+    });
+    document.addEventListener('focusout', () => {
+      if (card) scheduleHide();
+    });
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && card) hide();
+    });
+    const reflow = () => {
+      if (card && home && home.isConnected) place(home, card);
+    };
+    window.addEventListener('scroll', reflow, { passive: true });
+    window.addEventListener('resize', reflow);
+  })();
+</script>

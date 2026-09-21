@@ -970,8 +970,8 @@ body.is-board .site-footer a {
  * ----------------------------------------------------------------------------
  * 标记是**构建期 / dev 中间件**由 tools/memlink 注入的：
  *   <a class="mem" href="…"><span class="mem__text">隰辰煦</span>
- *     <span class="mem__card">
- *       [<span class="mem__sun"></span>]                     ← 有 sun 的成员才有
+ *     <span class="mem__card">                                 ← 平时 display:none
+ *       [<span class="mem__sun"></span>]                        ← 有 sun 的成员才有
  *       <img class="mem__face" …>
  *       <span class="mem__meta"><span class="mem__label">隰辰煦</span>
  *         [<span class="mem__title">冰室之主</span>]</span>
@@ -982,8 +982,18 @@ body.is-board .site-footer a {
  *
  * 所以样式必须写在**全局**（不能放组件里）：注入的节点没有 Astro 的作用域属性，
  * 写成 scoped 选择器一条都命不中。同理，`.mem` 是 `display:inline`（不改成
- * inline-block）—— 保持它在行里的行为不变，只是多一个 `position:relative`
- * 给名片当定位祖先，正文的行高和换行一个像素都不动。
+ * inline-block）—— 保持它在行里的行为不变，只是多一个 `position:relative`，
+ * 正文的行高和换行一个像素都不动。
+ *
+ * ⚠⚠ 名片平时是 **display:none**，浮出来靠 `MemberCard.astro` 那段脚本把它
+ * **搬进 `.memlayer`（position:fixed 的浮层）**。这不是花活，是修两个量出来的毛病：
+ *   ① 时间轴每行的名字格子 `.tl__name` 是 `overflow:hidden` 的小盒子，名片要是
+ *      常驻在 `.mem` 里，格子内部立刻多出 66px 横向 / 55px 纵向的溢出，而且名片
+ *      本身被裁掉一半 —— 用户看到的就是"名字出框严重"；
+ *   ② 常驻 + 纯 CSS `:hover` 的写法，名字和名片之间那 10px 空隙一移进去就落空，
+ *      名片立刻消失，根本来不及点名字或者去悬停头像看放大图。
+ * 固定定位的浮层不受任何祖先 overflow 影响，也不会给谁增加滚动区；收起有 180ms
+ * 宽限，指针在名字或名片上就一直开着。
  *
  * 配色刻意**不跟随主题**：名片是个浮层，深紫底 + 霓虹粉描边在亮色文章页和
  * 深色的首页/板块页上都成立（和首页日历那个小提示同一套颜色）。
@@ -1011,50 +1021,56 @@ body.is-board .site-footer a {
   outline-offset: 2px;
 }
 
+/* 名片：**平时不画**（不占位、不参与任何容器的滚动区），显示时由脚本搬进浮层 */
 .mem__card {
-  position: absolute;
-  left: 50%;
-  bottom: calc(100% + 10px);
-  z-index: 60;
+  display: none;
+}
+
+/* 浮层本身铺满视口但不吃指针，只有里面那张名片吃 */
+.memlayer {
+  position: fixed;
+  inset: 0;
+  z-index: 9990;
+  pointer-events: none;
+}
+.memlayer .mem__card {
+  position: fixed;
   display: flex;
   align-items: center;
   gap: 0.55rem;
   padding: 0.42rem 0.8rem 0.42rem 0.42rem;
   border: 1px solid rgba(255, 120, 190, 0.55);
   border-radius: 10px;
-  background: rgba(24, 3, 36, 0.96);
+  background: rgba(24, 3, 36, 0.97);
   color: #ffd9ef;
   font-size: 0.9rem;
   line-height: 1.2;
   letter-spacing: 0.03em;
   white-space: nowrap;
+  pointer-events: auto;
   box-shadow:
     0 0 0 1px rgba(0, 0, 0, 0.4) inset,
     0 14px 34px -14px rgb(0 0 0 / 0.9);
   backdrop-filter: blur(5px);
-  /* 平时不画、也不吃指针：不然鼠标移到名片上就把 .mem 的 hover 弄丢了 */
-  opacity: 0;
-  visibility: hidden;
-  pointer-events: none;
-  transform: translate(-50%, 4px);
-  transition:
-    opacity 0.16s ease,
-    transform 0.16s ease,
-    visibility 0.16s;
+  animation: mem-in 0.14s ease-out;
+  max-width: calc(100vw - 16px);
 }
-.mem:hover .mem__card,
-.mem:focus-visible .mem__card {
-  opacity: 1;
-  visibility: visible;
-  pointer-events: auto;
-  transform: translate(-50%, 0);
+@keyframes mem-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 /* ---------------------------------------------------------------------------
    头像：平时 42px 圆；鼠标移上去 → 放大成一个方形框显示**整张图**
    （`object-fit: contain`，所以窄图长图都不会被裁）
-   ⚠ 放大框要挂在 `.mem__card` 里、而且是 `.mem__face` 的**后面的兄弟**，
-     才能用 `~` 选中；它自己也要能 `:hover`（否则鼠标移上去的一瞬间会闪没）。
+   ⚠ 放大框要挂在名片里、而且是 `.mem__face` 的**后面的兄弟**，才能用 `~` 选中；
+     它自己也要能 `:hover`（否则鼠标移上去的一瞬间会闪没）。
    --------------------------------------------------------------------------- */
 .mem__face {
   display: block;
@@ -1172,7 +1188,9 @@ body.is-board .site-footer a {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .mem__card,
+  .memlayer .mem__card {
+    animation: none;
+  }
   .mem__zoom {
     transition: none;
   }
@@ -1183,7 +1201,7 @@ body.is-board .site-footer a {
   .mem {
     border-bottom: none;
   }
-  .mem__card {
+  .memlayer {
     display: none;
   }
 }

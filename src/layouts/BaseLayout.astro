@@ -4,6 +4,7 @@ import '../styles/global.css';
 import SiteHeader from '../components/SiteHeader.astro';
 import SiteFooter from '../components/SiteFooter.astro';
 import BoardDrawer from '../components/BoardDrawer.astro';
+import MemberCard from '../components/MemberCard.astro';
 import Timeline from '../components/Timeline.astro';
 import MusicPlayer from '../components/MusicPlayer.astro';
 import site from '../site.config';
@@ -193,6 +194,13 @@ const currentPath = withoutBase.length > 1 ? withoutBase.replace(/\/+$/, '') : '
     </main>
 
     <SiteFooter />
+    {/*
+      成员名名片的浮层脚本：正文里的成员名（构建期由 tools/memlink 包出来的 .mem）
+      悬停时要浮出一张名片。名片平时是 display:none（不参与布局、撑不出框），
+      鼠标移上去时由这段脚本把它搬进 position:fixed 的浮层 —— 见组件里的说明。
+      全站都要有（链接可能出现在任何一页），所以挂在布局里。
+    */}
+    <MemberCard />
   </body>
 </html>
 

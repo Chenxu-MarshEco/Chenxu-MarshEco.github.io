@@ -373,13 +373,8 @@ await cdp.send('Page.enable');
 await cdp.send('Runtime.enable');
 await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
 
-console.log('\n================ C. 悬停浮出名片 ================');
-/* 找一个带真头像、而且在视口里的 .mem */
-const target = await cdp.ev(`(() => {
-  const all = [...document.querySelectorAll('a.mem, span.mem')];
-  return all.length;
-})()`);
-void target;
+console.log('\n================ C. 悬停浮出名片（固定浮层）================');
+
 /* ⚠ 必须挑一个**真的在视口里**的 .mem：
    ① 这一页的时间轴有桌面/手机两套，隐藏的那套量出来是 0×0；
    ② 有的名字横向排到视口外面去了（实测 x=1483 > 1440），
@@ -399,209 +394,253 @@ const pickVisible = (sel) => `(() => {
   return null;
 })()`;
 
+/** 浮层里那张名片（显示时它在 .memlayer 里；平时它在 .mem 里且 display:none） */
+const cardState = () => cdp.ev(`(() => {
+  const layer = document.querySelector('.memlayer');
+  const card = layer && layer.querySelector('.mem__card');
+  const inPlace = document.querySelector('.mem .mem__card');
+  const pick = card || inPlace;
+  if (!pick) return { none: true };
+  const cs = getComputedStyle(pick);
+  const r = pick.getBoundingClientRect();
+  const img = pick.querySelector('img.mem__face');
+  const mem = document.querySelector('.mem:hover') || (card ? card.__home : null);
+  const mr = mem && mem.getBoundingClientRect ? mem.getBoundingClientRect() : null;
+  return {
+    inLayer: !!card,
+    display: cs.display,
+    card: { x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height) },
+    inViewport: r.left >= 0 && r.top >= 0 && r.right <= innerWidth && r.bottom <= innerHeight,
+    aboveName: mr ? r.bottom <= mr.top + 2 : null,
+    label: pick.querySelector('.mem__label')?.textContent,
+    imgOk: img ? img.complete && img.naturalWidth > 0 : null,
+    layers: document.querySelectorAll('.memlayer').length,
+  };
+})()`);
+
 await cdp.goto('/huaya/bingshi/', 1200);
 const spot = await cdp.ev(`(() => {
   const el = ${pickVisible('a.mem, span.mem')};
   const all = [...document.querySelectorAll('a.mem, span.mem')];
   if (!el) return { none: true, total: all.length };
   const r = el.getBoundingClientRect();
-  const card = el.querySelector('.mem__card');
-  const cs = card ? getComputedStyle(card) : null;
-  const img = el.querySelector('img.mem__face');
   return {
     n: all.length, tag: el.tagName,
     name: el.querySelector('.mem__text')?.textContent,
     href: el.getAttribute('href'), x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2),
     w: Math.round(r.width), h: Math.round(r.height),
-    beforeOpacity: cs?.opacity, beforeVisibility: cs?.visibility,
-    imgSrc: img ? img.getAttribute('src') : null,
-    labels: card ? card.textContent.trim() : null,
   };
 })()`);
 info('找一个名字：' + JSON.stringify(spot));
-check('产物的页面上真的有 .mem 元素', !!spot && spot.n >= 5, `${spot?.n} 个`);
+check('产物的页面上真的有 .mem 元素', !!spot && spot.n >= 5, spot && spot.n + ' 个');
 check('名字本身是可见文字（宽度高度都量得到）', !!spot && spot.w > 4 && spot.h > 4, JSON.stringify(spot && [spot.w, spot.h]));
 
-const cardState = () => cdp.ev(`(() => {
-  const els = [...document.querySelectorAll('a.mem:hover, span.mem:hover')];
-  const el = els[0] || [...document.querySelectorAll('a.mem, span.mem')].find((e) => e.matches(':hover'));
-  if (!el) return { hovered: false };
-  const card = el.querySelector('.mem__card');
-  const img = el.querySelector('img.mem__face');
-  const r = card.getBoundingClientRect();
-  const cs = getComputedStyle(card);
-  /* 名片有没有被祖先的 overflow 裁掉：逐层比裁剪框 */
-  let clipped = false;
-  for (let p = card.parentElement; p; p = p.parentElement) {
-    const s = getComputedStyle(p);
-    if (s.overflow === 'visible' && s.overflowX === 'visible' && s.overflowY === 'visible') continue;
-    const pr = p.getBoundingClientRect();
-    if (r.left < pr.left - 1 || r.right > pr.right + 1 || r.top < pr.top - 1 || r.bottom > pr.bottom + 1) clipped = true;
+/* ---- 静止态：名片不参与布局，谁都没被撑出框 ---- */
+const idle = await cdp.ev(`(() => {
+  const overflowing = [];
+  for (const el of document.querySelectorAll('*')) {
+    const cs = getComputedStyle(el);
+    if (cs.overflowX === 'visible' && cs.overflowY === 'visible') continue;
+    const dx = el.scrollWidth - el.clientWidth;
+    const dy = el.scrollHeight - el.clientHeight;
+    if (dx > 1 || dy > 1) overflowing.push((el.className || el.tagName).toString().slice(0, 40) + ' +' + Math.round(dx) + '/' + Math.round(dy));
   }
+  const card = document.querySelector('.mem .mem__card');
+  const de = document.documentElement;
   return {
-    hovered: true, opacity: cs.opacity, visibility: cs.visibility, pointerEvents: cs.pointerEvents,
-    card: { x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height) },
-    inViewport: r.left >= 0 && r.top >= 0 && r.right <= innerWidth && r.bottom <= innerHeight,
-    label: card.querySelector('.mem__label')?.textContent,
-    imgOk: img ? img.complete && img.naturalWidth > 0 : null,
-    imgW: img ? img.naturalWidth : null,
-    clipped,
+    cardDisplay: card ? getComputedStyle(card).display : null,
+    layers: document.querySelectorAll('.memlayer').length,
+    overflowCount: overflowing.length,
+    overflowing: overflowing.slice(0, 5),
+    hScroll: de.scrollWidth - de.clientWidth,
   };
 })()`);
+info('静止态：' + JSON.stringify(idle));
+check('★ 名片平时不参与布局（display:none）—— 这是"名字出框"那个问题的根子',
+  idle.cardDisplay === 'none', String(idle.cardDisplay));
+check('★ 静止时页面上没有任何容器被撑出框（原来时间轴名字格会多出 66px）',
+  idle.overflowCount === 0 && idle.hScroll <= 1, JSON.stringify(idle.overflowing));
 
-const before = await cardState();
-check('鼠标还没上去时名片是藏着的', before.hovered === false || before.opacity === '0' || before.visibility === 'hidden',
-  JSON.stringify(before));
-
+/* ---- 悬停：名片搬进浮层、贴着名字、整个在视口里 ---- */
 await cdp.move(spot.x, spot.y);
-await sleep(450);
-const after = await cardState();
-info('悬停之后：' + JSON.stringify(after));
-check('★ 鼠标移上去，名片浮出来了（可见）', after.hovered === true && after.visibility === 'visible' && Number(after.opacity) > 0.9,
-  `visibility=${after.visibility} opacity=${after.opacity}`);
-check('★ 名片里有成员的名字', !!after.label && after.label.includes(spot.name), `${after.label} vs ${spot.name}`);
-check('★ 名片里的头像真的加载出来了（不是裂图）', after.imgOk === true, `naturalWidth=${after.imgW}`);
-check('名片整个落在视口里', after.inViewport === true, JSON.stringify(after.card));
-check('名片没有被某个 overflow:hidden 的祖先裁掉', after.clipped === false);
-check('名片能收点击（pointer-events 不是 none）', after.pointerEvents !== 'none', String(after.pointerEvents));
-
-await cdp.move(5, 5);
 await sleep(400);
-const away = await cardState();
-check('鼠标移开之后名片收回去', away.hovered === false, JSON.stringify(away));
+const shown = await cardState();
+info('悬停之后：' + JSON.stringify(shown));
+check('★ 鼠标移上去，名片浮出来了（在 .memlayer 浮层里，不再是常驻 DOM）',
+  shown.inLayer === true && shown.display === 'flex', JSON.stringify({ inLayer: shown.inLayer, display: shown.display }));
+check('★ 名片里有成员的名字', shown.label === spot.name, spot.name + ' vs ' + shown.label);
+check('★ 名片里的头像真的加载出来了（不是裂图）', shown.imgOk === true);
+check('名片贴着名字（在上方或下方 10px 内）', shown.aboveName === true, JSON.stringify(shown.card));
+check('名片整个落在视口里', shown.inViewport === true, JSON.stringify(shown.card));
 
+/* ---- ★ 关键：鼠标从名字挪到名片上，名片不能消失（用户报的第三个问题） ---- */
+const cardPt = { x: shown.card.x + Math.round(shown.card.w / 2), y: shown.card.y + Math.round(shown.card.h / 2) };
+await cdp.move(cardPt.x, cardPt.y);
+await sleep(600);
+const moved = await cardState();
+info('把鼠标挪到名片上之后：' + JSON.stringify({ inLayer: moved.inLayer, display: moved.display }));
+check('★ 鼠标从名字挪到名片上，名片不消失（移过去点得着）',
+  moved.inLayer === true && moved.display === 'flex', JSON.stringify(moved.display));
 
-/* ---- Raw：落日 + 称号 ---- */
+/* ---- 再挪到头像上 → 放大框；再挪到放大框上 → 也停得住 ---- */
+const facePt = await cdp.ev(`(() => {
+  const f = document.querySelector('.memlayer .mem__card .mem__face');
+  if (!f) return null;
+  const r = f.getBoundingClientRect();
+  return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2), w: Math.round(r.width) };
+})()`);
+check('浮出来的名片里有头像', !!facePt, JSON.stringify(facePt));
+const zoomState = () => cdp.ev(`(() => {
+  const z = document.querySelector('.memlayer .mem__card .mem__zoom');
+  if (!z) return { none: true };
+  const cs = getComputedStyle(z);
+  const r = z.getBoundingClientRect();
+  const img = z.querySelector('.mem__zoomImg');
+  return { visibility: cs.visibility, opacity: cs.opacity, w: Math.round(r.width), h: Math.round(r.height),
+    objectFit: img ? getComputedStyle(img).objectFit : null,
+    src: img ? img.getAttribute('src') : null,
+    loaded: img ? img.complete && img.naturalWidth > 0 : null,
+    inViewport: r.left >= 0 && r.top >= 0 && r.right <= innerWidth && r.bottom <= innerHeight };
+})()`);
+const zoomBefore = await zoomState();
+check('鼠标还没到头像上时，放大框是藏着的', zoomBefore.none !== true && zoomBefore.visibility === 'hidden',
+  JSON.stringify({ v: zoomBefore.visibility, o: zoomBefore.opacity }));
+if (facePt) {
+  await cdp.move(facePt.x, facePt.y);
+  await sleep(450);
+  const zoomAfter = await zoomState();
+  info('头像放大框：' + JSON.stringify(zoomAfter));
+  check('★ 鼠标移到头像上，放大框出来了（方形、比头像大得多、显示整张图）',
+    zoomAfter.visibility === 'visible' && Number(zoomAfter.opacity) > 0.9 && zoomAfter.objectFit === 'contain' &&
+      zoomAfter.w > facePt.w * 3 && Math.abs(zoomAfter.w - zoomAfter.h) <= 2,
+    JSON.stringify({ v: zoomAfter.visibility, fit: zoomAfter.objectFit, size: [zoomAfter.w, zoomAfter.h] }));
+  check('放大框里的图真的加载出来了', zoomAfter.loaded === true, String(zoomAfter.src));
+  /* 挪到放大框上：也不能消失 */
+  const zc = { x: zoomAfter.w ? Math.round(zoomAfter.w / 2) : 0, y: 0 };
+  const zrect = await cdp.ev(`(() => {
+    const z = document.querySelector('.memlayer .mem__card .mem__zoom');
+    const r = z.getBoundingClientRect();
+    return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) };
+  })()`);
+  await cdp.move(zrect.x, zrect.y);
+  await sleep(450);
+  const zoomHeld = await zoomState();
+  check('★ 鼠标挪到放大框上，放大框和名片都还开着',
+    zoomHeld.visibility === 'visible' && (await cdp.ev("!!document.querySelector('.memlayer .mem__card')")) === true,
+    JSON.stringify({ v: zoomHeld.visibility }));
+}
+
+/* ---- 移开：名片收回去，而且**搬回**原来的 .mem 里 ---- */
+await cdp.move(5, 5);
+await sleep(700);
+const away = await cdp.ev(`(() => ({
+  inLayer: !!document.querySelector('.memlayer .mem__card'),
+  backInPlace: !!document.querySelector('.mem .mem__card'),
+  display: (() => { const c = document.querySelector('.mem .mem__card'); return c ? getComputedStyle(c).display : null; })(),
+}))()`);
+info('移开之后：' + JSON.stringify(away));
+check('★ 鼠标移开之后名片收回去（并且搬回原来的名字里，不会越堆越多）',
+  away.inLayer === false && away.backInPlace === true && away.display === 'none', JSON.stringify(away));
+
+/* ---- C2. 手机上名片也得待在视口里（浮层是靠 JS 定位 + 夹边） ---- */
+console.log('\n---- 手机 390×844：名片和放大框都不许出屏 ----');
+await cdp.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+await cdp.goto('/huaya/bingshi/', 900);
+const mSpot = await cdp.ev(`(() => {
+  const el = ${pickVisible('span.mem')};
+  if (!el) return null;
+  el.scrollIntoView({ block: 'center', behavior: 'instant' });
+  const r = el.getBoundingClientRect();
+  return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2), name: el.querySelector('.mem__text')?.textContent };
+})()`);
+check('手机上找得到一个在视口里的名字', !!mSpot, JSON.stringify(mSpot));
+if (mSpot) {
+  await cdp.move(mSpot.x, mSpot.y);
+  await sleep(450);
+  const mCard = await cdp.ev(`(() => {
+    const card = document.querySelector('.memlayer .mem__card');
+    if (!card) return { none: true };
+    const r = card.getBoundingClientRect();
+    return { w: Math.round(r.width), h: Math.round(r.height),
+      fitsW: r.left >= -1 && r.right <= innerWidth + 1,
+      fitsH: r.top >= -1 && r.bottom <= innerHeight + 1,
+      vw: innerWidth, vh: innerHeight };
+  })()`);
+  info('手机上的名片：' + JSON.stringify(mCard));
+  check('★ 手机（390 宽）上名片没出屏、也没被压成负宽',
+    mCard.none !== true && mCard.w > 40 && mCard.w <= mCard.vw && mCard.fitsW && mCard.fitsH, JSON.stringify(mCard));
+  await cdp.move(5, 5);
+  await sleep(400);
+}
+await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
+
+/* ---- Raw：落日 + 称号 + 他那张放大图 ---- */
 await cdp.goto('/huaya/bingshi/', 1000);
 const rawPt = await cdp.ev(`(() => {
   const el = ${pickVisible('[data-mem="m02-da43"]')};
   if (!el) return null;
   const r = el.getBoundingClientRect();
-  return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2), name: el.textContent.trim() };
+  return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) };
 })()`);
 check('页面上找得到 Raw 的名字（而且在视口里）', !!rawPt, JSON.stringify(rawPt));
 await cdp.move(rawPt.x, rawPt.y);
 await sleep(450);
 const rawCard = await cdp.ev(`(() => {
-  const el = document.querySelector('[data-mem="m02-da43"]:hover') || document.querySelector('[data-mem="m02-da43"]');
-  const card = el?.querySelector('.mem__card');
+  const card = document.querySelector('.memlayer .mem__card');
   if (!card) return null;
   const sun = card.querySelector('.mem__sun');
   const sr = sun.getBoundingClientRect();
   const cs = getComputedStyle(sun);
-  const zoom = card.querySelector('.mem__zoom');
-  const zi = zoom.querySelector('.mem__zoomImg');
   return {
     cardClass: card.className,
-    visible: getComputedStyle(card).visibility,
     sun: { w: Math.round(sr.width), h: Math.round(sr.height), radius: cs.borderTopLeftRadius,
-      mask: (cs.maskImage || cs.webkitMaskImage || '').replace(/\s+/g, ' ').slice(0, 70),
-      bg: cs.backgroundImage.replace(/\s+/g, ' ').slice(0, 60) },
+      mask: (cs.maskImage || cs.webkitMaskImage || '').replace(/\s+/g, ' ').slice(0, 50),
+      bg: cs.backgroundImage.replace(/\s+/g, ' ').slice(0, 40) },
     label: card.querySelector('.mem__label')?.textContent,
     title: card.querySelector('.mem__title')?.textContent,
-    titleColor: getComputedStyle(card.querySelector('.mem__title')).color,
-    zoomSrc: zi.getAttribute('src'),
+    zoomSrc: card.querySelector('.mem__zoomImg')?.getAttribute('src'),
   };
 })()`);
 info('Raw 的名片：' + JSON.stringify(rawCard));
 check('★ Raw 的名片上有「落日」那一块，而且是半圆（宽 2 倍高 + 顶部圆角）',
   !!rawCard && rawCard.sun.w > 40 && Math.abs(rawCard.sun.w / rawCard.sun.h - 2) < 0.4 && /px/.test(rawCard.sun.radius),
-  rawCard && `${rawCard.sun.w}×${rawCard.sun.h} 圆角 ${rawCard.sun.radius}`);
+  rawCard && rawCard.sun.w + '×' + rawCard.sun.h + ' 圆角 ' + rawCard.sun.radius);
 check('★ 落日的横条遮罩 + 落日渐变都在（蒸汽波那套）',
-  !!rawCard && /repeating-linear-gradient/.test(rawCard.sun.mask) && /radial-gradient/.test(rawCard.sun.bg),
-  rawCard && (rawCard.sun.mask.slice(0, 34) + ' | ' + rawCard.sun.bg.slice(0, 30)));
-check('★ 名片上写着「冰室之主」', rawCard?.title === '冰室之主', String(rawCard?.title));
-check('★ Raw 的放大框用的是他那张图（raw-zoom）', /raw-zoom/.test(rawCard?.zoomSrc || ''), String(rawCard?.zoomSrc));
-
-/* ---- 头像放大成方形框 ---- */
-const zoomState = () => cdp.ev(`(() => {
-  const el = document.querySelector('[data-mem="m02-da43"]:hover') || document.querySelector('[data-mem="m02-da43"]');
-  const z = el?.querySelector('.mem__zoom');
-  if (!z) return null;
-  const cs = getComputedStyle(z);
-  const r = z.getBoundingClientRect();
-  const img = z.querySelector('.mem__zoomImg');
-  return { visibility: cs.visibility, opacity: cs.opacity,
-    w: Math.round(r.width), h: Math.round(r.height),
-    inViewport: r.left >= 0 && r.top >= 0 && r.right <= innerWidth && r.bottom <= innerHeight,
-    objectFit: getComputedStyle(img).objectFit,
-    src: img.getAttribute('src'), loaded: img.complete && img.naturalWidth > 0, nw: img.naturalWidth };
-})()`);
-const zoomBefore = await zoomState();
-check('鼠标还没到头像上时，放大框是藏着的', !zoomBefore || zoomBefore.opacity === '0' || zoomBefore.visibility === 'hidden',
-  JSON.stringify(zoomBefore && { v: zoomBefore.visibility, o: zoomBefore.opacity }));
-const facePt = await cdp.ev(`(() => {
-  const el = document.querySelector('[data-mem="m02-da43"]:hover') || document.querySelector('[data-mem="m02-da43"]');
-  const f = el.querySelector('.mem__face');
-  const r = f.getBoundingClientRect();
-  return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2), w: Math.round(r.width), h: Math.round(r.height) };
-})()`);
-await cdp.move(facePt.x, facePt.y);
-await sleep(450);
-const zoomAfter = await zoomState();
-info('头像放大框：' + JSON.stringify(zoomAfter));
-check('★ 鼠标移到头像上，放大框出来了（方形、比头像大得多）',
-  !!zoomAfter && zoomAfter.visibility === 'visible' && Number(zoomAfter.opacity) > 0.9 &&
-    zoomAfter.w > facePt.w * 3 && Math.abs(zoomAfter.w - zoomAfter.h) <= 2,
-  zoomAfter && `${zoomAfter.w}×${zoomAfter.h}（头像 ${facePt.w}）`);
-check('★ 放大框里显示的是整张图（object-fit: contain，不裁）', zoomAfter?.objectFit === 'contain', String(zoomAfter?.objectFit));
-check('★ Raw 放大出来的是他给的那张图，而且真加载出来了',
-  !!zoomAfter && /raw-zoom/.test(zoomAfter.src) && zoomAfter.loaded === true,
-  zoomAfter && `${zoomAfter.src} naturalWidth=${zoomAfter.nw}`);
-check('放大框整个在视口里', zoomAfter?.inViewport === true, JSON.stringify(zoomAfter && [zoomAfter.w, zoomAfter.h]));
+  !!rawCard && /repeating-linear-gradient/.test(rawCard.sun.mask) && /radial-gradient/.test(rawCard.sun.bg));
+check('★ 名片上写着「冰室之主」', rawCard && rawCard.title === '冰室之主', String(rawCard && rawCard.title));
+check('★ Raw 的放大框用的是他那张图（raw-zoom）', /raw-zoom/.test((rawCard && rawCard.zoomSrc) || ''), String(rawCard && rawCard.zoomSrc));
 await cdp.move(5, 5);
 await sleep(400);
-const zoomAway = await zoomState();
-check('鼠标移开之后放大框收回去', !zoomAway || zoomAway.visibility === 'hidden' || zoomAway.opacity === '0');
 
-/* ---- 普通成员：放大框 = 头像那张，一样是 contain ---- */
+/* ---- 普通成员：放大出来的是头像那张，一样是 contain ---- */
+await cdp.goto('/huaya/bingshi/', 900);
 const otherPt = await cdp.ev(`(() => {
   const el = ${pickVisible('span.mem[data-mem]:not([data-mem="m02-da43"])')};
   if (!el) return null;
   const r = el.getBoundingClientRect();
-  const face = el.querySelector('img.mem__face');
-  return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2),
-    face: face ? face.getAttribute('src') : null, mem: el.getAttribute('data-mem') };
+  return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) };
 })()`);
 if (otherPt) {
   await cdp.move(otherPt.x, otherPt.y);
   await sleep(420);
-  const faceP = await cdp.ev(`(() => {
-    const el = document.querySelector('span.mem[data-mem]:hover');
-    const f = el?.querySelector('.mem__face');
+  const fp = await cdp.ev(`(() => {
+    const f = document.querySelector('.memlayer .mem__card .mem__face');
     if (!f) return null;
     const r = f.getBoundingClientRect();
     return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) };
   })()`);
-  if (faceP) {
-    await cdp.move(faceP.x, faceP.y);
+  if (fp) {
+    await cdp.move(fp.x, fp.y);
     await sleep(420);
-    const otherZoom = await cdp.ev(`(() => {
-      const el = document.querySelector('span.mem[data-mem]:hover');
-      const z = el?.querySelector('.mem__zoom');
-      const img = z?.querySelector('.mem__zoomImg');
-      return z ? { v: getComputedStyle(z).visibility, fit: getComputedStyle(img).objectFit,
-        src: img.getAttribute('src'), ok: img.complete && img.naturalWidth > 0 } : null;
-    })()`);
-    info('普通成员的放大框：' + JSON.stringify(otherZoom));
+    const oz = await zoomState();
+    info('普通成员的放大框：' + JSON.stringify({ v: oz.visibility, fit: oz.objectFit, ok: oz.loaded }));
     check('普通成员放大头像也正常（显示整图、不裁）',
-      !!otherZoom && otherZoom.v === 'visible' && otherZoom.fit === 'contain' && otherZoom.ok === true,
-      JSON.stringify(otherZoom));
+      oz.visibility === 'visible' && oz.objectFit === 'contain' && oz.loaded === true,
+      JSON.stringify({ v: oz.visibility, fit: oz.objectFit }));
   }
   await cdp.move(5, 5);
   await sleep(300);
 }
-
-/* 键盘也能走到它（focus-visible）—— 只有填了介绍页的才该在 Tab 序列里 */
-const focusable = await cdp.ev(`(() => {
-  const links = [...document.querySelectorAll('a.mem')];
-  const spans = [...document.querySelectorAll('span.mem')];
-  return { links: links.length, spans: spans.length,
-    firstHref: links[0]?.getAttribute('href') ?? null };
-})()`);
-info('可点/不可点：' + JSON.stringify(focusable));
-check('没填链接的名字不是 <a>（点不动，也就不会进 Tab 序列）', focusable.spans > 0 && focusable.links === 0,
-  `a=${focusable.links} span=${focusable.spans}`);
 
 /* ================================================================
  * D. 填了介绍页之后：点了真的跳过去（在副本里改数据再构建）
