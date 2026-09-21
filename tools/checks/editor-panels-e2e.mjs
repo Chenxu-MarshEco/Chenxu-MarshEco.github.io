@@ -611,7 +611,7 @@ try {
     ['calendar', '日历', '特殊日子'],
     ['about', '关于我', '小圆片'],
     ['iceberg', '冰室冰山', '塔吊'],
-    ['essences', '精华', '冰室群精华'],
+    ['essences', '精华', '冰室精华'],
     ['members', '成员', '成员 id'],
   ];
   const panels = [];

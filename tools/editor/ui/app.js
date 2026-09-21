@@ -1591,7 +1591,7 @@ const WORKSPACES = [
   { id: 'calendar', label: '日历', hint: '首页日历：特殊日子、以及今天那句话' },
   { id: 'about', label: '关于我', hint: '页头小圆片的头像 + /about-me/ 的正文' },
   { id: 'iceberg', label: '冰室冰山', hint: '首页「冰室冰山」那块：图、一句话、链接' },
-  { id: 'essences', label: '精华', hint: '冰室群精华：735 条，可搜索 / 新增 / 改删' },
+  { id: 'essences', label: '精华', hint: '冰室精华（/salon/）：可搜索 / 新增 / 改删' },
   { id: 'members', label: '成员', hint: '精华的成员表：改名 / 换头像，他所有精华跟着变' },
 ];
 
@@ -1757,7 +1757,8 @@ const BLOCK_LABEL = {
 };
 const TEXT_HINT =
   '支持 Markdown：**粗体**、[链接](地址)、- 列表、![图](/img/uploads/x.png)、## 小标题、[[文字|图片地址]]（悬停出图）、[[文字|图片地址|链接地址]]（悬停出图 + 点击跳转）';
-const IMG_WIDTHS = [['full', '全宽'], ['wide', '宽'], ['half', '半宽'], ['third', '窄']];
+/* 「窄」的说明：连着几张窄图会横着排开、排满一行再换行（见 PageContent.astro 的 .pblock--flow） */
+const IMG_WIDTHS = [['full', '全宽'], ['wide', '宽'], ['half', '半宽'], ['third', '窄（连着放会并排）']];
 const CARD_SHAPES = [['wide', '横（16:3）'], ['square', '方（1:1）'], ['tall', '竖（3:4）']];
 const CARD_SIZES = [['l', '大'], ['m', '中'], ['s', '小']];
 /** 「子页面」块里单张卡的下拉多一项「默认」，表示不覆盖整块的设置 */
@@ -9809,7 +9810,7 @@ function filteredEssences() {
 function renderEssencesPanel() {
   const { body, foot, status } = panelShell(els.essEditor, {
     hint:
-      '冰室群精华的每一条 = 成员（可以好几个）+ 日期时间 + 正文/图片。成员名和头像**不在**这里存，' +
+      '冰室精华的每一条 = 成员（可以好几个）+ 日期时间 + 正文/图片。成员名和头像**不在**这里存，' +
       '只存成员 id —— 所以给成员改名 / 换头像，他所有的精华一起跟着变（去「成员」面板改）。',
     group: 'salon',
   });

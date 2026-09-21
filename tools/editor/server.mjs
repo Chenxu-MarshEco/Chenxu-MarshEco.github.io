@@ -2278,7 +2278,7 @@ async function readSalon() {
   const data = JSON.parse(text);
   return {
     _readme: Array.isArray(data._readme) ? data._readme : [],
-    title: String(data.title || '冰室群精华'),
+    title: String(data.title || '冰室精华'),
     updated: String(data.updated || ''),
     note: String(data.note || ''),
     /* 冰室精华页左边放哪条时间轴（站点 timelines.json 里的一个 id，空串 = 不放） */
@@ -2337,7 +2337,7 @@ function cleanSalon(payload, current) {
   const readme = Array.isArray(payload._readme) ? payload._readme : current._readme;
   const file = {};
   if (Array.isArray(readme)) file._readme = readme;
-  file.title = String(payload.title ?? '').trim() || current.title || '冰室群精华';
+  file.title = String(payload.title ?? '').trim() || current.title || '冰室精华';
   file.note = has('note') ? String(payload.note ?? '') : current.note;
   /*
     冰室精华页左边那条时间轴：存站点 timelines.json 里的一个 id（空串 = 不放）。

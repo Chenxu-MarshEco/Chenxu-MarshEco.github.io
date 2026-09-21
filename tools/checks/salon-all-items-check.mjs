@@ -14,6 +14,8 @@
  *   ⑥ 搜索：搜新加入的成员「艾林森」命中他那条；搜完美对话正文里的词也命中
  *   ⑦ 首页「每日精华」：跑 24 个不同日期，抽到多成员那条时，卡片要显示**所有**成员的名字和头像
  *   ⑧ 数据层核对：dist/salon.json 的 784 条里，多成员/无成员/图片数都对得上
+ *   ⑨ 页头只有标题：原来那行「共 N 条 · 成员 N 人 · 截至 …　由群精华导出文件整理：…」
+ *      用户说不需要，整段删掉 —— 这里按**构建出来的 HTML**量（不是靠 CSS 藏起来）
  *
  * 用法：node tools/checks/salon-all-items-check.mjs [<dist目录>]
  */
@@ -153,8 +155,31 @@ try {
       pics: document.querySelectorAll('.salon__pic').length,
       sample, multiSample: multi.slice(0, 4).map((i) => i.id),
       allMultiNames: multi.map((i) => i.id + ' ' + i.querySelector('.salon__name').textContent),
+      h1: document.querySelector('.salon__head h1')?.textContent.trim() || '',
+      headParas: document.querySelectorAll('.salon__head p, .salon__meta, .salon__note').length,
+      headText: (document.querySelector('.salon__head')?.textContent || '').replace(/\s+/g, ' ').trim(),
     };
   })()`);
+  /*
+    ⑨ 页头：用户原话「把标题下方那行『共 784 条 · 成员 18 人 · 截至 2026-09-21
+      由群精华导出文件整理…』删掉 不需要」——所以标题下面**一个 <p> 都不该有**。
+      按构建出来的 HTML 量，防止只是被 CSS 藏起来（藏起来还是会被搜到/被读屏念到）。
+  */
+  const headHtml = (() => {
+    const f = path.join(ROOT, 'salon', 'index.html');
+    if (!fs.existsSync(f)) return null;
+    const m = fs.readFileSync(f, 'utf8').match(/<header class="salon__head"[\s\S]*?<\/header>/);
+    return m ? m[0].replace(/\s+/g, ' ') : null;
+  })();
+  check('/salon/ 页头 HTML：.salon__head 里只剩一个标题 <h1>，那行统计/说明整段删了',
+    !!headHtml && /<h1 class="salon__title"/.test(headHtml) && !/<p[\s>]/.test(headHtml)
+      && !/截至/.test(headHtml) && !/三类都在/.test(headHtml),
+    headHtml ? headHtml.slice(0, 150) : '没找到 <header class="salon__head">');
+  check('页头那段文字在渲染后的 DOM 里也一个都不剩（.salon__meta / .salon__note / 页头里的 <p>）',
+    page.headParas === 0 && !/截至|三类都在|一条没丢/.test(page.headText),
+    `页头里剩 ${page.headParas} 个元素；文字「${page.headText}」`);
+  check(`标题还是数据里那个「${data.title}」（只删了下面那行，标题没动）`,
+    page.h1 === data.title, `页面上量到「${page.h1}」`);
   check(`/salon/ 页面：${total} 条一条不少（HTML 里数得出来）`, page.items === total, `salon__item = ${page.items}`);
   check(`/salon/ 页面：文字 ${kinds.text} / 完美对话 ${kinds.perfect} / AI 创作 ${kinds.ai} 三类都在`,
     page.text === kinds.text && page.perfect === kinds.perfect && page.ai === kinds.ai,

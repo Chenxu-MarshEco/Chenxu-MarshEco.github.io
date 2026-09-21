@@ -22,8 +22,6 @@ import Timeline from '../components/Timeline.astro';
 import {
   salonEssences,
   salonEras,
-  salonMembers,
-  salonNote,
   salonTitle,
   salonTimelineId,
   salonUpdated,
@@ -61,7 +59,7 @@ const firstParam = list.length && tl ? (params.get(list[0].id) ?? 0) : 0;
       {tl ? (
         <div class="salon__tl" data-salon-tl data-tl-id={tl.id}>
           {/* 原样放上去：不传任何会改它的东西，只给它宽度和一个高度 */}
-          <Timeline timeline={tl} pinned={true} fill={true} defaultParam={firstParam} />
+          <Timeline timeline={tl} pinned={true} fill={true} rail={true} defaultParam={firstParam} />
         </div>
       ) : (
         <p class="salon__tlNone">
@@ -70,21 +68,23 @@ const firstParam = list.length && tl ? (params.get(list[0].id) ?? 0) : 0;
         </p>
       )}
       {/*
-        这行说明放在轴的**下面**：放上面会把轴往下推，一进页面（还没滚的时候）
-        轴底下那条比例尺就被裁在屏幕外了 —— 实测"拖比例尺滑块"那条验收就是这么挂的。
+        轴下面原来还有一行小字（「点刻度或塔吊 → 跳到最近的一条精华」，
+        鼠标悬停还带一个「成员 18 人 · 精华 784 条」的提示）——
+        用户说「左栏小字去掉」，连提示一起删了。轴底下现在是空的，
+        腾出来的那一点高度让给轴本身（见 .salon__tl 的 --tl-panel-h）。
       */}
-      <p class="salon__sideNote" title={`成员 ${salonMembers.length} 人 · 精华 ${list.length} 条`}>
-        {tl ? <>点<b>刻度</b>或<b>塔吊</b> → 跳到最近的一条精华</> : <>还没有选时间轴</>}
-      </p>
     </aside>
 
     <main class="salon__main">
+      {/*
+        页头只有标题。原来标题下面还有一行
+        「共 N 条 · 成员 N 人 · 截至 …　由群精华导出文件整理：…」
+        —— 用户说不需要，删掉了（连带上面那些数字也一起删）。
+        数据里的 note / updated 两个字段**没删**：updated 还在 <meta name="description">
+        和「截至哪天」的语义里用，note 留在 salon.json 里（编辑器保存时照样原样带回去）。
+      */}
       <header class="salon__head">
         <h1 class="salon__title">{salonTitle}</h1>
-        <p class="salon__meta">
-          共 {list.length} 条 · 成员 {salonMembers.length} 人 · 截至 {salonUpdated}
-          {salonNote && <span class="salon__note">　{salonNote}</span>}
-        </p>
       </header>
 
       {/*
@@ -210,28 +210,25 @@ const firstParam = list.length && tl ? (params.get(list[0].id) ?? 0) : 0;
      ------------------------------------------------------------
      页头的高度会随字号、语言、窗口宽度变（窄到一定程度导航会换行），
      左边那条轴和搜索栏的吸顶位置都得以它为准。
-     量出来写进 CSS 变量：--salon-top（吸顶要让开多少）、
-     --salon-note（轴上面那行说明占多高，轴的高度要把它减掉）。
+     量出来写进 CSS 变量：--salon-top（吸顶要让开多少）。
+     （原来还有一个 --salon-note：轴上面那行小字占多高、轴的高度要减掉它。
+       那行小字用户让删了，这个变量跟着一起没了。）
      ============================================================ */
   const root = document.documentElement;
-  const sideNote = document.querySelector<HTMLElement>('.salon__sideNote');
 
   const measureSticky = () => {
     const header = document.querySelector<HTMLElement>('.site-header');
     const bar = document.querySelector<HTMLElement>('.salon__searchBar');
-    const axis = document.querySelector<HTMLElement>('.salon__tl');
-    const mobile = window.matchMedia('(max-width: 880px)').matches;
     const top = Math.round((header?.getBoundingClientRect().height ?? 0) + 10);
-    const note = Math.round(sideNote?.getBoundingClientRect().height ?? 0);
     const barH = Math.round(bar?.getBoundingClientRect().height ?? 0);
-    const axisH = Math.round(axis?.getBoundingClientRect().height ?? 0);
     root.style.setProperty('--salon-top', `${top}px`);
-    root.style.setProperty('--salon-note', `${note}px`);
     /*
-      「跳过去以后那一条要落在哪儿」= 它得从所有吸顶的东西下面露出来：
-      页头 + 搜索栏（两端都有），手机端还要加轴上那一块。
+      「跳过去以后那一条要落在哪儿」= 它得从所有吸顶的东西下面露出来。
+      手机端和电脑端一样，吸顶的只有「页头 + 搜索栏」两样 ——
+      轴改成固定在屏幕**左边**那条细栏了，不再压在正文上方，
+      所以这里不能再把轴的高度算进去（算了那一条就会白让出一整条轴的空）。
     */
-    root.style.setProperty('--salon-jump-gap', `${Math.round(top + barH + (mobile ? axisH : 0) + 10)}px`);
+    root.style.setProperty('--salon-jump-gap', `${Math.round(top + barH + 10)}px`);
   };
   measureSticky();
   /* 尺寸一变就重量（防抖到下一帧，免得拖窗口时连着量几十遍） */
@@ -512,8 +509,16 @@ const firstParam = list.length && tl ? (params.get(list[0].id) ?? 0) : 0;
     两种写法：先 vh 兜底，认识 dvh 的浏览器（手机地址栏收放时更准）用 dvh。
   */
   .salon__tl {
-    --tl-panel-h: calc(100vh - var(--salon-top, 5.5rem) - var(--salon-note, 1.4rem) - 0.5rem);
-    --tl-panel-h: calc(100dvh - var(--salon-top, 5.5rem) - var(--salon-note, 1.4rem) - 0.5rem);
+    /*
+      高度：视口 − 让开页头那一段 − 1.4rem − 0.5rem。
+      那个 1.4rem 原来是"轴下面那行小字"占的高度 —— 2026-09-21 用户把那行字删了，
+      但这里**照样留着**：一进页面（还没滚的时候）轴底那根比例尺不能被顶出屏幕外，
+      轴再长这 22px 就正好把它挤下去（实测短窗口上 `salon-timeline-scale`
+      的滑块拖拽会因此点空 —— 这一点也是当年把那行小字放到轴**下面**的原因）。
+      删掉的是那行字，不是它占的位置。
+    */
+    --tl-panel-h: calc(100vh - var(--salon-top, 5.5rem) - 1.4rem - 0.5rem);
+    --tl-panel-h: calc(100dvh - var(--salon-top, 5.5rem) - 1.4rem - 0.5rem);
     width: 100%;
   }
   /* 还没选时间轴时的说明（编辑器里选完就换成轴） */
@@ -528,21 +533,8 @@ const firstParam = list.length && tl ? (params.get(list[0].id) ?? 0) : 0;
     color: rgba(255, 226, 244, 0.72);
     text-align: center;
   }
-  .salon__sideNote {
-    margin: 0.45rem 0 0;
-    font-size: 0.76rem;
-    line-height: 1.4;
-    color: rgba(255, 226, 244, 0.62);
-    text-align: center;
-    /* 太长会自动省略，别把轴的高度吃掉 */
-    overflow: hidden;
-    white-space: nowrap;
-    text-overflow: ellipsis;
-  }
-  .salon__sideNote b {
-    color: #ffb3dd;
-    font-weight: 500;
-  }
+  /* 已经不用了：这行小字（连同它的悬停提示）用户让删掉了，见上面标记里的说明。
+     样式留着只会让人以为还有这么个东西，所以整条删干净。 */
 
   .salon__main {
     flex: 1 1 auto;
@@ -563,15 +555,6 @@ const firstParam = list.length && tl ? (params.get(list[0].id) ?? 0) : 0;
     text-shadow:
       0 0 10px rgba(255, 79, 163, 0.9),
       0 0 28px rgba(212, 0, 123, 0.7);
-  }
-  .salon__meta {
-    margin: 0.5rem 0 0;
-    font-size: 0.86rem;
-    line-height: 1.7;
-    color: rgba(255, 226, 244, 0.72);
-  }
-  .salon__note {
-    color: rgba(255, 226, 244, 0.55);
   }
 
   /* ---------- 搜索栏：两端都吸顶，无论怎么翻都留在屏幕里 ---------- */
@@ -779,46 +762,81 @@ const firstParam = list.length && tl ? (params.get(list[0].id) ?? 0) : 0;
   }
 
   /* ============================================================================
-   * 窄屏：轴挪到上面、吸在屏幕上半部分；搜索栏吸在轴的下面
+   * 窄屏（手机）：轴固定在屏幕**左边**一条细栏里，正文在它右边
    * ---------------------------------------------------------------------------
-   *  用户原话：「在手机端下翻看精华时又无法显示，应当在手机端始终保持在屏幕上半部分。
-   *            同时搜索栏应当也在电脑端和手机端都可以无论怎么翻都随时保持在屏幕内」
-   *  所以窄屏下这两块都改成 sticky：轴占上面 40dvh（不到一半），
-   *  搜索栏紧贴在轴下方 —— 两个都一直在，正文从它们下面穿过去。
+   *  用户原话：「请调整手机端的冰室精华 UI。手机端最好像电脑端一样时间轴固定在
+   *            屏幕左侧，可以让时间轴更细一点以防止占用太多正文空间，
+   *            搜索栏就始终停留在时间轴 UI 顶部」
+   *
+   *  以前窄屏是「轴横在顶上占 46% 高 + 搜索栏吸在它下面」——正文只剩一半屏。
+   *  现在改成和电脑端同一套结构（左栏 + 右正文），只是这一栏细得多：
+   *    · 栏宽 clamp(64px, 18vw, 96px)：390px 的手机上量到 **70px**（屏宽 17.9%），
+   *      正文还剩 **265px（67.9%）**，比原来「轴横在顶上占掉 46% 的高度」省得多
+   *      （320px 小屏：栏 64px、正文 62.8%）。
+   *      栏宽写成一个变量 --salon-rail-w，正文的 padding-left 用它算，
+   *      两边不会各写一个数字而对不上。
+   *    · 用 position: fixed（不是 sticky）：用户要的是「固定在屏幕左侧」，
+   *      滚 784 条的过程中它一步都不动。
+   *    · 搜索栏和轴**顶边对齐**：两个都用 --salon-top 那一档，
+   *      所以搜索栏看上去就停在轴的上沿。轴是 fixed、搜索栏是 sticky，
+   *      各粘各的，但起点一样。
+   *  轴本身在这么窄的栏里怎么活下来：见 Timeline.astro 的 .tl.is-rail。
    * ========================================================================= */
   @media (max-width: 880px) {
     .salon {
       flex-direction: column;
-      /* 上面那条轴占多高：不到一半，留出下面的正文。两种写法见上（vh 兜底 + dvh） */
-      --salon-axis-h: 46vh;
-      --salon-axis-h: 46dvh;
+      /*
+        左边这条轴栏占多宽。用户要「更细一点以免占用太多正文空间」，
+        所以给到 390px 手机上 ≈ 70px（屏宽的 18%）：正文还剩 ~265px（约 68%），
+        比原来「轴横在顶上占掉 46% 的高度」省得多。
+      */
+      --salon-rail-w: clamp(64px, 18vw, 96px);
+      gap: 0;
+      /* 正文用 padding 让开这条栏 —— 栏是 fixed，不占 .salon 的布局位置 */
+      padding-left: calc(var(--salon-rail-w) + 0.3rem);
+      padding-right: 0.15rem;
     }
     /*
-      轴这一块吸在顶上（让开站点页头）。给它实色底：
-      正文会从它下面滚过去，透了就会两串字叠在一起。
+      轴那一栏：钉在屏幕左边、从页头底下一直到底。
+      底用实色（不是透明）：正文要从它旁边滚过去，透了就成了两串字叠在一起。
+      右边沿留一条很淡的粉线，把「栏」和「正文」分开。
+      **上边不留 padding**：轴的上沿要和搜索栏的上沿齐平（用户要「搜索栏停在
+      时间轴 UI 顶部」），差几个像素都能看出来。
     */
     .salon__side {
-      position: sticky;
+      position: fixed;
+      left: 0;
       top: var(--salon-top, 3.6rem);
+      bottom: 0;
       z-index: 25;
       flex: none;
-      width: 100%;
-      padding-top: 0.5rem;
+      width: var(--salon-rail-w);
+      padding: 0 0.15rem 0.25rem 0.2rem;
       background: #1e0730;
+      border-right: 1px solid rgba(255, 120, 190, 0.22);
     }
-    /* 手机上那行说明让给正文（空间本来就不够） */
-    .salon__sideNote {
-      display: none;
-    }
+    /*
+      轴的高度 = 这一栏剩下的全部（100dvh - 让开页头那一段 - 底下那点 padding）。
+      和上面 .salon__side 的 top/bottom 是同一笔账，所以轴正好贴着栏的上下沿。
+    */
     .salon__tl {
-      --tl-panel-h: var(--salon-axis-h, 40dvh);
+      --tl-panel-h: calc(100dvh - var(--salon-top, 3.6rem) - 0.25rem);
+      /* 弧线几何要一个「窄栏」的事实：窄栏里没有横着写的名字，弧顶居中更好看 */
+      --tl-apex: 0.5;
+      /* 凸出量跟着收：栏只有 60~90px 宽，凸 30px 塔吊就会被裁掉半边（见 Timeline 的 bulgeOf） */
+      --tl-bulge: 12px;
+      /* 塔吊不转向：转了的塔吊是横着朝外伸的，一根就横向占 26px，细栏里放不下两根 */
+      --tl-crane-rot: 0;
+      /* 栏有多宽告诉轴自己：手机上点塔吊弹出的提示卡要让开这一条栏（见 Timeline 的窄栏那一段） */
+      --tl-rail-w: var(--salon-rail-w);
+      height: 100%;
     }
     .salon__head {
-      margin-top: 0.9rem;
+      margin-top: 0.7rem;
     }
-    /* 搜索栏吸在「页头 + 轴」下面，一直看得见 */
+    /* 搜索栏：和轴**顶边对齐**，一直停在时间轴 UI 的顶部 */
     .salon__searchBar {
-      top: calc(var(--salon-top, 3.6rem) + var(--salon-axis-h, 40dvh) + 0.3rem);
+      top: var(--salon-top, 3.6rem);
     }
   }
 </style>

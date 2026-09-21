@@ -96,8 +96,14 @@ interface SalonFile {
 
 const DATA = raw as SalonFile;
 
-export const salonTitle: string = DATA.title || '冰室群精华';
+export const salonTitle: string = DATA.title || '冰室精华';
 export const salonUpdated: string = DATA.updated || '';
+/*
+  note 现在**页面上不显示了**：用户说标题下面那行
+  「共 N 条 · 成员 N 人 · 截至 …　由群精华导出文件整理：…」不需要，删掉了（见 pages/salon.astro）。
+  字段本身留着（salon.json 里还有、编辑器保存时原样带回去），所以这里也保留这个导出：
+  以后想再放到别处（首页/关于页）随时能用，不用改数据。
+*/
 export const salonNote: string = DATA.note || '';
 
 export const salonMembers: SalonMember[] = (DATA.members ?? [])

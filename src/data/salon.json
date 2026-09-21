@@ -8,7 +8,7 @@
     "ocr: true 表示这条的正文是截图 OCR 自动转录（尚未人工校对）。",
     "images 里是 public/img/salon/ 下的站内路径；编辑器里新增精华可以直接上传图片。"
   ],
-  "title": "冰室群精华",
+  "title": "冰室精华",
   "note": "由群精华导出文件整理：文字 / 完美对话 / AI 创作三类都在，一条没丢。",
   "timelineId": "tl-mu6e19cb793",
   "updated": "2026-09-21",

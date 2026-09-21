@@ -46,9 +46,21 @@ interface Props {
    * 不传就是老样子：body 高度写死 clamp(320px,58vh,620px)。
    */
   fill?: boolean;
+  /**
+   * **窄栏模式**（和 `pinned` 一起用；手机端的冰室精华页要的就是它）：
+   * 页面把轴塞进屏幕左边一条 76~104px 宽的细栏里
+   * （用户要求「手机端像电脑端一样时间轴固定在屏幕左侧，可以更细一点以免占用正文空间」）。
+   *
+   * 这么窄的栏放不下横着写的名字（`.tl__name` 最宽 8.5rem、还挂在弧线两侧 40px 外），
+   * 硬塞只会被 `overflow: hidden` 裁成半个字 —— 所以 880px 以下这里只留**轴本身**：
+   * 弧线、刻度尺、塔吊、弧顶那颗点、底部的比例尺；名字和那六个开关都收起来，
+   * 点一下塔吊照样能从提示卡里看到名字和日期。
+   * 宽屏（>880px）时和没传一样 —— 栏够宽，名字照常显示。
+   */
+  rail?: boolean;
 }
 
-const { timeline: tl, defaultParam = null, pinned = false, fill = false } = Astro.props;
+const { timeline: tl, defaultParam = null, pinned = false, fill = false, rail = false } = Astro.props;
 
 /** 站内链接补上 base；站外原样（外链开新窗口，见下面的标记） */
 const linkHref = (href: string) =>
@@ -162,7 +174,7 @@ const initialScaleText = `一刻度约 ${
 ---
 
 <div
-  class:list={['tl', 'is-off-left-moments', 'is-off-right-moments', pinned && 'is-pinned', fill && 'is-fill']}
+  class:list={['tl', 'is-off-left-moments', 'is-off-right-moments', pinned && 'is-pinned', fill && 'is-fill', rail && 'is-rail']}
   data-tl
   data-tl-id={tl.id}
   data-tl-pinned={pinned ? '1' : undefined}
@@ -984,6 +996,18 @@ const initialScaleText = `一刻度约 ${
   }
 
   /*
+    窄栏模式 + 触摸：卡片只盖**正文那一栏**，别把左边那条轴压在下面。
+    窄栏里轴是固定在屏幕左边的，卡片又是贴屏幕底部的整条浮层 ——
+    不让开的话，卡片正好压住栏底部的比例尺，用户一边看卡片一边就调不了比例尺了
+    （栏有多宽由页面通过 `--tl-rail-w` 告诉这里，默认 0 = 不影响原来的行为）。
+  */
+  @media (hover: none) and (max-width: 880px) {
+    .tl.is-rail .tl__item.is-open .tl__tip {
+      left: calc(var(--tl-rail-w, 0px) + 0.55rem);
+    }
+  }
+
+  /*
     时间段的名字，跟着带子一起走（同样算面板上的字，用粉色）。
 
     比事件名（0.8rem）还大一档：事件是「点」，年代是「段」，
@@ -1239,6 +1263,96 @@ const initialScaleText = `一刻度约 ${
     }
   }
 
+  /* ============================================================================
+   * 窄栏模式（`.tl.is-rail`，手机端的冰室精华页）：轴被塞进屏幕左边一条细栏
+   * ---------------------------------------------------------------------------
+   *  用户原话：「手机端最好像电脑端一样时间轴固定在屏幕左侧，可以让时间轴更细一点
+   *            以防止占用太多正文空间」。
+   *
+   *  这一栏只有 76~104px 宽（页面里的 --salon-rail-w），而名字是横着写的一整串
+   *  （`.tl__name` 最宽 8.5rem、挂在弧线两侧各 40px 外；时间段的名字还要更宽）。
+   *  在这么窄的栏里它们只会被 `.tl__panel` 的 overflow: hidden 裁成半个字 ——
+   *  那比不显示还糟。所以这里只留**轴本身**：
+   *    弧线 / 刻度尺 / 塔吊 / 弧顶那颗点 / 底部的比例尺 + 左右两个历名。
+   *  名字和顶上那六个「年代 / 时刻 / 事件」开关都收起来
+   *  （那六个开关管的就是名字，名字不在，开关留着只会点出一片空白）。
+   *  想知道某一根塔吊是什么，点它 —— 提示卡里名字、日期都在（手机端那张卡
+   *  是贴在屏幕底部的浮层，和栏的宽窄无关，见上面 @media (hover: none)）。
+   *
+   *  只在 880px 以下生效：栏够宽的时候（比如横屏平板）名字照常显示，
+   *  这个 class 传了也等于没传。
+   * ========================================================================= */
+  @media (max-width: 880px) {
+    .tl.is-rail .tl__name,
+    .tl.is-rail .tl__spanName,
+    .tl.is-rail .tl__toggles {
+      display: none;
+    }
+    /* 标题竖着写：5 个字刚好顺着栏排下来，横着写只能露出头两个字 */
+    .tl.is-rail .tl__head {
+      justify-content: center;
+      padding: 0.4rem 0.25rem;
+    }
+    .tl.is-rail .tl__title {
+      writing-mode: vertical-rl;
+      font-size: 0.66rem;
+      letter-spacing: 0.2em;
+      max-height: 8rem;
+      overflow: hidden;
+    }
+    /* 弧顶那天：日期**竖着**写。横着写有 59px 宽，而它是挂在弧顶左边的 ——
+       栏只有 62px 宽，实测左边会溢出 22px、被 panel 裁掉一截日期。竖着写只占 10px 宽 */
+    .tl.is-rail .tl__now {
+      gap: 0.15rem;
+    }
+    .tl.is-rail .tl__nowDot {
+      width: 7px;
+      height: 7px;
+    }
+    .tl.is-rail .tl__nowDate {
+      writing-mode: vertical-rl;
+      font-size: 0.5rem;
+      letter-spacing: 0;
+    }
+    /*
+      底部：左右两个历名上下叠着放，比例尺那一行也改成竖排两行
+      （「时间轴比例」四个字 + 尺子 + 读数横着排需要 ~150px，栏里只有 80px）。
+    */
+    .tl.is-rail .tl__foot {
+      gap: 0.28rem;
+      padding: 0.45rem 0.28rem 0.5rem;
+      font-size: 0.6rem;
+    }
+    .tl.is-rail .tl__footNames {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 0.1rem;
+    }
+    .tl.is-rail .tl__side {
+      letter-spacing: 0.02em;
+    }
+    .tl.is-rail .tl__scale {
+      flex-direction: column;
+      align-items: stretch;
+      gap: 0.22rem;
+    }
+    .tl.is-rail .tl__scaleLabel,
+    .tl.is-rail .tl__scaleValue {
+      font-size: 0.58rem;
+    }
+    .tl.is-rail .tl__scaleValue {
+      min-width: 0;
+      text-align: left;
+    }
+    /* 年代带子的「分层往外让」也收一档：电脑端一档 11px，细栏里两档就伸到栏外了 */
+    .tl.is-rail .tl__band[data-side='left'] {
+      transform: translateX(calc(-4px - var(--lane, 0) * 5px));
+    }
+    .tl.is-rail .tl__band[data-side='right'] {
+      transform: translateX(calc(4px + var(--lane, 0) * 5px));
+    }
+  }
+
   @media (prefers-reduced-motion: reduce) {
     .tl__panel,
     .tl__tab,
@@ -1278,10 +1392,46 @@ const initialScaleText = `一刻度约 ${
    */
   const TOUCH_HINT = '打开 ›';
 
-  /** 弧顶比两端向左凸出多少（px） */
+  /** 弧顶比两端向左凸出多少（px）；窄栏模式（手机端细栏）可以用 `--tl-bulge` 调小 */
   const BULGE = 30;
-  /** 弧顶在面板里横向的位置（占面板宽度的比例）：右边留出给右侧标签的余地 */
+  /**
+   * 凸出量也允许页面用 CSS 变量 `--tl-bulge` 覆盖（默认 30px）。
+   *
+   * 为什么需要：电脑端左栏有 260~330px 宽，弧线横着凸出 30px 只占一小条；
+   * 手机端窄栏模式（`.tl.is-rail`）的面板只有 ~62px 宽，而一根塔吊本身就有 26px 宽、
+   * 挂在弧线上还会被旋转撑到 ~30px。凸出 30px 的话「塔吊左边一半 + 凸出 + 塔吊右边一半」
+   * 就超过 90px —— 栏里的塔吊会被 `overflow: hidden` 切掉一半（实测最狠的一根切掉 28px）。
+   * 所以窄栏模式把凸出量调到 12px，弧线更直、塔吊整根都在栏里。
+   */
+  const bulgeOf = (el: HTMLElement) => {
+    const v = Number.parseFloat(getComputedStyle(el).getPropertyValue('--tl-bulge'));
+    return Number.isFinite(v) && v >= 2 ? v : BULGE;
+  };
+  /**
+   * 塔吊要不要顺着半径转向。页面写 `--tl-crane-rot: 0` 就关掉（窄栏模式用）。
+   *
+   * 为什么需要：转正之后塔吊是「朝外伸出去」的 —— 26px 的一根会横向占掉 26px
+   * （弧顶那两个点干脆是横躺着的）。电脑端左栏 260~330px 宽，随便伸；
+   * 手机端窄栏只有 ~60px，左右两根对向的塔吊必然被 `overflow: hidden` 切掉一角
+   * （实测最狠的一根切掉 8px）。关掉旋转，塔吊就竖着立在锚点上，只占 ±13px，
+   * 整根都在栏里，点击区域也还是完整的一根。
+   */
+  const craneRot = (el: HTMLElement) =>
+    getComputedStyle(el).getPropertyValue('--tl-crane-rot').trim() !== '0';
+  /** 弧顶在面板里横向的位置（占面板宽度的比例）：默认右边留出给右侧标签的余地 */
   const APEX_RATIO = 0.62;
+  /**
+   * 弧顶横向位置允许页面用 CSS 变量 `--tl-apex` 覆盖（默认还是 0.62）。
+   *
+   * 为什么需要：0.62 是「左边给名字留一大片、右边给塔吊留一小片」这个前提下的数。
+   * 手机端窄栏模式（`.tl.is-rail`）里名字一个都不显示，弧线再偏右就贴着正文边界了，
+   * 所以页面写 `--tl-apex: 0.5`，弧线正好落在细栏中间。
+   * 每次 measure() 都重新读 —— 横竖屏切换、变宽变窄都会跟着变。
+   */
+  const apexRatio = (el: HTMLElement) => {
+    const v = Number.parseFloat(getComputedStyle(el).getPropertyValue('--tl-apex'));
+    return Number.isFinite(v) && v > 0.05 && v < 0.95 ? v : APEX_RATIO;
+  };
   /** 刻度线长度（从弧上朝外画） */
   const TICK = 7;
   /** 刻度间隔（px，沿轴） */
@@ -1917,10 +2067,11 @@ const initialScaleText = `一刻度约 ${
       H = body!.clientHeight;
       if (!H) return;
       const W = body!.clientWidth;
-      apexX = W * APEX_RATIO;
+      apexX = W * apexRatio(root);
       cy = H / 2;
-      // 由「凸出量」和「半高」反推半径（推导见文件头）
-      R = ((H / 2) * (H / 2) + BULGE * BULGE) / (2 * BULGE);
+      // 由「凸出量」和「半高」反推半径（推导见文件头）；凸出量可以按页面调（见 bulgeOf）
+      const bulge = bulgeOf(root);
+      R = ((H / 2) * (H / 2) + bulge * bulge) / (2 * bulge);
       cx = apexX + R;
 
       /*
@@ -1941,9 +2092,18 @@ const initialScaleText = `一刻度约 ${
         字体大小、缩放、横竖屏都会改这个高度，所以量出来写进 CSS 变量，不写死数字。
       */
       const toggles = root.querySelector<HTMLElement>('.tl__toggles');
-      if (toggles && panel) {
-        const gap = panel.getBoundingClientRect().bottom - toggles.getBoundingClientRect().top + 8;
+      /*
+        注意：窄栏模式（手机端精华页的细栏）里那排开关是 `display: none` 的 ——
+        隐藏元素量出来全是 0，按它算出来的 gap 会变成「整个面板的高度」，
+        卡片直接被顶到屏幕外面（实测 top = -104px，整张卡都看不见）。
+        量不到就退回 CSS 里的默认值（3.4rem）。
+      */
+      const toggleBox = toggles ? toggles.getBoundingClientRect() : null;
+      if (panel && toggleBox && toggleBox.height > 0) {
+        const gap = panel.getBoundingClientRect().bottom - toggleBox.top + 8;
         if (Number.isFinite(gap) && gap > 0) root.style.setProperty('--tl-card-gap', `${Math.round(gap)}px`);
+      } else {
+        root.style.removeProperty('--tl-card-gap');
       }
 
       // V 定了才能按屏幕距离判断谁和谁挤在一起，所以分组放在最后
@@ -2041,10 +2201,10 @@ const initialScaleText = `一刻度约 ${
           // 向外的径向单位向量（弧顶处指向正左）
           const nx = (x - cx) / R;
           const ny = (y - cy) / R;
-          // 左侧的塔吊朝外（=径向），右侧的朝里（=反向）
+          // 左侧的塔吊朝外（=径向），右侧的朝里（=反向）；窄栏模式不转（见 craneRot）
           const rot =
             el.dataset.side === 'right' ? Math.atan2(-nx, ny) : Math.atan2(nx, -ny);
-          crane.style.transform = `rotate(${rot}rad)`;
+          crane.style.transform = craneRot(root) ? `rotate(${rot}rad)` : '';
         }
       }
 

@@ -181,16 +181,25 @@ try {
     const main = q('.salon__main').getBoundingClientRect();
     const panel = q('.tl__panel').getBoundingClientRect();
     const body = q('.tl__body').getBoundingClientRect();
+    const vw = innerWidth;
     return {
       overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+      vw,
       sideTop: Math.round(side.top), sideW: Math.round(side.width),
       mainTop: Math.round(main.top), mainW: Math.round(main.width),
+      mainLeft: Math.round(main.left),
       panelW: Math.round(panel.width), bodyH: Math.round(body.height),
-      stacked: main.top > side.top + 100,
+      sidePos: getComputedStyle(q('.salon__side')).position,
+      /* 栏在屏幕左边、正文在它右边并排（不是上下堆叠） */
+      sideBySide: Math.abs(side.top - main.top) < 100 && main.left >= side.right - 1,
     };
   })()`);
   check('手机端精华页：不横向溢出', mSalon.overflow <= 1, JSON.stringify({ overflow: mSalon.overflow }));
-  check('手机端精华页：时间轴挪到上面、占满宽度、没塌', mSalon.stacked && mSalon.panelW > 300 && mSalon.bodyH > 250, JSON.stringify(mSalon));
+  /* 2026-09-21 用户改的版式：手机端不再「轴横在上面占半屏」，而是像电脑端那样
+     一条细栏钉在屏幕左边（见 salon-perf-check 里那一组断言，这儿只做粗查） */
+  check('手机端精华页：时间轴是屏幕左边一条细栏（和正文并排、没塌）',
+    mSalon.sideBySide && mSalon.sidePos === 'fixed' && mSalon.sideW <= mSalon.vw * 0.3 && mSalon.panelW > 40 && mSalon.bodyH > 250,
+    JSON.stringify(mSalon));
   check('手机端精华页 JS 没报错', cdp.errors.length === 0, cdp.errors.slice(0, 3).join(' | '));
 
   /* ================= C. 「每日精华」隔天自动换（客户端重挑） ================= */

@@ -278,7 +278,13 @@ const cardsOf = (b: Extract<PageBlock, { type: 'children' }>) => ({
 
       return (
         <div
-          class="pblock"
+          class:list={[
+            'pblock',
+            /* 「窄」图（third）：宽屏上它只占栅格的一格，于是连着的窄图会并排、排满再换行。
+               见下面 .pblock--flow 的样式 —— 用户原话「选择为窄的图片会优先横着排开
+               然后再换行继续排」「不要让右边留出那么多空」。 */
+            b.type === 'image' && (b.width ?? 'wide') === 'third' && 'pblock--flow',
+          ]}
           id={`blk-${b.id}`}
           data-edit={`pg-${b.id}`}
           data-block-type={b.type}
@@ -292,7 +298,17 @@ const cardsOf = (b: Extract<PageBlock, { type: 'children' }>) => ({
 
           {b.type === 'image' && (
             <figure class:list={['pfigure', `pfigure--${b.width ?? 'wide'}`]}>
-              <Img src={b.src} alt={b.alt ?? ''} sizes="(max-width: 760px) 100vw, 760px" loading="lazy" />
+              <Img
+                src={b.src}
+                alt={b.alt ?? ''}
+                sizes={
+                  /* 窄图并排以后实际只占行宽的 1/3 左右，别再按 760px 去挑大图 */
+                  (b.width ?? 'wide') === 'third'
+                    ? '(max-width: 719px) 100vw, (max-width: 1100px) 45vw, 360px'
+                    : '(max-width: 760px) 100vw, 760px'
+                }
+                loading="lazy"
+              />
               {b.alt && <figcaption>{b.alt}</figcaption>}
             </figure>
           )}
@@ -809,6 +825,36 @@ const cardsOf = (b: Extract<PageBlock, { type: 'children' }>) => ({
   }
   .pfigure--third {
     width: min(100%, 20rem);
+  }
+
+  /*
+    「窄」图不再一张占一行。
+    用户原话：「修改页面中图片的排列 如果图片选择大小为窄 那么不要让右边留出那么多空
+              选择为窄的图片会优先横着排开然后再换行继续排」
+
+    做法：宽屏上把 .page 从「一列往下排」换成栅格 ——
+      · 一列就是「窄」那么宽（min(20rem,100%) 起，最多均分整行）；
+      · 普通块（文字 / 宽图 / 半宽图 / 地图 / 时间轴…）横跨整行 `1 / -1`，和以前一样；
+      · 带 .pblock--flow 的（就是窄图）只占一格 `span 1`，于是**连着的窄图自动并排**，
+        排满一行再换行，空位只留在最后一行末尾；
+      · 窄图在图里占满自己那一格（width:100%）—— 不然格子比图宽，图之间又会空出一条。
+    手机上（<720px）一列放不下两张，还是老样子排下去，不套栅格。
+  */
+  @media (min-width: 720px) {
+    .page {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(min(20rem, 100%), 1fr));
+      align-items: start;
+    }
+    .pblock {
+      grid-column: 1 / -1;
+    }
+    .pblock--flow {
+      grid-column: span 1;
+    }
+    .pblock--flow .pfigure {
+      width: 100%;
+    }
   }
 
   /* ---------- 链接 ---------- */

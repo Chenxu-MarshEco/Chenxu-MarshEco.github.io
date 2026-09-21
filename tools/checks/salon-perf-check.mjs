@@ -394,6 +394,10 @@ const layout = await cdp.ev(`(() => {
     userSelectTl: ua(document.querySelector('.tl')),
     userSelectItem: ua(tlItem),
     userSelectPin: ua(pin),
+    /* 左栏那行小字（「点刻度或塔吊 → 跳到最近的一条精华」+ 悬停提示里的条数）
+       用户让删了：这里量它真的不在 DOM 里了（不是被 CSS 藏着） */
+    sideNoteCount: document.querySelectorAll('.salon__sideNote').length,
+    sideText: (side ? side.textContent : '').replace(/\\s+/g, ' ').trim().slice(0, 40),
   };
 })()`);
 console.log('\n=== ④ 版式（桌面 1440x900）===');
@@ -406,6 +410,8 @@ check(
 check('桌面端轴下面没有大空缺（轴底离屏幕底 ≤ 60px）', layout.tlH !== null && layout.vh - (layout.sideTop + layout.tlH) <= 60,
   `轴底 ${layout.sideTop + layout.tlH}px，屏幕 ${layout.vh}px，空隙 ${layout.vh - (layout.sideTop + layout.tlH)}px`);
 check('搜索栏是吸顶的（滚下去还在）', layout.barPos === 'sticky', `position=${layout.barPos}`);
+check('左栏那行小字已经删掉（.salon__sideNote 不在 DOM 里，悬停提示里的条数也一起没了）',
+  layout.sideNoteCount === 0, `命中 ${layout.sideNoteCount} 个；左栏文字「${layout.sideText}」`);
 check('时间轴上的文字不能被框选', layout.userSelectTl === 'none', `user-select=${layout.userSelectTl}`);
 check('时间轴刻度的文字不能被框选', layout.userSelectItem === 'none', `user-select=${layout.userSelectItem}`);
 check('手机端/地图图钉的文字也不能被框选', layout.userSelectPin === 'none' || layout.userSelectPin === null, `user-select=${layout.userSelectPin}`);
@@ -428,16 +434,30 @@ await sleep(900);
 await cdp.ev('window.scrollTo(0, 4000), true');
 await sleep(800);
 const mobile = await cdp.ev(`(() => {
-  const vh = innerHeight;
+  const vh = innerHeight, vw = innerWidth;
+  const side = document.querySelector('.salon__side');
   const tl = document.querySelector('.salon__tl');
+  const main = document.querySelector('.salon__main');
   const bar = document.querySelector('.salon__searchBar');
   const search = document.querySelector('.salon__searchBox');
   const r = tl ? tl.getBoundingClientRect() : null;
   const br = bar ? bar.getBoundingClientRect() : null;
   const sr = search ? search.getBoundingClientRect() : null;
-  return { vh, scrollY: Math.round(scrollY),
+  const dr = side ? side.getBoundingClientRect() : null;
+  const mr = main ? main.getBoundingClientRect() : null;
+  /* 窄栏模式里名字应该都收起来了：这里数"真的占着地方的"那些名字 */
+  const names = [...document.querySelectorAll('.salon__tl .tl__name, .salon__tl .tl__spanName')]
+    .filter((el) => el.getBoundingClientRect().width > 0);
+  return { vh, vw, scrollY: Math.round(scrollY),
+    sidePos: side ? getComputedStyle(side).position : null,
+    sideLeft: dr ? Math.round(dr.left) : null,
+    sideW: dr ? Math.round(dr.width) : null,
+    mainLeft: mr ? Math.round(mr.left) : null,
+    mainW: mr ? Math.round(mr.width) : null,
+    railNames: names.length,
+    railNamesHidden: names.length === 0,
     tlTop: r ? Math.round(r.top) : null, tlBottom: r ? Math.round(r.bottom) : null,
-    tlInTopHalf: r ? r.top < vh / 2 && r.bottom > 0 : null,
+    tlInView: r ? r.top >= -2 && r.bottom <= vh + 2 : null,
     barTop: br ? Math.round(br.top) : null,
     searchTop: sr ? Math.round(sr.top) : null, searchBottom: sr ? Math.round(sr.bottom) : null,
     searchInView: sr ? sr.top >= -2 && sr.bottom <= vh + 2 : null,
@@ -445,11 +465,83 @@ const mobile = await cdp.ev(`(() => {
 })()`);
 console.log('\n=== ④b 手机（390x844）滚到 4000px ===');
 console.log(JSON.stringify(mobile, null, 0));
-check('手机端下翻时时间轴始终留在屏幕上半部分', mobile.tlInTopHalf === true,
-  `轴 ${mobile.tlTop}~${mobile.tlBottom}px / 视口 ${mobile.vh}px`);
-check('手机端下翻时搜索栏也在屏幕内', mobile.searchInView === true,
-  `搜索栏 ${mobile.searchTop}~${mobile.searchBottom}px / position=${mobile.barPos}`);
+/*
+  手机端的版式在 2026-09-21 改过一次。用户原话：
+    「请调整手机端的冰室精华 UI。手机端最好像电脑端一样时间轴固定在屏幕左侧，
+      可以让时间轴更细一点以防止占用太多正文空间，搜索栏就始终停留在时间轴 UI 顶部」
+  以前是「轴横在顶上占 46% 高」，所以那时候这里量的是「轴在不在屏幕上半部分」。
+  现在量的是新要求，一条一条对着用户那句话：
+    · 轴固定在屏幕最左边（left≈0）而且是 fixed —— 滚 784 条它一步都不动
+    · 栏够细：不超过屏幕宽度的 30%（390px 手机上 ≈ 82px），也不超过 110px
+    · 正文没被压死：正文起点在栏右边、正文宽度占屏幕 65% 以上
+    · 搜索栏顶边和轴顶边对齐（都停在 --salon-top 那一档）—— 「停在时间轴 UI 顶部」
+*/
+check('手机端时间轴固定在屏幕左侧（fixed + 左边缘贴着屏幕左边）',
+  mobile.sidePos === 'fixed' && mobile.sideLeft !== null && mobile.sideLeft <= 2,
+  `position=${mobile.sidePos}；栏左边 ${mobile.sideLeft}px，栏宽 ${mobile.sideW}px`);
+check('手机端下翻 4000px 后时间轴仍整条在屏幕里（固定的，不是跟着滚走）',
+  mobile.tlInView === true, `轴 ${mobile.tlTop}~${mobile.tlBottom}px / 视口 ${mobile.vh}px`);
+check('手机端这条栏够细：不超过屏幕宽度的 30%、也不超过 110px',
+  mobile.sideW !== null && mobile.sideW <= 110 && mobile.sideW <= mobile.vw * 0.3,
+  `栏宽 ${mobile.sideW}px / 屏宽 ${mobile.vw}px = ${mobile.sideW !== null ? ((mobile.sideW / mobile.vw) * 100).toFixed(1) : '?'}%`);
+check('手机端正文没被这条栏挤没：正文宽度占屏幕 65% 以上，且起点在栏右边（不叠着）',
+  mobile.mainW !== null && mobile.mainW >= mobile.vw * 0.65 && mobile.mainLeft >= mobile.sideW - 1,
+  `正文 ${mobile.mainLeft}~${mobile.mainLeft + mobile.mainW}px（宽 ${mobile.mainW}px = ${((mobile.mainW / mobile.vw) * 100).toFixed(1)}%）；栏右沿 ${mobile.sideW}px`);
+check('手机端搜索栏顶边和轴顶边对齐（搜索栏就停在时间轴 UI 顶部）',
+  mobile.searchInView === true && Math.abs(mobile.barTop - mobile.tlTop) <= 2,
+  `搜索栏顶 ${mobile.barTop}px / 轴顶 ${mobile.tlTop}px（差 ${Math.abs(mobile.barTop - mobile.tlTop)}px）`);
+check('手机端窄栏里的名字收起来了（横着写的一串放不进 80px 的栏，会被裁成半个字）',
+  mobile.railNamesHidden === true && mobile.railNames === 0,
+  `窄栏里还显示着的名字 ${mobile.railNames} 个`);
 check('手机端滚下去以后没有 JS 报错', cdp.errors.length === 0, cdp.errors.slice(0, 2).join(' | '));
+
+/*
+  窄栏里「点一根塔吊」这条路还在不在。
+  窄栏把名字都收起来了，所以塔吊是栏里唯一能点的东西 —— 要是它点不出卡片，
+  手机上就彻底看不到这个时间点叫什么了。卡片本身是贴屏幕底部的浮层（fixed），
+  和栏的宽窄无关，这里两头都量：卡片亮没亮、整条卡片在不在屏幕里。
+*/
+const tapReady = await cdp.ev(`(() => {
+  const body = document.querySelector('[data-tl-body]');
+  const item = document.querySelector('.salon__tl [data-tl-item][data-href]');
+  if (!body || !item) return { ok: false };
+  /* 把带链接的那个点滚进轴的可视范围（滚轮事件直接发给轴，和用户手滚一样） */
+  const b = body.getBoundingClientRect();
+  body.dispatchEvent(new WheelEvent('wheel', { deltaY: item.getBoundingClientRect().top + 13 - (b.top + b.height / 2), bubbles: true, cancelable: true }));
+  return { ok: true, href: item.dataset.href };
+})()`);
+await sleep(400);
+const craneHit = await cdp.ev(`(() => {
+  const body = document.querySelector('[data-tl-body]');
+  const item = document.querySelector('.salon__tl [data-tl-item][data-href]');
+  const crane = item && item.querySelector('.tl__crane');
+  if (!body || !crane) return null;
+  const r = crane.getBoundingClientRect(); const b = body.getBoundingClientRect();
+  return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2), w: Math.round(r.width),
+    inBody: r.top >= b.top - 1 && r.bottom <= b.bottom + 1, inRail: r.left >= 0 && r.right <= 390 };
+})()`);
+check('手机端窄栏里找得到一个带链接的塔吊、且它整根都在栏里（没被裁掉）',
+  !!tapReady.ok && !!craneHit && craneHit.inBody && craneHit.inRail,
+  JSON.stringify({ href: tapReady.href, ...craneHit }));
+if (craneHit) {
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: craneHit.x, y: craneHit.y, button: 'none' });
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: craneHit.x, y: craneHit.y, button: 'left', buttons: 1, clickCount: 1 });
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: craneHit.x, y: craneHit.y, button: 'left', buttons: 0, clickCount: 1 });
+  await sleep(500);
+}
+const tapTip = await cdp.ev(`(() => {
+  const item = document.querySelector('.salon__tl [data-tl-item].is-open');
+  const t = item && item.querySelector('.tl__tip');
+  if (!t) return { open: false };
+  const cs = getComputedStyle(t); const r = t.getBoundingClientRect();
+  return { open: true, visibility: cs.visibility, position: cs.position,
+    l: Math.round(r.left), r: Math.round(r.right), t: Math.round(r.top), b: Math.round(r.bottom),
+    inView: r.left >= -1 && r.right <= innerWidth + 1 && r.top >= -1 && r.bottom <= innerHeight + 1,
+    text: t.textContent.replace(/\\s+/g, ' ').trim().slice(0, 40) };
+})()`);
+check('手机端窄栏里点一下塔吊 → 亮出提示卡（名字 + 日期都在），整条卡片在屏幕里',
+  tapTip.open === true && tapTip.visibility === 'visible' && tapTip.inView === true,
+  JSON.stringify(tapTip));
 
 /* ================================================================
  * ⑤ 地图图钉上的文字也不能被框选（图钉在板块子页面里，不在 /salon/）
