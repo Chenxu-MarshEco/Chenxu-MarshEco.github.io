@@ -16,14 +16,20 @@
  * 只有"什么时候来一群、来几只、什么鸟、往哪飞"交给下面那点 JS —— 这部分必须随机，
  * 写死在 CSS 里每页都一样就没意思了。
  *
- * 彩蛋：小概率，一群鸟里混进一只「疑问的雕像」（明日方舟 PRTS 里那个飞行敌人）。
- * 它的样子是从它自己的 Spine 模型 A_Move 动作里渲染出来的一帧剪影
- * （public/img/home/statue.png）。它会飞得比鸟慢，而且**可以点**：点进 /secret/xianbao/ 。
+ * 彩蛋（现已搬到 HomeStatue.astro，见下）：小概率，一群鸟里混进一只「疑问的雕像」
+ * （明日方舟 PRTS 里那个飞行敌人）。它的样子是从它自己的 Spine 模型 A_Move 动作里
+ * 渲染出来的一帧剪影（public/img/home/statue.png）。它会飞得比鸟慢，而且**可以点**：
+ * 点进 /secret/xianbao/ 。这段代码留在原地（EGG_IN_FLOCK 打开才会跑）。
+ *
+ * ⚠ 2026-09 现状：**鸟群关着**（用户说"出现有点突兀，设计还没想好，先关掉、别删代码"）。
+ *   总开关是下面的 FLOCKS_ENABLED = false；雕像也从"混在鸟群里飞"改成了
+ *   「藏在城市剪影里偶尔探头」，代码在 HomeStatue.astro。
+ *   这个文件一行没删，改回 true 就完全恢复。
  *
  * 调试 / 触发：
- *   ?birds=1    立刻放一群鸟
+ *   ?birds=1    立刻放一群鸟（**不受总开关影响**，专门用来验鸟群本身）
  *   ?birds=0    完全不放（做对照截图用）
- *   ?statue=1   下一群必出雕像
+ *   ?statue=1   下一群必出雕像（只在 EGG_IN_FLOCK 打开时才有意义）
  *   彩蛋还有一条**给用户的暗号**：连续点右下角「回到顶部」5 次 → 稳定放出一只雕像。
  */
 import { withBase } from '../utils/url';
@@ -306,8 +312,24 @@ const KEYS = Object.keys(BIRDS) as (keyof typeof BIRDS)[];
     const eggImg = root.dataset.eggImg || '/img/home/statue.png';
     const eggWing = root.dataset.eggWing || '/img/home/statue-wing.png';
     const params = new URLSearchParams(location.search);
-    // ?birds=0 完全不放（做对照截图用）；?birds=1 立刻放一群；?statue=1 下一群必出雕像
+    // ?birds=0 完全不放（做对照截图用）；?birds=1 立刻放一群（调试口，见下面开关）
     if (params.get('birds') === '0') return;
+
+    /* ══════════════════════════════════════════════════════════════════════
+       ── 总开关（2026-09）──────────────────────────────────────────────────
+       用户：「鸟群出现有点突兀 还是需要优化 但是暂时没有想好设计 所以你先把
+       首页出现鸟群这一点关掉吧 注意只是关掉这个功能先不要删掉它们的代码！！」
+
+       所以这里只关不删：整段调度、队形、飞行带、彩蛋全都在，
+       把 FLOCKS_ENABLED 改回 true 就完全恢复原样。
+         · ?birds=1 这个调试口**不受开关影响** —— 想单独验鸟群本身（或者给设计
+           挑新参数）时照放一群，正常访问（没有参数）一只都不放。
+         · EGG_IN_FLOCK：雕像已经从"混在鸟群里飞"改成"藏在城市剪影里探头"，
+           搬到 HomeStatue.astro 了。这里那段混在鸟群里的老彩蛋留着但不再启用，
+           免得哪天开回鸟群时冒出两只雕像、还和新雕像抢那五次连点。
+       ══════════════════════════════════════════════════════════════════════ */
+    const FLOCKS_ENABLED = false;
+    const EGG_IN_FLOCK = false;
 
     /** 一群鸟之间的间隔（毫秒）。12~26 秒，平均约 19 秒一次 */
     const GAP_MIN = 12000;
@@ -399,7 +421,9 @@ const KEYS = Object.keys(BIRDS) as (keyof typeof BIRDS)[];
       return [Math.max(lo, Math.min(...free) - 1), Math.min(hi, Math.max(...free) + 1)];
     }
 
-    let forceEgg = params.get('statue') === '1';
+    /** 老调试口 ?statue=1（下一群必出雕像）。雕像搬去 HomeStatue.astro 之后，
+        只有把 EGG_IN_FLOCK 打开时它才有意义 */
+    let forceEgg = EGG_IN_FLOCK && params.get('statue') === '1';
     /** 场上已经有一只雕像在飞：没飞出去之前不许再刷（防连点器） */
     let eggInFlight = false;
     /** 场上那只雕像的 <a>（同时只会有一只），光标判断用它 */
@@ -409,7 +433,7 @@ const KEYS = Object.keys(BIRDS) as (keyof typeof BIRDS)[];
     function spawnFlock(opts: { egg?: boolean } = {}) {
       const dir = Math.random() < 0.5 ? 'ltr' : 'rtl';
       // 带雕像的那一群飞在"看得见又点得到"的带子上；实在找不到就退回最上面那条空天
-      const useEgg = opts.egg === true || forceEgg || Math.random() < EGG_CHANCE;
+      const useEgg = EGG_IN_FLOCK && (opts.egg === true || forceEgg || Math.random() < EGG_CHANCE);
       forceEgg = false;
       // 带雕像的那一群飞在"看得见又点得到"的带子上；找不到就退回当前屏幕天空带的最上面
       const band: [number, number] = useEgg ? freeBand() ?? [birdBand()[0], birdBand()[0] + 16] : birdBand();
@@ -513,31 +537,39 @@ const KEYS = Object.keys(BIRDS) as (keyof typeof BIRDS)[];
       }, wait);
     }
 
+    // 顶上的开关关着就一次都不排（?birds=1 那个调试口不受影响，见上面那一节）
+    root.dataset.flocks = FLOCKS_ENABLED ? 'on' : 'off';
     // 首屏别等太久：3~7 秒先来一群，之后按 12~26 秒的间隔随机
-    schedule(rnd(3000, 7000));
+    if (FLOCKS_ENABLED) schedule(rnd(3000, 7000));
     if (params.get('birds') === '1') setTimeout(spawnFlock, 120);
 
     /*
-      ── 彩蛋的两条触发路径 ────────────────────────────────────────────
+      ── 彩蛋的两条触发路径（EGG_IN_FLOCK 关着时整段不挂）─────────────────
       ① 隐秘暗号：连续点「回到顶部」5 次 → 立刻放一群带雕像的（不等随机概率）。
          两次点击超过 1.6 秒就重新数，避免"一会儿点一下"也给触发出来。
       ② 防连点器：场上有雕像在飞时，eggInFlight 是 true，再点多少次都不刷；
          等它整群飞出屏幕（animationend）才解锁。
+
+      ⚠ 这五下连点现在是 HomeStatue.astro 的暗号（让藏在楼群里的雕像轮廓
+      微微发光）。这里留在原地、只在 EGG_IN_FLOCK 打开时生效，
+      两处不会同时响应 —— 否则一次连点会既发光又放鸟。
     */
-    let totopCount = 0;
-    let totopLast = 0;
-    document.addEventListener('click', (event) => {
-      const target = event.target as Element | null;
-      if (!target || !target.closest || !target.closest('#totop')) return;
-      const now = Date.now();
-      if (now - totopLast > TOTOP_WINDOW) totopCount = 0;
-      totopLast = now;
-      totopCount += 1;
-      if (totopCount >= TOTOP_CLICKS) {
-        totopCount = 0;
-        if (!eggInFlight) spawnFlock({ egg: true });
-      }
-    });
+    if (EGG_IN_FLOCK) {
+      let totopCount = 0;
+      let totopLast = 0;
+      document.addEventListener('click', (event) => {
+        const target = event.target as Element | null;
+        if (!target || !target.closest || !target.closest('#totop')) return;
+        const now = Date.now();
+        if (now - totopLast > TOTOP_WINDOW) totopCount = 0;
+        totopLast = now;
+        totopCount += 1;
+        if (totopCount >= TOTOP_CLICKS) {
+          totopCount = 0;
+          if (!eggInFlight) spawnFlock({ egg: true });
+        }
+      });
+    }
 
     /*
       ── 点击兜底 ─────────────────────────────────────────────────────

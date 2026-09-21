@@ -1,0 +1,408 @@
+---
+/**
+ * ============================================================================
+ * 首页城市剪影里「藏着的那只雕像」（点进 /secret/xianbao/）
+ * ----------------------------------------------------------------------------
+ * 用户要求（2026-09）：
+ *   「雕像的出现改为每次进入首页都会让一个雕像随机刷新在和城市影重合的位置
+ *     看不出来，然后雕像会偶尔探头出来，引导用户点击。
+ *     连续点击回到顶部塔吊五次改为会让雕像轮廓微微发光」
+ *
+ * 一句话机制：雕像和楼群**同一支墨**（--ink #08020c）、画在楼群**前面**，
+ * 每次进页面从 data-rests 里随机挑一格站定 —— 那一格是量出来的「整个剪影都压在
+ * 实墨里」的位置，所以静止时它和楼群是一片黑，看不出任何东西。
+ * 偶尔抬起来一截（探头），上半身探到楼顶以上，天上才出现它的形状；
+ * 这时候点它就进隐秘页。连点「回到顶部」五次，它会在原地微微发光 ——
+ * 那是给用户的提示：它就在那片楼里。
+ *
+ * 为什么"看不出来"是硬保证而不是"差不多看不见"：
+ *   雕像是一层 `background: var(--ink)` + `mask-image: statue-full.png`。
+ *   静止时它整块压在楼群的实墨上，而楼群的墨色逐位就是 #08020c（skyline.png 里
+ *   0 个非 --ink 像素，opt 那一路是无损 WebP，颜色逐位不变）——
+ *   于是"同一颜色叠在同一颜色上"在数学上等于什么都没画，抗锯齿的软边也一样
+ *   （半透明的墨叠在墨上还是墨）。证据：home-statue-check 里把「有雕像 / 没雕像」
+ *   两张全屏截图逐像素比，静止态的差异必须是 0 个像素。
+ *
+ * 取位数据（GRID / PEEK / RESTS）怎么来的：
+ *   跑 `node tools/egg/fit-statue.mjs` 现算的 —— 它读 skyline.png 每一列的实墨
+ *   最高点、和剪影自己的 alpha，逐个候选点解出「藏得住的最低位置」，再数探头时
+ *   能露出多少像素，只留下露出比例合适、而且露出来的确实是上半身的那些格。
+ *   ⚠ 换了 skyline.png 或 statue*.png 就得重跑一遍，把下面三行抄回来。
+ *
+ * 为什么尺寸写**百分比**而不是 px：
+ *   .vapor__skyline 是 aspect-ratio:1773/526 + background-size:100% 100%，
+ *   图像坐标到盒子坐标是线性的、和视口无关。雕像高写成盒高的 11%，于是
+ *   「雕像占多宽」「楼顶在盒高百分之几」全是常数比例 —— 桌面量出来的安全位，
+ *   手机上照样安全（窄屏上 max-height 把盒子压得更矮，脚印占比只会更小，
+ *   更保守）。写成 px 的话窄屏上雕像会相对楼群越变越大，量好的位置当场失效。
+ *
+ * 调试口（见下面脚本，都是给核对用的，不影响正常访问）：
+ *   ?statue=off     完全不放（做对照截图用）
+ *   ?statue=still   只站好、一次都不探头（像素比对要一个完全静止的页面）
+ *   ?statue=peek    一进来就一直探着头（拍图／量坐标用）
+ *   ?statue=glow    一进来就发光
+ *   ?statue=37      固定用第 37 格（核对某个具体位置）
+ *   ?statue=fast    第一次探头 0.6s，之后每 1.5~2.5s 一次（核对调度用）
+ * ============================================================================
+ */
+import { withBase } from '../utils/url';
+
+const SECRET = withBase('/secret/xianbao/');
+const SPRITE = withBase('/img/home/statue-full.png');
+
+/* ↓↓↓ 下面三行由 `node tools/egg/fit-statue.mjs` 生成，换图之后要重抄 ↓↓↓ */
+/** 候选格数：画面宽度均匀切成这么多格，索引就是 data-rests 里的位置 */
+const GRID = 200;
+/**
+ * 探头抬升量，单位是**雕像自身高度**的百分比（5.0% 盒高 ÷ 11% 盒高 ≈ 45%）。
+ * 这 5.0% 里含 1.0% 的安全余量（楼顶那条边被缩放抹开、剪影自己也有软边），
+ * 所以真正露出来的那一截仍然只有 4.0% 盒高上下 —— 见 tools/egg/fit-statue.mjs。
+ */
+const PEEK = 45;
+/** 每一格的「藏位」＝雕像顶边在盒高里的百分比×10；--- 表示这一格藏不住 */
+const RESTS = '--- --- 518 510 --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- 812 814 --- --- 811 --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- 054 --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- 562 562 562 562 --- --- --- --- --- --- --- 708 --- --- 669 657 657 657 --- --- --- --- --- --- --- --- --- --- --- --- --- --- 708 --- --- 771 777 777 769 --- --- --- 682 --- --- 708 708 708 --- 717 708 716 --- --- --- 769 769 760 760 760 768 769 760 760 760 --- --- --- --- --- --- --- --- --- ---';
+/* ↑↑↑ 生成数据结束 ↑↑↑ */
+---
+
+{/*
+  aria-hidden：它是彩蛋，读屏软件不用念它（里面那个 <a> 只是留个真 href，
+  点击由脚本兜底接管，见脚本最后一段）。
+*/}
+<div
+  class="statue"
+  data-statue
+  data-grid={GRID}
+  data-peek={PEEK}
+  data-rests={RESTS}
+  data-secret={SECRET}
+  style={`--statue-img:url(${SPRITE})`}
+  aria-hidden="true"
+>
+  <a class="statue__fig" data-statue-fig href={SECRET} tabindex="-1" aria-label="？">
+    <span class="statue__body"></span>
+  </a>
+</div>
+
+<style>
+  /*
+    整层铺满「天际线 + 塔吊」那一块（.vapor__horizon 是它的定位祖先）。
+    放在 .vapor__skyline **后面**，所以画在楼群前面 —— 这是能"藏进去"的前提：
+    楼群盖不住它，靠的是**同色**，不是遮挡。
+  */
+  .statue {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+  }
+
+  /*
+    雕像本体。三条尺寸全用百分比（理由见文件头）：
+      height: 11%        盒高的 11%
+      aspect-ratio       和剪影图一致（150:238），宽度自动跟着走
+      top / left         --rest / --sx，由脚本从 data-rests 里挑一格写进来
+    默认 visibility: hidden —— 脚本量好位置之前不许画出来（否则会先在错误的
+    位置闪一下），也不让"没有 JS"的浏览者看到一团悬在天上的黑。
+  */
+  .statue__fig {
+    position: absolute;
+    left: var(--sx, 50%);
+    top: var(--rest, 60%);
+    height: 11%;
+    aspect-ratio: 150 / 238;
+    visibility: hidden;
+    pointer-events: auto;
+    cursor: pointer;
+    /*
+      探头：整条位移只有一个 transform，X 固定 -50%（把 left 对准雕像中轴），
+      Y 由 --statue-peek 给。translateY 的百分比是**元素自身高度**的百分比，
+      所以 36% 就是"抬到自己身高的 36%"。
+      ⚠ 别把这里的 -50% 写成单独的 `translate: -50% 0`：Lightning CSS 压完
+      会把它丢掉（实测产物里那条声明不见了），雕像于是整体右移半个身位 ——
+      量好的藏位按"中轴对齐"算的，右移半个身位就正好把右半边顶到楼顶以上，
+      静止态直接露馅（home-statue-check 的逐像素比对当场抓出来）。
+      缓动走 ease-out：抬头快、缩回去慢，像真的探一下头。
+    */
+    transform: translate(-50%, 0);
+    transition: transform 0.62s cubic-bezier(0.22, 0.9, 0.24, 1);
+  }
+  .statue__fig.is-armed {
+    visibility: visible;
+  }
+  .statue__fig.is-peek {
+    transform: translate(-50%, calc(-1 * var(--statue-peek, 36%)));
+  }
+
+  /*
+    剪影本身：底色是站点那支墨，形状交给 mask（用 alpha 当形状）。
+    用 mask 而不是直接 <img>，是为了让它的颜色**逐位等于** --ink：
+    原图是抠出来的铅笔稿剪影，边缘难免带一点别的灰，当遮罩用就没这个问题
+    （遮罩只取 alpha，颜色由 background 给）。
+  */
+  .statue__body {
+    position: absolute;
+    inset: 0;
+    display: block;
+    background: var(--ink, #08020c);
+    -webkit-mask-image: var(--statue-img);
+    mask-image: var(--statue-img);
+    -webkit-mask-repeat: no-repeat;
+    mask-repeat: no-repeat;
+    -webkit-mask-size: 100% 100%;
+    mask-size: 100% 100%;
+  }
+
+  /*
+    连点「回到顶部」五次之后：轮廓微微发光。
+    发光必须画在 .statue__fig（外层）上，不能和 mask 写在同一个元素上 ——
+    mask 在 filter 之后应用，写在同一个元素上的话 drop-shadow 看到的是
+    **没被遮罩的整块矩形**，会糊出一个方块光晕。写在外层，滤镜拿到的是子元素
+    遮罩之后的形状，光晕才贴着雕像的轮廓走。
+  */
+  .statue.is-glow .statue__fig {
+    filter: drop-shadow(0 0 3px rgba(255, 186, 226, 0.85)) drop-shadow(0 0 9px rgba(255, 84, 168, 0.45));
+    animation: statue-glow 1.9s ease-in-out infinite alternate;
+  }
+  @keyframes statue-glow {
+    from {
+      filter: drop-shadow(0 0 2px rgba(255, 186, 226, 0.55)) drop-shadow(0 0 6px rgba(255, 84, 168, 0.28));
+    }
+    to {
+      filter: drop-shadow(0 0 4px rgba(255, 214, 238, 0.95)) drop-shadow(0 0 13px rgba(255, 84, 168, 0.55));
+    }
+  }
+
+  /* 关掉动画偏好：不做光晕呼吸、探头也不做过渡（直接换位置，不"动"） */
+  @media (prefers-reduced-motion: reduce) {
+    .statue__fig {
+      transition: none;
+    }
+    .statue.is-glow .statue__fig {
+      animation: none;
+    }
+  }
+</style>
+
+<script>
+  /*
+    两件事：挑一格站定（一次），以及偶尔探头（定时）。
+    没有 JS 时雕像一直 visibility:hidden —— 反正这条彩蛋本来就走脚本。
+  */
+  (() => {
+    const root = document.querySelector<HTMLElement>('[data-statue]');
+    if (!root) return;
+    const fig = root.querySelector<HTMLElement>('[data-statue-fig]');
+    if (!fig) return;
+
+    const params = new URLSearchParams(location.search);
+    const arg = params.get('statue') || '';
+    if (arg === 'off' || arg === '0') {
+      // 对照用：连节点都不留（截图比对时另一侧必须是"根本没有它"）
+      root.remove();
+      return;
+    }
+
+    const sleep = (ms: number) => new Promise<void>((done) => window.setTimeout(done, ms));
+    const rnd = (a: number, b: number) => a + Math.random() * (b - a);
+
+    /* ── 挑一格站定 ─────────────────────────────────────────────────────
+       候选格是离线量好的（见文件头），这里只按索引取；x 用格中心。 */
+    const GRID = Number(root.dataset.grid) || 0;
+    const rests = (root.dataset.rests || '').trim().split(/\s+/);
+    const spots: { i: number; x: number; rest: number }[] = [];
+    for (let i = 0; i < rests.length; i++) {
+      const v = rests[i];
+      if (!v || v === '---') continue;
+      const rest = Number(v) / 10;
+      if (!Number.isFinite(rest) || rest <= 0 || rest >= 100) continue;
+      spots.push({ i, x: ((i + 0.5) / GRID) * 100, rest });
+    }
+    if (!spots.length) return;
+
+    const forced = Number(arg);
+    const want = Number.isInteger(forced) && forced >= 0 && forced < rests.length && rests[forced] !== '---'
+      ? forced
+      : -1;
+    const spot = want >= 0 ? spots.find((s) => s.i === want) ?? spots[0] : spots[Math.floor(Math.random() * spots.length)];
+
+    fig.style.setProperty('--sx', `${spot.x.toFixed(2)}%`);
+    fig.style.setProperty('--rest', `${spot.rest.toFixed(1)}%`);
+    fig.style.setProperty('--statue-peek', `${Number(root.dataset.peek) || 45}%`);
+    fig.classList.add('is-armed');
+
+    // 给核对脚本看的：这一页挑的是哪一格、藏位多少、一共多少格可用
+    root.dataset.spot = String(spot.i);
+    root.dataset.spotX = spot.x.toFixed(2);
+    root.dataset.spotRest = spot.rest.toFixed(1);
+    root.dataset.spots = String(spots.length);
+    root.dataset.peeks = '0';
+
+    /* ── 探头 ───────────────────────────────────────────────────────────
+       节奏：第一次 5~10 秒（让人先看两眼城市），之后每 9~20 秒一次，
+       每次探 1.6~2.6 秒；三成概率连探两下。标签页在后台就跳过这一轮，
+       停在卡片区（body.is-cards，城市被卡片盖住）也跳过 —— 省得白探。 */
+    const FAST = arg === 'fast';
+    const FIRST: [number, number] = FAST ? [600, 600] : [5000, 10000];
+    const GAP: [number, number] = FAST ? [1500, 2500] : [9000, 20000];
+    const HOLD: [number, number] = FAST ? [900, 1400] : [1600, 2600];
+
+    /** 点它／悬停判定用的余量（px）：这东西个头小，鼠标不必精准落在轮廓上 */
+    const PAD = 10;
+    let peeking = false;
+    let busy = false;
+    /** 鼠标正压在雕像上：这一轮先不缩回去（点起来才不费劲） */
+    let held = false;
+    /** 最近一次"看得见"的时刻：缩回去那 0.6 秒里还允许点 */
+    let shownAt = 0;
+    let ptrX = -1;
+    let ptrY = -1;
+    let watch = 0;
+
+    function setPeek(on: boolean) {
+      peeking = on;
+      if (on) shownAt = Date.now();
+      fig.classList.toggle('is-peek', on);
+      syncWatch();
+    }
+
+    async function peekOnce() {
+      if (busy) return;
+      busy = true;
+      const times = Math.random() < 0.3 ? 2 : 1;
+      for (let k = 0; k < times; k++) {
+        if (document.hidden) break;
+        setPeek(true);
+        await sleep(rnd(HOLD[0], HOLD[1]));
+        // 鼠标压在它身上就一直举着 —— 等它离开
+        while (held) await sleep(250);
+        setPeek(false);
+        await sleep(rnd(620, 900));
+      }
+      busy = false;
+      root.dataset.peeks = String(Number(root.dataset.peeks || '0') + 1);
+    }
+
+    const tick = (wait: number) => {
+      window.setTimeout(() => {
+        // 城市被卡片盖住时这一轮跳过，但 3 秒后再问一次
+        if (document.hidden || document.body.classList.contains('is-cards')) {
+          tick(3000);
+          return;
+        }
+        void peekOnce();
+        tick(rnd(GAP[0], GAP[1]));
+      }, wait);
+    };
+    /* ⚠ 探头调度放在最后再开（见下面调试口那一段）：still / peek / glow
+       这几个调试口要先 return，不能让定时器先跑起来。 */
+
+    /* ── 连点「回到顶部」五次 → 轮廓微微发光 ─────────────────────────────
+       两次点击超过 3 秒就重新数（人正常点五下常常超过 1.6s，早先那条窗口太窄）。
+       默认亮 7 秒；这期间再点够五次可以续上。 */
+    const CLICKS = 5;
+    const WINDOW = 3000;
+    const GLOW_MS = 7000;
+    let count = 0;
+    let last = 0;
+    let glowTimer = 0;
+
+    function glow(on: boolean, ms = GLOW_MS) {
+      root.classList.toggle('is-glow', on);
+      if (on) shownAt = Date.now();
+      syncWatch();
+      window.clearTimeout(glowTimer);
+      if (on && ms > 0) glowTimer = window.setTimeout(() => glow(false), ms);
+    }
+
+    document.addEventListener('click', (event) => {
+      const target = event.target as Element | null;
+      if (!target || !target.closest || !target.closest('#totop')) return;
+      const now = Date.now();
+      if (now - last > WINDOW) count = 0;
+      last = now;
+      count += 1;
+      if (count < CLICKS) return;
+      count = 0;
+      glow(true);
+    });
+
+    /* ── 点它 ───────────────────────────────────────────────────────────
+       雕像画在 .vapor 里（z-index:-1，在内容后面），所以它正上方多半压着
+       .home 这类**什么都没画、却照样吃点击**的包裹 div：点击根本落不到 <a> 上。
+       这里在文档上补一层判断：点在该露出来的雕像矩形里就进隐秘页。
+       两条自我约束：
+         · **绝不抢链接/按钮的点击** —— 用户明明在点卡片/小字，不能因为他点的时候
+           雕像正好探着头就被带到隐秘页去。
+         · 只有"这一刻看得见它"才算数（探头中 / 发光中 / 刚缩回去 0.8 秒内 /
+           鼠标已经压在它上面）。静止时那一块是纯黑的楼群，闭着眼睛点一下
+           不该有反应。 */
+    const visibleNow = () =>
+      peeking || held || root.classList.contains('is-glow') || Date.now() - shownAt < 800;
+
+    document.addEventListener('click', (event) => {
+      if (!visibleNow()) return;
+      const target = event.target as Element | null;
+      if (target && target.closest && target.closest('a, button, input, select, textarea, label, [role="button"]')) {
+        return; // 那是内容自己的点击，放行
+      }
+      const r = fig.getBoundingClientRect();
+      if (r.width === 0) return;
+      const { clientX: x, clientY: y } = event;
+      if (x >= r.left - PAD && x <= r.right + PAD && y >= r.top - PAD && y <= r.bottom + PAD) {
+        location.assign(fig.getAttribute('href') || root.dataset.secret || '/secret/xianbao/');
+      }
+    });
+
+    /* ── 鼠标压在雕像上：换小手 + 这一轮先不缩回去 ───────────────────────
+       .statue__fig 上的 cursor:pointer 和 :hover 都**不会生效**：雕像画在
+       .vapor 里（在内容后面），鼠标真正命中的是盖在它上面的 .home 这类元素。
+       所以自己算：指针落在雕像矩形（含一点余量）里就
+         ① 把整页光标换成小手（提示"这里能点"）；
+         ② held = true，让这一轮探头先别缩回去。
+       用 130ms 的定时器而不是 pointermove：鼠标不动、雕像自己探出来的那种情况
+       也要能变，缩回去了也要能变回来。静止态没有指针在附近时定时器是关着的。 */
+    document.addEventListener('pointermove', (e) => {
+      ptrX = e.clientX;
+      ptrY = e.clientY;
+    }, { passive: true });
+    document.addEventListener('pointerleave', () => {
+      ptrX = -1;
+      ptrY = -1;
+    });
+
+    function syncPointer() {
+      let on = false;
+      if (ptrX >= 0 && fig.isConnected) {
+        const r = fig.getBoundingClientRect();
+        on = r.width > 0 && ptrX >= r.left - PAD && ptrX <= r.right + PAD && ptrY >= r.top - PAD && ptrY <= r.bottom + PAD;
+      }
+      if (on === held) return;
+      held = on;
+      document.documentElement.style.cursor = on ? 'pointer' : '';
+    }
+
+    function syncWatch() {
+      const want = peeking || root.classList.contains('is-glow');
+      if (want) {
+        if (!watch) watch = window.setInterval(syncPointer, 130);
+      } else if (watch && !held) {
+        window.clearInterval(watch);
+        watch = 0;
+        document.documentElement.style.cursor = '';
+      }
+    }
+
+    /* ── 调试口 ────────────────────────────────────────────────────────
+       一直探着头 / 一进来就发光 / 只站着一次都不探头。
+       ⚠ 必须放在**所有交互都装好之后**：早先把这段 return 写在前面，
+       于是 still/peek 模式下「连点五下发光」和「点雕像进隐秘页」两个监听器
+       根本没装上 —— home-statue-check 的 E/F 两段当场把这事逮了出来。 */
+    if (arg === 'peek' || arg === 'glow' || arg === 'still') {
+      if (arg === 'peek') setPeek(true);
+      else if (arg === 'glow') glow(true, 0);
+      return; // still：站好就完事，不排探头（像素比对要一个完全静止的页面）
+    }
+
+    // 第一次探头：5~10 秒（先让人看两眼城市），之后每 9~20 秒一轮
+    tick(rnd(FIRST[0], FIRST[1]));
+  })();
+</script>

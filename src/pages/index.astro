@@ -2,6 +2,7 @@
 import BaseLayout from '../layouts/BaseLayout.astro';
 import HomeCranes from '../components/HomeCranes.astro';
 import HomeBirds from '../components/HomeBirds.astro';
+import HomeStatue from '../components/HomeStatue.astro';
 import HomeWidgets from '../components/HomeWidgets.astro';
 import Img from '../components/Img.astro';
 import site from '../site.config';
@@ -158,6 +159,10 @@ const styleOf = (key: string) => editVars('home', key) ?? undefined;
         鸟群写在楼群**前面**（DOM 顺序在前 = 先绘制）：
         这样鸟从楼群后面穿过时是同一片墨，而不是浮在天上。
         它又是 .vapor__sea 的子节点，所以会跟着那片一起做滚动视差。
+
+        ⚠ 现在鸟群是**关着的**（用户 2026-09：「鸟群出现有点突兀，设计还没想好，
+        先关掉，别删代码」）—— 总开关在 HomeBirds.astro 里的 FLOCKS_ENABLED，
+        代码一行没删，改回 true 就恢复。调试口 ?birds=1 仍然照放。
       */}
       <HomeBirds />
 
@@ -168,6 +173,12 @@ const styleOf = (key: string) => editVars('home', key) ?? undefined;
       <div class="vapor__horizon">
         <HomeCranes />
         <div class="vapor__skyline" style={`background-image:${skyline}`}></div>
+        {/*
+          雕像写在楼群**后面**（DOM 顺序在后 = 后绘制，画在楼群前面）：
+          它不是靠遮挡藏起来的，是靠**同色**——整块压在楼群的实墨上就看不出来了。
+          见 HomeStatue.astro 文件头。
+        */}
+        <HomeStatue />
       </div>
 
       <div class="vapor__reflectWrap">
