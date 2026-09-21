@@ -2,16 +2,76 @@
   "boards": [
     {
       "id": "page-mu9w6v28",
-      "title": "关于我",
+      "title": "花娅域主",
       "subtitle": "",
       "image": "/img/uploads/20260920-2210-3896-A443CBF1F42C5B876BFC396E2E6AFF1B.jpg",
       "standalone": true,
-      "href": "/huaya/secret/about",
+      "href": "/huaya/character/xichenxu",
       "page": [
+        {
+          "id": "page-mu9w6v28-pmuavjkc11",
+          "type": "divider"
+        },
         {
           "id": "page-mu9w6v28-pmu9w9bov1",
           "type": "text",
-          "text": "## 隰辰煦\n- 土生土长的宁波人\n- 千禧年与宁波话怀念者\n- 昆虫与爬宠爱好者（最爱蟑螂！）\n- 花娅域主\n- 冰室最强史官\n- 钟公庙长期驻在\n- 每天都在等待篠雨之人\n\n欢迎你能看到这个网站！建立这个网站的初衷是自2026年的夏天开始，自己和冰室群里的伙伴们都逐渐忙碌起来，恐怕以后很那再有时间交织出如同绮花娅域那样"
+          "text": "## 隰辰煦\n- 土生土长的宁波人\n- 千禧年与宁波话怀念者\n- 昆虫与爬宠爱好者（最爱蟑螂！）\n- 花娅域主\n- 冰室最强史官\n- 钟公庙长期驻在\n- 每天都在等待篠雨之人\n\n欢迎你来看这个网站！建立这个网站的初衷是自2026年的夏天开始，自己和[[冰室|/img/uploads/20260915-1928-c3f0-粉色动漫风-方图.jpg|/huaya/bingshi]]群里的伙伴们都逐渐忙碌起来，恐怕以后很那再有时间像[[绮花娅域|/img/uploads/20260915-1514-e76e-2025-02-11_17.42.28.jpg|/huaya/years/qihuaya]]那时一样诞下如此多的故事和热梗。不过我们可以把这些专属于冰室与花娅的回忆都记录下来，于是[[花娅陌域|/img/uploads/20260915-1514-e76e-2025-02-11_17.42.28.jpg|/huaya]]板块就这样诞生了。\n\n除此之外，这个网站作为我的个人网站，同样也记录了那些我不想忘记的，想要永远保存在互联网上的东西。有关在宁波的生活，饲养的各种动物，还有因为对宁波的喜爱而生，却因为各种原因迟迟无法动工，只能停留在设定集的甬神系列等等。如果感兴趣的话，也欢迎前往[[甬城晴雨|/img/uploads/20260921-1248-8de1-dd85cacddde8d09c09a7c5d5a7235a80.jpg|/yongshen]]板块阅览。"
+        },
+        {
+          "id": "page-mu9w6v28-pmuavju9d2",
+          "type": "divider"
+        },
+        {
+          "id": "page-mu9w6v28-pmuavkcjd3",
+          "type": "text",
+          "text": "## 远位面链接"
+        },
+        {
+          "id": "page-mu9w6v28-pmuavlgsh4",
+          "type": "image",
+          "src": "/img/uploads/20260921-1441-3c34-9b6fdc94d128a05c1d6f265b53b9afea.png",
+          "alt": "如果需要链接到本网站，请取这条横幅！",
+          "width": "half"
+        },
+        {
+          "id": "page-mu9w6v28-pmuaw0u4010",
+          "type": "text",
+          "text": "## 花涧堂\n个人的熟人群，比较混杂，从小学同学到联机网友都有活跃。"
+        },
+        {
+          "id": "page-mu9w6v28-pmuaw3vbc11",
+          "type": "image",
+          "src": "/img/uploads/20260921-1454-6e9e-9a6fbea07fcbdf679a3087a12a1048c7.jpg",
+          "width": "half"
+        },
+        {
+          "id": "page-mu9w6v28-pmuavnd4x5",
+          "type": "text",
+          "text": "## 哔哩哔哩账号\n### 隰辰煦\n主要上传冰室活动的长录播，以及在宁波的生活。如果未来有机会制作甬神系列也会在此账号更新。\n\n### 隰星涧\n主要上传日常游戏的录播，部分花娅录播与小隰虫记内容也零散分布在此账号。"
+        },
+        {
+          "id": "page-mu9w6v28-pmuavutg19",
+          "type": "children",
+          "shape": "square",
+          "size": "m"
+        }
+      ],
+      "children": [
+        {
+          "id": "page-mu9w6v28-1",
+          "title": "隰辰煦",
+          "image": "/img/uploads/20260921-1447-24ae-Crane.jpg",
+          "cardShape": "square",
+          "cardSize": "s",
+          "link": "https://space.bilibili.com/37304223"
+        },
+        {
+          "id": "page-mu9w6v28-2",
+          "title": "隰星涧",
+          "image": "/img/uploads/20260921-1450-441f-dc2d501039cad6ace8a66643411b197c.jpg",
+          "cardShape": "square",
+          "cardSize": "s",
+          "link": "https://space.bilibili.com/3494371561310637"
         }
       ]
     },
@@ -246,23 +306,17 @@
       "subtitle": "甬神晴奇雨仰",
       "image": "/img/uploads/20260921-1248-8de1-dd85cacddde8d09c09a7c5d5a7235a80.jpg",
       "href": "/yongshen",
-      "children": [
+      "page": [
         {
-          "id": "yongcheng-a",
-          "title": "小隰虫记",
-          "href": "/yongshen/xiinsect",
-          "children": [
-            {
-              "id": "yongcheng-a-1",
-              "title": "成员介绍",
-              "href": "/yongshen/xiinsect/member"
-            },
-            {
-              "id": "yongcheng-a-2",
-              "title": "喂食记录",
-              "href": "/yongshen/xiinsect/feed"
-            }
-          ]
+          "id": "yongcheng-pmuawdam012",
+          "type": "text",
+          "text": "这里还在建设中！之后再来看看吧~"
+        },
+        {
+          "id": "yongcheng-pmuawdlcg13",
+          "type": "image",
+          "src": "/img/uploads/20260921-1502-0efd-8C936754F62DD9546CA3C0FE8B9C779E.jpg",
+          "width": "wide"
         }
       ]
     },
@@ -962,6 +1016,12 @@
               "title": "断续之梦",
               "image": "/img/uploads/20260918-2104-8422-Mathsicon.png",
               "link": "https://maths-s-website1.pages.dev/"
+            },
+            {
+              "id": "huaya-r3-4",
+              "title": "记忆画布",
+              "image": "/img/uploads/20260921-1500-21cb-9FA43B85B45D077523E2B679834DC712.png",
+              "link": "https://sswtlzz69.github.io/"
             }
           ]
         }

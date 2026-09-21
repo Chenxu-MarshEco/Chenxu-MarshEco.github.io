@@ -17,10 +17,10 @@
     "           下面那条随机精华来自 src/data/salon.json（按访问者当天日期挑，同一天固定、隔天自动换）。"
   ],
   "about": {
-    "title": "关于我",
+    "title": "花娅域主",
     "avatar": "/img/uploads/20260920-2202-ca57-Crane.jpg",
     "text": "",
-    "href": "/huaya/secret/about"
+    "href": "/huaya/character/xichenxu"
   },
   "calendar": {
     "title": "涣源溪水钟",
