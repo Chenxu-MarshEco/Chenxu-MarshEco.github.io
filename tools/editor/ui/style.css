@@ -4204,3 +4204,23 @@ body.pblock-dragging * {
   gap: 6px;
 }
 
+
+/* 成员卡片的「卡片特效」那一行：落日勾选框 + 称号输入框并排 */
+.wmem__fx {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.wmem__fx > input[type='text'] {
+  flex: 1 1 10rem;
+  min-width: 8rem;
+}
+.wmem__sun {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.32rem;
+  white-space: nowrap;
+  font-size: 0.86rem;
+  cursor: pointer;
+}

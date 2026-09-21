@@ -1,5 +1,6 @@
 // @ts-check
 import { defineConfig } from 'astro/config';
+import memlink from './tools/memlink/index.mjs';
 
 // 站点部署在 GitHub Pages 的「用户站点」仓库（仓库名 = 用户名.github.io）上，
 // 所以站点根路径就是 /，不需要额外配置 base。
@@ -7,6 +8,15 @@ import { defineConfig } from 'astro/config';
 export default defineConfig({
   site: 'https://chenxu-marsheco.github.io',
   base: '/',
+
+  /*
+    成员名自动链接：构建完之后逐页重写 HTML，把正文里出现的成员名包成
+    「悬停浮出名片、点了跳介绍页」的小块。名字表就是编辑器「成员」面板那张表
+    （src/data/salon.json），链接由你填在成员的 `url` 里。
+    冰室精华页（/salon/）整页跳过 —— 那里的名字又多又碎，链上只会碍事。
+    细节、边界和怎么关掉：tools/memlink/index.mjs 的头注释。
+  */
+  integrations: [memlink({ skip: ['/salon/'] })],
 
   // 生成 /posts/xxx/index.html 这样的目录式链接，GitHub Pages 上最稳。
   trailingSlash: 'ignore',

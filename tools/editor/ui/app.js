@@ -10374,7 +10374,9 @@ function renderMembersPanel() {
   const note = panelBox(
     `成员（${members.length} 人）`,
     '「精华」面板里的每一条都指向这里的一个 id（可以指向好几个人）。删掉一个成员，引用他的精华会显示成「未知成员」' +
-      '（站点那边就是这么兜底的），精华本身不会消失。',
+      '（站点那边就是这么兜底的），精华本身不会消失。' +
+      '另外：这张表还会被构建期用来把**全站正文里**出现的成员名自动链上（悬停浮出头像名片，点进「介绍页」）——' +
+      '只链这里写的名字，所以旧名（比如「花花」）不在表里就永远不会被链；冰室精华页整页跳过。',
   );
   const tally = document.createElement('p');
   tally.className = 'hint';
@@ -10465,13 +10467,69 @@ function renderMembersPanel() {
     );
     fields.appendChild(panelRow('头像地址', avatarInput));
 
+    /* 卡片特效（可选）：名片上那轮落日 + 名字下面那行小字 + 放大头像时固定显示的图。
+       三样都只有"特殊化"的成员才用得上（Raw 现在用了全套），留空就什么都不加。 */
+    const zoomSlot = imageSlot({
+      label: '放大图',
+      getValue: () => m.zoom,
+      setValue: (v) => { m.zoom = v; },
+      onValue: (v) => { zoomInput.value = v; },
+      onChanged: () => { markPanelDirty(status, 'salon'); },
+      hint: '鼠标移到名片头像上时，放大框里固定显示这张；留空 = 就用头像那张。',
+    });
+    const zoomInput = boardInput(m.zoom ?? '', '/img/members/xxx.png 或 https://…', (v) => {
+      m.zoom = v.trim();
+      zoomSlot.sync(zoomInput.value, true);
+      markPanelDirty(status, 'salon');
+    });
+    fields.appendChild(panelRow(
+      '卡片特效',
+      (() => {
+        const box = document.createElement('div');
+        box.className = 'wmem__fx';
+        const sun = document.createElement('label');
+        sun.className = 'wmem__sun';
+        const cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.checked = m.sun === true;
+        cb.addEventListener('change', () => { m.sun = cb.checked; markPanelDirty(status, 'salon'); });
+        const cbText = document.createElement('span');
+        cbText.textContent = '落日';
+        sun.append(cb, cbText);
+        box.append(
+          sun,
+          boardInput(m.title ?? '', '称号，例如：冰室之主', (v) => {
+            m.title = v.trim();
+            markPanelDirty(status, 'salon');
+          }),
+        );
+        return box;
+      })(),
+      '落日 = 名片上半画一轮蒸汽波落日；右边填「称号」（名字下面那行小字，例如「冰室之主」）。',
+    ));
+    fields.appendChild(panelRow('放大图', zoomSlot.el));
+    fields.appendChild(panelRow('放大图地址', zoomInput));
+
+    /* 介绍页地址：填了之后，全站正文里出现的这个名字会变成可点的链接
+       （悬停浮出头像名片）；留空就只有名片、点不动。构建期由 tools/memlink 用。 */
+    fields.appendChild(
+      panelRow(
+        '介绍页',
+        boardInput(m.url ?? '', '/members/xxx/ 或 https://…', (v) => {
+          m.url = v.trim();
+          markPanelDirty(status, 'salon');
+        }),
+        '填了之后，全站正文里出现的这个名字会变成可点的链接（悬停浮出头像名片）；留空 = 只有名片、点不动。改完要「保存并重新构建」。',
+      ),
+    );
+
     row.append(head, fields);
     note.appendChild(row);
   });
 
   note.appendChild(
     panelBtn('＋ 新增成员', '新 id 自动生成，不会和现有的撞', () => {
-      salonDraft.members.push({ id: newMemberId(), name: `新成员${salonDraft.members.length + 1}`, avatar: '' });
+      salonDraft.members.push({ id: newMemberId(), name: `新成员${salonDraft.members.length + 1}`, avatar: '', url: '', aliases: [], title: '', sun: false, zoom: '' });
       markPanelDirty(status, 'salon');
       renderMembersPanel();
     }),

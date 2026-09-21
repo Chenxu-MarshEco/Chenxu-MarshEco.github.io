@@ -53,87 +53,131 @@
     {
       "id": "m01-4780",
       "name": "Airo",
-      "avatar": "/img/uploads/20260920-2139-0c3a-f2e82b158111fede741b598c29e0858d.jpg"
+      "avatar": "/img/uploads/20260920-2139-0c3a-f2e82b158111fede741b598c29e0858d.jpg",
+      "url": "",
+      "aliases": []
     },
     {
       "id": "m02-da43",
       "name": "Raw",
-      "avatar": "/img/uploads/20260920-2140-9e6b-Raw.jpg"
+      "avatar": "/img/uploads/20260920-2140-9e6b-Raw.jpg",
+      "url": "",
+      "aliases": [],
+      "title": "冰室之主",
+      "sun": true,
+      "zoom": "/img/members/raw-zoom.png"
     },
     {
       "id": "m03-018b",
       "name": "SSWTLZZ",
-      "avatar": "/img/uploads/20260920-2141-c3a1-2ace38273addfad17d035d38aea8103e.jpg"
+      "avatar": "/img/uploads/20260920-2141-c3a1-2ace38273addfad17d035d38aea8103e.jpg",
+      "url": "",
+      "aliases": []
     },
     {
       "id": "m04-1c92",
       "name": "桑芙",
-      "avatar": "/img/uploads/20260920-2141-a969-ff8be2784d1edffad0a36fcc4bccc092.jpg"
+      "avatar": "/img/uploads/20260920-2141-a969-ff8be2784d1edffad0a36fcc4bccc092.jpg",
+      "url": "",
+      "aliases": []
     },
     {
       "id": "m05-7a48",
       "name": "马斯",
-      "avatar": ""
+      "avatar": "",
+      "url": "",
+      "aliases": []
     },
     {
       "id": "m06-5577",
       "name": "OWQ",
-      "avatar": "/img/uploads/20260920-2143-28ed-154e98639be48e0aef98f63ada4e7189.jpg"
+      "avatar": "/img/uploads/20260920-2143-28ed-154e98639be48e0aef98f63ada4e7189.jpg",
+      "url": "",
+      "aliases": []
     },
     {
       "id": "m07-7449",
       "name": "伤感统领",
-      "avatar": "/img/uploads/20260920-2143-6146-e5bb024e165f62423b7cf930754328c5.jpg"
+      "avatar": "/img/uploads/20260920-2143-6146-e5bb024e165f62423b7cf930754328c5.jpg",
+      "url": "",
+      "aliases": []
     },
     {
       "id": "m08-e2cf",
       "name": "吉吉",
-      "avatar": "/img/uploads/20260920-2143-b629-JIJI.jpg"
+      "avatar": "/img/uploads/20260920-2143-b629-JIJI.jpg",
+      "url": "",
+      "aliases": []
     },
     {
       "id": "m09-597e",
       "name": "平铃",
-      "avatar": "/img/uploads/20260920-2143-6ee8-7ca8de06fbccc0ba3031f8e280a8ed67.jpg"
+      "avatar": "/img/uploads/20260920-2143-6ee8-7ca8de06fbccc0ba3031f8e280a8ed67.jpg",
+      "url": "",
+      "aliases": []
     },
     {
       "id": "m10-5032",
       "name": "沃伊德",
-      "avatar": "/img/uploads/20260920-2158-1171-45a05fd36565d219fe9869843bbd1957.jpg"
+      "avatar": "/img/uploads/20260920-2158-1171-45a05fd36565d219fe9869843bbd1957.jpg",
+      "url": "",
+      "aliases": []
     },
     {
       "id": "m11-c403",
       "name": "灵空",
-      "avatar": "/img/uploads/20260920-2144-ac7e-LingKong.jpg"
+      "avatar": "/img/uploads/20260920-2144-ac7e-LingKong.jpg",
+      "url": "",
+      "aliases": []
     },
     {
       "id": "m12-5879",
       "name": "盾返",
-      "avatar": "/img/uploads/20260920-2216-f2c3-5ef063fa2e6b91b479a76026f0a99f83.jpg"
+      "avatar": "/img/uploads/20260920-2216-f2c3-5ef063fa2e6b91b479a76026f0a99f83.jpg",
+      "url": "",
+      "aliases": []
     },
     {
       "id": "m13-d1c9",
       "name": "羽之颂",
-      "avatar": "/img/uploads/20260920-2147-10ea-71666150ed580ed9d2aaf1662558d0ee.jpg"
+      "avatar": "/img/uploads/20260920-2147-10ea-71666150ed580ed9d2aaf1662558d0ee.jpg",
+      "url": "",
+      "aliases": []
     },
     {
       "id": "m14-2e3a",
       "name": "艾林森",
-      "avatar": "/img/uploads/20260920-2148-0d67-82742bf61167b014e7b91e7d9f76e09c.jpg"
+      "avatar": "/img/uploads/20260920-2148-0d67-82742bf61167b014e7b91e7d9f76e09c.jpg",
+      "url": "",
+      "aliases": []
     },
     {
       "id": "m14-4d5c",
       "name": "隰辰煦",
-      "avatar": "/img/uploads/20260920-2148-219a-Crane.jpg"
+      "avatar": "/img/uploads/20260920-2148-219a-Crane.jpg",
+      "url": "",
+      "aliases": []
     },
     {
       "id": "m15-5808",
       "name": "虹星",
-      "avatar": "/img/uploads/20260921-0023-3043-3896d8a7ccec5a608f5daaf958df2491.jpg"
+      "avatar": "/img/uploads/20260921-0023-3043-3896d8a7ccec5a608f5daaf958df2491.jpg",
+      "url": "",
+      "aliases": []
     },
     {
       "id": "m16-daff",
       "name": "光子",
-      "avatar": "/img/uploads/20260920-2154-f5ed-14028717e3662998896f4c81abbde242.jpg"
+      "avatar": "/img/uploads/20260920-2154-f5ed-14028717e3662998896f4c81abbde242.jpg",
+      "url": "",
+      "aliases": []
+    },
+    {
+      "id": "m18-f870",
+      "name": "皮丝",
+      "avatar": "/img/uploads/20260921-1259-bf9e-b_30d451fcf147e8aaf904de16d6808b1f.jpg",
+      "url": "",
+      "aliases": []
     }
   ],
   "essences": [

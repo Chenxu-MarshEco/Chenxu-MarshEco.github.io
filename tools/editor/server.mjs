@@ -2255,7 +2255,9 @@ function cleanWidgets(payload, current) {
    冰室精华（src/data/salon.json）
 
    三块数据：
-     members   成员表：id / name / avatar（头像和名字只存这儿）
+     members   成员表：id / name / avatar / url / aliases
+               （头像和名字只存这儿；url = 介绍页地址，全站正文里的名字会被
+                tools/memlink 自动链到它；aliases = 还想一起链的别的写法）
      eras      五个年代：id / title / from / to / note
      essences  精华条目：id / memberIds / kind / date / time / text / images / eraId
 
@@ -2360,13 +2362,27 @@ function cleanSalon(payload, current) {
       if (!name) { dropped.members++; continue; }
       if (!id || used.has(id)) id = newMemberId(used);
       used.add(id);
-      members.push({ id, name, avatar: String(rm.avatar || '').trim() });
+      members.push({
+        id,
+        name,
+        avatar: String(rm.avatar || '').trim(),
+        url: safeMemberUrl(rm.url),
+        aliases: cleanAliases(rm.aliases),
+        title: String(rm.title ?? '').trim().slice(0, 40),
+        sun: rm.sun === true,
+        zoom: safeMemberUrl(rm.zoom),
+      });
     }
   } else {
     members = current.members.map((m) => ({
       id: String(m?.id || ''),
       name: String(m?.name || ''),
       avatar: String(m?.avatar || ''),
+      url: safeMemberUrl(m?.url),
+      aliases: cleanAliases(m?.aliases),
+      title: String(m?.title ?? '').trim(),
+      sun: m?.sun === true,
+      zoom: safeMemberUrl(m?.zoom),
     }));
   }
   file.members = members;
@@ -2496,6 +2512,29 @@ function cleanMemberIds(raw, validIds) {
   // 老字段兜底：没带 memberIds 时才看 memberId（带了空数组也算「明确说没有成员」）
   if (!out.length && !Array.isArray(raw?.memberIds)) push(raw?.memberId);
   return out;
+}
+
+/**
+ * 成员的「介绍页」地址。
+ * 只收三种：站内路径（`/xxx/`）、http(s) 外链、页内锚点（`#xxx`）。
+ * 别的（`javascript:` 之类）一律丢成空串 —— 这个值会被 tools/memlink 写进
+ * 全站正文的 `<a href>`，不能让它从数据这一侧就带进可执行协议。
+ */
+function safeMemberUrl(v) {
+  const s = String(v ?? '').trim();
+  if (!s) return '';
+  if (s.startsWith('/') || s.startsWith('#') || /^https?:\/\//i.test(s)) return s;
+  return '';
+}
+
+/** 成员名还能按哪些别的写法一起被链接（去空、去重、最多 20 条） */
+function cleanAliases(v) {
+  const out = [];
+  for (const a of Array.isArray(v) ? v : []) {
+    const s = String(a ?? '').trim();
+    if (s && !out.includes(s)) out.push(s);
+  }
+  return out.slice(0, 20);
 }
 
 /** 新成员 id：`mNN-xxxx`，和现有那批（m01-4780…）长一样，撞了就再摇一个 */

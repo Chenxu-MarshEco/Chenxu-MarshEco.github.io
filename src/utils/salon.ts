@@ -28,6 +28,27 @@ export interface SalonMember {
   name: string;
   /** 头像（/img/... 或外链）；留空就显示一个占位圆 */
   avatar: string;
+  /**
+   * 这个人的「介绍页」地址（站内路径或外链）。留空 = 站点正文里出现的这个名字
+   * 只浮现名片、点不动（页面还没做好时就是这个状态）。
+   * 由 tools/memlink 在构建期读它，把全站正文里的名字自动链上。
+   */
+  url?: string;
+  /**
+   * 还要按哪些别的写法一起链（默认空数组）。
+   * ⚠ 只按这里写的 + `name` 来链 —— 所以旧名（比如「花花」）只要不写进来，
+   * 正文里出现多少次都不会被链接。想链旧名就自己往这里加一条。
+   */
+  aliases?: string[];
+  /** 名片里名字下面那行小字（Raw 是「冰室之主」）；留空就不显示 */
+  title?: string;
+  /** 名片上半画一轮蒸汽波落日（只有需要"特殊化"的成员才开） */
+  sun?: boolean;
+  /**
+   * 鼠标移到头像上时，放大框里固定显示这张图（留空 = 就用头像那张）。
+   * 例：Raw 用的是他自己那张立绘。站内路径 / 外链都行。
+   */
+  zoom?: string;
 }
 
 export interface SalonEra {
@@ -79,7 +100,18 @@ export const salonTitle: string = DATA.title || '冰室群精华';
 export const salonUpdated: string = DATA.updated || '';
 export const salonNote: string = DATA.note || '';
 
-export const salonMembers: SalonMember[] = (DATA.members ?? []).filter((m) => m && m.id && m.name);
+export const salonMembers: SalonMember[] = (DATA.members ?? [])
+  .filter((m) => m && m.id && m.name)
+  /* url / aliases / title / sun / zoom 都是后加的字段，老数据里没有 —— 这里补成空值，
+     免得页面各处都要写 `m.url ?? ''`（tools/memlink 读的是同一个文件，也这么兜底） */
+  .map((m) => ({
+    ...m,
+    url: String(m.url ?? '').trim(),
+    title: String(m.title ?? '').trim(),
+    zoom: String(m.zoom ?? '').trim(),
+    sun: m.sun === true,
+    aliases: (Array.isArray(m.aliases) ? m.aliases : []).map((a) => String(a ?? '').trim()).filter(Boolean),
+  }));
 export const salonEras: SalonEra[] = (DATA.eras ?? []).filter((e) => e && e.id && e.from && e.to);
 
 /** 按时间正序（数据里已经排过，这里再兜一次底，免得手工编辑插错位置） */

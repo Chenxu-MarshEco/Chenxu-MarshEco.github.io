@@ -185,8 +185,9 @@ try {
       nameInputs: w.querySelectorAll('.wmem input[type=text], .wmem input:not([type])').length,
       addBtn: [...w.querySelectorAll('button')].some((b) => b.textContent.includes('新增成员')),
       sample: counts.slice(0, 3), sum, titles: [...w.querySelectorAll('.wbox__title')].map((t) => t.textContent) }; })()`);
-  check(`成员面板：${mem.rows} 行（盘上就是 ${salon.members.length} 个成员）、每行都有头像上传口和名字框`,
-    mem.rows === salon.members.length && mem.files === mem.rows && mem.nameInputs >= mem.rows,
+  /* 每行的上传口现在是两个：成员头像 + 放大头像时固定显示的那张（可选的「卡片特效」） */
+  check(`成员面板：${mem.rows} 行（盘上就是 ${salon.members.length} 个成员）、每行都有头像/放大图两个上传口和名字框`,
+    mem.rows === salon.members.length && mem.files === mem.rows * 2 && mem.nameInputs >= mem.rows * 4,
     JSON.stringify({ rows: mem.rows, files: mem.files, nameInputs: mem.nameInputs, titles: mem.titles }));
   const slots = salon.essences.reduce((a, e) => a + (e.memberIds ?? []).length, 0);
   check(`成员面板：「名下 N 条精华」加起来 = ${slots}（= 每条精华挂的成员数之和；多成员的那 11 条会各算一次）`,
