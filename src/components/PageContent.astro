@@ -301,6 +301,13 @@ const cardsOf = (b: Extract<PageBlock, { type: 'children' }>) => ({
               <Img
                 src={b.src}
                 alt={b.alt ?? ''}
+                /* 点了放大看原图（只有「＋图片」放进来的图才是可点的，见 ImageZoom.astro）。
+                   正文里的图不在链接里，所以要自己可聚焦 + 有个名字，键盘 / 读屏才用得上。 */
+                data-zoom="1"
+                data-full={withBase(b.src)}
+                tabindex="0"
+                role="button"
+                aria-label={b.alt ? `放大查看：${b.alt}` : '放大查看这张图'}
                 sizes={
                   /* 窄图并排以后实际只占行宽的 1/3 左右，别再按 760px 去挑大图 */
                   (b.width ?? 'wide') === 'third'
@@ -1159,6 +1166,19 @@ const cardsOf = (b: Extract<PageBlock, { type: 'children' }>) => ({
     -webkit-user-select: none;
     user-select: none;
     -webkit-touch-callout: none;
+  }
+  /*
+    鼠标指上去（或键盘聚焦、手机上点开）的那颗钉子**抬到最上面**。
+    名字卡是钉子的子元素，而钉子们都是 `position: absolute` 且没有 z-index ——
+    于是 DOM 里靠后的钉子会盖住前面那颗的卡片，看着就是"文字被别的图钉挡住了"
+    （用户 2026-09-22 报的：「地图中 鼠标移到图钉上时浮现的文字卡片会被别的地图图钉
+    挡住 请保证鼠标移上去显示出来的文字卡片始终在最高图层不会被挡住」）。
+    抬一层就够：钉子之间只需要比大小。
+  */
+  .pmap__pin:hover,
+  .pmap__pin:focus-visible,
+  .pmap__pin.is-open {
+    z-index: 60;
   }
   /*
     整张地图也一样：拖地图、滚轮缩放的时候不该把任何文字框住。

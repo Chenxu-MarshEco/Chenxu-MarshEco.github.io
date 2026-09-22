@@ -34,6 +34,10 @@ interface Props {
   height?: number | string;
   id?: string;
   'data-edit'?: string;
+  /** 标了它这张图就能点开看大图（见 ImageZoom.astro）；只给"该能点"的图标 */
+  'data-zoom'?: string;
+  /** 点开放大的那张原图地址（不填就用 <img> 自己的 src） */
+  'data-full'?: string;
 }
 
 const {

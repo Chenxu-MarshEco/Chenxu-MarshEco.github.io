@@ -5,6 +5,7 @@ import SiteHeader from '../components/SiteHeader.astro';
 import SiteFooter from '../components/SiteFooter.astro';
 import BoardDrawer from '../components/BoardDrawer.astro';
 import MemberCard from '../components/MemberCard.astro';
+import ImageZoom from '../components/ImageZoom.astro';
 import Timeline from '../components/Timeline.astro';
 import MusicPlayer from '../components/MusicPlayer.astro';
 import site from '../site.config';
@@ -201,6 +202,13 @@ const currentPath = withoutBase.length > 1 ? withoutBase.replace(/\/+$/, '') : '
       全站都要有（链接可能出现在任何一页），所以挂在布局里。
     */}
     <MemberCard />
+    {/*
+      点图放大（wiki 那种灯箱）：只认标了 data-zoom 的图 ——
+      页面正文里「＋图片」放进去的那些、以及冰室精华页里的截图。
+      全站都要有（正文和精华页可能出现在任何一页的链接下面），所以挂在布局里，
+      组件自己判断这一页有没有能点的图。
+    */}
+    <ImageZoom />
   </body>
 </html>
 

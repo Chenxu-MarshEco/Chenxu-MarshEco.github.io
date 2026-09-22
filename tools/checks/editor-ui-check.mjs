@@ -874,6 +874,56 @@ try {
     navSave.ok === true && !!navWritten,
     `${JSON.stringify(navSave)}｜盘上：${navWritten ?? '（没有）'}`);
 
+  /* ---------- ⑨ 「这一页的内容」那排「＋ 文字 / ＋ 图片 / …」一直吸在下方 ----------
+     用户原话：「在编辑【这一页的内容】时，不论怎样滚动滚轮 那些+文字 +图片 +链接等选项
+     可以始终保持在UI下方 不需要在一个地方点加号插入 然后滚到最下面点+文字
+     然后又滚回去编辑了」。 */
+  const stickyBar = await cdp.ev(`(async () => {
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+    await window.__openWs('pages');
+    await sleep(2000);
+    const col = document.querySelector('.pstudio__col--edit');
+    const bar = document.querySelector('.pblock-add');
+    if (!col || !bar) return { ok: false, why: '找不到编辑区或那排按钮' };
+    const boxOf = (el) => { const r = el.getBoundingClientRect(); return { top: Math.round(r.top), bottom: Math.round(r.bottom), h: Math.round(r.height) }; };
+    const cs = getComputedStyle(bar);
+    col.scrollTop = 0;
+    await sleep(250);
+    const atTop = { col: boxOf(col), bar: boxOf(bar), scrollTop: Math.round(col.scrollTop) };
+    /* 滚到最底下：这一排必须还在编辑区可见范围里 */
+    col.scrollTop = col.scrollHeight;
+    await sleep(400);
+    const atBottom = { col: boxOf(col), bar: boxOf(bar), scrollTop: Math.round(col.scrollTop), scrollH: Math.round(col.scrollHeight) };
+    /* 滚到中间：一样要在 */
+    col.scrollTop = Math.round(col.scrollHeight / 2);
+    await sleep(400);
+    const atMid = { col: boxOf(col), bar: boxOf(bar), scrollTop: Math.round(col.scrollTop) };
+    /* 那个坐标上点得到的真是它（没被别的东西压住） */
+    const r = bar.getBoundingClientRect();
+    const hit = document.elementFromPoint(Math.round(r.left + r.width / 2), Math.round(r.top + r.height / 2));
+    const buttons = [...bar.querySelectorAll('button')].map((b) => b.textContent.trim());
+    return {
+      ok: true, position: cs.position, bottom: cs.bottom,
+      atTop, atBottom, atMid,
+      hitInBar: !!hit && (hit === bar || bar.contains(hit)),
+      buttons,
+    };
+  })()`);
+  console.log('\n================ 「这一页的内容」那排按钮 ================');
+  console.log(JSON.stringify(stickyBar));
+  const inView = (s) => s && s.bar.top >= s.col.top - 2 && s.bar.bottom <= s.col.bottom + 12;
+  check('⑨★ 那排「＋ 文字 / ＋ 图片 / …」是 sticky 贴在编辑区下方的',
+    stickyBar.ok === true && stickyBar.position === 'sticky',
+    `position=${stickyBar.position} bottom=${stickyBar.bottom}`);
+  check('⑨★ 滚到**最底下**它还在编辑区可见范围里（不用再滚回去找加号）',
+    inView(stickyBar.atBottom), JSON.stringify({ col: stickyBar.atBottom?.col, bar: stickyBar.atBottom?.bar }));
+  check('⑨★ 滚到**中间**也在（编辑哪一段都够得着）',
+    inView(stickyBar.atMid), JSON.stringify({ col: stickyBar.atMid?.col, bar: stickyBar.atMid?.bar }));
+  check('⑨ 那个位置点得到的确实是这一排（没被内容压住），而且按钮齐（文字/图片/链接…）',
+    stickyBar.hitInBar === true && (stickyBar.buttons ?? []).length >= 10 &&
+      ['＋ 文字', '＋ 图片', '＋ 链接'].every((t) => (stickyBar.buttons ?? []).includes(t)),
+    JSON.stringify(stickyBar.buttons));
+
   check('这一趟没有 JS 报错', cdp.errors.length === 0, cdp.errors.slice(0, 3).join(' | '));
 
   try { execSync(`taskkill /pid ${chrome.pid} /T /F`, { stdio: 'ignore' }); } catch { /* 已退出 */ }

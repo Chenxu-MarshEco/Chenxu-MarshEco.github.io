@@ -1,0 +1,202 @@
+---
+/**
+ * 点图放大（wiki 那种灯箱）。
+ *
+ * 用户要求（2026-09-22）：
+ *   「新功能：放大看图功能 只有编辑器里由页面→+图片上传的图片 以及冰室精华页面内的
+ *    所有的图片可以点击 点击后可以放大查看这个图片 就像几乎所有wiki类网站一样
+ *    放大后右上角有一个小x点击可以关掉图片 点击图片外的背景也可以关掉」
+ *
+ * 所以**只认标了 `data-zoom` 的图**（不是"全站所有 img"）：
+ *   · 页面正文里由「＋图片」放进去的图 —— `PageContent.astro` 那个 image 块
+ *   · 冰室精华页里每一条精华的截图 —— `salon.astro` 的 `.salon__pic img`
+ * 头像、封面、首页小卡那些都没标，点了什么都不会发生。
+ *
+ * 原图从哪来：优先 `data-full`，没有就取包着它的那个 `<a href>`（精华页那层链接本来
+ * 就指向原图），再退回 `currentSrc`。**给的是原图**，不是版面上那一档 ——
+ * 精华页那些是聊天截图，放大就是为了看清字，给压缩过的那档没意义。
+ *
+ * 没有 JS 时：这里的框一直是 `hidden`，页面正文的图照旧点不动、精华页那层 `<a>`
+ * 照旧开原图（`target="_blank"`）—— 一分钱功能都没少，只是没那么好看。
+ */
+---
+
+<div class="izoom" data-izoom hidden role="dialog" aria-modal="true" aria-label="查看大图">
+  <button type="button" class="izoom__close" data-izoom-close aria-label="关闭大图（Esc）">×</button>
+  <img class="izoom__img" data-izoom-img alt="" decoding="async" />
+  <p class="izoom__cap" data-izoom-cap hidden></p>
+</div>
+
+<script>
+  const box = document.querySelector<HTMLElement>('[data-izoom]');
+  const pic = box?.querySelector<HTMLImageElement>('[data-izoom-img]');
+  const cap = box?.querySelector<HTMLElement>('[data-izoom-cap]');
+  const closeBtn = box?.querySelector<HTMLButtonElement>('[data-izoom-close]');
+
+  if (box && pic && closeBtn) {
+    /* 打开之前焦点在哪儿，关掉之后还回去（键盘用户不会"掉到页面顶上"） */
+    let backTo: HTMLElement | null = null;
+
+    const open = (im: HTMLImageElement) => {
+      const a = im.closest('a');
+      const src = im.dataset.full || a?.getAttribute('href') || im.currentSrc || im.src;
+      if (!src) return;
+      pic.src = src;
+      pic.alt = im.alt || '';
+      /* 图注：正文里那层 <figcaption> 的字、或者图片自己的 alt */
+      const fig = im.closest('figure');
+      const text = (fig?.querySelector('figcaption')?.textContent || im.alt || '').trim();
+      if (cap) {
+        cap.textContent = text;
+        cap.hidden = !text;
+      }
+      backTo = im;
+      box.hidden = false;
+      document.documentElement.classList.add('is-zoomed');
+      closeBtn.focus();
+    };
+
+    const close = () => {
+      if (box.hidden) return;
+      box.hidden = true;
+      pic.removeAttribute('src');
+      document.documentElement.classList.remove('is-zoomed');
+      backTo?.focus?.();
+    };
+
+    /*
+      点图。用事件委托：页面正文是服务端渲染好的，精华页那一堆也是，
+      一个个挂监听不如在 document 上收一次。
+      只有 `img[data-zoom]` 命中才管 —— 其余的点谁是谁。
+    */
+    document.addEventListener('click', (ev) => {
+      const target = ev.target as HTMLElement | null;
+      /*
+        ⚠ 两种命中的情况都要认：
+          · 鼠标点在图上 —— target 就是那张图；
+          · **键盘**在精华页那层 <a> 上按回车 —— 浏览器把回车变成的 click，
+            target 是那个 `<a>` 本身（不是里面的图）。只查 `closest('img[data-zoom]')`
+            的话这条路会漏掉（实测就是漏的）。
+      */
+      const im = (target?.closest?.('img[data-zoom]') ??
+        target?.closest?.('a')?.querySelector?.('img[data-zoom]') ??
+        null) as HTMLImageElement | null;
+      if (!im || im.closest('[data-izoom]')) return;
+      /* 精华页那层 <a target="_blank" href="原图">：有 JS 时不跳新标签，改成原地放大 */
+      ev.preventDefault();
+      open(im);
+    });
+
+    /* 右上角那个小 × */
+    closeBtn.addEventListener('click', close);
+    /* 点图片**外面**的底色也关（点在图上不关，方便细看） */
+    box.addEventListener('click', (ev) => {
+      if (ev.target === box) close();
+    });
+    document.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Escape') {
+        close();
+        return;
+      }
+      /*
+        正文里的图不在链接里，回车 / 空格不会自己变成点击 —— 键盘要能打开。
+        （精华页那些在 <a> 里，浏览器会把回车变成 click，走上面那条路。）
+      */
+      const t = ev.target as HTMLElement | null;
+      const im = t?.closest?.('img[data-zoom]') as HTMLImageElement | null;
+      if (im && !im.closest('a') && (ev.key === 'Enter' || ev.key === ' ')) {
+        ev.preventDefault();
+        open(im);
+      }
+    });
+    /* 光标：只有真的能点的图才给放大镜（省得整站每个 img 都变成手型） */
+    document.documentElement.classList.add('has-izoom');
+  }
+</script>
+
+<style>
+  /* 能点的图给个放大镜光标 —— 没跑 JS 时这条不生效（html 上没有 has-izoom） */
+  :global(html.has-izoom) :global(img[data-zoom]) {
+    cursor: zoom-in;
+  }
+  /* 放大开着的时候别让底下的页面跟着滚 */
+  :global(html.is-zoomed),
+  :global(html.is-zoomed body) {
+    overflow: hidden;
+  }
+
+  .izoom {
+    position: fixed;
+    inset: 0;
+    /* 比页头（20）、目录抽屉、失真那层（30）都高 */
+    z-index: 90;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: clamp(0.8rem, 3vw, 2.4rem);
+    padding-top: clamp(3rem, 6vh, 4rem);
+    background: rgb(10 2 16 / 0.86);
+    backdrop-filter: blur(3px);
+  }
+  .izoom[hidden] {
+    display: none;
+  }
+  .izoom__img {
+    max-width: 100%;
+    max-height: 100%;
+    width: auto;
+    height: auto;
+    object-fit: contain;
+    border-radius: 10px;
+    background: #fff;
+    box-shadow: 0 24px 70px rgb(0 0 0 / 0.65);
+  }
+  /* 右上角那个小 × */
+  .izoom__close {
+    position: absolute;
+    top: max(0.6rem, env(safe-area-inset-top, 0px));
+    right: max(0.6rem, env(safe-area-inset-right, 0px));
+    display: grid;
+    place-items: center;
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    font: inherit;
+    font-size: 26px;
+    line-height: 1;
+    color: #ffd9ef;
+    cursor: pointer;
+    border: 1px solid rgba(255, 120, 190, 0.5);
+    border-radius: 50%;
+    background: rgb(24 3 36 / 0.88);
+    transition: color 0.14s ease, border-color 0.14s ease, background 0.14s ease;
+  }
+  .izoom__close:hover,
+  .izoom__close:focus-visible {
+    color: #fff;
+    border-color: rgba(255, 120, 190, 0.95);
+    background: rgb(46 8 70 / 0.95);
+  }
+  .izoom__close:focus-visible {
+    outline: 2px solid rgba(255, 120, 190, 0.8);
+    outline-offset: 2px;
+  }
+  .izoom__cap {
+    position: absolute;
+    left: 50%;
+    bottom: 0.7rem;
+    max-width: min(52rem, 90vw);
+    margin: 0;
+    padding: 0.3rem 0.7rem;
+    font-size: 0.82rem;
+    line-height: 1.6;
+    text-align: center;
+    color: rgba(255, 236, 248, 0.9);
+    background: rgb(24 3 36 / 0.8);
+    border-radius: 999px;
+    transform: translateX(-50%);
+  }
+  .izoom__cap[hidden] {
+    display: none;
+  }
+</style>

@@ -2037,6 +2037,24 @@ body[data-type="notes"] .field--posts-only {
   gap: 6px;
   flex-wrap: wrap;
   padding-top: 4px;
+  /*
+    这一排「＋ 文字 / ＋ 图片 / …」**一直吸在编辑区下方**（用户要求：
+    「在编辑【这一页的内容】时，不论怎样滚动滚轮 那些+文字 +图片 +链接等选项
+    可以始终保持在UI下方 不需要在一个地方点加号插入 然后滚到最下面点+文字
+    然后又滚回去编辑了」）。
+    滚动容器是 .pstudio__col--edit（overflow-y: auto），这里是它里面的最后一个
+    子块 —— sticky 会把这一排贴在容器下沿，而它的"约束矩形"是 #page-editor，
+    往上飘多少都还在里面，所以整段内容滚到哪儿它都露得出来。
+    底下垫一层不透明底 + 一道上边线：内容从它后面滚过去不会糊在一起。
+  */
+  position: sticky;
+  bottom: -10px;
+  z-index: 6;
+  margin: 0 -10px -10px;
+  padding: 8px 10px 10px;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+  box-shadow: 0 -8px 16px rgb(0 0 0 / 0.16);
 }
 .pblock-add__label {
   font-size: 12px;
