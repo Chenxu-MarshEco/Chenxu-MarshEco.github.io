@@ -180,6 +180,11 @@ const els = {
   icebergEditor: $('iceberg-editor'),
   icebergSave: $('iceberg-save'),
 
+  /* 冰山图（src/data/iceberg.json）：分类 / 标签 / 层级 / 条目 */
+  icechartModal: $('icechart-modal'),
+  iceEditor: $('ice-editor'),
+  iceSave: $('ice-save'),
+
   /* 冰室精华（src/data/salon.json）：精华 / 成员两个面板共用一份 salonDraft */
   essencesModal: $('essences-modal'),
   essEditor: $('ess-editor'),
@@ -1591,6 +1596,7 @@ const WORKSPACES = [
   { id: 'calendar', label: '日历', hint: '首页日历：特殊日子、以及今天那句话' },
   { id: 'about', label: '关于我', hint: '页头小圆片的头像 + /about-me/ 的正文' },
   { id: 'iceberg', label: '冰室冰山', hint: '首页「冰室冰山」那块：图、一句话、链接' },
+  { id: 'ice-chart', label: '冰山图', hint: '冰山图（/iceberg/）：分类 / 标签 / 层级 / 条目' },
   { id: 'essences', label: '精华', hint: '冰室精华（/salon/）：可搜索 / 新增 / 改删' },
   { id: 'members', label: '成员', hint: '精华的成员表：改名 / 换头像，他所有精华跟着变' },
 ];
@@ -1616,6 +1622,7 @@ function closeWorkspace(id) {
   else if (id === 'calendar') closeCalendarModal();
   else if (id === 'about') closeAboutModal();
   else if (id === 'iceberg') closeIcebergModal();
+  else if (id === 'ice-chart') closeIceChartModal();
   else if (id === 'essences') closeEssencesModal();
   else if (id === 'members') closeMembersModal();
 }
@@ -1648,6 +1655,7 @@ async function openWorkspace(id) {
   else if (id === 'calendar') await openCalendarModal();
   else if (id === 'about') await openAboutModal();
   else if (id === 'iceberg') await openIcebergModal();
+  else if (id === 'ice-chart') await openIceChartModal();
   else if (id === 'essences') await openEssencesModal();
   else if (id === 'members') await openMembersModal();
 }
@@ -8942,7 +8950,7 @@ function panelShell(host, { hint = '', group = '' } = {}) {
     会让「精华」面板也显示有改动（踩过第二次）。所以传 group 进来，
     由 markPanelDirty 自己去查那一组的标记。
   */
-  const dirty = group === 'salon' ? salonDirty : group === 'widgets' ? widgetsDirty : false;
+  const dirty = group === 'salon' ? salonDirty : group === 'widgets' ? widgetsDirty : group === 'iceberg' ? iceDirty : false;
   if (dirty) markPanelDirty(status, group);
   return { body, foot: bar, status };
 }
@@ -9192,13 +9200,14 @@ async function loadWidgets() {
 /**
  * 面板顶上的「有改动没保存」。
  *
- * group 要传对：写 home-widgets.json 的三个面板传 'widgets'、
- * 写 salon.json 的两个传 'salon'。在日历里改一笔不该让「精华」面板
- * 也跟着显示「有改动没保存」—— 这两个文件互不相干。
+ * group 要传对：写 home-widgets.json 的三个面板传 'widgets'、写 salon.json
+ * 的两个传 'salon'、写 iceberg.json 的那个传 'iceberg'。在日历里改一笔不该让
+ * 「精华」「冰山图」也跟着显示「有改动没保存」—— 这三份文件互不相干。
  */
 function markPanelDirty(statusEl, group = '') {
-  if (group !== 'salon') widgetsDirty = true;
-  if (group !== 'widgets') salonDirty = true;
+  if (group === 'salon') salonDirty = true;
+  else if (group === 'iceberg') iceDirty = true;
+  else widgetsDirty = true;
   if (!statusEl) return;
   statusEl.textContent = '有改动没保存';
   statusEl.classList.add('is-dirty');
@@ -9606,6 +9615,761 @@ function renderIcebergPanel() {
   );
   els.icebergSave = $('iceberg-save');
 }
+
+/* ---------------------------------------------------------------
+   冰山图（src/data/iceberg.json）
+
+   整张图就三层结构：分类 / 标签（库）→ 层级（层）→ 条目（点）。
+   面板按这个结构分三栏，一栏一件事：
+
+     A 栏  这一页（大标题 + 介绍）+ 分类 + 标签
+     B 栏  层级（顺序 = 页面从上往下的顺序）+ 选中那一层的四样东西
+     C 栏  选中那一层的条目（搜索 / 新增 / 编辑 / 删 / 上下挪）
+
+   两条规矩面板里照搬页面那一套，绝不让人维护第二份真相：
+     · 条目的颜色只由**分类**决定（改一次分类颜色，归在它里的条目一起变）；
+     · 完备标识只看**详细描述**填没填（不检测 tag、不检测链接）。
+
+   改动先落在 iceDraft 里（面板重画、切走再切回来都不丢），按「保存并重新构建」
+   才写盘，和精华 / 成员那两个面板一个规矩。
+   --------------------------------------------------------------- */
+
+/** iceberg.json 的草稿（面板重画、切走切回来读的都是它） */
+let iceDraft = null;
+/** 这一组有没有没保存的改动 */
+let iceDirty = false;
+/** 选中的层级 id（'' = 还没选，落到第一层） */
+let iceSel = '';
+/** 正在写的那一条：'' = 表单没开 / 'new' = 新增 / 别的 = 那个条目的 id */
+let iceEditing = '';
+/** 新增到一半的那一条（还没进 arrays，按「取消」就当没发生过） */
+let iceNewItem = null;
+/** 条目搜索词（只筛列出来的，不动数据） */
+let iceFind = '';
+
+async function loadIceberg() {
+  if (iceDraft) return iceDraft;
+  const res = await fetch('/api/iceberg');
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const data = await res.json();
+  iceDraft = data && typeof data === 'object' ? data : {};
+  if (!Array.isArray(iceDraft.categories)) iceDraft.categories = [];
+  if (!Array.isArray(iceDraft.tags)) iceDraft.tags = [];
+  if (!Array.isArray(iceDraft.layers)) iceDraft.layers = [];
+  return iceDraft;
+}
+
+const iceLayers = () => iceDraft?.layers ?? [];
+const iceCats = () => iceDraft?.categories ?? [];
+const iceTagList = () => iceDraft?.tags ?? [];
+const iceCatById = (id) => iceCats().find((c) => c.id === id) ?? null;
+
+/**
+ * 完备 = 详细描述非空。
+ * 和页面上 `src/utils/iceberg.ts` 的 isComplete() 是同一个判断 ——
+ * 这条标记两边都是**算出来的**，数据里不存第二份。
+ */
+const iceComplete = (it) => String(it?.desc ?? '').trim() !== '';
+
+/** 补一个没被占用的 id（前缀 + 两位序号）。保存时服务端还会再核一遍 */
+function iceNewId(prefix, used) {
+  for (let i = used.size + 1; i < used.size + 500; i++) {
+    const id = `${prefix}${String(i).padStart(2, '0')}`;
+    if (!used.has(id)) return id;
+  }
+  return `${prefix}${Date.now().toString(36)}`;
+}
+
+/** 当前选中的层级；没选过、或者选的那个被删了，就落到第一层 */
+function iceCurrent() {
+  const hit = iceLayers().find((l) => l.id === iceSel);
+  if (hit) return hit;
+  const first = iceLayers()[0] ?? null;
+  iceSel = first ? first.id : '';
+  return first;
+}
+
+/** 面板里那条小灰字 */
+function iceHint(text) {
+  const p = document.createElement('p');
+  p.className = 'hint wice__hint';
+  p.textContent = text;
+  return p;
+}
+
+/** 小方块按钮（↑ ↓ ✕ 这种），disabled 时点不动 */
+function iceMiniBtn(text, title, enabled, onClick, danger = false) {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = `btn btn--ghost boardedit__mini${danger ? ' boardedit__del' : ''}`;
+  b.textContent = text;
+  b.title = title;
+  b.disabled = !enabled;
+  b.addEventListener('click', onClick);
+  return b;
+}
+
+/** 数组里前后换一位（层级 / 条目排序都走它） */
+function iceMove(list, index, delta) {
+  const to = index + delta;
+  if (to < 0 || to >= list.length) return;
+  const [x] = list.splice(index, 1);
+  list.splice(to, 0, x);
+}
+
+async function openIceChartModal() {
+  markWorkspaceActive('ice-chart');
+  els.icechartModal.hidden = false;
+  els.iceEditor.textContent = '正在读取…';
+  try {
+    await loadIceberg();
+  } catch (err) {
+    els.iceEditor.textContent = `读取失败：${err.message}`;
+    return;
+  }
+  iceEditing = '';
+  iceNewItem = null;
+  renderIceChartPanel();
+}
+
+function closeIceChartModal() {
+  els.icechartModal.hidden = true;
+}
+
+/* ---------- 三栏里的一行一行 ---------- */
+
+/** 一个分类：显示/隐藏（眼睛）+ 颜色 + 名字 + 删 */
+function iceCatRow(c, status) {
+  const dirty = () => markPanelDirty(status, 'iceberg');
+  const row = document.createElement('div');
+  row.className = 'wice__cat';
+  row.dataset.catId = c.id;
+
+  const eye = document.createElement('button');
+  eye.type = 'button';
+  eye.className = `wice__eye${c.hidden ? ' is-off' : ''}`;
+  eye.dataset.eye = c.id;
+  eye.textContent = c.hidden ? '隐藏' : '显示';
+  eye.title = c.hidden
+    ? '这一类的条目现在在页面上默认不显示 —— 点一下改成显示'
+    : '这一类的条目在页面上默认显示 —— 点一下改成不显示（看的人随时能自己开关）';
+  eye.addEventListener('click', () => {
+    c.hidden = !c.hidden;
+    eye.textContent = c.hidden ? '隐藏' : '显示';
+    eye.classList.toggle('is-off', c.hidden);
+    dirty();
+  });
+
+  const color = document.createElement('input');
+  color.type = 'color';
+  color.className = 'wice__color';
+  color.value = /^#[0-9a-f]{6}$/i.test(String(c.color)) ? c.color : '#ff5fb0';
+  color.title = '条目在冰山图里的颜色';
+  color.addEventListener('input', () => {
+    c.color = color.value;
+    dirty();
+  });
+
+  const name = boardInput(c.name ?? '', '分类名字（例如 花娅奇闻）', (v) => {
+    c.name = v;
+    dirty();
+  });
+  name.classList.add('wice__name');
+
+  const del = iceMiniBtn('✕', '删掉这个分类（归在它里面的条目会变成「未分类」，条目本身不删）', true, () => {
+    const i = iceCats().indexOf(c);
+    if (i < 0) return;
+    iceCats().splice(i, 1);
+    /* 引用一起清掉：留着一个指向已删分类的 id，页面上那一条会变成默认灰，
+       而在编辑器里看起来「还归在某个分类」，两边对不上 */
+    for (const l of iceLayers()) for (const it of l.items) if (it.categoryId === c.id) it.categoryId = '';
+    dirty();
+    renderIceChartPanel();
+  }, true);
+
+  row.append(eye, color, name, del);
+  return row;
+}
+
+/** 一个标签：名字可改 + 显示用了几条 + 删 */
+function iceTagRow(t, status) {
+  const dirty = () => markPanelDirty(status, 'iceberg');
+  const row = document.createElement('div');
+  row.className = 'wice__tag';
+  row.dataset.tagId = t.id;
+
+  const name = boardInput(t.name ?? '', '标签名字', (v) => {
+    t.name = v;
+    dirty();
+  });
+  name.classList.add('wice__name');
+
+  const used = iceLayers().reduce(
+    (n, l) => n + l.items.filter((it) => (it.tags ?? []).includes(t.id)).length,
+    0
+  );
+  const count = document.createElement('span');
+  count.className = `wice__used${used ? '' : ' is-none'}`;
+  count.textContent = used ? `${used} 条在用` : '还没人用';
+
+  const del = iceMiniBtn('✕', '删掉这个标签（条目上勾过的会一起取消）', true, () => {
+    const i = iceTagList().indexOf(t);
+    if (i < 0) return;
+    iceTagList().splice(i, 1);
+    for (const l of iceLayers()) for (const it of l.items) it.tags = (it.tags ?? []).filter((x) => x !== t.id);
+    dirty();
+    renderIceChartPanel();
+  }, true);
+
+  row.append(name, count, del);
+  return row;
+}
+
+/** 层级清单里的一行：点一下选中它（↑ ↓ ✕ 在右边） */
+function iceLayerRow(l, index, status) {
+  const dirty = () => markPanelDirty(status, 'iceberg');
+  const row = document.createElement('div');
+  row.className = `wice__layer${l.id === iceSel ? ' is-on' : ''}`;
+  row.dataset.layerId = l.id;
+
+  const pick = document.createElement('button');
+  pick.type = 'button';
+  pick.className = 'wice__pick';
+  const title = document.createElement('b');
+  title.textContent = l.title || '（还没有标题）';
+  const meta = document.createElement('em');
+  const done = l.items.filter(iceComplete).length;
+  meta.textContent = l.items.length
+    ? `${l.items.length} 条 · ${done} 完备${done < l.items.length ? ` · ${l.items.length - done} 缺描述` : ''}`
+    : '还没有条目';
+  pick.append(title, meta);
+  pick.addEventListener('click', () => {
+    iceSel = l.id;
+    iceEditing = '';
+    iceNewItem = null;
+    renderIceChartPanel();
+  });
+
+  const ops = document.createElement('div');
+  ops.className = 'wice__ops';
+  ops.append(
+    iceMiniBtn('↑', '往上挪一层（页面上也跟着往上）', index > 0, () => {
+      iceMove(iceLayers(), index, -1);
+      dirty();
+      renderIceChartPanel();
+    }),
+    iceMiniBtn('↓', '往下挪一层', index < iceLayers().length - 1, () => {
+      iceMove(iceLayers(), index, 1);
+      dirty();
+      renderIceChartPanel();
+    }),
+    iceMiniBtn('✕', `删掉这一层${l.items.length ? `（连同里面的 ${l.items.length} 条条目一起）` : ''}`, true, () => {
+      iceLayers().splice(index, 1);
+      if (iceSel === l.id) iceSel = '';
+      iceEditing = '';
+      dirty();
+      renderIceChartPanel();
+    }, true)
+  );
+
+  row.append(pick, ops);
+  return row;
+}
+
+/** 条目清单里的一行：分类色点 + 名字 + 归在哪一类 + 完备标识 + 编辑/删/挪 */
+function iceItemRow(layer, it, status) {
+  const dirty = () => markPanelDirty(status, 'iceberg');
+  const row = document.createElement('div');
+  row.className = 'wice__item';
+  row.dataset.itemId = it.id;
+  const cat = iceCatById(it.categoryId);
+  row.style.setProperty('--cat', cat ? cat.color : '#b9a6c9');
+
+  const dot = document.createElement('span');
+  dot.className = 'wice__dot';
+
+  const name = document.createElement('span');
+  name.className = 'wice__itemName';
+  name.textContent = it.name || '（还没有名字）';
+
+  const via = document.createElement('span');
+  via.className = 'wice__itemVia';
+  const tagNames = (it.tags ?? []).map((id) => iceTagList().find((t) => t.id === id)?.name ?? '').filter(Boolean);
+  via.textContent = `${cat ? cat.name : '未分类'}${tagNames.length ? ` · ${tagNames.join('/')}` : ''}${it.href ? ' · 有链接' : ''}`;
+
+  const done = iceComplete(it);
+  const badge = document.createElement('span');
+  badge.className = `wice__badge${done ? '' : ' wice__badge--off'}`;
+  badge.textContent = done ? '完备' : '缺描述';
+  badge.title = done
+    ? '填了详细描述 —— 页面上这一条背后会垫一块粉色带栅格的圆角矩形'
+    : '还没写详细描述 —— 页面上这一条不会有完备标识';
+
+  const index = layer.items.indexOf(it);
+  const ops = document.createElement('div');
+  ops.className = 'wice__ops';
+  ops.append(
+    iceMiniBtn('改', '编辑这一条（分类 / 标签 / 详细描述 / 链接）', true, () => {
+      iceEditing = it.id;
+      iceNewItem = null;
+      renderIceChartPanel();
+    }),
+    iceMiniBtn('↑', '往前挪一条', index > 0, () => {
+      iceMove(layer.items, index, -1);
+      dirty();
+      renderIceChartPanel();
+    }),
+    iceMiniBtn('↓', '往后挪一条', index < layer.items.length - 1, () => {
+      iceMove(layer.items, index, 1);
+      dirty();
+      renderIceChartPanel();
+    }),
+    iceMiniBtn('✕', '删掉这一条', true, () => {
+      layer.items.splice(index, 1);
+      if (iceEditing === it.id) iceEditing = '';
+      dirty();
+      renderIceChartPanel();
+    }, true)
+  );
+
+  row.append(dot, name, via, badge, ops);
+  return row;
+}
+
+/**
+ * 条目的编辑表单（新增和改都用它）。
+ *
+ * isNew 的那一条在按「完成」之前**不进 arrays** —— 中途按「取消」就当没发生过，
+ * 不会在数据里留下一条没名字的条目（保存时那种条目会被丢掉并报数）。
+ */
+function iceItemForm(host, layer, item, status, isNew) {
+  const dirty = () => markPanelDirty(status, 'iceberg');
+  const box = document.createElement('div');
+  box.className = 'wice__form';
+  box.dataset.formFor = isNew ? 'new' : item.id;
+
+  const nameInput = boardInput(item.name ?? '', '例如：塔吊文化', (v) => {
+    item.name = v;
+    dirty();
+  });
+  box.appendChild(panelRow('条目', nameInput));
+
+  const catSel = document.createElement('select');
+  catSel.className = 'input wice__select';
+  const none = document.createElement('option');
+  none.value = '';
+  none.textContent = '（未分类 · 页面上是灰的）';
+  catSel.appendChild(none);
+  for (const c of iceCats()) {
+    const o = document.createElement('option');
+    o.value = c.id;
+    o.textContent = `${c.name} · ${c.color}`;
+    catSel.appendChild(o);
+  }
+  catSel.value = item.categoryId ?? '';
+  catSel.addEventListener('change', () => {
+    item.categoryId = catSel.value;
+    dirty();
+  });
+  box.appendChild(panelRow('分类', catSel, '决定这一条在图里的颜色。'));
+
+  const tagWrap = document.createElement('div');
+  tagWrap.className = 'wess__memberGrid';
+  if (!iceTagList().length) {
+    tagWrap.appendChild(iceHint('还没有标签 —— 先在左边「标签」那一栏建一个，再回来勾。'));
+  }
+  for (const t of iceTagList()) {
+    const label = document.createElement('label');
+    label.className = 'wess__member';
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.checked = (item.tags ?? []).includes(t.id);
+    cb.dataset.tagPick = t.id;
+    cb.addEventListener('change', () => {
+      const set = new Set(item.tags ?? []);
+      if (cb.checked) set.add(t.id);
+      else set.delete(t.id);
+      item.tags = [...set];
+      dirty();
+    });
+    const span = document.createElement('span');
+    span.className = 'wess__memberName';
+    span.textContent = t.name;
+    label.append(cb, span);
+    tagWrap.appendChild(label);
+  }
+  box.appendChild(panelRow('标签', tagWrap, '勾上的会显示在页面上那张悬停卡片的顶部。'));
+
+  const desc = panelArea(item.desc ?? '', '鼠标移到条目上时，卡片里的正文。填了它就有完备标识', 5, (v) => {
+    item.desc = v;
+    dirty();
+    /* 「完备 / 缺描述」那句话要跟着输入实时变，所以只重画这一个角标 */
+    const badge = box.querySelector('.wice__descState');
+    if (badge) {
+      const on = iceComplete(item);
+      badge.textContent = on ? '已有详细描述 → 页面上会有完备标识' : '还没写详细描述 → 页面上没有完备标识';
+      badge.classList.toggle('is-on', on);
+    }
+  });
+  box.appendChild(panelRow('详细描述', desc));
+
+  const link = linkField(item.href ?? '', '/salon/ 或 https://…', (v) => {
+    item.href = v;
+    dirty();
+  }, { anchor: true });
+  box.appendChild(panelRow('链接', link, '留空 = 这一条点不动（只出悬停卡片）。'));
+
+  const state = document.createElement('p');
+  state.className = `hint wice__descState${iceComplete(item) ? ' is-on' : ''}`;
+  state.textContent = iceComplete(item)
+    ? '已有详细描述 → 页面上会有完备标识'
+    : '还没写详细描述 → 页面上没有完备标识';
+  box.appendChild(state);
+
+  const acts = document.createElement('div');
+  acts.className = 'wice__formact';
+  acts.append(
+    panelBtn('完成', '把这一条收起来', () => {
+      if (!String(item.name ?? '').trim()) {
+        toast('条目得有个名字', true);
+        nameInput.focus();
+        return;
+      }
+      if (isNew) layer.items.push(item);
+      iceEditing = '';
+      iceNewItem = null;
+      dirty();
+      renderIceChartPanel();
+    }, true),
+    panelBtn('取消', isNew ? '不要这一条了' : '收起表单（已经改的留着，按保存才写盘）', () => {
+      iceEditing = '';
+      iceNewItem = null;
+      renderIceChartPanel();
+    })
+  );
+  box.appendChild(acts);
+
+  host.appendChild(box);
+  if (isNew) requestAnimationFrame(() => nameInput.focus());
+}
+
+/* ---------- 整个面板 ---------- */
+
+function renderIceChartPanel() {
+  const { body, foot, status } = panelShell(els.iceEditor, {
+    hint:
+      '整张冰山图。层级从上往下叠，条目按分类上色：分类先建好（颜色 + 那对小眼睛决定这一类的条目在页面上默认显不显示），' +
+      '标签也是先建再到条目上勾。条目的「详细描述」填了就自动打上完备标识（粉色带栅格的那块圆角矩形）。',
+    group: 'iceberg',
+  });
+  body.classList.add('wpanel__body--tall');
+  const dirty = () => markPanelDirty(status, 'iceberg');
+  const cur = iceCurrent();
+
+  const grid = document.createElement('div');
+  grid.className = 'wice';
+  const colA = document.createElement('div');
+  colA.className = 'wice__col';
+  const colB = document.createElement('div');
+  colB.className = 'wice__col';
+  const colC = document.createElement('div');
+  colC.className = 'wice__col wice__col--c';
+
+  /* ---------------- A1：这一页 ---------------- */
+  const meta = panelBox('这一页', '大标题 + 标题下面那段介绍（页面最上面那两行）。');
+  meta.appendChild(
+    panelRow(
+      '大标题',
+      boardInput(iceDraft.title ?? '', '冰室冰山', (v) => {
+        iceDraft.title = v;
+        dirty();
+      })
+    )
+  );
+  meta.appendChild(
+    panelRow(
+      '介绍',
+      panelArea(iceDraft.intro ?? '', '一两句就好（可以留空）', 3, (v) => {
+        iceDraft.intro = v;
+        dirty();
+      })
+    )
+  );
+  colA.appendChild(meta);
+
+  /* ---------------- A2：分类 ---------------- */
+  const catBox = panelBox(
+    '分类',
+    '条目的颜色只由分类决定 —— 改一次颜色，归在这一类里的条目一起变。左边那颗是「默认显不显示」：' +
+      '切到「隐藏」的类，页面上那排分类里的小眼睛默认是闭着的（看的人随时能自己点开）。'
+  );
+  const catList = document.createElement('div');
+  catList.className = 'wice__rows';
+  if (!iceCats().length) catList.appendChild(iceHint('还没有分类。先建一个（例如「花娅奇闻」），再给条目选它。'));
+  for (const c of iceCats()) catList.appendChild(iceCatRow(c, status));
+  catBox.appendChild(catList);
+  catBox.appendChild(
+    panelBtn('＋ 新增分类', '建一个新分类，然后到条目上选它', () => {
+      const used = new Set(iceCats().map((c) => String(c.id ?? '')));
+      iceCats().push({ id: iceNewId('c', used), name: '新分类', color: '#ff5fb0', hidden: false });
+      dirty();
+      renderIceChartPanel();
+    })
+  );
+  colA.appendChild(catBox);
+
+  /* ---------------- A3：标签 ---------------- */
+  const tagBox = panelBox(
+    '标签',
+    '先在这里建好，再到条目上勾。鼠标移到条目上时，卡片顶部显示的就是勾上的这些（没勾就不显示那一行）。'
+  );
+  const tagRows = document.createElement('div');
+  tagRows.className = 'wice__rows';
+  if (!iceTagList().length) tagRows.appendChild(iceHint('还没有标签。'));
+  for (const t of iceTagList()) tagRows.appendChild(iceTagRow(t, status));
+  tagBox.appendChild(tagRows);
+
+  const tagAdd = document.createElement('div');
+  tagAdd.className = 'wice__add';
+  const tagInput = boardInput('', '新标签名字（回车也行）', () => {});
+  const commitTag = () => {
+    const name = tagInput.value.trim();
+    if (!name) {
+      toast('标签得有个名字', true);
+      return;
+    }
+    const used = new Set(iceTagList().map((t) => String(t.id ?? '')));
+    iceTagList().push({ id: iceNewId('t', used), name });
+    dirty();
+    renderIceChartPanel();
+  };
+  tagInput.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Enter') {
+      ev.preventDefault();
+      commitTag();
+    }
+  });
+  tagAdd.append(tagInput, panelBtn('＋ 添加', '也可以直接在输入框里回车', commitTag));
+  tagBox.appendChild(tagAdd);
+  colA.appendChild(tagBox);
+
+  /* ---------------- B1：层级 ---------------- */
+  const layBox = panelBox(
+    '层级',
+    '顺序就是页面从上往下的顺序（↑ ↓ 调）。点一行选中它，右边那一栏就是这一层的条目。'
+  );
+  const layRows = document.createElement('div');
+  layRows.className = 'wice__rows';
+  if (!iceLayers().length) layRows.appendChild(iceHint('还没有层级。先建一个（例如「漫步花娅街头」）。'));
+  iceLayers().forEach((l, i) => layRows.appendChild(iceLayerRow(l, i, status)));
+  layBox.appendChild(layRows);
+  layBox.appendChild(
+    panelBtn('＋ 新建层级', '新的一层加在最下面，然后写标题、传图、加条目', () => {
+      const used = new Set(iceLayers().map((l) => String(l.id ?? '')));
+      const l = { id: iceNewId('l', used), title: '新层级', subtitle: '', background: '', head: '', items: [] };
+      iceLayers().push(l);
+      iceSel = l.id;
+      iceEditing = '';
+      iceNewItem = null;
+      dirty();
+      renderIceChartPanel();
+    })
+  );
+  colB.appendChild(layBox);
+
+  /* ---------------- B2：选中那一层的四样东西 ---------------- */
+  const fieldBox = panelBox(
+    `这一层 · ${cur ? cur.title || '（还没有标题）' : '（还没有层级）'}`,
+    '标题和副标题写在层的中间；背景图铺满整层（会压一层暗罩，字才看得清），头图是右边竖着的那一条。'
+  );
+  if (!cur) {
+    fieldBox.appendChild(iceHint('左边先建一个层级。'));
+  } else {
+    fieldBox.appendChild(
+      panelRow(
+        '标题',
+        boardInput(cur.title ?? '', '例如：漫步花娅街头', (v) => {
+          cur.title = v;
+          dirty();
+        })
+      )
+    );
+    fieldBox.appendChild(
+      panelRow(
+        '副标题',
+        panelArea(cur.subtitle ?? '', '例如：只要稍微在冰室里冲浪就能看见的词', 2, (v) => {
+          cur.subtitle = v;
+          dirty();
+        })
+      )
+    );
+    fieldBox.appendChild(imageFieldRow('背景图', cur, 'background', dirty));
+    fieldBox.appendChild(imageFieldRow('头图', cur, 'head', dirty));
+  }
+  colB.appendChild(fieldBox);
+
+  /* ---------------- C：这一层的条目 ---------------- */
+  const itemBox = panelBox(
+    `条目 · ${cur ? cur.title || '（还没有标题）' : '（还没有层级）'}`,
+    '「完备标识」只看详细描述：填了的条目在页面上背后会垫一块粉色带栅格的圆角矩形。分类决定颜色，' +
+      '标签显示在悬停卡片顶部，填了链接这一条就能点。'
+  );
+  if (!cur) {
+    itemBox.appendChild(iceHint('先建一个层级，再往里加条目。'));
+  } else {
+    const bar = document.createElement('div');
+    bar.className = 'wice__toolbar';
+    const search = document.createElement('input');
+    search.type = 'search';
+    search.className = 'input input--sm wice__search';
+    search.placeholder = '在这一层里找条目…';
+    search.value = iceFind;
+    const count = document.createElement('span');
+    count.className = 'wess__count';
+    const rows = document.createElement('div');
+    rows.className = 'wice__rows wice__items';
+
+    const paintRows = () => {
+      const kw = iceFind.trim().toLowerCase();
+      const hits = cur.items.filter((it) => {
+        if (!kw) return true;
+        const cat = iceCatById(it.categoryId);
+        const tagNames = (it.tags ?? []).map((id) => iceTagList().find((t) => t.id === id)?.name ?? '');
+        return (
+          String(it.name ?? '').toLowerCase().includes(kw) ||
+          String(it.desc ?? '').toLowerCase().includes(kw) ||
+          (cat?.name ?? '').toLowerCase().includes(kw) ||
+          tagNames.join('/').toLowerCase().includes(kw)
+        );
+      });
+      const done = cur.items.filter(iceComplete).length;
+      count.textContent = `${hits.length} / ${cur.items.length} 条 · ${done} 完备 · ${cur.items.length - done} 缺描述`;
+      rows.textContent = '';
+      /* 表单排在最上面：正在写的这一条一眼就能看见 */
+      if (iceEditing === 'new' && iceNewItem) iceItemForm(rows, cur, iceNewItem, status, true);
+      else if (iceEditing) {
+        const editing = cur.items.find((it) => it.id === iceEditing);
+        if (editing) iceItemForm(rows, cur, editing, status, false);
+      }
+      if (!cur.items.length) rows.appendChild(iceHint('这一层还没有条目 —— 点「＋ 新增条目」。'));
+      else if (!hits.length) rows.appendChild(iceHint(`这一层里没有匹配「${iceFind}」的条目。`));
+      for (const it of hits) rows.appendChild(iceItemRow(cur, it, status));
+    };
+
+    search.addEventListener('input', () => {
+      iceFind = search.value;
+      paintRows();
+    });
+
+    bar.append(
+      search,
+      count,
+      panelBtn('＋ 新增条目', '往这一层加一条', () => {
+        iceNewItem = { id: '', name: '', categoryId: iceCats()[0]?.id ?? '', tags: [], desc: '', href: '' };
+        iceEditing = 'new';
+        renderIceChartPanel();
+      }, true)
+    );
+    itemBox.append(bar, rows);
+    paintRows();
+  }
+  colC.appendChild(itemBox);
+
+  grid.append(colA, colB, colC);
+  body.appendChild(grid);
+
+  /* ---------------- 底栏 ---------------- */
+  const totalItems = iceLayers().reduce((n, l) => n + l.items.length, 0);
+  const totalDone = iceLayers().reduce((n, l) => n + l.items.filter(iceComplete).length, 0);
+  const sum = document.createElement('span');
+  sum.className = 'wice__sum';
+  sum.textContent = `${iceCats().length} 分类 · ${iceTagList().length} 标签 · ${iceLayers().length} 层 · ${totalItems} 条（${totalDone} 完备）`;
+  foot.append(
+    sum,
+    panelBtn('关闭面板', '关掉这个面板（没保存的改动留着，切回来还在）', () => openWorkspace('docs')),
+    panelBtn('打开 /iceberg/', '在新标签页打开预览站点里的这一页（要先构建过）', () => {
+      window.open(`${PREVIEW_URL}/iceberg/`, '_blank', 'noopener');
+    }),
+    panelBtn('保存并重新构建', '写进 src/data/iceberg.json 并重新构建站点', () => saveIceberg(els.iceSave, status), true, 'ice-save')
+  );
+  els.iceSave = $('ice-save');
+}
+
+/** 一层里的「图 + 地址框」那一行（背景图 / 头图都用它） */
+function imageFieldRow(label, layer, key, dirty) {
+  const input = boardInput(layer[key] ?? '', '/img/uploads/xxx.png 或 https://…', () => {});
+  const slot = imageSlot({
+    label,
+    getValue: () => layer[key],
+    setValue: (v) => {
+      layer[key] = v;
+    },
+    onValue: (v) => {
+      input.value = v;
+    },
+    onChanged: dirty,
+  });
+  input.addEventListener('input', () => {
+    slot.sync(input.value, true);
+    dirty();
+  });
+  const wrap = document.createElement('div');
+  wrap.className = 'wice__imgrow';
+  const r1 = panelRow(label, slot.el);
+  const r2 = panelRow(`${label}地址`, input);
+  wrap.append(r1, r2);
+  return wrap;
+}
+
+async function saveIceberg(btn, statusEl) {
+  const was = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = '正在保存…';
+  statusEl.textContent = '正在保存…';
+  statusEl.classList.remove('is-dirty');
+  try {
+    const res = await fetch('/api/iceberg', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(iceDraft),
+    });
+    const data = await res.json();
+    if (!res.ok || !data.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    iceDirty = false;
+    /*
+      拿服务端那份重新来过：它给补过 id、洗过引用（认不出来的分类 / 标签会清掉），
+      界面上看到的必须和落盘的一致 —— 不然接着改就是在改一份对不上的草稿。
+    */
+    iceDraft = null;
+    await loadIceberg();
+    const d = data.dropped ?? {};
+    const lost = [];
+    if (d.categories) lost.push(`${d.categories} 个没写名字的分类`);
+    if (d.tags) lost.push(`${d.tags} 个没写名字的标签`);
+    if (d.items) lost.push(`${d.items} 条没写名字的条目`);
+    if (d.refs) lost.push(`${d.refs} 处指向已删分类 / 标签的引用`);
+    const c = data.counts ?? {};
+    if (data.built) {
+      statusEl.textContent = `已保存并重新构建（${data.ms} ms）`;
+      toast(
+        `冰山图已保存并重新构建（${data.ms} ms）：${c.layers ?? 0} 层 / ${c.items ?? 0} 条` +
+          (lost.length ? `；有 ${lost.join('、')} 被丢掉` : '')
+      );
+    } else {
+      statusEl.textContent = '已保存，但重新构建没成功';
+      toast(`已保存，但重新构建没成功：${String(data.output || '').split('\n')[0]}`, true);
+    }
+    if (!els.icechartModal.hidden) renderIceChartPanel();
+  } catch (err) {
+    statusEl.textContent = `出错了：${err.message}`;
+    statusEl.classList.add('is-dirty');
+    toast(`保存失败：${err.message}`, true);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = was;
+  }
+}
+
 /* ---------------------------------------------------------------
    冰室精华 / 成员（src/data/salon.json）
    --------------------------------------------------------------- */
@@ -10924,15 +11688,16 @@ function bindEvents() {
   });
 
   /*
-    首页那几块 + 冰室精华：五个面板都没有顶栏按钮（顶栏已经挤满了），
+    首页那几块 + 冰室精华 + 冰山图：六个面板都没有顶栏按钮（顶栏已经挤满了），
     入口就两个 —— 左上角「☰ 工作台」的清单和每个面板顶上那排「切换」，
-    两个都走 openWorkspace()，那里面已经接好了这五个 id。
+    两个都走 openWorkspace()，那里面已经接好了这六个 id。
     这里只管「点遮罩 / 点取消关掉」，和别的面板一个规矩。
   */
   for (const [modal, close] of [
     [els.calendarModal, closeCalendarModal],
     [els.aboutModal, closeAboutModal],
     [els.icebergModal, closeIcebergModal],
+    [els.icechartModal, closeIceChartModal],
     [els.essencesModal, closeEssencesModal],
     [els.membersModal, closeMembersModal],
   ]) {
@@ -11015,7 +11780,7 @@ function bindEvents() {
       return;
     }
     /*
-      首页那几块 + 冰室精华的五个面板也吃 Esc。同时只可能开着一个
+      首页那几块 + 冰室精华 + 冰山图的六个面板也吃 Esc。同时只可能开着一个
       （openWorkspace 会先把别的都关掉），所以一个个判就够了。
     */
     if (ev.key === 'Escape') {
@@ -11023,6 +11788,7 @@ function bindEvents() {
         [els.calendarModal, closeCalendarModal],
         [els.aboutModal, closeAboutModal],
         [els.icebergModal, closeIcebergModal],
+        [els.icechartModal, closeIceChartModal],
         [els.essencesModal, closeEssencesModal],
         [els.membersModal, closeMembersModal],
       ]) {

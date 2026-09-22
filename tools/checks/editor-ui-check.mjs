@@ -131,12 +131,12 @@ try {
   await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 960, deviceScaleFactor: 1, mobile: false });
 
   const regress = [];
-  for (const p of ['/api/bootstrap', '/api/boards', '/api/music', '/api/timelines', '/api/navs', '/api/anchors', '/api/layout', '/api/widgets', '/api/salon']) {
+  for (const p of ['/api/bootstrap', '/api/boards', '/api/music', '/api/timelines', '/api/navs', '/api/anchors', '/api/layout', '/api/widgets', '/api/salon', '/api/iceberg']) {
     const r = await api(p);
     regress.push(`${p}=${r.status}`);
   }
   const salonApi = await api('/api/salon');
-  check('老接口全在（9 条 GET 全 200）', regress.every((s) => s.endsWith('=200')), regress.join(' '));
+  check('老接口全在（10 条 GET 全 200）', regress.every((s) => s.endsWith('=200')), regress.join(' '));
   check('GET /api/salon 里的数字和盘上一致',
     salonApi.status === 200 && salonApi.json?.essences?.length === salon.essences.length && salonApi.json?.members?.length === salon.members.length,
     `${salonApi.json?.members?.length} 成员 / ${salonApi.json?.essences?.length} 精华`);
@@ -150,6 +150,7 @@ try {
     ['calendar', '日历', '特殊日子'],
     ['about', '关于我', '小圆片'],
     ['iceberg', '冰室冰山', '塔吊'],
+    ['ice-chart', '冰山图', '完备标识'],
     ['essences', '精华', '冰室精华'],
     ['members', '成员', '成员 id'],
   ];
@@ -171,7 +172,7 @@ try {
     panels[id] = info;
     check(`面板「${label}」打得开、开的是这一块（提示里含「${keyword}」）`, info.ok === true && info.hintOk === true,
       JSON.stringify({ hint: (info.hint ?? '').slice(0, 34), boxes: info.boxes, h: info.h }));
-    check(`面板「${label}」顶上那排工作面切换按钮在（切走切回来草稿才不丢）`, info.switchBtns >= 13, `switchBtns=${info.switchBtns}`);
+    check(`面板「${label}」顶上那排工作面切换按钮在（切走切回来草稿才不丢）`, info.switchBtns >= 14, `switchBtns=${info.switchBtns}`);
   }
 
   /* ---------- ② 成员面板：行数 / 头像通道 / 名字框 / 名下条数 ---------- */  const mem = await cdp.ev(`(async () => {
@@ -475,7 +476,260 @@ try {
   check(`时间轴选择：换回原来那条（${back}）→ 存盘 → 盘上也跟着回去（来回都能改）`,
     okSw2, `${JSON.stringify(sw2)}，盘上 timelineId=${readTl()}`);
 
-  /* ---------- ⑤ 草稿保护：改字 → 切走 → 切回来 ---------- */
+  /* ---------- ⑤ 冰山图面板（src/data/iceberg.json） ----------
+     这一轮新加的整块：分类 / 标签 / 层级 / 条目四样都能在面板里建、改、删、排序，
+     存下去之后**站点那一页真的跟着变**（最后一条会去副本的构建产物里找新条目）。
+     期望值全部从副本的数据里现算，不写死名字和条数。 */
+  const ICE_FILE = path.join(DST, 'src', 'data', 'iceberg.json');
+  const readIce = () => JSON.parse(fs.readFileSync(ICE_FILE, 'utf8'));
+  const ice0 = readIce();
+  const iceLayer0 = ice0.layers[0];
+  const iceItems0 = iceLayer0.items.length;
+  const iceDone0 = iceLayer0.items.filter((i) => String(i.desc ?? '').trim()).length;
+  const NEW_CAT = '验收分类';
+  const NEW_COLOR = '#00ff88';
+  const NEW_ITEM = '验收新条目';
+  const NEW_DESC = '验收用的详细描述：填了它就该有完备标识。';
+
+  const iceUi = await cdp.ev(`(async () => {
+    await window.__openWs('ice-chart');
+    await new Promise((r) => setTimeout(r, 1400));
+    /* ⚠ 面板要**按内容认**（有 .wice 的那个）：编辑器里同时挂着的面板不止一个，
+       只挑"第一个可见的 .wpanel"会读到别的面板上去（这个坑这个文件里踩过一次）。 */
+    const w = [...document.querySelectorAll('.wpanel')]
+      .filter((el) => el.getBoundingClientRect().height > 0)
+      .find((el) => el.querySelector('.wice'));
+    if (!w) return { ok: false, why: '面板没开' };
+    const boxOf = (kw) => [...w.querySelectorAll('.wbox')].find((b) => ((b.querySelector('.wbox__title') || {}).textContent || '').includes(kw));
+    const catBox = boxOf('分类');
+    const tagBox = boxOf('标签');
+    const layBox = boxOf('层级');
+    const itemBox = boxOf('条目');
+    const cats = [...(catBox?.querySelectorAll('.wice__cat') ?? [])];
+    const tags = [...(tagBox?.querySelectorAll('.wice__tag') ?? [])];
+    const lays = [...(layBox?.querySelectorAll('.wice__layer') ?? [])];
+    const items = [...(itemBox?.querySelectorAll('.wice__item') ?? [])];
+    return {
+      ok: true,
+      cols: w.querySelectorAll('.wice__col').length,
+      cats: cats.length,
+      catNames: cats.map((c) => (c.querySelector('input.wice__name') || {}).value || ''),
+      catColors: cats.map((c) => (c.querySelector('input[type=color]') || {}).value || ''),
+      catEyes: cats.map((c) => (c.querySelector('.wice__eye') || {}).textContent || ''),
+      tags: tags.length,
+      tagNames: tags.map((t) => (t.querySelector('input.wice__name') || {}).value || ''),
+      tagUsed: tags.map((t) => (t.querySelector('.wice__used') || {}).textContent || ''),
+      layers: lays.length,
+      layerTitles: lays.map((l) => (l.querySelector('.wice__pick b') || {}).textContent || ''),
+      layerOps: lays.map((l) => l.querySelectorAll('.wice__ops button').length),
+      itemRows: items.length,
+      itemNames: items.map((it) => (it.querySelector('.wice__itemName') || {}).textContent || ''),
+      itemVia: items.map((it) => (it.querySelector('.wice__itemVia') || {}).textContent || ''),
+      doneBadges: items.filter((it) => ((it.querySelector('.wice__badge') || {}).textContent || '') === '完备').length,
+      offBadges: items.filter((it) => ((it.querySelector('.wice__badge') || {}).textContent || '').includes('缺描述')).length,
+      sum: (w.querySelector('.wice__sum') || {}).textContent || '',
+      hasSearch: !!w.querySelector('.wice__search'),
+      imgRows: w.querySelectorAll('.wice__imgrow').length,
+      files: w.querySelectorAll('input[type=file]').length,
+      adds: [...w.querySelectorAll('button')].map((b) => b.textContent).filter((t) => /新增|新建|添加/.test(t)),
+      count: (itemBox?.querySelector('.wess__count') || {}).textContent || '',
+    }; })()`);
+  check('冰山图面板：三栏（分类标签 / 层级 / 条目）都在',
+    iceUi.ok === true && iceUi.cols === 3, JSON.stringify({ cols: iceUi.cols }));
+  check(`冰山图面板：分类 ${ice0.categories.length} 行（名字框 + 取色器 + 显示开关都有）、颜色 = 盘上的颜色`,
+    iceUi.cats === ice0.categories.length &&
+      iceUi.catColors.join(',') === ice0.categories.map((c) => String(c.color).toLowerCase()).join(',') &&
+      iceUi.catNames.every((n) => n.length > 0) &&
+      iceUi.catEyes.every((t) => t === '显示' || t === '隐藏'),
+    JSON.stringify({ cats: iceUi.cats, colors: iceUi.catColors, eyes: iceUi.catEyes }));
+  check(`冰山图面板：标签 ${ice0.tags.length} 个，每个都写着有几条在用`,
+    iceUi.tags === ice0.tags.length && iceUi.tagUsed.every((t) => /条在用|还没人用/.test(t)),
+    JSON.stringify({ tags: iceUi.tags, used: iceUi.tagUsed }));
+  check(`冰山图面板：层级 ${ice0.layers.length} 行、每行 ↑↓✕ 三个按钮、顺序和盘上一致`,
+    iceUi.layers === ice0.layers.length && iceUi.layerOps.every((n) => n === 3) &&
+      iceUi.layerTitles.join('|') === ice0.layers.map((l) => l.title || '（还没有标题）').join('|'),
+    JSON.stringify({ layers: iceUi.layers, titles: iceUi.layerTitles }));
+  check(`冰山图面板：第一层的 ${iceItems0} 条都列出来了，名字对得上`,
+    iceUi.itemRows === iceItems0 && iceUi.itemNames.join('|') === iceLayer0.items.map((i) => i.name || '（还没有名字）').join('|'),
+    JSON.stringify({ rows: iceUi.itemRows, names: iceUi.itemNames }));
+  check(`冰山图面板：完备标识 = 有详细描述的那 ${iceDone0} 条（剩下的写着「缺描述」）`,
+    iceUi.doneBadges === iceDone0 && iceUi.offBadges === iceItems0 - iceDone0,
+    JSON.stringify({ done: iceUi.doneBadges, off: iceUi.offBadges }));
+  check('冰山图面板：有搜索框、有「这一层」的背景图 / 头图两个上传口、（＋ 新增分类 / 新建层级 / 新增条目）三个入口',
+    iceUi.hasSearch === true && iceUi.imgRows === 2 && iceUi.files >= 2 && iceUi.adds.length >= 3,
+    JSON.stringify({ imgRows: iceUi.imgRows, files: iceUi.files, adds: iceUi.adds }));
+  check('冰山图面板：底栏写着「N 分类 · N 标签 · N 层 · N 条（N 完备）」',
+    /分类/.test(iceUi.sum) && /标签/.test(iceUi.sum) && /层/.test(iceUi.sum) && /完备/.test(iceUi.sum),
+    iceUi.sum);
+
+  /* ⑤b 新增分类 → 新增条目（选这个新分类、勾一个 tag、写描述）→ 完成 → 层级 ↓ 调序 */
+  const iceEdit = await cdp.ev(`(async () => {
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+    /* 按内容认面板（见上面 iceUi 那条注释） */
+    const panel = () => [...document.querySelectorAll('.wpanel')]
+      .filter((el) => el.getBoundingClientRect().height > 0)
+      .find((el) => el.querySelector('.wice'));
+    const setVal = (el, v) => {
+      const proto = el.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+      Object.getOwnPropertyDescriptor(proto, 'value').set.call(el, v);
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+    };
+    const boxOf = (w, kw) => [...w.querySelectorAll('.wbox')].find((b) => ((b.querySelector('.wbox__title') || {}).textContent || '').includes(kw));
+    const clickText = (root, txt) => [...root.querySelectorAll('button')].find((b) => b.textContent.includes(txt));
+
+    let w = panel();
+    clickText(w, '新增分类').click();
+    await sleep(700);
+    w = panel();
+    const cats = [...boxOf(w, '分类').querySelectorAll('.wice__cat')];
+    const last = cats[cats.length - 1];
+    setVal(last.querySelector('input.wice__name'), ${JSON.stringify(NEW_CAT)});
+    setVal(last.querySelector('input[type=color]'), ${JSON.stringify(NEW_COLOR)});
+    await sleep(300);
+    const catCount = cats.length;
+
+    clickText(w, '新增条目').click();
+    await sleep(700);
+    w = panel();
+    const form = w.querySelector('.wice__form');
+    if (!form) return { ok: false, why: '新增条目没出表单' };
+    const nameInput = form.querySelector('.wice__form input.input');
+    setVal(nameInput, ${JSON.stringify(NEW_ITEM)});
+    const sel = form.querySelector('select.wice__select');
+    const newOpt = [...sel.options].find((o) => o.textContent.includes(${JSON.stringify(NEW_CAT)}));
+    if (!newOpt) return { ok: false, why: '新增的分类没出现在下拉里' };
+    sel.value = newOpt.value;
+    sel.dispatchEvent(new Event('change', { bubbles: true }));
+    const firstTag = form.querySelector('.wess__memberGrid input[type=checkbox]');
+    if (firstTag) { firstTag.click(); await sleep(200); }
+    const area = form.querySelector('textarea');
+    setVal(area, ${JSON.stringify(NEW_DESC)});
+    await sleep(300);
+    const state = (form.querySelector('.wice__descState') || {}).textContent || '';
+    const stateOn = !!(form.querySelector('.wice__descState') || {}).classList?.contains('is-on');
+    clickText(form, '完成').click();
+    await sleep(800);
+
+    w = panel();
+    const rows = [...boxOf(w, '条目').querySelectorAll('.wice__item')];
+    const added = rows.find((r) => ((r.querySelector('.wice__itemName') || {}).textContent || '') === ${JSON.stringify(NEW_ITEM)});
+    /* 层级调序：把第一层的 ↓ 点一下 */
+    const layRows = [...boxOf(w, '层级').querySelectorAll('.wice__layer')];
+    const beforeTitles = layRows.map((l) => (l.querySelector('.wice__pick b') || {}).textContent || '');
+    [...layRows[0].querySelectorAll('.wice__ops button')].find((b) => b.textContent === '↓').click();
+    await sleep(700);
+    w = panel();
+    const afterTitles = [...boxOf(w, '层级').querySelectorAll('.wice__layer')].map((l) => (l.querySelector('.wice__pick b') || {}).textContent || '');
+
+    return { ok: true, catCount, state, stateOn,
+      itemRows: rows.length,
+      added: added ? { badge: (added.querySelector('.wice__badge') || {}).textContent || '',
+        via: (added.querySelector('.wice__itemVia') || {}).textContent || '' } : null,
+      beforeTitles, afterTitles,
+      status: [...panel().querySelectorAll('.wpanel__status')].map((s) => s.textContent).filter(Boolean) }; })()`);
+  check(`冰山图面板：＋ 新增分类 → 多一行「${NEW_CAT}」`,
+    iceEdit.ok === true && iceEdit.catCount === ice0.categories.length + 1, JSON.stringify({ catCount: iceEdit.catCount }));
+  check('冰山图面板：新增条目 → 表单里名字 / 分类下拉 / tag 勾选框 / 描述 / 链接都在，描述一写就提示「会有完备标识」',
+    iceEdit.ok === true && iceEdit.stateOn === true && /会有完备标识/.test(iceEdit.state),
+    JSON.stringify({ state: iceEdit.state }));
+  check(`冰山图面板：按「完成」→ 这一层多出「${NEW_ITEM}」，而且它带着完备标识、归在新分类下`,
+    iceEdit.ok === true && iceEdit.added?.badge === '完备' && iceEdit.added?.via.includes(NEW_CAT) && iceEdit.itemRows === iceItems0 + 1,
+    JSON.stringify(iceEdit.added));
+  check('冰山图面板：层级 ↓ 能把两层换个位置（顺序是在面板里调的）',
+    iceEdit.ok === true && iceEdit.afterTitles[0] === iceEdit.beforeTitles[1] && iceEdit.afterTitles[1] === iceEdit.beforeTitles[0],
+    JSON.stringify({ before: iceEdit.beforeTitles, after: iceEdit.afterTitles }));
+  check('冰山图面板：改完状态栏写着「有改动没保存」', Array.isArray(iceEdit.status) && iceEdit.status.some((s) => /保存/.test(s)), JSON.stringify(iceEdit.status));
+
+  /* ⑤c 保存并重新构建 → 盘上的 iceberg.json → 副本构建出来的 /iceberg/ 页面 */
+  const readIceItem = () => {
+    try {
+      const d = readIce();
+      const l = d.layers.flatMap((x) => x.items).find((i) => i.name === NEW_ITEM);
+      return l ? JSON.stringify(l) : '';
+    } catch { return ''; }
+  };
+  const waitIce = async (ms = 120000) => {
+    const t0 = Date.now();
+    while (Date.now() - t0 < ms) {
+      if (readIceItem()) return true;
+      await sleep(800);
+    }
+    return false;
+  };
+  const iceSave = await cdp.ev(`(async () => {
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+    const panel = () => [...document.querySelectorAll('.wpanel')]
+      .filter((el) => el.getBoundingClientRect().height > 0)
+      .find((el) => el.querySelector('.wice'));
+    const save = () => {
+      const w = panel();
+      const bar = w && w.querySelector('.wpanel__bar');
+      const b = bar && [...bar.querySelectorAll('button')].find((x) => x.textContent.trim() === '保存并重新构建' && !x.disabled);
+      return b || null;
+    };
+    /* 顺手记一笔网络：保存这一步要是卡住，失败详情里能看出请求到底发出去没有、卡在哪 */
+    window.__net = [];
+    const of = window.fetch;
+    window.fetch = async (...a) => {
+      const t0 = Date.now();
+      try {
+        const r = await of(...a);
+        window.__net.push({ url: String(a[0]), status: r.status, ms: Date.now() - t0 });
+        return r;
+      } catch (e) {
+        window.__net.push({ url: String(a[0]), err: String(e && e.message || e), ms: Date.now() - t0 });
+        throw e;
+      }
+    };
+    const t0 = Date.now();
+    while (!save()) { if (Date.now() - t0 > 60000) return { ok: false, why: '等不到可点的保存按钮' }; await sleep(300); }
+    save().click();
+    /* 只负责"点下去"：保存结果由 Node 这边独立盯盘上的文件和构建产物，
+       就算浏览器这一趟卡住（构建慢），证据也不受影响 */
+    return { ok: true }; })()`);
+  const iceSaved = iceSave.ok === true && (await waitIce(120000));
+  const ice1 = readIce();
+  const savedItem = ice1.layers.flatMap((l) => l.items).find((i) => i.name === NEW_ITEM);
+  const savedCat = ice1.categories.find((c) => c.name === NEW_CAT);
+  check(`★ 冰山图：面板里「保存并重新构建」→ 盘上 src/data/iceberg.json 真有「${NEW_ITEM}」`,
+    iceSaved, `${JSON.stringify(iceSave)}；盘上 ${readIceItem() || '（没有）'}`);
+  check('★ 冰山图：存下去的条目带着详细描述（= 页面上会有完备标识）',
+    String(savedItem?.desc ?? '').trim() === NEW_DESC, JSON.stringify(savedItem?.desc ?? ''));
+  check(`★ 冰山图：存下去的分类颜色就是面板里选的那个（${NEW_COLOR}），条目也真的归在它下面`,
+    savedCat?.color === NEW_COLOR && savedItem?.categoryId === savedCat?.id,
+    JSON.stringify({ color: savedCat?.color, catId: savedCat?.id, itemCat: savedItem?.categoryId }));
+  check('★ 冰山图：层级的顺序也存下去了（面板里换过位置 → 盘上跟着换）',
+    ice1.layers[0]?.title === ice0.layers[1]?.title && ice1.layers[1]?.title === ice0.layers[0]?.title,
+    ice1.layers.map((l) => l.title).join(' | '));
+  check('冰山图：没有多存 / 少存别的层级和分类（层数没变、分类正好 +1）',
+    ice1.layers.length === ice0.layers.length && ice1.categories.length === ice0.categories.length + 1,
+    `${ice1.layers.length} 层 / ${ice1.categories.length} 分类`);
+
+  /*
+    页面上真的出现了：副本构建出来的 dist/iceberg/index.html。
+    构建这一步在编辑器（服务端）里是**同步等完**才回响应的，慢的时候要几十秒 ——
+    所以这里独立轮询 240 秒，不跟浏览器那一趟的等待绑在一起。
+  */
+  const iceDist = path.join(DST, 'dist', 'iceberg', 'index.html');
+  let iceHtml = '';
+  for (let i = 0; i < 240 && !iceHtml; i++) {
+    try {
+      const t = fs.readFileSync(iceDist, 'utf8');
+      if (t.includes(NEW_ITEM)) iceHtml = t;
+    } catch { /* 还没构建好 */ }
+    if (!iceHtml) await sleep(1000);
+  }
+  const net = await cdp.ev('JSON.stringify(window.__net || [])');
+  check(`★ 冰山图：站点那一页（构建产物 dist/iceberg/index.html）里真出现了「${NEW_ITEM}」—— 面板 → 数据 → 页面整条链路通了`,
+    iceHtml.includes(NEW_ITEM) && iceHtml.includes(NEW_COLOR),
+    iceHtml ? `产物 ${iceHtml.length} 字节，条目和颜色都在` : `产物里没找到；这一趟的网络：${net}`);
+
+  /* 构建产物都出来了 → 保存那一次请求肯定已经回来了，这时候读面板的提示才准 */
+  const iceToast = await cdp.ev(`(document.querySelector('#toast') || {}).textContent || ''`);
+  check('★ 冰山图：这次保存的构建面板自己也是这么报的（「已保存并重新构建」）',
+    /冰山图已保存并重新构建/.test(String(iceToast)), `toast「${String(iceToast).slice(0, 80)}」`);
+
+  /* ---------- ⑥ 草稿保护：改字 → 切走 → 切回来 ---------- */
   const draft = await cdp.ev(`(async () => {
     await window.__openWs('calendar');
     await new Promise((r) => setTimeout(r, 900));

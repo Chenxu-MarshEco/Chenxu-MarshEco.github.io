@@ -183,10 +183,13 @@ try {
   /*
     用户要求：别再像 debug 输出（以前是「2026-08-30 桑芙的生日（填的是 2003-08-30）」），
     改成「桑芙的生日 2003-08-30」。
+    ⚠ 期望值里的日期要跟着 birthKey 走，不能写死：脚本自己把事件挂在"今天那个月日"，
+      写死的话第二天再跑就凭空失败（2026-09-22 这一天踩到过）。
   */
+  const eventLabel = `验收用的纪念日 ${birthKey}`;
   check('日历：特殊日那句话是「{名字} {填的日期}」，不带"填的是"、也不再顶一串今年日期',
-    yearless.label === '验收用的纪念日 2004-09-21' && !/填的是/.test(yearless.tip || ''),
-    `aria-label=${yearless.label}｜提示卡=${yearless.tip}`);
+    yearless.label === eventLabel && !/填的是/.test(yearless.tip || ''),
+    `aria-label=${yearless.label}（期望 ${eventLabel}）｜提示卡=${yearless.tip}`);
   check('日历：普通日那句话就是这一天', /^\d{4}-\d{2}-\d{2}$/.test(yearless.normLabel || ''), yearless.normLabel);
   check('日历：不再挂浏览器原生的 title（那个白底提示就是它）', yearless.nativeTitle === null, JSON.stringify(yearless.nativeTitle));
 
@@ -234,7 +237,7 @@ try {
       hovering: !!document.querySelector('.cal__day--event:hover'), w: Math.round(t.getBoundingClientRect().width) }; })()`);
   console.log('特殊日的提示卡：', JSON.stringify(evTip));
   check('日历：特殊日子指上去也弹提示卡，文案是「{名字} {填的日期}」',
-    evTip.ok === true && evTip.hovering === true && evTip.opacity === '1' && evTip.text === '验收用的纪念日 2004-09-21',
+    evTip.ok === true && evTip.hovering === true && evTip.opacity === '1' && evTip.text === eventLabel,
     JSON.stringify(evTip));
   check('日历：特殊日子那张卡的边是暖橙（和它的圆头一套），不是粉色',
     /rgba\(255, 180, 70/.test(evTip.border || '') && evTip.color === 'rgb(255, 233, 192)',

@@ -1,72 +1,86 @@
 ---
 /**
- * 「冰室冰山」页面 —— /iceberg/（首页中间那一块点进来的就是它）
+ * 冰山图页面 —— /iceberg/（首页中间那块「冰室冰山」点进来的就是它）。
  *
- * 用户要求：这一块「会链接到一个页面，同样预留图片和链接接口」。
- * 所以这页现在就把位置留好：
- *   · 大图（home-widgets.json 的 iceberg.image，编辑器里传）
- *   · 一段介绍（iceberg.text，支持 Markdown）
- *   · 一个"继续"链接（iceberg.href —— 首页那块和这一页共用同一个地址，
- *     之后要指向哪一页，在编辑器里填就行）
- * 没传图就先画一块冰蓝斜坡 + 塔吊的占位，免得页面空着看不出是个什么位置。
+ * 正文由 `src/data/iceberg.json` 画出来（编辑器的「冰山图」面板写这个文件）：
+ * 一层一层的深色卡片，每层有标题 / 副标题 / 背景图 / 头图 / 一堆条目，
+ * 条目按分类上色，填了详细描述的条目背后垫一块粉色带栅格的完备标识。
+ *
+ * 数据还是空的时候（一条层级都还没有）不摆一张空页面：退回显示首页那块里
+ * 传的图 + 那段介绍 + 链接 —— 也就是这一页以前的样子，编辑器「冰室冰山」
+ * 面板里填的就是这三样。等冰山图里有了内容，正文自动换成那张图。
  */
 import BaseLayout from '../layouts/BaseLayout.astro';
+import IcebergChart from '../components/IcebergChart.astro';
 import { marked } from 'marked';
 import widgets from '../data/home-widgets.json';
+import { iceberg } from '../utils/iceberg';
 import { enhanceHtml, variantUrl } from '../utils/images';
 import { withBase } from '../utils/url';
 
 const ice = (widgets.iceberg ?? {}) as { title?: string; image?: string; text?: string; href?: string };
-const title = ice.title || '冰室冰山';
+const title = iceberg.title || String(ice.title ?? '').trim() || '冰室冰山';
+
+/* ---- 冰山图还是空的时候用的那一份（首页那块的大图 + 介绍 + 链接） ---- */
 const imageRaw = String(ice.image ?? '').trim();
-/** 大头图取管线里较大的一档（查不到清单就退回原图） */
 const image = imageRaw ? variantUrl(imageRaw, 1200) : '';
 const href = String(ice.href ?? '').trim();
 const external = /^https?:/i.test(href);
 const body = enhanceHtml(marked.parse(String(ice.text ?? '').trim(), { async: false }) as string);
 ---
 
-<BaseLayout title={title} description={`${title} —— 花涧堂。`}>
+<BaseLayout
+  title={title}
+  description={`${title} —— 花涧堂。${iceberg.itemCount ? `共 ${iceberg.itemCount} 条，分 ${iceberg.layers.length} 层。` : ''}`}
+>
   <article class="icePage">
-    <h1 class="icePage__title">{title}</h1>
-
-    <figure class="icePage__fig">
-      {
-        image ? (
-          <img class="icePage__img" src={image} alt="" loading="eager" decoding="async" />
-        ) : (
-          <div class="icePage__ph" aria-label="还没有上传图片">
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M10.5 20.5V6.5M13.5 20.5V6.5M8.5 20.5h7M12 4v2.5M3.5 9h17M12 4 3.5 9M12 4l8.5 5M17.5 9v4" />
-            </svg>
-          </div>
-        )
-      }
-      {!image && <figcaption class="icePage__cap">图还没传：编辑器「冰室冰山」面板里传一张。</figcaption>}
-    </figure>
+    <header class="page-header">
+      <h1 class="page-header__title">{title}</h1>
+      {iceberg.intro && <p class="page-header__desc">{iceberg.intro}</p>}
+    </header>
 
     {
-      body.trim() ? (
-        <div class="icePage__body" set:html={body} />
+      iceberg.hasContent ? (
+        <IcebergChart />
       ) : (
-        <p class="icePage__empty">
-          {title}还没有写介绍 —— 在编辑器「冰室冰山」面板里填就行（支持 Markdown）。
-        </p>
-      )
-    }
+        <div class="icePage__fallback">
+          <figure class="icePage__fig">
+            {image ? (
+              <img class="icePage__img" src={image} alt="" loading="eager" decoding="async" />
+            ) : (
+              <div class="icePage__ph" aria-label="还没有上传图片">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M10.5 20.5V6.5M13.5 20.5V6.5M8.5 20.5h7M12 4v2.5M3.5 9h17M12 4 3.5 9M12 4l8.5 5M17.5 9v4" />
+                </svg>
+              </div>
+            )}
+            {!image && <figcaption class="icePage__cap">图还没传：编辑器「冰室冰山」面板里传一张。</figcaption>}
+          </figure>
 
-    {
-      href ? (
-        <p class="icePage__more">
-          <a
-            href={external ? href : withBase(href)}
-            {...external ? { target: '_blank', rel: 'noopener' } : {}}
-          >
-            继续看 ›
-          </a>
-        </p>
-      ) : (
-        <p class="icePage__more icePage__more--none">（链接留空：编辑器里填上要指到哪一页）</p>
+          {
+            body.trim() ? (
+              <div class="icePage__body" set:html={body} />
+            ) : (
+              <p class="icePage__empty">
+                {title}还没有内容 —— 编辑器里打开「冰山图」面板，先建一个层级、往里加条目；
+                或者只在「冰室冰山」面板里填一句介绍 + 传一张图。
+              </p>
+            )
+          }
+
+          {
+            href && (
+              <p class="icePage__more">
+                <a
+                  href={external ? href : withBase(href)}
+                  {...external ? { target: '_blank', rel: 'noopener' } : {}}
+                >
+                  继续看 ›
+                </a>
+              </p>
+            )
+          }
+        </div>
       )
     }
   </article>
@@ -75,11 +89,6 @@ const body = enhanceHtml(marked.parse(String(ice.text ?? '').trim(), { async: fa
 <style>
   .icePage {
     padding: clamp(1.2rem, 4vh, 2.4rem) 0 4rem;
-  }
-  .icePage__title {
-    margin: 0 0 1rem;
-    font-size: clamp(1.7rem, 3.6vw, 2.4rem);
-    letter-spacing: 0.1em;
   }
   .icePage__fig {
     margin: 0 0 1.6rem;

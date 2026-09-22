@@ -4224,3 +4224,261 @@ body.pblock-dragging * {
   font-size: 0.86rem;
   cursor: pointer;
 }
+
+/* ---------------------------------------------------------------------------
+ * 冰山图面板（src/data/iceberg.json）
+ * ------------------------------------------------------------------------
+ *  三栏：A 这一页 / 分类 / 标签 · B 层级 · C 条目。
+ *  面板比别的高一截（层级 + 条目一起看才改得动），所以给 body 加了
+ *  --tall 那个修饰类。窄屏按 2 栏 → 1 栏折下来，条目那一栏永远占整行。
+ * ------------------------------------------------------------------------ */
+.wpanel__body--tall {
+  max-height: min(76vh, 880px);
+}
+.wice {
+  display: grid;
+  grid-template-columns: minmax(230px, 0.95fr) minmax(250px, 1fr) minmax(300px, 1.25fr);
+  gap: 12px;
+  align-items: start;
+}
+.wice__col {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+.wice__hint {
+  margin: 0;
+}
+.wice__rows {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.wice__add {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.wice__add > input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.wice__ops {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+}
+.wice__ops .btn[disabled] {
+  opacity: 0.35;
+}
+
+/* ---- 分类 / 标签 的一行 ---- */
+.wice__cat,
+.wice__tag {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+}
+.wice__cat > .wice__name,
+.wice__tag > .wice__name {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.wice__eye {
+  flex: none;
+  width: 3.4rem;
+  padding: 3px 0;
+  font-size: 11.5px;
+  color: #fff;
+  cursor: pointer;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: var(--accent);
+}
+.wice__eye.is-off {
+  color: var(--text-muted);
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--border-strong);
+}
+.wice__color {
+  flex: none;
+  width: 2rem;
+  height: 1.7rem;
+  padding: 0 2px;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+}
+.wice__used {
+  flex: none;
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.wice__used.is-none {
+  color: var(--text-faint);
+}
+
+/* ---- 层级一行 ---- */
+.wice__layer {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+}
+.wice__layer.is-on {
+  border-color: var(--accent);
+  background: var(--surface);
+}
+.wice__pick {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 2px 4px;
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
+  border: 0;
+  background: none;
+}
+.wice__pick b {
+  font-size: 12.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wice__pick em {
+  font-size: 11px;
+  font-style: normal;
+  color: var(--text-muted);
+}
+
+/* ---- 条目一行 ---- */
+.wice__items {
+  max-height: 46vh;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+.wice__item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+}
+.wice__dot {
+  flex: none;
+  width: 9px;
+  height: 9px;
+  border-radius: var(--r-full);
+  background: var(--cat, #b9a6c9);
+}
+.wice__itemName {
+  flex: 0 1 auto;
+  min-width: 0;
+  font-size: 12.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wice__itemVia {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 11px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wice__badge {
+  flex: none;
+  padding: 1px 6px;
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  color: #fff;
+  border-radius: var(--r-full);
+  background: var(--accent);
+}
+.wice__badge--off {
+  color: var(--text-faint);
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--border-strong);
+}
+.wice__toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.wice__toolbar > .wice__search {
+  flex: 1 1 8rem;
+  min-width: 0;
+}
+.wice__sum {
+  flex: 0 0 auto;
+  font-size: 11.5px;
+  color: var(--text-muted);
+  padding-right: 4px;
+}
+
+/* ---- 条目的编辑表单 ---- */
+.wice__form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  margin-bottom: 2px;
+  border: 1px solid var(--accent);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+}
+.wice__formact {
+  display: flex;
+  gap: 8px;
+}
+.wice__descState {
+  margin: 0;
+}
+.wice__descState.is-on {
+  color: var(--accent);
+}
+.wice__select {
+  width: 100%;
+}
+.wice__imgrow {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+@media (max-width: 1180px) {
+  .wice {
+    grid-template-columns: minmax(220px, 1fr) minmax(240px, 1fr);
+  }
+  .wice__col--c {
+    grid-column: 1 / -1;
+  }
+}
+@media (max-width: 860px) {
+  .wice {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .wice__col--c {
+    grid-column: auto;
+  }
+}
+

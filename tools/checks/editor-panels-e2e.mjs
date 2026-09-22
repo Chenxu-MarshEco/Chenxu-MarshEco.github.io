@@ -114,12 +114,12 @@ const html = (rel) => fs.readFileSync(path.join(DST, 'dist', rel), 'utf8');
 try {
   /* ---- 1.1 老接口还在（回归） ---- */
   const regress = [];
-  for (const p of ['/api/bootstrap', '/api/boards', '/api/music', '/api/timelines', '/api/navs', '/api/anchors', '/api/layout', '/api/widgets', '/api/salon']) {
+  for (const p of ['/api/bootstrap', '/api/boards', '/api/music', '/api/timelines', '/api/navs', '/api/anchors', '/api/layout', '/api/widgets', '/api/salon', '/api/iceberg']) {
     const r = await api('GET', p);
     regress.push(`${p}=${r.status}`);
     if (r.status !== 200) check(`老接口 ${p} 还是 200`, false, String(r.status));
   }
-  check('老接口全在（9 条 GET 全 200，没有因为新面板碰坏）', regress.every((s) => s.endsWith('=200')), regress.join(' '));
+  check('老接口全在（10 条 GET 全 200，没有因为新面板碰坏）', regress.every((s) => s.endsWith('=200')), regress.join(' '));
 
   const w0 = await api('GET', '/api/widgets');
   check('GET /api/widgets：四块数据齐全（about / calendar / iceberg / daily）',
@@ -180,11 +180,140 @@ try {
   check('/about-me/ 页里头像用的是上传那张（variantUrl 出来的地址）', hAbout.includes(stemA), stemA);
   check('/about-me/ 页里正文写进去了（Markdown 渲染成 h2）', /<h2[^>]*>验收标题<\/h2>/.test(hAbout), 'h2 验收标题');
 
+  /*
+    /iceberg/ 这一页现在有**两种样子**：
+      · 冰山图里有内容 → 正文就是那张图（层级 / 条目 / 完备标识）；
+      · 一条层级都没有 → 退回显示「冰室冰山」面板里那张图 + 介绍 + 链接（2b 验）。
+    这里先验"有内容时正文是图"。
+  */
   const hIce = html(path.join('iceberg', 'index.html'));
-  const iceImg = /<figure class="icePage__fig"[\s\S]*?<img[^>]*src="([^"]+)"/.exec(hIce);
-  check('/iceberg/ 页出了图（不是占位符）', !!iceImg && iceImg[1].includes(path.basename(upB.json.path, path.extname(upB.json.path))), iceImg?.[1] ?? '没有 img');
-  const moreBlock = /<p class="icePage__more[\s\S]{0,300}?<\/p>/.exec(hIce)?.[0] ?? '';
-  check('/iceberg/ 页的「更多」链接指到了 /salon/', moreBlock.includes('href="/salon/"'), moreBlock.slice(0, 170));
+  check('/iceberg/ 页正文是冰山图（有内容时不再是一张图 + 一句话）',
+    hIce.includes('data-ibk') && hIce.includes('ibk__layer'),
+    `data-ibk=${hIce.includes('data-ibk')} 层数=${(hIce.match(/class="ibk__layer"/g) ?? []).length}`);
+
+  /* ================= 2b. POST /api/iceberg：把图清空 → 退回首页那块的样子 ================= */
+  const ice0 = readJson(path.join(DST, 'src', 'data', 'iceberg.json'));
+  const rc = await api('POST', '/api/iceberg', {
+    title: ice0.title, intro: '', categories: ice0.categories, tags: ice0.tags, layers: [],
+  });
+  check('POST /api/iceberg（layers: []）：保存成功并且顺带重建了站点',
+    rc.status === 200 && rc.json?.ok === true && rc.json?.built === true,
+    `built=${rc.json?.built} ${rc.json?.ms}ms counts=${JSON.stringify(rc.json?.counts)}`);
+  const hIceEmpty = html(path.join('iceberg', 'index.html'));
+  const emptyImg = /<figure class="icePage__fig"[\s\S]*?<img[^>]*src="([^"]+)"/.exec(hIceEmpty);
+  check('/iceberg/ 一条层级都没有时退回显示「冰室冰山」那张大图（不是一张空页面）',
+    !hIceEmpty.includes('data-ibk') && !!emptyImg &&
+      emptyImg[1].includes(path.basename(upB.json.path, path.extname(upB.json.path))),
+    emptyImg?.[1] ?? '没有 img');
+  check('/iceberg/ 退回时那段介绍和「继续看」链接也在（链接指到 /salon/）',
+    /icePage__body[\s\S]{0,300}?副本里写的一行介绍/.test(hIceEmpty) && hIceEmpty.includes('href="/salon/"'),
+    '');
+
+  /* ================= 2c. POST /api/iceberg：写进一整张图 ================= */
+  const ICE_LAYER = '验收层 · 街头';
+  const ICE_SUB = '验收用的副标题';
+  const ICE_DONE = '验收条目 · 有描述';
+  const ICE_TODO = '验收条目 · 没描述';
+  const ICE_LOOSE = '指向空气的条目';
+  const ICE_COLOR = '#22d3ee';
+  const rIce = await api('POST', '/api/iceberg', {
+    title: '冰室冰山',
+    intro: '验收写的介绍。',
+    categories: [{ id: '', name: '验收分类', color: ICE_COLOR, hidden: false }],
+    tags: [{ id: '', name: '验收标签' }],
+    layers: [
+      {
+        id: '', title: ICE_LAYER, subtitle: ICE_SUB, background: upB.json.path, head: '',
+        items: [
+          { id: '', name: ICE_DONE, categoryId: 'c01', tags: ['t01'], desc: '验收写的详细描述。', href: '/salon/' },
+          { id: '', name: ICE_TODO, categoryId: 'c01', tags: [], desc: '', href: '' },
+          /* 没名字的那条必须被丢掉（页面上一条没有字的条目没有意义），丢了几条要有回报 */
+          { id: '', name: '', categoryId: '', tags: [], desc: '', href: '' },
+          /* 引用了不存在的分类 / 标签：清成空，不许留一个指向空气的引用 */
+          { id: '', name: ICE_LOOSE, categoryId: '不存在的分类', tags: ['不存在的标签'], desc: '', href: '' },
+        ],
+      },
+    ],
+  });
+  check('POST /api/iceberg：保存成功并且顺带重建了站点',
+    rIce.status === 200 && rIce.json?.ok === true && rIce.json?.built === true,
+    `built=${rIce.json?.built} ${rIce.json?.ms}ms ${JSON.stringify(rIce.json?.counts)}`);
+  const iceOn = readJson(path.join(DST, 'src', 'data', 'iceberg.json'));
+  check('冰山图落盘了：1 层 3 条（没名字那条被丢掉，而且报了数）',
+    iceOn.layers.length === 1 && iceOn.layers[0].title === ICE_LAYER &&
+      iceOn.layers[0].items.length === 3 && rIce.json?.dropped?.items === 1,
+    `layers=${iceOn.layers.length} items=${iceOn.layers[0]?.items.length} dropped=${JSON.stringify(rIce.json?.dropped)}`);
+  check('分类 / 标签 / 条目都补上了 id（请求里明明一个 id 都没带）',
+    !!iceOn.categories[0]?.id && !!iceOn.tags[0]?.id && iceOn.layers[0].items.every((i) => !!i.id),
+    JSON.stringify({ cat: iceOn.categories[0], tag: iceOn.tags[0], itemIds: iceOn.layers[0].items.map((i) => i.id) }));
+  const loose = iceOn.layers[0].items.find((i) => i.name === ICE_LOOSE);
+  check('引用了不存在的分类 / 标签 → 清成空，并报了数（dropped.refs = 2）',
+    loose && loose.categoryId === '' && loose.tags.length === 0 && rIce.json?.dropped?.refs === 2,
+    JSON.stringify({ loose, dropped: rIce.json?.dropped }));
+
+  const hIce2 = html(path.join('iceberg', 'index.html'));
+  const doneCls = (hIce2.match(/ibk__item is-done/g) ?? []).length;
+  const badges = (hIce2.match(/class="ibk__badge"/g) ?? []).length;
+  /* ⚠ <Img> 输出的属性顺序是 src 在前、class 在后，所以先抠出整个 <img> 标签再取 src */
+  const bgTag = /<img[^>]*ibk__bgimg[^>]*>/.exec(hIce2)?.[0] ?? '';
+  const bgImg = /src="([^"]+)"/.exec(bgTag)?.[1] ?? '';
+  check('/iceberg/ 页画出了这一层：标题 / 副标题 / 两条条目都在',
+    hIce2.includes(ICE_LAYER) && hIce2.includes(ICE_SUB) && hIce2.includes(ICE_DONE) && hIce2.includes(ICE_TODO),
+    '');
+  check('/iceberg/ 页的条目颜色 = 那一类的颜色；完备标识只给有描述的那一条（一条不多一条不少）',
+    hIce2.includes(`--cat:${ICE_COLOR}`) && doneCls === 1 && badges === 1,
+    `--cat:${ICE_COLOR} 出现=${hIce2.includes(`--cat:${ICE_COLOR}`)}；is-done ${doneCls} / badge ${badges}`);
+  check('/iceberg/ 页这一层用上了编辑器里传的背景图',
+    !!bgImg && bgImg.includes(path.basename(upB.json.path, path.extname(upB.json.path))),
+    bgImg || `标签：${bgTag.slice(0, 120) || '没有 ibk__bgimg'}`);
+
+  /* ================= 2d. 连着两次保存：第二次的改动也必须进产物 =================
+     保存这条路由的规矩是「先写盘、再构建」。第二次保存进来的时候，第一轮构建
+     往往已经在跑了 —— 要是把这次请求并到那一轮上（编辑器以前就是那么做的），
+     那轮构建是在第二次写盘**之前**开始的，产物里就没有这次改动，
+     面板却会说「已保存并重新构建」。修好之后是**排队**：等第一轮跑完再跑一轮。
+     这里就量这个。 */
+  const ICE_A = '并发验收 · 第一次';
+  const ICE_B = '并发验收 · 第二次';
+  const icePayload = (name, items) => ({
+    title: '冰室冰山', intro: '',
+    categories: [{ id: 'c01', name: '并发分类', color: '#ff5fb0', hidden: false }],
+    tags: [],
+    layers: [{ id: 'l01', title: name, subtitle: '', background: '', head: '', items }],
+  });
+  const iceItem = (id, name) => ({ id, name, categoryId: 'c01', tags: [], desc: '', href: '' });
+  const firstPost = api('POST', '/api/iceberg', icePayload(ICE_A, [iceItem('i01', ICE_A)]));
+  await sleep(150); // 让第一轮的构建先跑起来
+  const secondPost = await api('POST', '/api/iceberg', icePayload(ICE_B, [iceItem('i01', ICE_A), iceItem('i02', ICE_B)]));
+  const firstRes = await firstPost;
+  check('连着两次保存：两个请求都成功返回（第二次是排队等第一轮跑完再跑）',
+    firstRes.status === 200 && firstRes.json?.built === true && secondPost.json?.built === true,
+    `第一次 built=${firstRes.json?.built} ${firstRes.json?.ms}ms；第二次 built=${secondPost.json?.built} ${secondPost.json?.ms}ms`);
+  const hIce3 = html(path.join('iceberg', 'index.html'));
+  check('★ 连着两次保存：**第二次**的改动也在产物里（没有并到第一轮那趟构建上）',
+    hIce3.includes(ICE_B) && hIce3.includes(ICE_A),
+    `产物里：第一次=${hIce3.includes(ICE_A)} 第二次=${hIce3.includes(ICE_B)}`);
+
+  /* 这一节把图换成了「并发验收」那两层，后面的页面断言量的是 2c 那份 —— 写回去 */
+  const rBack = await api('POST', '/api/iceberg', {
+    title: '冰室冰山',
+    intro: '验收写的介绍。',
+    categories: [{ id: '', name: '验收分类', color: ICE_COLOR, hidden: false }],
+    tags: [{ id: '', name: '验收标签' }],
+    layers: [
+      {
+        id: '', title: ICE_LAYER, subtitle: ICE_SUB, background: upB.json.path, head: '',
+        items: [
+          { id: '', name: ICE_DONE, categoryId: 'c01', tags: ['t01'], desc: '验收写的详细描述。', href: '/salon/' },
+          { id: '', name: ICE_TODO, categoryId: 'c01', tags: [], desc: '', href: '' },
+          { id: '', name: ICE_LOOSE, categoryId: '不存在的分类', tags: ['不存在的标签'], desc: '', href: '' },
+        ],
+      },
+    ],
+  });
+  check('（衔接）把 2c 那份图写回去，后面的页面断言接着量它',
+    rBack.json?.built === true && readJson(path.join(DST, 'src', 'data', 'iceberg.json')).layers[0]?.title === ICE_LAYER,
+    `built=${rBack.json?.built} ${rBack.json?.ms}ms`);
 
   /* ================= 3. POST /api/salon：只带 members ================= */
   const salon1 = readJson(path.join(DST, 'src', 'data', 'salon.json'));
@@ -435,21 +564,49 @@ try {
   check('关于我：外框 UI 和右侧控件是一套（同一页头 + 同一套 .corner__btn 控件）',
     me.corner >= 3 && me.pill === true, `corner 控件 ${me.corner} 个，页头小圆片在=${me.pill}`);
 
-  /* ---- 5.3 冰室冰山 ---- */
+  /* ---- 5.3 冰山图那一页（/iceberg/）----
+     这一页现在是**数据画出来的**：2c 里 POST 进去的那 1 层 2 条应该原样长在页面上。
+     「一条层级都没有时退回显示首页那块的大图」在 2b 已经验过（构建产物那一层）。 */
   await cdp.goto('/iceberg/');
   const ice = await cdp.ev(`(() => {
-    const img = document.querySelector('.icePage__fig img');
+    const img = document.querySelector('.ibk__bgimg');
     const r = img && img.getBoundingClientRect();
-    const more = document.querySelector('.icePage__more a') || document.querySelector('a.icePage__more');
-    return { src: img && img.getAttribute('src'), w: r && Math.round(r.width), h: r && Math.round(r.height),
-      title: (document.querySelector('.icePage__title') || {}).textContent,
-      moreHref: more && more.getAttribute('href'), moreText: more && more.textContent.trim(),
-      ph: !!document.querySelector('.icePage__ph'), corner: document.querySelectorAll('.corner__btn').length };
+    const items = [...document.querySelectorAll('.ibk__item')];
+    const done = items.filter((i) => i.classList.contains('is-done'));
+    const badge = document.querySelector('.ibk__badge');
+    const br = badge && badge.getBoundingClientRect();
+    const linked = document.querySelector('a.ibk__item');
+    const layer = document.querySelector('.ibk__layer');
+    return {
+      layers: document.querySelectorAll('.ibk__layer').length,
+      title: (document.querySelector('.ibk__title') || {}).textContent,
+      sub: (document.querySelector('.ibk__sub') || {}).textContent,
+      intro: (document.querySelector('.page-header__desc') || {}).textContent,
+      src: img && img.getAttribute('src'), w: r && Math.round(r.width), h: r && Math.round(r.height),
+      items: items.length, names: items.map((i) => i.querySelector('.ibk__txt').textContent),
+      loose: (() => { const l = items.find((i) => i.querySelector('.ibk__txt').textContent === ${JSON.stringify(ICE_LOOSE)}); return l ? l.style.getPropertyValue('--cat').trim() : ''; })(),
+      done: done.length, badge: badge ? { w: Math.round(br.width), bg: getComputedStyle(badge).backgroundColor } : null,
+      color: items[0] && items[0].style.getPropertyValue('--cat').trim(),
+      href: linked && linked.getAttribute('href'),
+      layerH: layer && Math.round(layer.getBoundingClientRect().height),
+      corner: document.querySelectorAll('.corner__btn').length };
   })()`);
-  check('冰室冰山：页面上真出了图（不是占位符，尺寸量得出来）', !!ice.src && ice.ph === false && ice.w > 0 && ice.h > 0, JSON.stringify({ src: ice.src, w: ice.w, h: ice.h, ph: ice.ph }));
-  check('冰室冰山：图是编辑器里传的那张', (ice.src ?? '').includes(path.basename(upB.json.path, path.extname(upB.json.path))), ice.src);
-  check('冰室冰山：标题 + 链接接口都在（链接指到 /salon/）',
-    ice.title === '冰室冰山' && ice.moreHref === '/salon/', JSON.stringify({ title: ice.title, href: ice.moreHref, text: ice.moreText }));
+  check('冰山图页：层 / 标题 / 副标题 / 介绍都是编辑器里写进去的',
+    ice.layers === 1 && ice.title === ICE_LAYER && ice.sub === ICE_SUB && ice.intro === '验收写的介绍。',
+    JSON.stringify({ layers: ice.layers, title: ice.title, sub: ice.sub, intro: ice.intro }));
+  check('冰山图页：背景图真画出来了（编辑器里传的那张，尺寸量得出来）',
+    !!ice.src && ice.w > 0 && ice.h > 0 && ice.src.includes(path.basename(upB.json.path, path.extname(upB.json.path))),
+    JSON.stringify({ src: ice.src, w: ice.w, h: ice.h, layerH: ice.layerH }));
+  check('冰山图页：三条条目都在，颜色是那一类的颜色（#22d3ee）',
+    ice.items === 3 && ice.names.includes(ICE_DONE) && ice.names.includes(ICE_TODO) && ice.names.includes(ICE_LOOSE) && ice.color === ICE_COLOR,
+    JSON.stringify({ items: ice.items, color: ice.color, names: ice.names }));
+  check('冰山图页：引用了不存在分类的那条用默认灰紫（认不出来的引用在页面上也不会串色）',
+    ice.loose === '#b9a6c9', `--cat:${ice.loose}`);
+  check('冰山图页：完备标识只有一颗、是粉色的（有描述的那条才有）',
+    ice.done === 1 && !!ice.badge && ice.badge.bg === 'rgb(255, 95, 176)', JSON.stringify({ done: ice.done, badge: ice.badge }));
+  check('冰山图页：填了链接的那条真的是链接（指到 /salon/）',
+    ice.href === '/salon/', String(ice.href));
+  check('冰山图页：页头那套外框控件还在（右下角三条杠）', ice.corner >= 3, `${ice.corner} 个`);
 
   /* ---- 5.4 冰室精华页 ---- */
   await cdp.goto('/salon/', 2500);
@@ -604,13 +761,14 @@ try {
 
   check('浏览器这一趟没有 JS 报错', cdp.errors.length === 0, cdp.errors.slice(0, 3).join(' | '));
 
-  /* ---- 5.6 编辑器 UI：五个新工作面真能打开 ---- */
+  /* ---- 5.6 编辑器 UI：六个新工作面真能打开 ---- */
   /* 关键字用来确认"开出来的确实是这一块"：面板是按工作面分开的容器，
      不开的那些还留在 DOM 里（只是 hidden），所以必须挑**可见**的那个 .wpanel */
   const wanted = [
     ['calendar', '日历', '特殊日子'],
     ['about', '关于我', '小圆片'],
     ['iceberg', '冰室冰山', '塔吊'],
+    ['ice-chart', '冰山图', '完备标识'],
     ['essences', '精华', '冰室精华'],
     ['members', '成员', '成员 id'],
   ];
@@ -634,9 +792,9 @@ try {
     const p = panels[i];
     check(`编辑器 UI：「${label}」面板能打开、开的是这一块、有提示和内容块`, p.ok && p.hintOk === true && p.buttons >= 1 && (p.boxes >= 1 || p.rows >= 5),
       JSON.stringify({ hintOk: p.hintOk, hint: p.hint, boxes: p.boxes, rows: p.rows, inputs: p.inputs, buttons: p.buttons, h: p.h }));
-    check(`编辑器 UI：「${label}」面板顶上的工作面切换条在（每个面板一套，草稿切走切回来才不丢）`, p.switchBtns >= 13, `switchBtns=${p.switchBtns}`);
+    check(`编辑器 UI：「${label}」面板顶上的工作面切换条在（每个面板一套，草稿切走切回来才不丢）`, p.switchBtns >= 14, `switchBtns=${p.switchBtns}`);
   }
-  check('编辑器 UI：五个新面板在 DOM 里各有一份，互不覆盖', panels.every((p) => p.ok) && new Set(panels.map((p) => p.h)).size >= 1, JSON.stringify(panels.map((p) => `${p.id}:${p.h}`)));
+  check('编辑器 UI：六个新面板在 DOM 里各有一份，互不覆盖', panels.every((p) => p.ok) && new Set(panels.map((p) => p.h)).size >= 1, JSON.stringify(panels.map((p) => `${p.id}:${p.h}`)));
   console.log('\n面板明细：');
   for (const p of panels) console.log(`   ${p.id}: boxes=${p.boxes} inputs=${p.inputs} buttons=${p.buttons} rows=${p.rows} h=${p.h} titles=${JSON.stringify(p.titles)}`);
 

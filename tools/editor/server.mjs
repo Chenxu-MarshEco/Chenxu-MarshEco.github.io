@@ -1021,6 +1021,49 @@ async function handleApi(req, res, url) {
     return sendJson(res, 200, { ok: true, built, ms, output, dropped: data.dropped });
   }
 
+  // ---- 冰山图（src/data/iceberg.json：分类 / 标签 / 层级 / 条目）----
+  // 「冰山图」面板写这一个文件。写完就重建：那一页的正文就是这份数据画的，
+  // 不重建的话预览里还是旧的（和导航 / 音乐一个道理）。
+  if (route === '/api/iceberg' && req.method === 'GET') {
+    return sendJson(res, 200, await readIceberg());
+  }
+  if (route === '/api/iceberg' && req.method === 'POST') {
+    const payload = await readBody(req);
+    const current = await readIceberg();
+    const data = cleanIceberg(payload, current);
+    try {
+      await fs.copyFile(ICEBERG_FILE, `${ICEBERG_FILE}.bak`);
+    } catch {
+      /* 第一次还没有这个文件，正常 */
+    }
+    await fs.writeFile(ICEBERG_FILE, `${JSON.stringify(data.file, null, 2)}\n`, 'utf8');
+    let built = false;
+    let ms = 0;
+    let output = '';
+    try {
+      const r = await runBuild();
+      built = true;
+      ms = r.ms;
+      output = r.output;
+    } catch (err) {
+      output = String(err?.message || err);
+    }
+    return sendJson(res, 200, {
+      ok: true,
+      built,
+      ms,
+      output,
+      updated: data.file.updated,
+      counts: {
+        categories: data.file.categories.length,
+        tags: data.file.tags.length,
+        layers: data.file.layers.length,
+        items: data.file.layers.reduce((n, l) => n + l.items.length, 0),
+      },
+      dropped: data.dropped,
+    });
+  }
+
   // ---- 冰室精华（src/data/salon.json：成员 / 年代 / 精华）----
   // 「成员」和「精华」两个面板都写这一个文件（精华里只存 memberId，
   // 名字和头像全在 members 里现查），所以这里也是**逐块 merge**：
@@ -1128,12 +1171,32 @@ const PREVIEW_ORIGINS = ['http://127.0.0.1:4321', 'http://localhost:4321'];
  * package.json 里 `build` 脚本真正执行的东西，效果完全一样，还少一层壳。
  *
  * 同时只允许一次构建：用户连点两下不该起两个进程抢 dist。
- * 后来的请求等同一个 promise，拿到同一份结果。
+ *
+ * ⚠ 但后来的请求**不能就这么并到那一次上**（这一版改掉了）：
+ * 「保存」这条路由是**先把数据写盘、再构建**的，所以第二次保存进来时，
+ * 正在跑的那次构建很可能是在它写盘**之前**就开始了 —— 产物里没有这次的改动，
+ * 面板却会说「已保存并重新构建」。连着两次保存（比如先在精华面板存一次、
+ * 十几秒内在冰山图面板再存一次）就会踩到：第二次的改动要等下一次构建才进 dist。
+ *
+ * 现在的规矩是**排队**：已经有一次在跑 → 等它跑完再跑一轮新的（那次一定读得到
+ * 你刚写的数据），同一个排队里的多个请求共用这一轮。
  */
 let buildInFlight = null;
+/** 等当前这一轮跑完之后要再跑的那一轮（盘上的数据是在它开始之后才写的） */
+let buildQueued = null;
 
 function runBuild() {
-  if (buildInFlight) return buildInFlight;
+  if (buildInFlight) {
+    if (!buildQueued) {
+      buildQueued = buildInFlight
+        .catch(() => {}) // 前一轮失败也要接着跑这一轮（数据已经落盘了）
+        .then(() => {
+          buildQueued = null;
+          return runBuild();
+        });
+    }
+    return buildQueued;
+  }
 
   const run = (async () => {
     const entry = path.join(PROJECT_ROOT, 'node_modules', 'astro', 'bin', 'astro.mjs');
@@ -2246,6 +2309,174 @@ function cleanWidgets(payload, current) {
     };
   } else if (current.daily) {
     file.daily = current.daily;
+  }
+
+  return { file, dropped };
+}
+
+/* ------------------------------------------------------------------
+   冰山图（src/data/iceberg.json）
+
+   四块数据（页面那边见 src/utils/iceberg.ts，两边算的是同一套规矩）：
+     categories  分类：id / name / color / hidden
+                 color 决定条目在图里的颜色；hidden = 这一类默认不显示
+                 （页面上那排分类上的小眼睛随时能手动开关）
+     tags        标签：id / name。先建后用；条目上勾了哪个，
+                 悬停卡片顶部就显示哪个
+     layers      层级（顺序 = 页面从上往下的顺序）：
+                 id / title / subtitle / background / head / items
+     items       条目：id / name / categoryId / tags / desc / href
+
+   两条**由数据推出来**的规矩，白名单写回时一个都不多存：
+     · 条目的颜色只由 categoryId 决定（改分类颜色，所有条目一起变）
+     · 完备标识只看 desc 填没填（不存这个标记，页面和编辑器各自算）
+
+   写回的取舍：
+     · 名字空的条目 / 分类 / 标签会被丢掉（页面上一张没有字的色卡没有意义），
+       丢了多少条在 dropped 里带回去给面板报数；
+     · id 缺了或者撞了就补一个（id 是编辑器选中哪一条、以及页面 data-* 的依据），
+       分类 / 标签的 id 补完还会**对齐条目上的引用**，不会出现指向空气的引用；
+     · 引用了不存在的分类 / 标签就清成空（认不出来比指着不存在的好查）。
+   ------------------------------------------------------------------ */
+const ICEBERG_FILE = path.join(PROJECT_ROOT, 'src', 'data', 'iceberg.json');
+/** 分类颜色只认 #rrggbb；别的（颜色名、rgb()、空）一律退回粉 */
+const ICE_COLOR = /^#[0-9a-f]{6}$/i;
+
+async function readIceberg() {
+  const text = await fs.readFile(ICEBERG_FILE, 'utf8');
+  const data = JSON.parse(text);
+  return {
+    _readme: Array.isArray(data._readme) ? data._readme : [],
+    title: String(data.title || '冰室冰山'),
+    intro: String(data.intro || ''),
+    updated: String(data.updated || ''),
+    categories: Array.isArray(data.categories) ? data.categories : [],
+    tags: Array.isArray(data.tags) ? data.tags : [],
+    layers: Array.isArray(data.layers) ? data.layers : [],
+  };
+}
+
+/** 补一个没被占用的 id：前缀 + 两位序号（c01 / t02 / l03 / i04），撞了就往后找 */
+function uniqueIceId(prefix, used) {
+  for (let i = used.size + 1; i < used.size + 500; i++) {
+    const id = `${prefix}${String(i).padStart(2, '0')}`;
+    if (!used.has(id)) return id;
+  }
+  return `${prefix}${Date.now().toString(36)}`;
+}
+
+function cleanIceberg(payload, current) {
+  if (!payload || typeof payload !== 'object') {
+    throw httpError(400, '数据格式不对，需要 { categories, tags, layers } 里的任意几块');
+  }
+  const dropped = { categories: 0, tags: 0, items: 0, refs: 0 };
+  const has = (k) => Object.prototype.hasOwnProperty.call(payload, k);
+  const file = {};
+
+  const readme = Array.isArray(payload._readme) ? payload._readme : current._readme;
+  if (Array.isArray(readme)) file._readme = readme;
+  file.title = String(payload.title ?? '').trim() || current.title || '冰室冰山';
+  file.intro = has('intro') ? String(payload.intro ?? '').trim() : current.intro || '';
+  /* 「最后改动」由服务端盖章：面板里不给人手填（填错了页面上的日期就是假的） */
+  file.updated = formatDateParts(new Date()).date;
+
+  /* ---- 分类 ---- */
+  const catIds = new Set();
+  file.categories = [];
+  const rawCats = Array.isArray(payload.categories)
+    ? payload.categories
+    : Array.isArray(current.categories)
+      ? current.categories
+      : [];
+  for (const raw of rawCats) {
+    const name = String(raw?.name ?? '').trim();
+    if (!name) {
+      dropped.categories++;
+      continue;
+    }
+    let id = String(raw?.id ?? '').trim();
+    if (!id || catIds.has(id)) id = uniqueIceId('c', catIds);
+    catIds.add(id);
+    const color = String(raw?.color ?? '').trim();
+    file.categories.push({
+      id,
+      name,
+      color: ICE_COLOR.test(color) ? color.toLowerCase() : '#ff5fb0',
+      hidden: raw?.hidden === true,
+    });
+  }
+
+  /* ---- 标签 ---- */
+  const tagIds = new Set();
+  file.tags = [];
+  const rawTags = Array.isArray(payload.tags) ? payload.tags : Array.isArray(current.tags) ? current.tags : [];
+  for (const raw of rawTags) {
+    const name = String(raw?.name ?? '').trim();
+    if (!name) {
+      dropped.tags++;
+      continue;
+    }
+    let id = String(raw?.id ?? '').trim();
+    if (!id || tagIds.has(id)) id = uniqueIceId('t', tagIds);
+    tagIds.add(id);
+    file.tags.push({ id, name });
+  }
+
+  /* ---- 层级 + 条目 ---- */
+  const layerIds = new Set();
+  const itemIds = new Set();
+  file.layers = [];
+  const rawLayers = Array.isArray(payload.layers) ? payload.layers : Array.isArray(current.layers) ? current.layers : [];
+  for (const raw of rawLayers) {
+    let lid = String(raw?.id ?? '').trim();
+    if (!lid || layerIds.has(lid)) lid = uniqueIceId('l', layerIds);
+    layerIds.add(lid);
+
+    const items = [];
+    for (const ri of Array.isArray(raw?.items) ? raw.items : []) {
+      const name = String(ri?.name ?? '').trim();
+      if (!name) {
+        dropped.items++;
+        continue;
+      }
+      let iid = String(ri?.id ?? '').trim();
+      if (!iid || itemIds.has(iid)) iid = uniqueIceId('i', itemIds);
+      itemIds.add(iid);
+
+      let categoryId = String(ri?.categoryId ?? '').trim();
+      if (categoryId && !catIds.has(categoryId)) {
+        dropped.refs++;
+        categoryId = '';
+      }
+      const tags = [];
+      for (const t of Array.isArray(ri?.tags) ? ri.tags : []) {
+        const id = String(t ?? '').trim();
+        if (!id) continue;
+        if (!tagIds.has(id)) {
+          dropped.refs++;
+          continue;
+        }
+        if (!tags.includes(id)) tags.push(id);
+      }
+
+      items.push({
+        id: iid,
+        name,
+        categoryId,
+        tags,
+        desc: String(ri?.desc ?? '').trim(),
+        href: String(ri?.href ?? '').trim(),
+      });
+    }
+
+    file.layers.push({
+      id: lid,
+      title: String(raw?.title ?? '').trim(),
+      subtitle: String(raw?.subtitle ?? '').trim(),
+      background: String(raw?.background ?? '').trim(),
+      head: String(raw?.head ?? '').trim(),
+      items,
+    });
   }
 
   return { file, dropped };

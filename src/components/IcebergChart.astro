@@ -1,0 +1,565 @@
+---
+/**
+ * 冰山图（/iceberg/ 的正文部分）。
+ *
+ * 一张图 = 若干「层级」从上往下叠，每层一个深色卡片：
+ *   标题（大）+ 副标题（小）+ 这一层的背景图 + 右边的头图 + 一堆条目。
+ *
+ * 条目长什么样全由数据推出来，不让人维护第二份真相：
+ *   颜色     ← 它归在哪个分类（分类颜色在编辑器里选）
+ *   完备标识 ← 详细描述填没填（填了就在条目背后垫一块粉色带栅格的圆角矩形）
+ *   悬停卡片 ← 标签 + 详细描述；填了链接就能点
+ *   顶上的分类小眼睛 ← 点一下把这一类的条目整批收起 / 放出
+ *
+ * 图走 <Img>（srcset + width/height，不跳版）；条目颜色只用一个自定义属性
+ * --cat 传下去，配色全在 CSS 里算。
+ */
+import Img from './Img.astro';
+import { DEFAULT_CATEGORY_COLOR, iceberg } from '../utils/iceberg';
+import { withBase } from '../utils/url';
+
+const { layers, categories } = iceberg;
+
+/** 只给「真有条目」的分类出图例：一个点了没反应的开关比没有更让人困惑 */
+const used = new Set<string>();
+for (const l of layers) for (const it of l.items) if (it.categoryId) used.add(it.categoryId);
+const legend = categories.filter((c) => used.has(c.id));
+/** 没有归类的条目（分类被删了 / 还没选）算一格「未分类」，颜色给中性灰紫 */
+const hasLoose = layers.some((l) => l.items.some((it) => !it.categoryId));
+if (hasLoose) legend.push({ id: '', name: '未分类', color: DEFAULT_CATEGORY_COLOR, hidden: false });
+
+const hrefOf = (href: string) => (/^https?:/i.test(href) ? href : withBase(href));
+/** 条目上给 JS 读的那些东西：标签用 0x1f 拼起来（正文里不会出现这个字符） */
+const dataOf = (it: { name: string; tags: string[]; desc: string }, tagNames: string[]) => ({
+  'data-name': it.name,
+  'data-tags': tagNames.join('\u001f'),
+  'data-desc': it.desc,
+});
+---
+
+<div class="ibk" data-ibk>
+  {
+    legend.length > 0 && (
+      <div class="ibk__cats" role="group" aria-label="分类显示开关">
+        {legend.map((c) => (
+          <button
+            type="button"
+            class:list={['ibk__cat', c.hidden && 'is-off']}
+            data-cat={c.id}
+            data-on={c.hidden ? '0' : '1'}
+            aria-pressed={c.hidden ? 'false' : 'true'}
+            style={`--cat:${c.color}`}
+            title={`${c.name}：点一下${c.hidden ? '显示' : '隐藏'}这一类的条目`}
+          >
+            <span class="ibk__eye" aria-hidden="true">
+              <svg viewBox="0 0 24 24">
+                <path d="M2 12s3.6-6 10-6 10 6 10 6-3.6 6-10 6-10-6-10-6Z" />
+                <circle cx="12" cy="12" r="2.6" />
+                <path class="ibk__eyeSlash" d="M4 20 20 4" />
+              </svg>
+            </span>
+            <span class="ibk__catName">{c.name}</span>
+          </button>
+        ))}
+      </div>
+    )
+  }
+
+  <div class="ibk__layers">
+    {
+      layers.map((l) => (
+        <section class="ibk__layer" data-layer={l.id}>
+          {l.background ? (
+            <Img class="ibk__bgimg" src={l.background} alt="" sizes="100vw" loading="lazy" />
+          ) : (
+            <span class="ibk__bg--none" aria-hidden="true" />
+          )}
+          <span class="ibk__shade" aria-hidden="true" />
+
+          <div class="ibk__main">
+            {(l.title || l.subtitle) && (
+              <header class="ibk__head">
+                {l.title && <h2 class="ibk__title">{l.title}</h2>}
+                {l.subtitle && <p class="ibk__sub">{l.subtitle}</p>}
+              </header>
+            )}
+
+            {l.items.length > 0 ? (
+              <ul class="ibk__items">
+                {l.items.map((it) => {
+                  const cat = categories.find((c) => c.id === it.categoryId) ?? null;
+                  const color = it.categoryId ? (cat?.color ?? DEFAULT_CATEGORY_COLOR) : DEFAULT_CATEGORY_COLOR;
+                  const tagList = it.tags
+                    .map((id) => iceberg.tags.find((t) => t.id === id)?.name ?? '')
+                    .filter(Boolean);
+                  const done = it.desc !== '';
+                  const extra = dataOf(it, tagList);
+                  return (
+                    <li class="ibk__cell" data-cat={it.categoryId || ''} data-done={done ? '1' : '0'}>
+                      {it.href ? (
+                        <a class:list={['ibk__item', done && 'is-done']} href={hrefOf(it.href)} style={`--cat:${color}`} {...extra}>
+                          {done && <span class="ibk__badge" aria-hidden="true" />}
+                          <span class="ibk__txt">{it.name}</span>
+                        </a>
+                      ) : (
+                        <span class:list={['ibk__item', done && 'is-done']} tabindex="0" aria-describedby="ibk-tip" style={`--cat:${color}`} {...extra}>
+                          {done && <span class="ibk__badge" aria-hidden="true" />}
+                          <span class="ibk__txt">{it.name}</span>
+                        </span>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            ) : (
+              <p class="ibk__empty">这一层还没有条目</p>
+            )}
+          </div>
+
+          {l.head && (
+            <div class="ibk__headImg">
+              <Img src={l.head} alt="" sizes="(max-width: 720px) 100vw, 190px" loading="lazy" />
+            </div>
+          )}
+        </section>
+      ))
+    }
+  </div>
+</div>
+
+{/* 条目详情卡片：全图共用一张，跟着指针跑（见下面的脚本） */}
+<div class="ibk__tip" id="ibk-tip" data-ibk-tip hidden aria-hidden="true">
+  <div class="ibk__tipTags" data-tip-tags hidden />
+  <p class="ibk__tipDesc" data-tip-desc />
+</div>
+
+<style>
+  .ibk {
+    --ibk-ink: #fff3fa;
+    --ibk-soft: rgba(255, 236, 248, 0.74);
+    --ibk-card: #1a0527;
+    --ibk-line: rgba(255, 120, 190, 0.3);
+  }
+
+  /* ---------- 顶上那排分类（小眼睛） ---------- */
+  .ibk__cats {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.45rem 0.5rem;
+    margin: 0 0 1.4rem;
+  }
+  .ibk__cat {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.22rem 0.7rem 0.22rem 0.5rem;
+    font: inherit;
+    font-size: 0.86rem;
+    letter-spacing: 0.04em;
+    color: #2a0620;
+    cursor: pointer;
+    border: 0;
+    border-radius: var(--r-full);
+    /* 分类色是实心的，字用深色压上去 —— 和参考图里那排粉色/蓝色/棕色分类一致 */
+    background: var(--cat, #b9a6c9);
+    box-shadow: 0 2px 10px -4px rgb(0 0 0 / 0.5);
+    transition: filter var(--t-fast) var(--ease), opacity var(--t-fast) var(--ease);
+  }
+  .ibk__cat:hover {
+    filter: brightness(1.08);
+  }
+  .ibk__cat.is-off {
+    color: rgba(255, 243, 250, 0.72);
+    background: transparent;
+    box-shadow: inset 0 0 0 1px var(--cat, #b9a6c9);
+  }
+  .ibk__catName {
+    line-height: 1.5;
+  }
+  .ibk__eye {
+    display: inline-flex;
+    width: 1.05em;
+    height: 1.05em;
+  }
+  .ibk__eye svg {
+    width: 100%;
+    height: 100%;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.7;
+    stroke-linecap: round;
+  }
+  /* 关掉的那一类：眼睛上划一道斜杠（不看 = 藏着） */
+  .ibk__eyeSlash {
+    opacity: 0;
+  }
+  .ibk__cat.is-off .ibk__eyeSlash {
+    opacity: 1;
+  }
+
+  /* ---------- 一层 ---------- */
+  .ibk__layers {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+  .ibk__layer {
+    position: relative;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: stretch;
+    overflow: hidden;
+    border: 1px solid var(--ibk-line);
+    border-radius: var(--r-lg);
+    background: var(--ibk-card);
+    box-shadow: 0 18px 44px -26px rgb(0 0 0 / 0.85);
+  }
+  /* 背景图铺满整层，压在文字下面（有一层暗罩保证字读得清） */
+  .ibk__bgimg,
+  .ibk__bg--none,
+  .ibk__shade {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+  }
+  .ibk__bgimg {
+    object-fit: cover;
+  }
+  .ibk__bg--none {
+    background: linear-gradient(180deg, #2a0a3e 0%, #170425 100%);
+  }
+  .ibk__shade {
+    background: linear-gradient(180deg, rgb(26 5 39 / 0.62), rgb(16 3 26 / 0.82));
+  }
+  /* <Img> 会包一层 <picture>（global.css 里 display:contents），但这里要给
+     背景图绝对定位，所以把 picture 也一起摆平 */
+  .ibk__layer :global(picture) {
+    position: absolute;
+    inset: 0;
+  }
+
+  .ibk__main {
+    position: relative;
+    z-index: 1;
+    min-width: 0;
+    padding: clamp(1.1rem, 2.6vw, 1.9rem) clamp(1rem, 2.4vw, 2rem);
+  }
+  .ibk__head {
+    text-align: center;
+  }
+  .ibk__title {
+    margin: 0;
+    font-size: clamp(1.25rem, 2.6vw, 1.9rem);
+    letter-spacing: 0.14em;
+    color: var(--ibk-ink);
+    text-shadow: 0 0 18px rgb(255 95 176 / 0.55), 0 2px 6px rgb(0 0 0 / 0.6);
+  }
+  .ibk__sub {
+    margin: 0.4rem 0 0;
+    font-size: 0.88rem;
+    line-height: 1.7;
+    color: var(--ibk-soft);
+  }
+
+  /* ---------- 条目 ---------- */
+  .ibk__items {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.85rem 0.7rem;
+    margin: clamp(0.9rem, 2vw, 1.5rem) 0 0;
+    padding: 0;
+    list-style: none;
+  }
+  .ibk__cell {
+    display: inline-flex;
+  }
+  .ibk__item {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    padding: 0.1rem 0.5rem;
+    font-size: 0.92rem;
+    line-height: 1.75;
+    letter-spacing: 0.03em;
+    color: var(--cat, #b9a6c9);
+    text-decoration: none;
+    border-radius: 7px;
+    text-shadow: 0 0 12px color-mix(in oklab, var(--cat, #b9a6c9) 45%, transparent);
+  }
+  a.ibk__item:hover {
+    filter: brightness(1.15);
+  }
+  .ibk__item[hidden] {
+    display: none;
+  }
+  .ibk__item:focus-visible {
+    outline: 2px solid var(--ibk-ink);
+    outline-offset: 3px;
+  }
+  .ibk__txt {
+    position: relative;
+    z-index: 1;
+  }
+
+  /*
+    完备标识（详细描述填了才有）：粉色带栅格的蒸汽波圆角矩形，垫在条目背后。
+    比条目本身宽出一点（inset 左右 -11px）= 「拉长版」的那个意思。
+  */
+  .ibk__badge {
+    position: absolute;
+    inset: -3px -11px;
+    z-index: 0;
+    border-radius: 7px;
+    background-color: #ff5fb0;
+    background-image:
+      repeating-linear-gradient(0deg, rgb(255 255 255 / 0.34) 0 1px, transparent 1px 5px),
+      repeating-linear-gradient(90deg, rgb(255 255 255 / 0.34) 0 1px, transparent 1px 5px),
+      linear-gradient(180deg, #ff9ad8 0%, #ff5fb0 46%, #d62b8b 100%);
+    box-shadow:
+      0 0 0 1px color-mix(in oklab, var(--cat, #ff5fb0) 62%, #ff5fb0),
+      0 6px 16px -8px rgb(255 95 176 / 0.9);
+  }
+  /* 粉色底上换深色字（浅粉底 + 亮色字 = 看不清） */
+  .ibk__item.is-done {
+    color: #2a0620;
+    text-shadow: none;
+  }
+  .ibk__empty {
+    margin: clamp(0.9rem, 2vw, 1.4rem) 0 0;
+    text-align: center;
+    font-size: 0.85rem;
+    color: rgba(255, 236, 248, 0.5);
+  }
+
+  /* ---------- 右边的头图 ---------- */
+  .ibk__headImg {
+    position: relative;
+    z-index: 1;
+    width: clamp(92px, 17%, 190px);
+    border-left: 1px solid var(--ibk-line);
+  }
+  .ibk__headImg :global(picture) {
+    display: contents;
+  }
+  .ibk__headImg :global(img) {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  /* ---------- 悬停卡片 ---------- */
+  .ibk__tip {
+    position: fixed;
+    z-index: 60;
+    max-width: min(340px, calc(100vw - 1.5rem));
+    padding: 0.7rem 0.85rem 0.8rem;
+    border: 1px solid rgba(255, 120, 190, 0.55);
+    border-radius: var(--r-md);
+    background: linear-gradient(180deg, rgb(42 8 60 / 0.97), rgb(20 3 32 / 0.98));
+    box-shadow: 0 18px 40px -18px rgb(0 0 0 / 0.9);
+    pointer-events: none;
+  }
+  .ibk__tip[hidden] {
+    display: none;
+  }
+  .ibk__tipTags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+    margin-bottom: 0.5rem;
+  }
+  .ibk__tipTags[hidden] {
+    display: none;
+  }
+  .ibk__tipTag {
+    padding: 0.05rem 0.45rem;
+    font-size: 0.74rem;
+    letter-spacing: 0.06em;
+    color: #2a0620;
+    border-radius: var(--r-full);
+    background: var(--cat, #ff5fb0);
+  }
+  .ibk__tipName {
+    display: block;
+    margin-bottom: 0.3rem;
+    font-size: 0.86rem;
+    color: #ffd9ef;
+  }
+  .ibk__tipDesc {
+    margin: 0;
+    font-size: 0.84rem;
+    line-height: 1.75;
+    color: rgba(255, 240, 250, 0.9);
+    white-space: pre-wrap;
+  }
+
+  /* ---------- 窄屏：头图挪到最上面当一条横幅 ---------- */
+  @media (max-width: 720px) {
+    .ibk__layer {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .ibk__headImg {
+      order: -1;
+      width: 100%;
+      aspect-ratio: 21 / 9;
+      border-left: 0;
+      border-bottom: 1px solid var(--ibk-line);
+    }
+    .ibk__main {
+      padding: 1rem 0.9rem 1.2rem;
+    }
+    .ibk__items {
+      gap: 0.7rem 0.55rem;
+    }
+    .ibk__item {
+      font-size: 0.86rem;
+    }
+  }
+</style>
+
+<script>
+  /*
+    条目详情卡片 + 分类小眼睛。
+
+    卡片全图共用一张（position:fixed，pointer-events:none）：
+    鼠标移上去 / 键盘 Tab 到条目 → 按条目上的 data-* 填内容再摆到它旁边；
+    手机（没有 hover）→ 点一下先出卡片，再点一下才跟着链接走。
+  */
+  for (const root of document.querySelectorAll<HTMLElement>('[data-ibk]')) {    const tip = document.querySelector<HTMLElement>('[data-ibk-tip]');
+    if (!tip) continue;
+    const tagsBox = tip.querySelector<HTMLElement>('[data-tip-tags]')!;
+    const descBox = tip.querySelector<HTMLElement>('[data-tip-desc]')!;
+    const noHover = window.matchMedia('(hover: none)').matches;
+    let pinned: HTMLElement | null = null;
+    let current: HTMLElement | null = null;
+
+    const hide = () => {
+      tip.hidden = true;
+      pinned = null;
+      current = null;
+    };
+
+    /** 把卡片摆到条目上方；顶不下就翻到下方，左右夹在视口里 */
+    const place = (el: HTMLElement) => {
+      const r = el.getBoundingClientRect();
+      const w = tip.offsetWidth;
+      const h = tip.offsetHeight;
+      const gap = 10;
+      let left = r.left + r.width / 2 - w / 2;
+      left = Math.max(8, Math.min(left, window.innerWidth - w - 8));
+      let top = r.top - h - gap;
+      if (top < 8) top = Math.min(window.innerHeight - h - 8, r.bottom + gap);
+      tip.style.left = `${Math.round(left)}px`;
+      tip.style.top = `${Math.round(top)}px`;
+    };
+
+    const show = (el: HTMLElement) => {
+      const name = el.dataset.name || '';
+      const desc = el.dataset.desc || '';
+      const tags = (el.dataset.tags || '').split('\u001f').filter(Boolean);
+      /* 标签和描述都没有 —— 这张卡片没有任何内容，不弹（不然是个空框） */
+      if (!desc && tags.length === 0) {
+        hide();
+        return;
+      }
+      const color = getComputedStyle(el).getPropertyValue('--cat').trim() || '#ff5fb0';
+      tagsBox.textContent = '';
+      tagsBox.hidden = tags.length === 0;
+      for (const t of tags) {
+        const chip = document.createElement('span');
+        chip.className = 'ibk__tipTag';
+        chip.style.setProperty('--cat', color);
+        chip.textContent = t;
+        tagsBox.appendChild(chip);
+      }
+      descBox.textContent = desc;
+      descBox.hidden = desc === '';
+      tip.hidden = false;
+      current = el;
+      place(el);
+    };
+
+    const itemOf = (node: EventTarget | null): HTMLElement | null =>
+      node instanceof Element ? node.closest<HTMLElement>('.ibk__item') : null;
+
+    /* ---- 小眼睛：整类收起 / 放出（初始状态来自数据里的 hidden） ---- */
+    for (const chip of root.querySelectorAll<HTMLElement>('.ibk__cat')) {
+      const cat = chip.dataset.cat ?? '';
+      const apply = (on: boolean) => {
+        chip.dataset.on = on ? '1' : '0';
+        chip.classList.toggle('is-off', !on);
+        chip.setAttribute('aria-pressed', on ? 'true' : 'false');
+        chip.title = `${chip.querySelector('.ibk__catName')?.textContent ?? ''}：点一下${on ? '隐藏' : '显示'}这一类的条目`;
+        for (const cell of root.querySelectorAll<HTMLElement>(`.ibk__cell[data-cat="${cat}"]`)) {
+          for (const it of cell.querySelectorAll<HTMLElement>('.ibk__item')) it.hidden = !on;
+        }
+      };
+      apply(chip.dataset.on !== '0');
+      chip.addEventListener('click', () => {
+        apply(chip.dataset.on === '0');
+        hide();
+      });
+    }
+
+    /* ---- 桌面：悬停出卡片；键盘：焦点出卡片 ---- */
+    root.addEventListener('pointerover', (ev) => {
+      const el = itemOf(ev.target);
+      if (!el || el === current) return;
+      if (noHover) return;
+      pinned = null;
+      show(el);
+    });
+    root.addEventListener('pointerout', (ev) => {
+      const el = itemOf(ev.target);
+      if (!el || pinned) return;
+      if (el.contains(ev.relatedTarget as Node | null)) return;
+      hide();
+    });
+    root.addEventListener('focusin', (ev) => {
+      const el = itemOf(ev.target);
+      if (el) show(el);
+    });
+    root.addEventListener('focusout', () => {
+      if (!pinned) hide();
+    });
+
+    /*
+      手机点一下：先出卡片；卡片已经开着再点同一个才放行链接。
+      （没有 hover 的设备上，卡片只能靠点，这是唯一能看清描述的路。）
+    */
+    root.addEventListener('click', (ev) => {
+      const el = itemOf(ev.target);
+      if (!el) return;
+      if (!noHover) {
+        if (tip.hidden) show(el);
+        return;
+      }
+      if (pinned === el && el.tagName === 'A') return; // 第二下：让它跳
+      ev.preventDefault();
+      if (pinned === el) hide();
+      else {
+        show(el);
+        pinned = el;
+      }
+    });
+
+    /* 点别处 / 滚动 / 缩放：收起来（不然卡片会停在半空中） */
+    document.addEventListener('pointerdown', (ev) => {
+      if (!tip.hidden && !itemOf(ev.target)) hide();
+    });
+    window.addEventListener('scroll', () => {
+      if (!tip.hidden && current && !pinned) hide();
+      else if (!tip.hidden && pinned) place(pinned);
+    }, { passive: true });
+    window.addEventListener('resize', () => {
+      if (!tip.hidden && current) place(current);
+    });
+    document.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Escape') hide();
+    });
+  }
+</script>
