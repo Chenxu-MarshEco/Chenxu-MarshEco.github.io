@@ -5,6 +5,7 @@
       "title": "花娅年代记",
       "leftName": "花娅历",
       "rightName": "冰室历",
+      "totalLabel": "冰室成立至今已经",
       "points": [
         {
           "id": "tl-mu6e19cb793-pmu6e1xnf0",
@@ -465,8 +466,7 @@
           "from": "tl-mu6e19cb793-pmu6occ3a56",
           "to": "tl-mu6e19cb793-pmu6p6djx56"
         }
-      ],
-      "totalLabel": "冰室成立至今已经"
+      ]
     },
     {
       "id": "tl-mu94ko3q566",
@@ -474,6 +474,7 @@
       "leftName": "左侧",
       "rightName": "右侧",
       "tickDays": 1.3,
+      "totalLabel": "纷湖共开服",
       "points": [
         {
           "id": "tl-mu94ko3q566-pmu94l4mu0",
