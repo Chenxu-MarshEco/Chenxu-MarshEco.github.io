@@ -121,7 +121,15 @@ const layout = wantLayout === 'region' && children.length >= 4 ? 'region' : 'sta
           </span>
         )}
         {c.url ? (
-          <a href={withBase(c.url)}>{c.title}</a>
+          /* 外链（节点上那个「上方位置链接」填了 http(s) 时）开新标签，站内照常 */
+          <a
+            href={withBase(c.url)}
+            {.../^https?:/i.test(c.url) || /^mailto:|^tel:/i.test(c.url)
+              ? { target: '_blank', rel: 'noopener' }
+              : {}}
+          >
+            {c.title}
+          </a>
         ) : (
           <span class="crumbs__here" aria-current="page">
             {c.title}

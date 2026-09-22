@@ -2218,6 +2218,13 @@ body.pblock-dragging * {
   min-width: 0;
 }
 
+/* 「上方位置链接（面包屑）跳去哪」那个输入框：第二行里占一段，窄屏自动换行 */
+.boardedit__crumb {
+  flex: 1 1 15rem;
+  min-width: 11rem;
+  font-size: 12px;
+}
+
 @media (max-width: 640px) {
   .boardedit__row {
     grid-template-columns: minmax(0, 1fr);

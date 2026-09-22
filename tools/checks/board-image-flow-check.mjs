@@ -41,8 +41,10 @@ const check = (n, ok, d = '') => {
 
 /*
   量哪一页**从数据里挑**，不写死地址：要一页里「连着至少两张『窄』图」，
-  另外还得有「宽」图和文字块（用来对照：它们必须照旧横跨整行）。
+  另外还得有文字块（用来对照：它们必须照旧横跨整行）。
   这样用户改了某一页的宽档 / 删了那两张图，这个检查也不会跟着挂。
+  （「宽图 704px」那一条只在数据里真有宽图时才量 —— 2026-09-22 用户把那两页的宽图
+    改成了半宽，硬要求「必须有宽图」会让整支脚本没得量、直接退出。）
 */
 const BOARDS = 'src/data/home-boards.json';
 if (!fs.existsSync(BOARDS)) {
@@ -71,9 +73,9 @@ const scored = pages.map((p) => {
     texts: p.blocks.filter((b) => b.type === 'text').length,
   };
 });
-const pick = scored.filter((p) => p.maxRun >= 2 && p.wides >= 1 && p.texts >= 1).sort((a, b) => b.maxRun - a.maxRun)[0];
+const pick = scored.filter((p) => p.maxRun >= 2 && p.texts >= 1).sort((a, b) => b.maxRun - a.maxRun)[0];
 if (!pick) {
-  console.error('数据里找不到「连着两张以上窄图 + 还要有宽图和文字块」的页面，这个检查没东西可量');
+  console.error('数据里找不到「连着两张以上窄图 + 还要有文字块」的页面，这个检查没东西可量');
   process.exit(2);
 }
 const PAGE = pick.href.endsWith('/') ? pick.href : `${pick.href}/`;
@@ -216,9 +218,14 @@ check('★ 那一行右边剩的空明显小了（≤ 正文列宽的 40%；一�
 check('文字 / 宽图这些块照旧横跨整行（没被拆成一格）',
   d.fullSpanOK && d.fullW >= d.pageW - 2 && d.textW !== null && Math.abs(d.textW - d.fullW) <= 2,
   `整行块宽 ${d.fullW}px、.page ${d.pageW}px、正文 ${d.textW}px`);
-check('宽图（宽档）宽度没被改：44rem = 704px',
-  d.wides.length > 0 && d.wides.every((f) => Math.abs(f.w - 704) <= 2),
-  d.wides.map((f) => f.w).join(' / '));
+if (d.wides.length) {
+  check('宽图（宽档）宽度没被改：44rem = 704px',
+    d.wides.every((f) => Math.abs(f.w - 704) <= 2),
+    d.wides.map((f) => f.w).join(' / '));
+} else {
+  console.log('SKIP  这一页没有「宽」档的图 —— 跳过「宽图 704px」那一条（用户把宽档都改成半宽了）');
+  pass++;
+}
 check('桌面端没有横向溢出', d.overflow <= 1, `scrollWidth - clientWidth = ${d.overflow}`);
 
 /* ---------------- 排满会不会换行（往 DOM 里再塞几张同样的窄图） ---------------- */

@@ -6,7 +6,7 @@
  */
 import { getNotes, getPosts } from './content';
 import { toISODate } from './date';
-import { flattenBoards, urlTrail, visibleChildren, type BoardNode, type FlatNode, type PageBlock } from './boards';
+import { flattenBoards, isLinkUrl, urlTrail, visibleChildren, type BoardNode, type FlatNode, type PageBlock } from './boards';
 import site from '../site.config';
 
 export interface SubPost {
@@ -136,17 +136,31 @@ export async function nodePageData(url: string): Promise<NodePageData | null> {
   const trailNodes = [...parents, flat.node];
   const parentNode = parents.length ? parents[parents.length - 1] : null;
 
+  /*
+    上方那行位置链接 / hero 那个「返回」点去哪儿：
+      · 默认 = 这一项自己那一页（`/huaya/years/fenhu`）
+      · 节点上填了 `crumbHref` 就用它（编辑器「上方位置链接」那个框）
+    只认站内 / http(s) / mailto / tel / #锚点，认不出来的一律退回默认 ——
+    写错一个字符不至于把整行面包屑变成死链。
+  */
+  const urlOf = (n: BoardNode): string | undefined => all.find((x) => x.node === n)?.url;
+  const crumbOf = (n: BoardNode): string | undefined => {
+    const custom = String(n.crumbHref ?? '').trim();
+    if (custom && isLinkUrl(custom)) return custom;
+    if (custom) console.warn(`[上方位置链接] ${n.id} 的 crumbHref「${custom}」不像个地址，已退回默认`);
+    return urlOf(n);
+  };
+
   return {
     title: flat.node.title,
     // 页面背景：没有自己的图就沿用所属大板块的
     image: flat.node.image ?? topBoardImage(all, flat.boardId),
     trail: trailNodes.map((n, i, arr) => {
-      const f = all.find((x) => x.node === n);
       const last = i === arr.length - 1;
-      return last ? { title: n.title } : { title: n.title, url: f?.url };
+      return last ? { title: n.title } : { title: n.title, url: crumbOf(n) };
     }),
     parent: parentNode
-      ? { title: parentNode.title, url: all.find((x) => x.node === parentNode)?.url ?? '/' }
+      ? { title: parentNode.title, url: crumbOf(parentNode) ?? '/' }
       : null,
     children: visibleChildren(flat.node).map((c) => {
       const cf = all.find((x) => x.node === c);

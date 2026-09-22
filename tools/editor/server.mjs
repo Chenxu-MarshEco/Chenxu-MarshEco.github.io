@@ -1704,6 +1704,13 @@ function cleanNavs(payload, fallbackReadme) {
     const cat = { id, title };
     const note = String(rc.note || '').trim();
     if (note) cat.note = note;
+    /*
+      顶上那行里点这个分类名跳去哪（可空）。
+      空着 = 跳下面自己那一节（只有一个分类时渲染成一行字，不做成链接）；
+      填了就照这个地址走，站内 / 外链都认 —— 和条目的 href 同一套规则。
+    */
+    const catLink = cleanLink(rc.link);
+    if (catLink) cat.link = catLink;
     cat.groups = groups;
     categories.push(cat);
   }
@@ -2120,6 +2127,14 @@ function cleanNode(raw, parentId, used) {
   // 链接版块：填了就点它直接跳走，不再有自己的页面
   const link = cleanLink(raw.link);
   if (link) out.link = link;
+
+  /*
+    上方那行位置链接（面包屑）跳去哪 —— 留空 = 回它自己那一页。
+    和 link / href 同一套地址规则（站内 / http(s) / mailto / tel / #锚点），
+    不认识的值直接丢掉（退回默认），免得写出一个死链。
+  */
+  const crumbHref = cleanLink(raw.crumbHref);
+  if (crumbHref) out.crumbHref = crumbHref;
 
   /*
     时间轴：这一页用哪条轴、以及这一页自己认领哪个时间点/时间段。

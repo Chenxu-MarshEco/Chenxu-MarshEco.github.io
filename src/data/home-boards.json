@@ -283,32 +283,51 @@
           "text": "### 主宅\n最早建成的建筑，曾经短暂地拥有过樱花屋顶形态。"
         },
         {
-          "id": "page-mu9fd13e-pmu9js3d74",
+          "id": "page-mu9fd13e-pmuccoeuj1",
           "type": "image",
-          "src": "/img/uploads/20260920-1621-a66d-b36eb2193cce0fa3afb6dcc9307d1648.jpg",
-          "alt": "樱花形态的主宅",
-          "width": "wide"
+          "src": "/img/uploads/20260922-1526-8b96-b36eb2193cce0fa3afb6dcc9307d1648.jpg",
+          "alt": "纷湖早期短暂存在过的樱花屋顶主宅",
+          "width": "half"
         },
         {
-          "id": "page-mu9fd13e-pmuazguxf21",
+          "id": "page-mu9fd13e-pmuccpg6j2",
           "type": "image",
-          "src": "/img/uploads/20260921-1628-2966-552ecbb894ec9e6629c9705fdcf9437c.jpg",
-          "alt": "纷湖末期的主宅，可以看到被强行拓长了一格，屋顶也改回了白桦",
-          "width": "wide"
+          "src": "/img/uploads/20260922-1527-484d-552ecbb894ec9e6629c9705fdcf9437c.jpg",
+          "alt": "纷湖末期的主宅",
+          "width": "half"
         },
         {
-          "id": "page-mu9fd13e-pmuaziupv22",
+          "id": "page-mu9fd13e-pmuccqbmb3",
           "type": "image",
-          "src": "/img/uploads/20260921-1630-41e7-5592f4ad41ccda9df82fd1976761dbe8.jpg",
-          "alt": "主宅一楼的内饰",
+          "src": "/img/uploads/20260922-1527-032c-5592f4ad41ccda9df82fd1976761dbe8.jpg",
+          "alt": "主宅一层的内饰",
           "width": "third"
         },
         {
-          "id": "page-mu9fd13e-pmuazk1ac23",
+          "id": "page-mu9fd13e-pmuccqsp84",
           "type": "image",
-          "src": "/img/uploads/20260921-1631-c51c-f5fef69e76431e025ebdacd290e1ad47.jpg",
-          "alt": "主宅二楼的内饰",
+          "src": "/img/uploads/20260922-1528-3f0b-f5fef69e76431e025ebdacd290e1ad47.jpg",
+          "alt": "主宅二层的内饰",
           "width": "third"
+        },
+        {
+          "id": "page-mu9fd13e-pmucdwj175",
+          "type": "text",
+          "text": "### 公共仓库\n第二栋建筑，日后所有人刚进服后没有居所时共用的仓库。"
+        },
+        {
+          "id": "page-mu9fd13e-pmucdxtys6",
+          "type": "image",
+          "src": "/img/uploads/20260922-1619-b239-2b13405af3127f9bfc10948b50dc9fc7.jpg",
+          "alt": "山腰上的公共仓库",
+          "width": "half"
+        },
+        {
+          "id": "page-mu9fd13e-pmucemdrw7",
+          "type": "image",
+          "src": "/img/uploads/20260922-1620-090f-9448569793f53a973eed910b91c7d0a5.jpg",
+          "alt": "公告仓库的内饰",
+          "width": "half"
         },
         {
           "id": "page-mu9fd13e-pmuayn1lp17",

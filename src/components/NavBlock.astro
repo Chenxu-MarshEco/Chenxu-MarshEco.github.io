@@ -35,6 +35,20 @@ const { cats = [], text, blockId = '' } = Astro.props;
 const list = navCatsFor(cats);
 /** 这一块里某个大分类的锚点 id（分类 id 已经带 navcat- 前缀，这里不再重复加） */
 const anchorOf = (catId: string) => `${blockId ? `${blockId}-` : ''}${catId}`;
+/**
+ * 顶上那行里，一个分类名点下去去哪、要不要做成链接。
+ *
+ * 默认是**页内锚点**（跳到下面自己那一节）—— 这是给「一块里挂了好几个分类」用的跳转索引。
+ * 但一个分类时，那一节就在紧下面，点它等于什么都没发生：用户报的就是这个
+ * （「这个导航二字旁边的纷湖 为什么可以点 点了根本没反应」）。
+ * 所以：
+ *   · 分类上填了 `link` → 真链接（站内 / 外链都认，外链开新标签）；
+ *   · 没填、而且这一块里就它一个 → **不做成链接**，就是一行字（别装作能点）；
+ *   · 没填、但有好几个分类 → 还是锚点链接（跳上跳下真有用）。
+ */
+const barHref = (cat: { link?: string }) => String(cat.link ?? '').trim();
+const barIsLink = (i: number) => !!barHref(list[i]) || list.length > 1;
+const isExternal = (href: string) => /^(https?:|mailto:|tel:)/i.test(href);
 ---
 
 {
@@ -47,9 +61,20 @@ const anchorOf = (catId: string) => `${blockId ? `${blockId}-` : ''}${catId}`;
           {list.map((cat, i) => (
             <>
               {i > 0 && <span class="navblk__barDot">·</span>}
-              <a class="navblk__barLink" href={`#${anchorOf(cat.id)}`}>
-                {cat.title}
-              </a>
+              {barIsLink(i) ? (
+                <a
+                  class="navblk__barLink"
+                  href={barHref(cat) || `#${anchorOf(cat.id)}`}
+                  {...isExternal(barHref(cat)) ? { target: '_blank', rel: 'noopener' } : {}}
+                >
+                  {cat.title}
+                </a>
+              ) : (
+                /* 只有一个分类、又没填链接：这一行就是标题，不做成链接（点了也没反应的东西不该像链接） */
+                <span class="navblk__barHere" title="这一块里只有这一个分类，它就在下面那一节">
+                  {cat.title}
+                </span>
+              )}
             </>
           ))}
         </span>
@@ -152,6 +177,15 @@ const anchorOf = (catId: string) => `${blockId ? `${blockId}-` : ''}${catId}`;
   .navblk__barLink:hover {
     color: var(--c-accent);
     border-bottom-color: var(--c-accent);
+  }
+  /*
+    只有一个分类、又没填链接时这一行**不是链接**：不能长得像能点的东西 ——
+    虚线底、hover 变色这些「可点」的暗示统统去掉（就是加粗一点的一行字）。
+  */
+  .navblk__barHere {
+    color: var(--c-text);
+    font-weight: 500;
+    cursor: default;
   }
   .navblk__barDot {
     opacity: 0.55;

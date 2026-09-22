@@ -315,6 +315,213 @@ try {
     rBack.json?.built === true && readJson(path.join(DST, 'src', 'data', 'iceberg.json')).layers[0]?.title === ICE_LAYER,
     `built=${rBack.json?.built} ${rBack.json?.ms}ms`);
 
+  /* ================= 2e. 上方那行位置链接（面包屑 crumbHref） =================
+     用户原话：「注意到导航栏若是选择了纷湖 上方会有可以点击的纷湖二字 如果预留了点击位
+     那么请加入可以编辑点击跳转到的链接的接口」。
+     量的是：默认点「纷湖」回它自己那页；节点上填了 crumbHref 之后，
+     ① 面包屑里那个链接改去新地址 ② hero 那个「← 返回 纷湖」也跟着变
+     ③ 别的祖先（花娅陌域 / 花娅编年史）不受影响 ④ 外链会带上 target=_blank。 */
+  const crumbsOf = (rel) => {
+    let t = '';
+    try { t = fs.readFileSync(path.join(DST, 'dist', rel), 'utf8'); } catch { return null; }
+    const nav = /<nav class="crumbs"[\s\S]*?<\/nav>/.exec(t)?.[0] ?? '';
+    const links = [...nav.matchAll(/<a\s([^>]*)>([^<]+)<\/a>/g)].map((m) => ({
+      text: m[2], href: /href="([^"]*)"/.exec(m[1])?.[1] ?? '',
+      blank: /target="_blank"/.test(m[1]), rel: /rel="noopener"/.test(m[1]),
+    }));
+    const back = /<a class="bp__back" href="([^"]+)"[^>]*>([^<]*)<\/a>/.exec(t);
+    return { links, backHref: back?.[1] ?? '', backText: (back?.[2] ?? '').trim() };
+  };
+  /* 找一页「面包屑里至少两个链接」的（= 够深，前面有可点的祖先） */
+  const deep = (() => {
+    const walk = (dir, rel) => {
+      for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+        const next = `${rel}/${e.name}`;
+        if (e.isDirectory()) {
+          const hit = walk(path.join(dir, e.name), next);
+          if (hit) return hit;
+        } else if (e.name === 'index.html') {
+          const c = crumbsOf(`${rel.slice(1)}/index.html`);
+          if (c && c.links.length >= 2) return { rel: `${rel.slice(1)}/index.html`, ...c };
+        }
+      }
+      return null;
+    };
+    return walk(path.join(DST, 'dist'), '');
+  })();
+  if (!deep) {
+    check('2e 找不到「面包屑里有两个以上可点祖先」的页面', false, '数据里一层都没有？');
+  } else {
+    const last = deep.links[deep.links.length - 1];
+    console.log(`\n拿这一页量：/${deep.rel.replace(/index\.html$/, '')}｜最后那个可点祖先「${last.text}」→ ${last.href}`);
+    check('2e 默认：最后那个可点祖先指回它自己那一页，hero 的「← 返回」也指它',
+      last.href.length > 1 && deep.backHref === last.href,
+      `crumb=${last.href}｜返回=${deep.backHref}（${deep.backText}）`);
+
+    const boardsFile = path.join(DST, 'src', 'data', 'home-boards.json');
+    const tree = readJson(boardsFile);
+    const findNode = (list, title) => {
+      for (const n of list ?? []) {
+        if (n && n.title === title) return n;
+        const hit = findNode(n?.children, title);
+        if (hit) return hit;
+      }
+      return null;
+    };
+    const node = findNode(tree.boards, last.text);
+    check(`2e 在数据里找到了「${last.text}」这个节点`, !!node, node ? `id=${node.id}` : '找不到');
+
+    if (node) {
+      /*
+        ⚠ /api/boards 只写数据、**自己不重建**（面板存完提示的是「重新构建后生效」），
+        所以要像用户那样再点一次「重新构建」。
+      */
+      const target = '/salon/';
+      node.crumbHref = target;
+      const rb = await api('POST', '/api/boards', { boards: tree.boards });
+      const build1 = await api('POST', '/api/build');
+      const after = crumbsOf(deep.rel);
+      const changed = after?.links.find((l) => l.text === last.text);
+      const others = after?.links.filter((l) => l.text !== last.text) ?? [];
+      check('2e 存下去之后重建成功', rb.json?.ok === true && build1.json?.ok === true,
+        `写 boards=${rb.json?.ok}｜重建=${build1.json?.ok} ${build1.json?.ms}ms`);
+      check(`2e ★ 面包屑里「${last.text}」改去了填的地址（${target}）`,
+        changed?.href === target, `现在是 ${changed?.href}`);
+      check('2e ★ hero 的「← 返回」也跟着改了（两处标的是同一件事）',
+        after?.backHref === target, `返回=${after?.backHref}（${after?.backText}）`);
+      check('2e 别的祖先不受影响（没填 crumbHref 的照旧指回自己那页）',
+        others.length >= 1 && others.every((o, i) => o.href === deep.links[i].href),
+        JSON.stringify({ 之前: deep.links.map((l) => l.href), 现在: others.map((l) => l.href) }));
+      check('2e 落盘的数据里带着 crumbHref（白名单没把新字段丢掉）',
+        readJson(boardsFile).boards && findNode(readJson(boardsFile).boards, last.text)?.crumbHref === target,
+        JSON.stringify(findNode(readJson(boardsFile).boards, last.text)?.crumbHref ?? null));
+
+      /* 外链：站点加上 target=_blank rel=noopener */
+      const ext = 'https://example.com/fenhu';
+      const tree2 = readJson(boardsFile);
+      findNode(tree2.boards, last.text).crumbHref = ext;
+      const rb2 = await api('POST', '/api/boards', { boards: tree2.boards });
+      const build2 = await api('POST', '/api/build');
+      const after2 = crumbsOf(deep.rel);
+      const changed2 = after2?.links.find((l) => l.text === last.text);
+      check('2e ★ 填成外链：面包屑那个链接就是外链，而且带 target=_blank + rel=noopener',
+        rb2.json?.ok === true && build2.json?.ok === true &&
+          changed2?.href === ext && changed2?.blank === true && changed2?.rel === true,
+        JSON.stringify({ 写: rb2.json?.ok, 重建: build2.json?.ok, ...changed2 }));
+    }
+  }
+
+  /* ================= 2f. 导航块顶栏那个分类名 =================
+     用户原话：「我说的是这个导航二字旁边的纷湖 为什么可以点 点了根本没反应
+     要么加可以写链接的接口要么删掉」。
+     量的是：只有一个分类又没填链接 → 那一行**不是链接**（一行字，点了不该装作能点）；
+     分类上填了 link → 变成真链接（站内 / 外链，外链开新标签）；
+     一块里挂两个分类 → 回到「页内锚点跳转」的老行为（那才是它本来的用处）。 */
+  const navBarOf = (rel) => {
+    let t = '';
+    try { t = fs.readFileSync(path.join(DST, 'dist', rel), 'utf8'); } catch { return null; }
+    const bar = /<div class="navblk__bar"[\s\S]*?<\/div>/.exec(t)?.[0] ?? '';
+    const ids = [...t.matchAll(/<details class="navblk__cat" id="([^"]+)"/g)].map((m) => m[1]);
+    return {
+      label: /navblk__barLabel[^>]*>([^<]*)</.exec(bar)?.[1] ?? '',
+      links: [...bar.matchAll(/<a class="navblk__barLink"([^>]*)>([^<]+)<\/a>/g)].map((m) => ({
+        text: m[2], href: /href="([^"]*)"/.exec(m[1])?.[1] ?? '',
+        blank: /target="_blank"/.test(m[1]), rel: /rel="noopener"/.test(m[1]),
+      })),
+      plain: [...bar.matchAll(/<span class="navblk__barHere"[^>]*>([^<]+)</g)].map((m) => m[1]),
+      sectionIds: ids,
+    };
+  };
+  const navPage = (() => {
+    const walk = (dir, rel) => {
+      for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+        const next = `${rel}/${e.name}`;
+        if (e.isDirectory()) {
+          const hit = walk(path.join(dir, e.name), next);
+          if (hit) return hit;
+        } else if (e.name === 'index.html') {
+          const bar = navBarOf(`${rel.slice(1)}/index.html`);
+          if (bar && (bar.links.length || bar.plain.length)) return { rel: `${rel.slice(1)}/index.html`, ...bar };
+        }
+      }
+      return null;
+    };
+    return walk(path.join(DST, 'dist'), '');
+  })();
+  if (!navPage) {
+    check('2f 找不到带「导航」块的页面', false, '数据里没有 type=nav 的块？');
+  } else {
+    console.log(`\n拿这一页量：/${navPage.rel.replace(/index\.html$/, '')}｜顶栏「${navPage.label}」｜链接 ${navPage.links.length} 个、纯文字 ${JSON.stringify(navPage.plain)}`);
+    check('2f ★ 只有一个分类又没填链接时，那一行**不是链接**（一行字，不再装作能点）',
+      navPage.plain.length === 1 && navPage.links.length === 0,
+      JSON.stringify({ 纯文字: navPage.plain, 链接: navPage.links }));
+
+    const navsFile = path.join(DST, 'src', 'data', 'navs.json');
+    const navs = readJson(navsFile);
+    const catTitle = navPage.plain[0];
+    const cat = (navs.categories ?? []).find((c) => c.title === catTitle);
+    check(`2f 在导航分类库里找到了「${catTitle}」这个分类`, !!cat, cat ? `id=${cat.id} ${(cat.groups ?? []).length} 组` : '找不到');
+
+    if (cat) {
+      cat.link = '/salon/';
+      const rn = await api('POST', '/api/navs', { categories: navs.categories });
+      const build1 = await api('POST', '/api/build');
+      const after1 = navBarOf(navPage.rel);
+      check('2f 存下去之后重建成功（导航库保存本来就会重建）',
+        rn.json?.ok === true && build1.json?.ok === true,
+        `写=${rn.json?.ok}｜重建=${build1.json?.ok}`);
+      check(`2f ★ 分类上填了链接 → 那一行变成真链接（指到 /salon/）`,
+        after1?.links.length === 1 && after1.links[0].href === '/salon/' && after1.plain.length === 0,
+        JSON.stringify(after1?.links));
+
+      const navs2 = readJson(navsFile);
+      const cat2 = (navs2.categories ?? []).find((c) => c.id === cat.id);
+      cat2.link = 'https://example.com/nav';
+      await api('POST', '/api/navs', { categories: navs2.categories });
+      await api('POST', '/api/build');
+      const after2 = navBarOf(navPage.rel);
+      check('2f ★ 填成外链：就是外链，而且带 target=_blank + rel=noopener',
+        after2?.links.length === 1 && after2.links[0].href === 'https://example.com/nav' &&
+          after2.links[0].blank === true && after2.links[0].rel === true,
+        JSON.stringify(after2?.links));
+      check('2f 落盘的数据里带着 link（白名单没把新字段丢掉）',
+        readJson(navsFile).categories.find((c) => c.id === cat.id)?.link === 'https://example.com/nav',
+        JSON.stringify(readJson(navsFile).categories.find((c) => c.id === cat.id)?.link ?? null));
+
+      /* 一块里挂两个分类 → 回到「页内锚点」的老行为 */
+      const navs3 = readJson(navsFile);
+      const c3 = navs3.categories.find((c) => c.id === cat.id);
+      delete c3.link;
+      const extra = {
+        id: 'navcat-e2e-second', title: '验收第二类', groups: [
+          { id: 'g-e2e', title: '验收子分类', items: [{ id: 'i-e2e', text: '验收条目', href: '/salon/' }] },
+        ],
+      };
+      navs3.categories.push(extra);
+      await api('POST', '/api/navs', { categories: navs3.categories });
+      const tree3 = readJson(path.join(DST, 'src', 'data', 'home-boards.json'));
+      const findNavBlock = (list) => {
+        for (const n of list ?? []) {
+          const b = (n?.page ?? []).find((x) => x.type === 'nav' && (x.cats ?? []).includes(cat.id));
+          if (b) return b;
+          const hit = findNavBlock(n?.children);
+          if (hit) return hit;
+        }
+        return null;
+      };
+      const block = findNavBlock(tree3.boards);
+      if (block) block.cats = [cat.id, extra.id];
+      await api('POST', '/api/boards', { boards: tree3.boards });
+      await api('POST', '/api/build');
+      const after3 = navBarOf(navPage.rel);
+      const anchorsOk = after3?.links.every((l) => l.href.startsWith('#') && after3.sectionIds.includes(l.href.slice(1)));
+      check('2f ★ 一块里挂两个分类时：顶上那两个名字都是**页内锚点**，而且锚点真指到下面那两节（这才是它本来的用处）',
+        after3?.links.length === 2 && anchorsOk === true && after3.plain.length === 0 &&
+          after3.sectionIds.length === 2,
+        JSON.stringify({ 链接: after3?.links, 节: after3?.sectionIds }));
+    }
+  }
+
   /* ================= 3. POST /api/salon：只带 members ================= */
   const salon1 = readJson(path.join(DST, 'src', 'data', 'salon.json'));
   const membersNew = salon1.members.map((m) => (m.id === RAW_ID ? { ...m, name: NEW_NAME, avatar: upA.json.path } : m));

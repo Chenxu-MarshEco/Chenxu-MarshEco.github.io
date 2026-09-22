@@ -758,6 +758,122 @@ try {
   check('草稿保护：改过的字切走再切回来还在', draft.kept === '验收草稿一句话', JSON.stringify(draft.kept));
   check('草稿保护：切回来后状态栏仍然写着「有改动没保存」（不会假装存过了）', draft.dirty === true, JSON.stringify(draft.status));
 
+  /* ---------- ⑦ 「上方位置链接」那两个编辑口子（子版块面板 / 页面工作台） ----------
+     用户原话：「注意到导航栏若是选择了纷湖 上方会有可以点击的纷湖二字 如果预留了点击位
+     那么请加入可以编辑点击跳转到的链接的接口」。
+     面板里填的那一项，要真的落进 draft（保存后写进 home-boards.json 的 crumbHref）。 */
+  const CRUMB_TO = '/salon/';
+  const crumbUi = await cdp.ev(`(async () => {
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+    const setVal = (el, v) => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(el, v);
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+    };
+    /* ① 子版块面板：每一行第二排都有一个「上方位置链接」输入框 */
+    await window.__openWs('boards');
+    await sleep(1800);
+    const modal = document.querySelector('#boards-modal');
+    const inputs = [...(modal ? modal.querySelectorAll('input.boardedit__crumb') : [])];
+    return { ok: inputs.length > 0, count: inputs.length, placeholder: inputs[0] ? inputs[0].placeholder : '', first: inputs[0] ? inputs[0].value : '' };
+  })()`);
+  check(`子版块面板：每个版块都有一个「上方位置链接」输入框（共 ${crumbUi.count} 个）`,
+    crumbUi.ok === true && /上方位置链接/.test(crumbUi.placeholder || ''),
+    JSON.stringify(crumbUi));
+
+  const crumbSave = await cdp.ev(`(async () => {
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+    const modal = document.querySelector('#boards-modal');
+    const input = modal && modal.querySelector('input.boardedit__crumb');
+    if (!input) return { ok: false, why: '找不到输入框' };
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, ${JSON.stringify(CRUMB_TO)});
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    await sleep(200);
+    const save = [...modal.querySelectorAll('button')].find((b) => b.textContent.trim() === '保存');
+    if (!save) return { ok: false, why: '找不到保存按钮' };
+    save.click();
+    await sleep(1500);
+    return { ok: true, value: input.value };
+  })()`);
+  const boardsFile = path.join(DST, 'src', 'data', 'home-boards.json');
+  const crumbWritten = (() => {
+    try {
+      const t = JSON.parse(fs.readFileSync(boardsFile, 'utf8'));
+      const walk = (list) => {
+        for (const n of list ?? []) {
+          if (n?.crumbHref === CRUMB_TO) return n;
+          const hit = walk(n?.children);
+          if (hit) return hit;
+        }
+        return null;
+      };
+      return walk(t.boards);
+    } catch { return null; }
+  })();
+  check(`★ 在面板里给某个版块填「${CRUMB_TO}」→ 保存 → 盘上那个节点真的带上了 crumbHref`,
+    crumbSave.ok === true && !!crumbWritten,
+    `${JSON.stringify(crumbSave)}｜盘上 ${crumbWritten ? crumbWritten.id || crumbWritten.title : '（没有）'}`);
+
+  const crumbPageUi = await cdp.ev(`(async () => {
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+    await window.__openWs('pages');
+    await sleep(2000);
+    const labels = [...document.querySelectorAll('#pw-fields .pw-field__label')].map((l) => l.textContent.trim());
+    const field = [...document.querySelectorAll('#pw-fields .pw-field')]
+      .find((f) => (f.querySelector('.pw-field__label') || {}).textContent === '上方位置链接');
+    return { labels, has: !!field, hint: field ? (field.querySelector('.pw-field__hint') || {}).textContent || '' : '',
+      value: field ? (field.querySelector('input') || {}).value || '' : '' };
+  })()`);
+  check('★ 页面工作台里也有「上方位置链接」这一项（带说明：留空 = 回它自己那页）',
+    crumbPageUi.has === true && /留空/.test(crumbPageUi.hint || ''),
+    JSON.stringify({ has: crumbPageUi.has, hint: (crumbPageUi.hint || '').slice(0, 60), 面板字段: crumbPageUi.labels.slice(0, 8) }));
+
+  /* ---------- ⑧ 「导航」面板里那个「顶栏点它去哪」 ----------
+     用户原话：「我说的是这个导航二字旁边的纷湖 为什么可以点 点了根本没反应
+     要么加可以写链接的接口要么删掉」。所以面板里得能填这个链接，而且填完要落盘。 */
+  const NAV_LINK_TO = '/salon/';
+  const navUi = await cdp.ev(`(async () => {
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+    await window.__openWs('navs');
+    await sleep(2200);
+    const field = [...document.querySelectorAll('.nv-field')]
+      .find((f) => (f.querySelector('.nv-field__label') || {}).textContent === '顶栏点它去哪');
+    const input = field ? field.querySelector('input') : null;
+    return {
+      has: !!field,
+      placeholder: input ? input.placeholder : '',
+      hint: field ? ((field.querySelector('.nv-field__hint') || {}).textContent || '') : '',
+      labels: [...document.querySelectorAll('.nv-field__label')].map((l) => l.textContent),
+    };
+  })()`);
+  check('★ 「导航」面板里多了一项「顶栏点它去哪」（填的就是那个分类名点击后的地址）',
+    navUi.has === true && /留空/.test(navUi.placeholder || ''),
+    JSON.stringify({ has: navUi.has, placeholder: navUi.placeholder, 面板字段: navUi.labels }));
+
+  const navSave = await cdp.ev(`(async () => {
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+    const field = [...document.querySelectorAll('.nv-field')]
+      .find((f) => (f.querySelector('.nv-field__label') || {}).textContent === '顶栏点它去哪');
+    const input = field && field.querySelector('input');
+    if (!input) return { ok: false, why: '找不到输入框' };
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, ${JSON.stringify(NAV_LINK_TO)});
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    await sleep(200);
+    const save = document.querySelector('#navs-save');
+    if (!save) return { ok: false, why: '找不到保存按钮' };
+    save.click();
+    await sleep(2500);
+    return { ok: true, value: input.value };
+  })()`);
+  const navWritten = (() => {
+    try {
+      const t = JSON.parse(fs.readFileSync(path.join(DST, 'src', 'data', 'navs.json'), 'utf8'));
+      return (t.categories ?? []).find((c) => c.link === NAV_LINK_TO)?.title ?? null;
+    } catch { return null; }
+  })();
+  check(`★ 在「导航」面板里填「${NAV_LINK_TO}」→ 保存 → 盘上的 navs.json 里那个分类真带上了 link`,
+    navSave.ok === true && !!navWritten,
+    `${JSON.stringify(navSave)}｜盘上：${navWritten ?? '（没有）'}`);
+
   check('这一趟没有 JS 报错', cdp.errors.length === 0, cdp.errors.slice(0, 3).join(' | '));
 
   try { execSync(`taskkill /pid ${chrome.pid} /T /F`, { stdio: 'ignore' }); } catch { /* 已退出 */ }

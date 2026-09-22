@@ -2447,6 +2447,19 @@ function renderStudioFields() {
     renderStudioTree();
     renderSoloList();
   }), node.href ? '用的是你写的这个地址' : `现在自动生成的是 ${flattenBoardNodes().find((f) => f.node === node)?.url ?? '—'}`));
+  /*
+    上方那行位置链接（面包屑）点它去哪。
+    默认 = 这一项自己那一页；填了就改去这个地址 —— hero 里那个「← 返回 X」也一起跟着变
+    （两处标的是同一件事）。用户原话：「上方会有可以点击的纷湖二字 如果预留了点击位
+    那么请加入可以编辑点击跳转到的链接的接口」。
+  */
+  const crumbOwn = flattenBoardNodes().find((f) => f.node === node)?.url ?? '—';
+  grid.appendChild(pwField('上方位置链接', boardInput(node.crumbHref ?? '', '留空 = 回它自己那一页', (v) => {
+    const s = v.trim();
+    if (s) node.crumbHref = s;
+    else delete node.crumbHref;
+    markStudioDirty();
+  }), `子页面正文上方那行「… › 这一项 › 当前页」里点它去哪（站内路径 / 外链都行）；留空 = ${crumbOwn}`));
 
   const layoutSel = pageSelect(LAYOUTS, node.layout ?? '', (v) => {
     if (v) node.layout = v;
@@ -4598,6 +4611,18 @@ function renderBoardsEditor() {
       link.classList.add('boardedit__link');
       link.title = '填了它就变成链接版块：卡片照旧有名字和封面图，但点下去打开这个网址，站里不再为它生成页面';
 
+      /*
+        上方那行位置链接（面包屑）点它去哪 —— 留空 = 回它自己那一页。
+        放在第二行（和版式、封面一排），因为这属于「这一项怎么被点到」，不是名字 / 地址。
+      */
+      const crumb = boardInput(node.crumbHref || '', '上方位置链接（留空 = 回它自己那页）', (v) => {
+        const s = v.trim();
+        if (s) node.crumbHref = s;
+        else delete node.crumbHref;
+      });
+      crumb.classList.add('boardedit__crumb');
+      crumb.title = '子页面正文上方那行「… › 纷湖 › 当前页」里点到这一项时去哪；hero 里那个「← 返回」也跟着变';
+
       // 加下级：这是「一层里能再加更多层」的入口
       const addKid = document.createElement('button');
       addKid.type = 'button';
@@ -4644,6 +4669,7 @@ function renderBoardsEditor() {
       meta.appendChild(moveSelect(node));
       meta.appendChild(layoutSelect(node));
       meta.appendChild(boardCoverControl(node));
+      meta.appendChild(crumb);
 
       // 页面内容：直接开工作台（那里能整页地改，还带预览）
       const content = document.createElement('button');
@@ -6967,7 +6993,20 @@ function renderNavEditor() {
       if (v.trim()) cat.note = v;
       else delete cat.note;
       paintNavPreview(pv);
-    }))
+    })),
+    /*
+      顶上那行里点这个名字跳去哪。
+      ⚠ 默认（留空）= 跳到下面自己那一节：一块里只挂了这一个分类时，
+      那一节就在紧下面，点它等于什么都没发生 —— 用户报的就是这个
+      （「导航二字旁边的纷湖 为什么可以点 点了根本没反应」）。
+      所以留空、而且只有一个分类时，页面上渲染成一行字、不做成链接。
+    */
+    nvField('顶栏点它去哪', boardInput(cat.link ?? '', '留空 = 跳到下面那一节（只有一个分类时不做成链接）', (v) => {
+      const s = v.trim();
+      if (s) cat.link = s;
+      else delete cat.link;
+      paintNavPreview(pv);
+    }), '页面上「导航 · 名字」那行里，点这个名字跳去哪；站内路径或外链都行')
   );
   mid.appendChild(top);
 
