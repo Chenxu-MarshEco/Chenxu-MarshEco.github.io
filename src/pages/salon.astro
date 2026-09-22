@@ -32,7 +32,6 @@ import {
 } from '../utils/salon';
 import { getTimeline } from '../utils/timelines';
 import { variantUrl, imageDims } from '../utils/images';
-
 /*
   左边那条时间轴：编辑器里选中的那一条，**原样**渲染。
   以前这里是按精华日期自己生成几百个点（还写死比例尺），又卡又超出用户要求 ——
@@ -42,6 +41,29 @@ const tl = salonTimelineId ? getTimeline(salonTimelineId) : undefined;
 const params = tl ? essenceParams(tl) : new Map<string, number>();
 const list = salonEssences;
 const eraName = new Map(salonEras.map((e) => [e.id, e.title]));
+/**
+ * 每个年代一共多少天（用户 2026-09-22 要的：鼠标移到年代名字上显示「xx天」）。
+ * 含头含尾（同一天 = 1 天）。最后那个年代数据里写的是 2099-12-31（表示"还在继续"），
+ * 所以**超过今天的就按今天算** —— 并标上 data-live，让页面脚本每天自己涨。
+ */
+const dayNo = (s: string) => {
+  const m = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(String(s ?? '').trim());
+  return m ? Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])) / 86400000 : NaN;
+};
+const todayNo = (() => {
+  const d = new Date();
+  return Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / 86400000;
+})();
+const eraDays = new Map(
+  salonEras.map((e) => {
+    const from = dayNo(e.from);
+    const to = dayNo(e.to);
+    if (!Number.isFinite(from) || !Number.isFinite(to)) return [e.id, { days: 0, live: false }];
+    const live = to > todayNo;
+    const end = live ? todayNo : to;
+    return [e.id, { days: Math.max(1, Math.round(end - from) + 1), live }];
+  })
+);
 /** 只在"换了一个年代"的那条精华前面插一个年代大标题 */
 const eraOf = (e: (typeof list)[number], prev: (typeof list)[number] | undefined) =>
   !prev || prev.eraId !== e.eraId ? e : null;
@@ -115,7 +137,26 @@ const firstParam = list.length && tl ? (params.get(list[0].id) ?? 0) : 0;
             const ids = essenceIds(e);
             return (
               <>
-                {era && <h2 class="salon__era">{eraName.get(e.eraId)}</h2>}
+                {era && (
+                  <h2 class="salon__era">
+                    <span class="salon__eraName">{eraName.get(e.eraId)}</span>
+                    {/*
+                      这个年代一共多少天（含头含尾）。平时收着，鼠标移到这张卡上才展开
+                      （见样式里的 .salon__era:hover）—— 用户 2026-09-22：
+                      「鼠标指针移到写有年代名字的卡片上时 卡片会微微放大并在年代名字下面
+                        写出xx天 也就是这个年代总共有几天 鼠标移开后变回原样」。
+                      「还在继续」的那个年代要在打开页面时按当天重算（data-live）。
+                    */}
+                    <span
+                      class="salon__eraDays"
+                      data-era-from={e.from}
+                      data-era-to={e.to}
+                      data-live={eraDays.get(e.eraId)?.live ? '1' : undefined}
+                    >
+                      {eraDays.get(e.eraId)?.days ?? 0} 天
+                    </span>
+                  </h2>
+                )}
                 {(!prev || prev.date !== e.date) && <h3 class="salon__date">{e.date}</h3>}
                 <article
                   class="salon__item"
@@ -556,6 +597,29 @@ const firstParam = list.length && tl ? (params.get(list[0].id) ?? 0) : 0;
   syncFolds();
   /* 图 / 字体到位后行数还会变，加载完再判一次 */
   window.addEventListener('load', () => window.setTimeout(syncFolds, 60));
+
+  /*
+    「还在继续」的那个年代（数据里 to 写的是 2099）按**访问者当天**重算天数 ——
+    构建期先按构建那天算好，打开页面时再对一次（和左边时间轴的实时点一个规矩）。
+  */
+  const syncEraDays = () => {
+    const iso = (d: number) => new Date(d * 86400000).toISOString().slice(0, 10);
+    const no = (s: string) => {
+      const m = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(String(s ?? '').trim());
+      return m ? Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])) / 86400000 : NaN;
+    };
+    const now = new Date();
+    const today = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()) / 86400000;
+    document.querySelectorAll<HTMLElement>('.salon__eraDays[data-live="1"]').forEach((el) => {
+      const from = no(el.dataset.eraFrom ?? '');
+      const to = no(el.dataset.eraTo ?? '');
+      if (!Number.isFinite(from) || !Number.isFinite(to)) return;
+      const end = Math.min(to, today);
+      el.textContent = `${Math.max(1, Math.round(end - from) + 1)} 天`;
+      el.title = `${iso(from)} → 还在继续（按今天 ${iso(today)} 算）`;
+    });
+  };
+  syncEraDays();
   let foldQueued = false;
   window.addEventListener('resize', () => {
     if (foldQueued) return;
@@ -717,6 +781,44 @@ const firstParam = list.length && tl ? (params.get(list[0].id) ?? 0) : 0;
     letter-spacing: 0.1em;
     color: #fff;
     text-shadow: 0 0 12px rgba(255, 79, 163, 0.75);
+    /*
+      年代这张"卡"（用户 2026-09-22）：鼠标移上去**微微放大**，
+      名字下面多出「xx天」，移开变回原样。
+      只动 transform / opacity / max-height —— 不占布局，进出都不会把下面几百条顶来顶去。
+    */
+    transform-origin: left center;
+    transition: transform 0.16s ease;
+  }
+  .salon__era:hover,
+  .salon__era:focus-within {
+    transform: scale(1.035);
+  }
+  .salon__eraName {
+    display: inline;
+  }
+  .salon__eraDays {
+    display: block;
+    max-height: 0;
+    overflow: hidden;
+    font-family: var(--font-body, inherit);
+    font-size: 0.82rem;
+    letter-spacing: 0.04em;
+    color: #ffd447;
+    text-shadow: 0 0 10px rgba(255, 212, 71, 0.5);
+    opacity: 0;
+    transition: max-height 0.18s ease, opacity 0.18s ease;
+  }
+  .salon__era:hover .salon__eraDays,
+  .salon__era:focus-within .salon__eraDays {
+    max-height: 2.2rem;
+    opacity: 1;
+  }
+  /* 触屏没有 hover：一直显示，免得手机上根本看不到天数 */
+  @media (hover: none) {
+    .salon__eraDays {
+      max-height: 2.2rem;
+      opacity: 1;
+    }
   }
   .salon__date {
     margin: 1.6rem 0 0.5rem;

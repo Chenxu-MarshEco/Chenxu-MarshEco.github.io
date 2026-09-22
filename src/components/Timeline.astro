@@ -72,6 +72,20 @@ const range = rangeOf(tl);
 const spanMin = Math.min(range.min, range.max);
 const spanMax = Math.max(range.max, range.min);
 
+/*
+  这条轴一共跨了多少天（用户 2026-09-22 要的「xxxxx 【xx天】」）。
+  取的是**没加过 6% 留边的**最早 / 最晚日期（rangeOf 给的那两个是加了留边的，
+  拿来显示天数会比实际多几十天），含头含尾（同一天 = 1 天）。
+  「实时」时间点（哨兵 today）在构建期算成构建那天；页面脚本会用访问者当天再算一遍。
+*/
+const axisDays = tl.points
+  .map((p) => dayOf(p.date ?? ''))
+  .concat(tl.spans.flatMap((s) => [dayOf(s.from ?? ''), dayOf(s.to ?? '')]))
+  .filter((d) => Number.isFinite(d));
+const totalDays = axisDays.length
+  ? Math.round(Math.max(...axisDays) - Math.min(...axisDays)) + 1
+  : 0;
+
 /**
  * 时间点：位置、左右、**哪一类**（时刻 / 事件 / 难以考据）、名字、日期都写进 data-*，
  * 脚本照着摆。三类点走的是同一套代码，只有 CSS 里的图标、颜色和字号不一样。
@@ -423,6 +437,20 @@ const initialScaleText = `一刻度约 ${
         <span class="tl__side tl__side--left">{tl.leftName}</span>
         <span class="tl__side tl__side--right">{tl.rightName}</span>
       </div>
+
+      {/*
+        这条轴一共跨了多少天（用户 2026-09-22 要的）：
+          「xxxxx 【xx天】」—— 前面那句 xxxxx 是编辑器里给这条轴写的（`totalLabel`，
+            比如「冰室成立至今已经」），不写就退回「共」；
+          天数 = 轴上最早的日期 → 最晚的日期（含头含尾）。
+        有「实时」时间点（date 写的是哨兵 today）时，构建期先按构建那天算，
+        页面脚本再按**访问者当天**重算一遍 —— 所以它是会自己涨的。
+      */}
+      <p class="tl__total" data-tl-total>
+        <span class="tl__totalLabel">{tl.totalLabel || '共'}</span>
+        <b class="tl__totalDays" data-tl-totaldays>{totalDays}</b>
+        <span class="tl__totalUnit">天</span>
+      </p>
 
       {/*
         时间轴比例：一根横着的刻度尺，上面的塔吊当滑块，左右拖就改比例尺。
@@ -1145,6 +1173,33 @@ const initialScaleText = `一刻度约 ${
     justify-content: space-between;
     gap: 0.5rem;
   }
+  /*
+    「冰室成立至今已经 1345 天」那句（用户 2026-09-22 要的），
+    位置在比例尺条**上方**、两个历名下面。
+  */
+  .tl__total {
+    display: flex;
+    align-items: baseline;
+    gap: 0.3rem;
+    margin: 0;
+    padding: 0.15rem 0 0;
+    font-size: 0.78rem;
+    line-height: 1.5;
+    color: rgba(255, 226, 244, 0.72);
+  }
+  .tl__totalLabel {
+    /* 自定义那句（编辑器里写的）—— 长句子要能换行，别把面板撑破 */
+    overflow-wrap: anywhere;
+  }
+  .tl__totalDays {
+    font-size: 1rem;
+    font-variant-numeric: tabular-nums;
+    color: #ffd447;
+    text-shadow: 0 0 10px rgba(255, 212, 71, 0.45);
+  }
+  .tl__totalUnit {
+    color: rgba(255, 226, 244, 0.72);
+  }
   .tl__side {
     letter-spacing: 0.1em;
     color: #ffd9ef;
@@ -1790,6 +1845,12 @@ const initialScaleText = `一刻度约 ${
         if (d > hi) hi = d;
       }
       if (!Number.isFinite(lo)) return;
+      /*
+        顶上那句「共 N 天」也要跟着实时点走（用户 2026-09-22：「如果有实时时间点也会实时更新」）。
+        用的是**没加 6% 留边**的 lo/hi，跟构建期那条算法一致（含头含尾）。
+      */
+      const totalEl = document.querySelector<HTMLElement>('[data-tl-totaldays]');
+      if (totalEl) totalEl.textContent = String(Math.round(hi - lo) + 1);
       if (hi - lo < 1) {
         lo -= 0.5;
         hi += 0.5;

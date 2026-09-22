@@ -105,6 +105,15 @@ export interface Timeline {
    * 不写这个字段就是默认（滑块正中间，约 19 天/格），老数据行为不变。
    */
   tickDays?: number;
+  /**
+   * 时间轴底部那句「一共跨了多少天」**前面**那句话（用户 2026-09-22 要的）。
+   *
+   * 页面上的样子是「{totalLabel} {N} 天」—— 比如给「花娅年代记」写
+   * 「冰室成立至今已经」，页面上就是「冰室成立至今已经 1345 天」。
+   * 不写就用默认的「共」。N 由轴上的最早/最晚日期算（含头含尾），
+   * 有「实时」时间点（date 是哨兵 `today`）时页面脚本会按访问者当天实时更新。
+   */
+  totalLabel?: string;
   points: TimelinePoint[];
   spans: TimelineSpan[];
 }

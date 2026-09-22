@@ -51,9 +51,16 @@ import { fileURLToPath } from 'node:url';
 /** 这些标签里面的文字**一个都不碰**（连同它们的子元素） */
 export const SKIP_TAGS = new Set([
   'head', 'title', 'script', 'style', 'pre', 'code', 'kbd', 'samp', 'var',
-  'textarea', 'svg', 'math', 'noscript', 'a', 'button', 'select', 'option',
+  'textarea', 'svg', 'math', 'noscript', 'button', 'select', 'option',
   'template', 'iframe', 'object', 'canvas',
 ]);
+/*
+  ⚠ 'a' 从上面那张表里拿掉了（2026-09-22）。
+  用户报的：「导航里如果成员名字带有了链接 鼠标移上去就无法显示成员卡片
+  例如纷湖导航里的隰辰煦家」—— 导航条目本身就是 <a>，整块跳过就永远没有名片。
+  现在走进链接里照样包名字，但**里面那层只用 <span>**（见 cardHtml 的 inLink），
+  绝不嵌套 <a>：点击照旧走外面那个链接，悬停浮出名片。
+*/
 
 /** 自闭合标签：不压栈（压了就永远弹不出来，后面的正文全被跳过） */
 const VOID_TAGS = new Set([
@@ -124,13 +131,20 @@ export function rewriteHtml(html, match, render) {
   /** 开标签栈：每一项是 { name, skip }；当前要不要跳过 = 栈里有没有 skip 项 */
   const stack = [];
   const skipping = () => stack.some((s) => s.skip);
+  /** 当前是不是在某个 <a> 里面（那样渲染出来不能是链接，只能是带名片的 span） */
+  const inLink = () => stack.some((s) => s.link);
 
   const push = (tagText) => {
     const m = /^<\s*([a-zA-Z][\w:-]*)/.exec(tagText);
     if (!m) return;
     const name = m[1].toLowerCase();
     if (VOID_TAGS.has(name) || /\/\s*>$/.test(tagText)) return;
-    stack.push({ name, skip: SKIP_TAGS.has(name) || /\sdata-nomem(?=[\s/>=])/.test(tagText) });
+    stack.push({
+      name,
+      skip: SKIP_TAGS.has(name) || /\sdata-nomem(?=[\s/>=])/.test(tagText),
+      /* 在链接里：名字照样包，但里面那层不能再用 <a>（HTML 不允许嵌套） */
+      link: name === 'a',
+    });
   };
   const pop = (tagText) => {
     const m = /^<\s*\/\s*([a-zA-Z][\w:-]*)/.exec(tagText);
@@ -154,7 +168,7 @@ export function rewriteHtml(html, match, render) {
     let s = '';
     let at = 0;
     for (const f of found) {
-      s += segment.slice(at, f.index) + render(f.member, f.text);
+      s += segment.slice(at, f.index) + render(f.member, f.text, inLink());
       at = f.index + f.text.length;
       count++;
       perMember.set(f.member.name, (perMember.get(f.member.name) || 0) + 1);
@@ -216,7 +230,7 @@ export function faceUrlOf(src, manifest, base = '/', need = 200) {
  *     （`object-fit: contain`）。没填 `zoom` 就用头像自己那张，填了就固定显示那张
  *     （Raw 就是这种情况）。
  */
-export function cardHtml(m, name, manifest, base = '/') {
+export function cardHtml(m, name, manifest, base = '/', inLink = false) {
   const face = faceUrlOf(m.avatar, manifest, base, 200);
   /* 放大框：没填 zoom 就复用头像那张地址（同一个 URL 不会再发一次请求） */
   const zoom = m.zoom ? faceUrlOf(m.zoom, manifest, base, 480) : face;
@@ -236,7 +250,11 @@ export function cardHtml(m, name, manifest, base = '/') {
       : '') +
     '</span>';
   const inner = `<span class="mem__text">${esc(name)}</span>${card}`;
-  return m.url
+  /*
+    在链接里（inLink）只用 span：HTML 不允许 <a> 套 <a>，套了解析器会把结构拆坏。
+    名字外面那层链接照旧管跳转，这里只负责"悬停浮出名片"。
+  */
+  return m.url && !inLink
     ? `<a class="mem" data-mem="${esc(m.id)}" href="${esc(m.url)}" data-nomem>${inner}</a>`
     : `<span class="mem mem--nolink" data-mem="${esc(m.id)}" data-nomem>${inner}</span>`;
 }
@@ -277,7 +295,7 @@ export default function memlink(opts = {}) {
     return {
       members,
       match: buildMatcher(members),
-      render: (m, name) => cardHtml(m, name, manifest, base),
+      render: (m, name, inLink) => cardHtml(m, name, manifest, base, inLink),
     };
   }
 

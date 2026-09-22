@@ -974,6 +974,25 @@ try {
     /^\/salon\/#e\w+$/.test(String(essPick.picked)) && essPick.stillOpen === false,
     JSON.stringify({ 写入: essPick.picked, 面板已关: !essPick.stillOpen }));
 
+  /* ---------- ⑪ 时间轴面板里那句「天数前面那句话」（用户 2026-09-22） ---------- */
+  const tlTotalUi = await cdp.ev(`(async () => {
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+    await window.__openWs('timelines');
+    await sleep(2200);
+    const field = [...document.querySelectorAll('.pw-field')]
+      .find((f) => ((f.querySelector('.pw-field__label') || {}).textContent || '') === '天数前面那句话');
+    const input = field ? field.querySelector('input') : null;
+    return {
+      has: !!field,
+      placeholder: input ? input.placeholder : '',
+      hint: field ? ((field.querySelector('.pw-field__hint') || {}).textContent || '') : '',
+      labels: [...document.querySelectorAll('.pw-field__label')].map((l) => l.textContent),
+    };
+  })()`);
+  check('★ 时间轴面板里有「天数前面那句话」这一项（时间轴底部那句「xxxxx N 天」的前半句）',
+    tlTotalUi.has === true && /比如/.test(tlTotalUi.placeholder || ''),
+    JSON.stringify({ 占位: tlTotalUi.placeholder, 说明: (tlTotalUi.hint || '').slice(0, 50), 面板字段: tlTotalUi.labels.slice(0, 8) }));
+
   check('这一趟没有 JS 报错', cdp.errors.length === 0, cdp.errors.slice(0, 3).join(' | '));
 
   try { execSync(`taskkill /pid ${chrome.pid} /T /F`, { stdio: 'ignore' }); } catch { /* 已退出 */ }

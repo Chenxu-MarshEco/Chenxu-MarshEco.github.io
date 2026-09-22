@@ -6464,6 +6464,15 @@ function renderTimelineEditor() {
         tl.rightName = v;
       })
     ),
+    pwField(
+      '天数前面那句话',
+      boardInput(tl.totalLabel ?? '', '比如 冰室成立至今已经', (v) => {
+        const s = v.trim();
+        if (s) tl.totalLabel = s;
+        else delete tl.totalLabel;
+      }),
+      '时间轴底部比例尺上方显示「{这句话} N 天」，N 是这条轴一共跨了多少天（有实时的点会自己涨）。留空就是「共」'
+    ),
     pwField('默认比例尺', scale.el)
   );
   form.appendChild(row);

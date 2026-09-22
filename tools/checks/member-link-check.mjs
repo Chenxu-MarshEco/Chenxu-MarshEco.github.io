@@ -71,16 +71,18 @@ const rawZoomUrl = rawMember && rawMember.zoom ? faceUrlOf(rawMember.zoom, manif
  * ================================================================ */
 console.log('================ A. 重写器（纯函数，不碰浏览器）================');
 const match = buildMatcher(members);
-const render = (m) => {
+const render = (m, name, inLink) => {
   const face = faceUrlOf(m.avatar, manifest, '/');
-  return (
-    `<a class="mem" data-mem="${m.id}"${m.url ? ` href="${m.url}"` : ''} data-nomem>` +
+  const inner =
     `<span class="mem__text">${m.name}</span><span class="mem__card" aria-hidden="true">` +
     (face ? `<img class="mem__face" src="${face}" alt="" loading="lazy">` : `<span class="mem__face mem__face--none">${m.name.slice(0, 1)}</span>`) +
     `<span class="mem__label">${m.name}</span>` +
     (m.url ? '<span class="mem__go">介绍页 →</span>' : '') +
-    '</span></a>'
-  );
+    '</span>';
+  /* 在链接里就**不能**再套一层 <a>（和 cardHtml 的 inLink 一个规矩） */
+  return inLink
+    ? `<span class="mem mem--nolink" data-mem="${m.id}" data-nomem>${inner}</span>`
+    : `<a class="mem" data-mem="${m.id}"${m.url ? ` href="${m.url}"` : ''} data-nomem>${inner}</a>`;
 };
 const run = (html) => rewriteHtml(html, match, render);
 
@@ -106,7 +108,6 @@ check('默认（aliases 空）只链正式名 —— 这正是「不能链花花
 })());
 
 const skipCases = [
-  ['<a href="/x">隰辰煦</a>', 'a 里面（链接不能套链接）'],
   ['<pre>隰辰煦</pre>', 'pre'],
   ['<code>隰辰煦</code>', 'code'],
   ['<script>var x = "隰辰煦"</script>', 'script'],
@@ -120,6 +121,16 @@ const skipCases = [
   ['<svg><text>隰辰煦</text></svg>', 'svg'],
 ];
 for (const [html, why] of skipCases) check(`${why} 不链`, run(html).count === 0, `count=${run(html).count}`);
+/*
+  ⚠ 这一条**反过来了**（2026-09-22）：以前 `a` 整块跳过（怕嵌套链接），
+  于是导航条目里的「隰辰煦家」永远没有名片 —— 用户报的就是这个。
+  现在走进 `<a>` 里照样包名字，嵌套那件事交给 cardHtml（链接里那层用 span）。
+*/
+check('★ 链接里面照样链（导航条目那种），而且里面那层是 span —— 不套链接',
+  run('<a href="/x">隰辰煦</a>').count === 1 &&
+    /^<a href="\/x"><span class="mem mem--nolink"[^>]*data-mem=/.test(run('<a href="/x">隰辰煦</a>').html) &&
+    !/<a[^>]*>\s*<a /.test(run('<a href="/x">隰辰煦</a>').html),
+  run('<a href="/x">隰辰煦</a>').html.slice(0, 80));
 check('跳过块结束之后照常链（skip 不会泄漏到后面）',
   run('<pre>隰辰煦</pre><p>隰辰煦</p>').count === 1);
 check('属性 + 正文混在一起时只动正文',
@@ -181,6 +192,25 @@ check('★ 冰室精华页（/salon/）也链上了：名字包成 .mem、名片
   `${salonMems} 处 .mem｜名片标记 face/label 都在`);
 check('★ 连**精华正文里**出现的成员名也链上了（不只是每条的抬头）',
   salonInText >= 20, `正文里 ${salonInText} 处`);
+
+/*
+  链接**里面**的成员名也要出名片（用户 2026-09-22）：
+  「注意到导航里如果成员名字带有了链接 鼠标移上去就无法显示成员卡片
+    例如纷湖导航里的隰辰煦家」—— 导航条目本身就是 <a>，以前整块被跳过（怕嵌套链接）。
+  现在走进链接里照样包名字，只是里面那层用 <span class="mem mem--nolink">，
+  **绝不嵌套 <a>**：点击照旧走外面那个链接，悬停浮出名片。
+*/
+const navHtml = fs.readFileSync(path.join(root, 'huaya/years/fenhu/index.html'), 'utf8');
+/* 导航条目那一坨很长（名片整块都在里面），窗口开大一点再找 data-mem */
+const memInNav = [];
+for (const m of navHtml.matchAll(/<a[^>]*class="navblk__item"[^>]*>([\s\S]{0,2000}?)<\/a>/g)) {
+  if (/class="mem[^"]*"[^>]*data-mem/.test(m[1])) memInNav.push(m[0].replace(/\s+/g, ' ').slice(0, 90));
+}
+check('★ 导航条目里的成员名也包上了名片（以前整块跳过 → 悬停什么都不出）',
+  memInNav.length >= 1, memInNav.slice(0, 2).join(' ¶ ') || '一条都没找到');
+check('★ 而且没有把链接套进链接里（里面那层是 span，不是 a）',
+  !/<a[^>]*class="navblk__item"[^>]*>[\s\S]{0,400}?<a\s[^>]*class="mem/.test(navHtml),
+  '检查 <a class="navblk__item"> 里有没有嵌 <a class="mem">');
 
 /*
   冰山图页（/iceberg/）也整页跳过（2026-09-22 加的）。这一条要连**原因**一起钉住：

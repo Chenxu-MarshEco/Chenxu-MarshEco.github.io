@@ -1491,12 +1491,19 @@ function cleanTimelines(payload) {
       位置放在 rightName 后面，和契约里那份示例一致。
     */
     const tickDays = cleanTickDays(raw.tickDays);
+    /*
+      「一共跨了多少天」前面那句话（用户 2026-09-22 要的）：
+      页面上显示成「{totalLabel} {N} 天」，不写就用默认的「共」。
+      空串就当没写（不往文件里塞空字段，免得整个文件全是 diff）。
+    */
+    const totalLabel = String(raw.totalLabel || '').trim();
     const tl = {
       id,
       title,
       leftName: String(raw.leftName || '').trim() || '左侧',
       rightName: String(raw.rightName || '').trim() || '右侧',
       ...(tickDays === null ? {} : { tickDays }),
+      ...(totalLabel ? { totalLabel } : {}),
       points: [],
       spans: [],
     };

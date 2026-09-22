@@ -361,7 +361,7 @@ try {
     });
     await cdp.goto('/', 1200);
     const card = await cdp.ev(`(() => { const n = document.querySelector('.daily__name'); const faces = [...document.querySelectorAll('.daily__face')];
-      return { asked: ${JSON.stringify(key)}, built: (document.querySelector('[data-daily]') || {}).dataset?.built, name: n && n.textContent, faces: faces.length,
+      return { asked: ${JSON.stringify(key)}, built: (document.querySelector('[data-daily]') || {}).dataset?.built, name: n && n.innerText, faces: faces.length,
         names: faces.map((f) => f.getAttribute('title')), time: (document.querySelector('.daily__time') || {}).textContent, hasText: !!document.querySelector('.daily__text') }; })()`);
     await cdp.send('Page.removeScriptToEvaluateOnNewDocument', { identifier });
     return card;
@@ -439,6 +439,108 @@ try {
     `#e0012 顶边 ${hashEntry.top}px（scrollY=${hashEntry.scrollY}）`);
   check('带 hash 时不会同时落到最后一条（两个落点不打架）',
     hashEntry.lastVisible === false, `最后一条在视口里=${hashEntry.lastVisible}`);
+
+  /* ============================================================
+     时间轴那句「xxxxx N 天」（用户 2026-09-22）+ 年代卡上的「N 天」
+     ============================================================ */
+  const DAY = 86400000;
+  const no = (s) => {
+    if (String(s ?? '').trim() === 'today') {
+      const d = new Date();
+      return Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / DAY;
+    }
+    const m = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(String(s ?? '').trim());
+    return m ? Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])) / DAY : NaN;
+  };
+  const todayNo = (() => { const d = new Date(); return Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / DAY; })();
+
+  const tlTotal = await cdp.ev(`(() => {
+    const el = document.querySelector('[data-tl-total]');
+    const days = document.querySelector('[data-tl-totaldays]');
+    const label = document.querySelector('.tl__totalLabel');
+    const scale = document.querySelector('.tl__scale');
+    const r = el ? el.getBoundingClientRect() : null;
+    const sr = scale ? scale.getBoundingClientRect() : null;
+    return {
+      has: !!el, days: days ? Number(days.textContent.trim()) : null,
+      label: label ? label.textContent.trim() : '',
+      /* 位置：在比例尺条**上方**（用户要的） */
+      above: !!(r && sr && r.bottom <= sr.top + 2),
+      text: el ? el.textContent.replace(/\s+/g, ' ').trim() : '',
+    };
+  })()`);
+  console.log('时间轴那句：', JSON.stringify(tlTotal));
+  const axisDays = [...tlSrc.points.map((p) => no(p.date)), ...tlSrc.spans.flatMap((s) => [no(s.from), no(s.to)])]
+    .filter((d) => Number.isFinite(d));
+  const wantDays = axisDays.length ? Math.round(Math.max(...axisDays) - Math.min(...axisDays)) + 1 : 0;
+  check('★ 时间轴多了一句「{编辑器里写的那句话} N 天」，而且在比例尺条**上方**',
+    tlTotal.has === true && tlTotal.above === true && tlTotal.label.length > 0,
+    JSON.stringify({ 位置在比例尺上方: tlTotal.above, 文字: tlTotal.text }));
+  check(`★ 那个 N 就是这条轴一共跨了多少天（含头含尾，实测 ${wantDays} 天）`,
+    tlTotal.days === wantDays, `页面 ${tlTotal.days} / 盘上算 ${wantDays}`);
+  check('★ 编辑器里写的那句话原样显示（这条轴写的是「' + (tlSrc.totalLabel ?? '') + '」）',
+    tlTotal.label === (tlSrc.totalLabel ?? tlTotal.label) && tlTotal.label.length > 0,
+    JSON.stringify({ 页面: tlTotal.label, 盘上: tlSrc.totalLabel ?? '' }));
+
+  /* 年代卡上的天数（用户 2026-09-22） */
+  const eraCards = await cdp.ev(`(() => {
+    return [...document.querySelectorAll('.salon__era')].map((h) => {
+      const d = h.querySelector('.salon__eraDays');
+      const cs = d ? getComputedStyle(d) : null;
+      return {
+        name: (h.querySelector('.salon__eraName') || {}).textContent || '',
+        days: d ? Number(d.textContent.replace(/[^0-9]/g, '')) : null,
+        live: d ? d.dataset.live === '1' : false,
+        from: d ? d.dataset.eraFrom : '', to: d ? d.dataset.eraTo : '',
+        hiddenOpacity: cs ? Number(cs.opacity) : null,
+        maxH: cs ? cs.maxHeight : '',
+        transform: getComputedStyle(h).transform,
+      };
+    });
+  })()`);
+  console.log('年代卡：', JSON.stringify(eraCards));
+  const eraWant = new Map((data.eras ?? []).map((e) => {
+    const from = no(e.from);
+    const to = no(e.to);
+    const end = Math.min(to, todayNo);
+    return [e.title, Math.max(1, Math.round(end - from) + 1)];
+  }));
+  check('★ 每个年代卡上都写着这个年代一共多少天（按 eras 的起止算，还在继续的钳到今天）',
+    eraCards.length >= 3 && eraCards.every((e) => eraWant.get(e.name) === e.days),
+    eraCards.map((e) => `${e.name.slice(0, 8)}=${e.days}(要 ${eraWant.get(e.name)})`).join(' '));
+  check('★ 平时那行天数是收着的（鼠标移上去才展开）',
+    eraCards.every((e) => e.hiddenOpacity === 0), JSON.stringify(eraCards.map((e) => e.hiddenOpacity)));
+
+  /* 真鼠标移上去：卡片微微放大 + 天数露出来；移开还原 */
+  const eraHoverPt = await cdp.ev(`(() => {
+    const h = document.querySelector('.salon__era');
+    h.scrollIntoView({ block: 'center', behavior: 'instant' });
+    const r = h.getBoundingClientRect();
+    return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2), name: (h.querySelector('.salon__eraName') || {}).textContent || '' };
+  })()`);
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: eraHoverPt.x, y: eraHoverPt.y, buttons: 0 });
+  await sleep(500);
+  const hovered = await cdp.ev(`(() => {
+    const h = document.querySelector('.salon__era');
+    const d = h.querySelector('.salon__eraDays');
+    const cs = getComputedStyle(d);
+    const m = /matrix3?d?\\(([-\\d.eE]+)/.exec(getComputedStyle(h).transform);
+    return { opacity: Number(cs.opacity), scale: m ? Number(m[1]) : 1, days: d.textContent.replace(/[^0-9]/g, '') };
+  })()`);
+  console.log('鼠标移上去：', JSON.stringify(hovered));
+  check('★ 鼠标移到年代卡上：卡片微微放大（>1）而且「xx天」露出来了',
+    hovered.scale > 1 && hovered.opacity > 0.5 && Number(hovered.days) > 0,
+    JSON.stringify(hovered));
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 4, y: 4, buttons: 0 });
+  await sleep(400);
+  const out = await cdp.ev(`(() => {
+    const h = document.querySelector('.salon__era');
+    const d = h.querySelector('.salon__eraDays');
+    const m = /matrix3?d?\\(([-\\d.eE]+)/.exec(getComputedStyle(h).transform);
+    return { opacity: Number(getComputedStyle(d).opacity), scale: m ? Number(m[1]) : 1 };
+  })()`);
+  check('★ 鼠标移开：变回原样（缩放回到 1、天数收回去）',
+    Math.abs(out.scale - 1) < 0.02 && out.opacity < 0.5, JSON.stringify(out));
 
   check('这一趟没有 JS 报错', cdp.errors.length === 0, cdp.errors.slice(0, 3).join(' | '));
 
