@@ -924,6 +924,56 @@ try {
       ['＋ 文字', '＋ 图片', '＋ 链接'].every((t) => (stickyBar.buttons ?? []).includes(t)),
     JSON.stringify(stickyBar.buttons));
 
+  /* ---------- ⑩ 链接选择器里的「精华里的某一条」（用户要的那个例子） ----------
+     原话：「可以跳转到某一条具体精华处，在编辑器内可以搜索对应精华选择跳转。
+     例如在纷湖时间轴上配置好链接后 点击拐卖劫掠兽时间点就可以跳转到精华中的
+     三个人屎都被打出来了那一句」。
+     所以就在时间轴面板上量：点「选位置…」→ 切到「精华里的某一条」→
+     搜「屎都被打出来」→ 点那一条 → 输入框里应该变成 /salon/#<那一条的 id>。 */
+  const essPick = await cdp.ev(`(async () => {
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+    await window.__openWs('timelines');
+    await sleep(2000);
+    const open = [...document.querySelectorAll('.anchorpick__open')][0];
+    if (!open) return { ok: false, why: '时间轴面板里没有「选位置…」按钮' };
+    const target = open.parentElement.querySelector('input');
+    open.click();
+    await sleep(700);
+    const mode = document.querySelector('.anchorpick__mode[data-mode="essence"]');
+    if (!mode) return { ok: false, why: '选择器里没有「精华里的某一条」这一档' };
+    const modes = [...document.querySelectorAll('.anchorpick__mode')].map((b) => b.textContent);
+    mode.click();
+    await sleep(400);
+    const input = document.querySelector('.anchorpick__ess input');
+    if (!input) return { ok: false, why: '切过去以后没有搜索框' };
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, '屎都被打出来');
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    await sleep(1200);
+    const rows = [...document.querySelectorAll('.anchorpick__ess .anchorpick__item')];
+    const first = rows[0];
+    const info = {
+      modes,
+      hint: (document.querySelector('.anchorpick__ess .anchorpick__note') || {}).textContent || '',
+      count: rows.length,
+      text: first ? (first.querySelector('.anchorpick__text') || {}).textContent : '',
+      meta: first ? (first.querySelector('.anchorpick__kind') || {}).textContent : '',
+    };
+    if (first) first.click();
+    await sleep(600);
+    return { ok: true, ...info, picked: target ? target.value : '', stillOpen: !!document.querySelector('.anchorpick') };
+  })()`);
+  console.log('\n================ 选一条精华 ================');
+  console.log(JSON.stringify(essPick));
+  check('⑩★ 链接选择器里有「精华里的某一条」这一档（另一档还是「页面里的位置」）',
+    essPick.ok === true && (essPick.modes ?? []).includes('精华里的某一条') && (essPick.modes ?? []).includes('页面里的位置'),
+    JSON.stringify(essPick.modes ?? essPick.why));
+  check('⑩★ 搜「屎都被打出来」→ 搜到那一条（就是用户说的那一句）',
+    essPick.count >= 1 && String(essPick.text).includes('屎都被打出来'),
+    JSON.stringify({ 命中: essPick.count, 文本: essPick.text, 说明: essPick.meta }));
+  check('⑩★ 点它 → 时间轴那个链接输入框里变成 /salon/#<那一条 id>',
+    /^\/salon\/#e\w+$/.test(String(essPick.picked)) && essPick.stillOpen === false,
+    JSON.stringify({ 写入: essPick.picked, 面板已关: !essPick.stillOpen }));
+
   check('这一趟没有 JS 报错', cdp.errors.length === 0, cdp.errors.slice(0, 3).join(' | '));
 
   try { execSync(`taskkill /pid ${chrome.pid} /T /F`, { stdio: 'ignore' }); } catch { /* 已退出 */ }

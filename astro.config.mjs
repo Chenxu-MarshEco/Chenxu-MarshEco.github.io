@@ -13,8 +13,7 @@ export default defineConfig({
     成员名自动链接：构建完之后逐页重写 HTML，把正文里出现的成员名包成
     「悬停浮出名片、点了跳介绍页」的小块。名字表就是编辑器「成员」面板那张表
     （src/data/salon.json），链接由你填在成员的 `url` 里。
-    冰室精华页（/salon/）整页跳过 —— 那里的名字又多又碎，链上只会碍事。
-    冰山图页（/iceberg/）也整页跳过，两个理由（2026-09-22 量出来的）：
+    冰山图页（/iceberg/）整页跳过，两个理由（2026-09-22 量出来的）：
       · 那里的条目本身就是关键词、自带一张悬停详情卡；名字上再叠一张成员卡，
         鼠标停在「Raw太小了还不能产奶」这种词上会同时冒出两张浮层；
       · 名片那坨 DOM 会被插进层标题 / 条目文字里（含成员名的条目有 9 条、
@@ -23,7 +22,14 @@ export default defineConfig({
         （HTML 不允许，解析器会把结构拆坏）。
     细节、边界和怎么关掉：tools/memlink/index.mjs 的头注释。
   */
-  integrations: [memlink({ skip: ['/salon/', '/iceberg/'] })],
+  /*
+    冰室精华页（/salon/）**2026-09-22 起不再跳过**：用户原话「因为冰室精华已经基本
+    规范完毕了，所以之前说不要把成员接入精华的限制可以取消了，现在在冰室精华页面里
+    指向成员名字时要跟其他页面一样跳出名字和头像 点击可以跳转到该成员链接」。
+    （当初跳过的理由见 tools/memlink/index.mjs 头注释：那会儿名字又多又碎；
+    现在成员表规范了、条目文字也补齐了，链上反而有用。）
+  */
+  integrations: [memlink({ skip: ['/iceberg/'] })],
 
   // 生成 /posts/xxx/index.html 这样的目录式链接，GitHub Pages 上最稳。
   trailingSlash: 'ignore',

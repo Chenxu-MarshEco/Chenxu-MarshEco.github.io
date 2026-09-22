@@ -91,6 +91,21 @@ export function listMusicKey(name: string): string {
   return `list:${name}`;
 }
 
+/**
+ * **其它页面**（既不是大板块页、也不是定长列表页 / 文章页）的 key。
+ *
+ * 用户 2026-09-22 的原话：「编辑器里的每一个带有编辑页面能力的功能都应该能修改到
+ * 所有页面！！！例如我现在根本无法在音乐页面中为冰室冰山，冰室精华，隐秘页面等页面
+ * 添加音乐！请把这些目前无法用编辑器互动的页面也加入到编辑器里」。
+ *
+ * 以前这些页面的 key 算出来是 null，只能落到「所有页面（通用歌单）」，没法单独配。
+ * 现在按地址给每个页面一个自己的 key（`/iceberg/` → `page:iceberg`），
+ * 编辑器那边会把构建出来的每一页都列出来（见 server.mjs 的 musicPages）。
+ */
+export function pageMusicKey(path: string): string {
+  return `page:${normalizePath(path).replace(/^\//, '')}`;
+}
+
 export interface MusicPageRef {
   key: string;
   label: string;
@@ -132,6 +147,9 @@ export async function allMusicPages(): Promise<MusicPageRef[]> {
  * 地址 -> 页面 key。
  * 先精确匹配；匹配不到就一层层往上退（`/tags/某标签` 退到 `/tags`，
  * 于是每个标签页都自动用「标签」那条歌单，不用逐页配）。
+ * 一层都没命中（`/iceberg/`、`/salon/`、`/about-me/` 这种「其它页面」）
+ * 就退回**它自己的页面 key**（`page:iceberg`）—— 这样这些页面也能单独配歌单；
+ * 自己没配的话 `playlistFor` 照样落到通用歌单，行为和以前一样。
  */
 export function musicKeyForPath(pathname: string, pages: MusicPageRef[]): string | null {
   const map = new Map<string, string>();
@@ -139,14 +157,16 @@ export function musicKeyForPath(pathname: string, pages: MusicPageRef[]): string
     if (!r.href) continue;
     map.set(normalizePath(r.href), r.key);
   }
-  let cur = normalizePath(pathname);
+  const own = normalizePath(pathname);
+  let cur = own;
   for (;;) {
     const hit = map.get(cur);
     if (hit) return hit;
     const i = cur.lastIndexOf('/');
-    if (i <= 0) return null;
+    if (i <= 0) break;
     cur = cur.slice(0, i);
   }
+  return own && own !== '/' ? pageMusicKey(own) : null;
 }
 
 /**
@@ -197,6 +217,16 @@ export async function musicContext(currentPath: string): Promise<MusicContext | 
   for (const r of pages) {
     if (!r.href) continue;
     map[normalizePath(r.href)] = r.key;
+  }
+  /*
+    「其它页面」的 key（page:xxx）也得进这张表：播放器判断「目标页第一首是不是我正在
+    听的那首」靠它反查。这些页面不在 allMusicPages 的清单里（构建期看不到 dist），
+    但**用户配过歌单的**都在 PAGES 里 —— 从 key 反推地址就够用了。
+  */
+  for (const k of Object.keys(PAGES)) {
+    if (!k.startsWith('page:')) continue;
+    const p = normalizePath(`/${k.slice('page:'.length)}`);
+    if (p && !map[p]) map[p] = k;
   }
 
   const pageFirst: Record<string, string | null> = {};

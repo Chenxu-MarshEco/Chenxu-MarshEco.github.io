@@ -2942,6 +2942,89 @@ async function musicPages() {
   for (const it of notes) {
     out.push({ key: `entry:notes:${it.slug}`, label: it.title, href: `/notes/${it.slug}/`, kind: 'entry' });
   }
+
+  /*
+    「其它页面」：冰室冰山 / 冰室精华 / 关于我 / 记忆更新… 这些既不是大板块页、
+    也不是定长列表页 —— 以前它们根本不在清单里，于是**没法给它们配音乐**
+    （用户 2026-09-22：「每一个带有编辑页面能力的功能都应该能修改到所有页面！！！
+    例如我现在根本无法在音乐页面中为冰室冰山，冰室精华，隐秘页面等页面添加音乐」）。
+    清单来源是**构建产物**（dist/**\/index.html）：站点那边构建完才知道自己有哪些页，
+    编辑器读上次构建的那一份（和锚点清单同一个规矩），所以面板上照样有「重新构建」的提示。
+  */
+  const have = new Set(out.map((p) => normalizeMusicPath(p.href)));
+  const extra = [];
+  /* ⚠ 这个文件里的 fs 是 node:fs/promises —— 没有 readdirSync / existsSync，
+     写成同步的会被 try/catch 静静吞掉（extra 永远是 0，页面清单里就少一整档）。 */
+  const walkDist = async (dir, rel) => {
+    let entries = [];
+    try {
+      entries = await fs.readdir(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const e of entries) {
+      const next = `${rel}/${e.name}`;
+      if (e.isDirectory()) {
+        if (e.name === 'img' || e.name === '_astro' || e.name.startsWith('.')) continue;
+        await walkDist(path.join(dir, e.name), next);
+      } else if (e.name === 'index.html') {
+        extra.push({ href: `${rel}/`, file: path.join(dir, e.name) });
+      }
+    }
+  };
+  await walkDist(path.join(PROJECT_ROOT, 'dist'), '');
+
+  /*
+    还没构建过（副本里第一次打开面板就是这种情况）时 dist 是空的 ——
+    那就直接从**源码**里推：`src/pages/iceberg.astro` → `/iceberg/`、
+    `src/pages/huaya/memory/update.astro` → `/huaya/memory/update/`。
+    带 `[` 的动态路由和 `_` 开头的文件跳过（那些不是"一个页面"）。
+  */
+  const walkSrc = async (dir, rel) => {
+    let entries = [];
+    try {
+      entries = await fs.readdir(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const e of entries) {
+      const next = `${rel}/${e.name}`;
+      if (e.isDirectory()) {
+        if (e.name.startsWith('_') || e.name.startsWith('[')) continue;
+        await walkSrc(path.join(dir, e.name), next);
+      } else if (/\.(astro|md|mdx)$/i.test(e.name)) {
+        if (e.name.startsWith('_') || e.name.includes('[')) continue;
+        const base = e.name.replace(/\.(astro|md|mdx)$/i, '');
+        if (base === '404') continue;
+        extra.push({ href: base === 'index' ? `${rel}/` : `${rel}/${base}/`, file: path.join(dir, e.name) });
+      }
+    }
+  };
+  await walkSrc(path.join(PROJECT_ROOT, 'src', 'pages'), '');
+
+  for (const p of extra) {
+    const norm = normalizeMusicPath(p.href);
+    if (!norm || norm === '/404' || have.has(norm)) continue;
+    have.add(norm);
+    let label = '';
+    try {
+      const html = await fs.readFile(p.file, 'utf8');
+      /* dist 里是渲染好的 HTML；源码里是 .astro —— 两种都试着抓一个标题 */
+      const t = /<title>([^<]*)<\/title>/i.exec(html)?.[1] ?? '';
+      const h1 = /<h1[^>]*>([\s\S]*?)<\/h1>/i.exec(html)?.[1] ?? '';
+      const astroTitle = /const\s+title\s*=\s*['"`]([^'"`]+)['"`]/.exec(html)?.[1] ?? '';
+      const strip = (s) => String(s).replace(/<[^>]+>/g, '').replace(/\{[^}]*\}/g, '').replace(/\s+/g, ' ').trim();
+      label = strip(h1) || strip(astroTitle) || strip(t).split(/[·|–-]/)[0].trim() || norm;
+    } catch {
+      label = norm;
+    }
+    out.push({
+      key: `page:${norm.replace(/^\//, '')}`,
+      label,
+      href: norm === '/' ? '/' : `${norm}/`,
+      kind: 'page',
+    });
+  }
   return out;
 }
 

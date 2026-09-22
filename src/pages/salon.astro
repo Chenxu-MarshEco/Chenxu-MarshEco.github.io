@@ -246,34 +246,59 @@ const firstParam = list.length && tl ? (params.get(list[0].id) ?? 0) : 0;
   document.fonts?.ready?.then(queueMeasure);
 
   /* ============================================================
-     0.5 带 hash 进来的：直接落在那一条上，别从页面顶上滑过来
+     0.5 进页面时落在哪儿：带 hash 就落在那一条，没带就落在**最新的一条**
      ------------------------------------------------------------
-     首页「每日精华」点一下就是 `/salon/#e0158` 这种地址（用户要的跳转）。
-     而全站 `html { scroll-behavior: smooth }` 对**片段跳转**也生效 ——
-     浏览器会从顶部开始"平滑"滚过去，可这一页有 30 万像素高，
-     实测滚了 3 秒还差 2870px 没到（等于没跳到）。
-     所以这里在页面加载完之后把落点**直接做掉**（instant）；只在"刚进页面"
-     这一小段时间里管，用户自己滚起来之后就不再插手。
+     带 hash（首页「每日精华」点一下就是 `/salon/#e0158`）：
+       全站 `html { scroll-behavior: smooth }` 对**片段跳转**也生效 ——
+       浏览器会从顶部开始"平滑"滚过去，可这一页有 30 万像素高，
+       实测滚了 3 秒还差 2870px 没到（等于没跳到）。
+       所以这里在页面加载完之后把落点**直接做掉**（instant）。
+     没带 hash（用户 2026-09-22 的要求）：
+       「如果进入精华页面时并没有指定到某条精华的位置 那么默认进入时不要停留在最早的精华处
+         而是直接跳转到最晚的一条精华 以后加了新的精华也是默认跳转到最新精华处」
+       —— 数据是按时间从早到晚排的，所以**最后一条 `.salon__item` 就是最新的那一条**，
+       以后加了新精华它自然又变成新的最后一条，这里一行都不用改。
+     两条都不该跟"用户自己"抢：从别的页返回（浏览器 restore 上次滚动位置）时不插手，
+     加载后那 600ms 里用户要是已经滚了 / 按了键，也不再把他拽回去。
      ============================================================ */
-  const landOnHash = () => {
+  let userTookOver = false;
+  for (const ev of ['wheel', 'touchstart', 'keydown', 'mousedown'] as const) {
+    window.addEventListener(ev, () => { userTookOver = true; }, { passive: true, once: true });
+  }
+  const cameBack = () => {
+    const nav = performance.getEntriesByType?.('navigation')?.[0] as PerformanceNavigationTiming | undefined;
+    return nav?.type === 'back_forward';
+  };
+  /** 页面上最后一条精华（= 最新的一条） */
+  const latestItem = (): HTMLElement | null => {
+    const items = [...document.querySelectorAll<HTMLElement>('.salon__item')].filter((el) => !el.hidden);
+    return items.length ? items[items.length - 1] : null;
+  };
+  const landOnEntry = () => {
+    if (userTookOver || cameBack()) return;
     const raw = location.hash.replace(/^#/, '');
-    if (!raw) return;
-    let el: HTMLElement | null = null;
-    try {
-      el = document.getElementById(decodeURIComponent(raw));
-    } catch {
-      el = document.getElementById(raw);
-    }
-    if (!el || !el.classList.contains('salon__item')) return;
     /* block: 'start' 会照顾 scroll-margin-top（让开吸顶的页头和搜索栏） */
-    el.scrollIntoView({ behavior: 'instant' as ScrollBehavior, block: 'start' });
+    const land = (el: HTMLElement) => el.scrollIntoView({ behavior: 'instant' as ScrollBehavior, block: 'start' });
+    if (raw) {
+      let el: HTMLElement | null = null;
+      try {
+        el = document.getElementById(decodeURIComponent(raw));
+      } catch {
+        el = document.getElementById(raw);
+      }
+      if (!el || !el.classList.contains('salon__item')) return;
+      land(el);
+      return;
+    }
+    const last = latestItem();
+    if (last) land(last);
   };
   window.addEventListener('load', () => {
-    landOnHash();
+    landOnEntry();
     /* 字体分片 / 图片到位可能再挪一点位置，稍后再钉一次 */
-    window.setTimeout(landOnHash, 600);
+    window.setTimeout(landOnEntry, 600);
   });
-  document.fonts?.ready?.then(landOnHash);
+  document.fonts?.ready?.then(landOnEntry);
 
   /* ============================================================
      1. 左边那条时间轴：点刻度 / 点塔吊 → 跳到离那儿最近的一条精华

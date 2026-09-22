@@ -2454,12 +2454,12 @@ function renderStudioFields() {
     那么请加入可以编辑点击跳转到的链接的接口」。
   */
   const crumbOwn = flattenBoardNodes().find((f) => f.node === node)?.url ?? '—';
-  grid.appendChild(pwField('上方位置链接', boardInput(node.crumbHref ?? '', '留空 = 回它自己那一页', (v) => {
+  grid.appendChild(pwField('上方位置链接', withAnchorPick(boardInput(node.crumbHref ?? '', '留空 = 回它自己那一页', (v) => {
     const s = v.trim();
     if (s) node.crumbHref = s;
     else delete node.crumbHref;
     markStudioDirty();
-  }), `子页面正文上方那行「… › 这一项 › 当前页」里点它去哪（站内路径 / 外链都行）；留空 = ${crumbOwn}`));
+  })), `子页面正文上方那行「… › 这一项 › 当前页」里点它去哪（站内路径 / 外链都行）；留空 = ${crumbOwn}`));
 
   const layoutSel = pageSelect(LAYOUTS, node.layout ?? '', (v) => {
     if (v) node.layout = v;
@@ -4602,25 +4602,27 @@ function renderBoardsEditor() {
         链接版块：填了地址这一项就不再是页面，点它是跳走。
         放在这一行最后，空着就是普通子版块。
       */
-      const link = boardInput(node.link || '', '链接（填了就跳走，不是页面）', (v) => {
+      /* 链接版块的地址也挂「选位置… / 选精华…」——外链直接手打，站内点选 */
+      const link = withAnchorPick(boardInput(node.link || '', '链接（填了就跳走，不是页面）', (v) => {
         const s = v.trim();
         if (s) node.link = s;
         else delete node.link;
-      });
-      link.type = 'url';
-      link.classList.add('boardedit__link');
+      }));
+      link.querySelector('input').type = 'url';
+      /* 类和 width 都挂在**里面那个 input** 上（外面那层 .linkpick 只是"输入框 + 按钮"一行） */
+      link.querySelector('input').classList.add('boardedit__link');
       link.title = '填了它就变成链接版块：卡片照旧有名字和封面图，但点下去打开这个网址，站里不再为它生成页面';
 
       /*
         上方那行位置链接（面包屑）点它去哪 —— 留空 = 回它自己那一页。
         放在第二行（和版式、封面一排），因为这属于「这一项怎么被点到」，不是名字 / 地址。
       */
-      const crumb = boardInput(node.crumbHref || '', '上方位置链接（留空 = 回它自己那页）', (v) => {
+      const crumb = withAnchorPick(boardInput(node.crumbHref || '', '上方位置链接（留空 = 回它自己那页）', (v) => {
         const s = v.trim();
         if (s) node.crumbHref = s;
         else delete node.crumbHref;
-      });
-      crumb.classList.add('boardedit__crumb');
+      }));
+      crumb.querySelector('input').classList.add('boardedit__crumb');
       crumb.title = '子页面正文上方那行「… › 纷湖 › 当前页」里点到这一项时去哪；hero 里那个「← 返回」也跟着变';
 
       // 加下级：这是「一层里能再加更多层」的入口
@@ -5290,6 +5292,47 @@ async function openAnchorPicker({ current = '', onPick } = {}) {
   right.className = 'anchorpick__col';
   body.append(left, right);
   panel.appendChild(body);
+  /*
+    ---------------------------------------------------------------
+    两种选法（用户 2026-09-22 要的）：
+      · 页面里的位置 —— 老样子：先选页面，再选标题 / 图片 / 段落；
+      · 精华里的某一条 —— 搜一句话 / 成员 / 日期，直接跳到冰室精华里的那一条
+        （原话：「可以跳转到某一条具体精华处，在编辑器内可以搜索对应精华选择跳转。
+          例如在纷湖时间轴上配置好链接后 点击拐卖劫掠兽时间点就可以跳转到精华中的
+          三个人屎都被打出来了那一句」）。选出来就是 `/salon/#<这一条的 id>`，
+        和首页那条「每日精华」点进去是同一个落点。
+    ---------------------------------------------------------------
+  */
+  const modeRow = document.createElement('div');
+  modeRow.className = 'anchorpick__modes';
+  const mkMode = (label, tip, mode) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'anchorpick__mode';
+    b.dataset.mode = mode;
+    b.textContent = label;
+    b.title = tip;
+    return b;
+  };
+  const modePage = mkMode('页面里的位置', '跳到某一页的某个标题 / 图片 / 段落', 'page');
+  const modeEss = mkMode('精华里的某一条', '搜一句话、成员或日期，跳到冰室精华里的那一条', 'essence');
+  modeRow.append(modePage, modeEss);
+  panel.insertBefore(modeRow, body);
+
+  const essBox = document.createElement('div');
+  essBox.className = 'anchorpick__ess';
+  essBox.hidden = true;
+  const essSearch = document.createElement('input');
+  essSearch.type = 'search';
+  essSearch.className = 'input input--sm';
+  essSearch.placeholder = '搜精华：一句话 / 成员 / 日期（例：三个人屎都被打出来了）';
+  essSearch.autocomplete = 'off';
+  const essHint = document.createElement('p');
+  essHint.className = 'hint anchorpick__note';
+  const essList = document.createElement('div');
+  essList.className = 'anchorpick__list';
+  essBox.append(essSearch, essHint, essList);
+  panel.insertBefore(essBox, body);
 
   const search = document.createElement('input');
   search.type = 'search';
@@ -5391,6 +5434,91 @@ async function openAnchorPicker({ current = '', onPick } = {}) {
     (hitBtn || first)?.classList.add('is-active');
     showAnchors(hitPage || pages[0], hitAnchor);
   };
+
+  /* ---- 精华那一边：数据从 /api/salon 来（面板里改过的草稿也在里面） ---- */
+  let essCache = null;
+  const loadEssences = async () => {
+    if (essCache) return essCache;
+    const data = await apiGet('/api/salon');
+    const names = new Map((data?.members ?? []).map((m) => [m.id, m.name]));
+    essCache = (data?.essences ?? []).map((e) => ({
+      id: e.id,
+      date: `${e.date ?? ''}${e.time ? ' ' + e.time : ''}`,
+      text: String(e.text ?? '').replace(/\s+/g, ' ').trim(),
+      who: (e.memberIds ?? []).map((id) => names.get(id)).filter(Boolean).join('、'),
+    }));
+    return essCache;
+  };
+
+  const ESS_SHOW_MAX = 120;
+
+  const showEssences = (list, kw) => {
+    essList.textContent = '';
+    const shown = list.slice(0, ESS_SHOW_MAX);
+    if (!list.length) {
+      const p = document.createElement('p');
+      p.className = 'hint';
+      p.textContent = kw ? '没有搜到这样的精华，换个词试试（搜的是正文 / 成员 / 日期 / 编号）。' : '精华清单是空的。';
+      essList.appendChild(p);
+      return;
+    }
+    for (const e of shown) {
+      const item = document.createElement('button');
+      item.type = 'button';
+      item.className = 'anchorpick__item';
+      item.dataset.essId = e.id;
+      const text = document.createElement('span');
+      text.className = 'anchorpick__text';
+      text.textContent = e.text ? e.text.slice(0, 90) : '（这一条没有文字）';
+      const kind = document.createElement('em');
+      kind.className = 'anchorpick__kind';
+      kind.textContent = `${e.id} · ${e.date}${e.who ? ' · ' + e.who : ''}`;
+      item.append(text, kind);
+      item.title = `跳到 /salon/#${e.id}`;
+      item.addEventListener('click', () => {
+        onPick?.(`/salon/#${e.id}`);
+        close();
+      });
+      essList.appendChild(item);
+    }
+  };
+
+  const renderEssences = async () => {
+    const kw = essSearch.value.trim().toLowerCase();
+    essHint.textContent = '正在读精华清单…';
+    let all = [];
+    try {
+      all = await loadEssences();
+    } catch (err) {
+      essHint.textContent = `读不到精华清单：${err.message}`;
+      showEssences([], '');
+      return;
+    }
+    const hit = kw
+      ? all.filter((e) => `${e.text} ${e.who} ${e.date} ${e.id}`.toLowerCase().includes(kw))
+      : all;
+    essHint.textContent = kw
+      ? `搜到 ${hit.length} 条${hit.length > ESS_SHOW_MAX ? `，先显示前 ${ESS_SHOW_MAX} 条 —— 再打几个字缩小范围` : ''}`
+      : `精华一共 ${all.length} 条 —— 上面输入一句话 / 成员 / 日期来缩小范围`;
+    showEssences(hit, kw);
+  };
+
+  const setMode = (mode) => {
+    const isEss = mode === 'essence';
+    modePage.classList.toggle('is-active', !isEss);
+    modeEss.classList.toggle('is-active', isEss);
+    body.hidden = isEss;
+    essBox.hidden = !isEss;
+    title.textContent = isEss ? '选一条精华' : '选页面里的位置';
+    note.hidden = isEss;
+    if (isEss) {
+      if (!essCache) renderEssences();
+      essSearch.focus();
+    }
+  };
+
+  essSearch.addEventListener('input', () => renderEssences());
+  setMode('page');
 
   const load = async (force) => {
     note.textContent = '正在读取锚点清单…';
@@ -8355,6 +8483,8 @@ const MUSIC_GROUPS = [
   { id: 'home', label: '首页' },
   { id: 'list', label: '列表页' },
   { id: 'board', label: '板块页' },
+  /* 冰室冰山 / 冰室精华 / 关于我 / 记忆更新… 这些「其它页面」（2026-09-22 加） */
+  { id: 'page', label: '其它页面' },
   { id: 'posts', label: '文章' },
   { id: 'notes', label: '手记' },
 ];
@@ -11319,10 +11449,10 @@ function renderMembersPanel() {
     fields.appendChild(
       panelRow(
         '介绍页',
-        boardInput(m.url ?? '', '/members/xxx/ 或 https://…', (v) => {
+        withAnchorPick(boardInput(m.url ?? '', '/members/xxx/ 或 https://…', (v) => {
           m.url = v.trim();
           markPanelDirty(status, 'salon');
-        }),
+        })),
         '填了之后，全站正文里出现的这个名字会变成可点的链接（悬停浮出头像名片）；留空 = 只有名片、点不动。改完要「保存并重新构建」。',
       ),
     );

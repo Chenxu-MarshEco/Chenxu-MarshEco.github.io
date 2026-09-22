@@ -166,9 +166,21 @@ const totalMem = countAll(/class="mem[ "]/g);
 info(`产物 ${files.length} 个 HTML，共 ${totalMem} 处 .mem`);
 check('产物里确实链上了（不是 0 处）', totalMem >= 50, `${totalMem} 处`);
 
+/*
+  冰室精华页（/salon/）**2026-09-22 起不再跳过**。用户原话：
+  「因为冰室精华已经基本规范完毕了，所以之前说不要把成员接入精华的限制可以取消了，
+    现在在冰室精华页面里指向成员名字时要跟其他页面一样跳出名字和头像 点击可以跳转到该成员链接」。
+  所以这一条从「一处都没链」翻过来：名字要包成 .mem、带名片，正文里的也要链上。
+*/
 const salonHtml = fs.readFileSync(path.join(root, 'salon/index.html'), 'utf8');
-check('★ 冰室精华页（/salon/）一处都没链', (salonHtml.match(/class="mem[ "]/g) || []).length === 0,
-  `${(salonHtml.match(/class="mem[ "]/g) || []).length} 处`);
+const salonMems = (salonHtml.match(/class="mem[ "]/g) || []).length;
+const salonInText = [...salonHtml.matchAll(/<blockquote class="salon__text"[^>]*>([\s\S]*?)<\/blockquote>/g)]
+  .reduce((sum, m) => sum + (m[1].match(/class="mem[ "]/g) || []).length, 0);
+check('★ 冰室精华页（/salon/）也链上了：名字包成 .mem、名片标记齐全',
+  salonMems >= 100 && salonHtml.includes('mem__face') && salonHtml.includes('mem__label'),
+  `${salonMems} 处 .mem｜名片标记 face/label 都在`);
+check('★ 连**精华正文里**出现的成员名也链上了（不只是每条的抬头）',
+  salonInText >= 20, `正文里 ${salonInText} 处`);
 
 /*
   冰山图页（/iceberg/）也整页跳过（2026-09-22 加的）。这一条要连**原因**一起钉住：
@@ -933,10 +945,88 @@ if (devHome) {
 
   const devSalon = await getHtml('/salon/');
   const devSalonClean = stripCode(devSalon);
-  const salonHits = [...devSalonClean.matchAll(/.{0,70}class="mem[ "][\s\S]{0,70}/g)].map((m) => m[0].replace(/\s+/g, ' '));
-  check('dev 下 /salon/ 照样整页跳过',
-    devSalon.length > 500 && (devSalonClean.match(/class="mem[ "]/g) || []).length === 0,
-    `${(devSalonClean.match(/class="mem[ "]/g) || []).length} 处` + (salonHits.length ? ` → ${salonHits.slice(0, 2).join(' ¶ ')}` : ''));
+  const devSalonMems = (devSalonClean.match(/class="mem[ "]/g) || []).length;
+  check('dev 下 /salon/ 也照样链上（这一页不再是跳过的）',
+    devSalon.length > 500 && devSalonMems >= 100, `${devSalonMems} 处`);
+
+  /* ---- 悬停浮出名片 + 点得动（用户要的「跟其他页面一样」） ----
+     副本里「虹星」的介绍页 url 已经被 E 段存成了 /iceberg/（站内路径），
+     所以这里点一个 a.mem 应该真的跳过去。 */
+  await cdp.send('Page.navigate', { url: `http://127.0.0.1:${devPort}/salon/` });
+  for (let i = 0; i < 200; i++) { await sleep(150); if ((await cdp.ev('document.readyState')) === 'complete') break; }
+  await sleep(2500);
+
+  const salonHover = await cdp.ev(`(async () => {
+    const target = document.querySelector('.salon__text .mem') || document.querySelector('.salon .mem');
+    if (!target) return { ok: false, why: '页面上找不到 .mem' };
+    target.scrollIntoView({ block: 'center', behavior: 'instant' });
+    await new Promise((r) => setTimeout(r, 200));
+    const r = target.getBoundingClientRect();
+    return {
+      ok: true,
+      x: Math.round(r.left + r.width / 2),
+      y: Math.round(r.top + r.height / 2),
+      name: (target.querySelector('.mem__text') || {}).textContent || '',
+      inText: !!target.closest('.salon__text'),
+      hasFace: !!target.querySelector('img.mem__face'),
+    };
+  })()`);
+  if (salonHover.ok) {
+    await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: salonHover.x, y: salonHover.y, buttons: 0 });
+    await sleep(700);
+    const card = await cdp.ev(`(() => {
+      const cards = [...document.querySelectorAll('.mem__card')].filter((c) => {
+        const cs = getComputedStyle(c);
+        const r = c.getBoundingClientRect();
+        return cs.display !== 'none' && cs.visibility !== 'hidden' && Number(cs.opacity) > 0.5 && r.width > 10;
+      });
+      const c = cards[0] || null;
+      return {
+        count: cards.length,
+        face: !!(c && c.querySelector('img.mem__face')),
+        label: c ? ((c.querySelector('.mem__label') || {}).textContent || '').trim() : '',
+      };
+    })()`);
+    check('★ /salon/ 上鼠标移到名字上 → 浮出名片（头像 + 名字）',
+      card.count >= 1 && card.face === true && card.label.length > 0,
+      JSON.stringify({ 悬停的那条: salonHover.name, 在正文里: salonHover.inText, ...card }));
+
+    /*
+      点得动那一条放到**副本产物**上量（和 D 段同一个做法、同一个副本服务器）：
+      副本里「虹星」的介绍页已经被存成 /iceberg/ 并重新构建过，产物里的 /salon/ 上
+      就有真的 <a class="mem" href="/iceberg/">。用真鼠标点它，看浏览器是不是真跳过去。
+    */
+    await cdp.goto(`http://127.0.0.1:${PORT + 1}/salon/`, 1600);
+    const salonClickPt = await cdp.ev(`(() => {
+      /* ⚠ 挑**条目里**那个名字：左边时间轴上的名字是轴的一部分（刻度标签 pointer-events
+         是关着的，点下去归轴自己处理），拿它当"点了跳不跳"的样本会量错。 */
+      const a = [...document.querySelectorAll('.salon__item a.mem[href]')].find((x) => x.getBoundingClientRect().width > 0)
+        ?? [...document.querySelectorAll('a.mem[href]')].find((x) => !x.closest('.tl') && x.getBoundingClientRect().width > 0);
+      if (!a) return null;
+      a.scrollIntoView({ block: 'center', behavior: 'instant' });
+      const r = a.getBoundingClientRect();
+      return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2), href: a.getAttribute('href'), name: a.textContent.trim() };
+    })()`);
+    if (!salonClickPt) {
+      check('★ /salon/ 上点了名字真的跳到成员链接', false, '产物里没有带 href 的 a.mem');
+    } else {
+      await cdp.click(salonClickPt.x, salonClickPt.y);
+      await sleep(1800);
+      const landed = await cdp.ev('location.pathname');
+      /* href 可能是站外地址（副本里给吉吉填的就是 example.com）——
+         那种情况下浏览器跳过去、location.pathname 是它的路径部分，所以按路径比。 */
+      const expectPath = /^https?:/i.test(salonClickPt.href)
+        ? new URL(salonClickPt.href).pathname
+        : salonClickPt.href;
+      check('★ /salon/ 上点了名字真的跳到成员链接',
+        landed === expectPath || landed === salonClickPt.href,
+        `点那一行里的名字：${salonClickPt.href} → ${landed}`);
+      /* 回到 dev 那一页（后面还有 dev 的断言） */
+      await cdp.goto(`http://127.0.0.1:${devPort}/salon/`, 1400);
+    }
+  } else {
+    check('★ /salon/ 上鼠标移到名字上 → 浮出名片（头像 + 名字）', false, JSON.stringify(salonHover));
+  }
 }
 dev.kill();
 

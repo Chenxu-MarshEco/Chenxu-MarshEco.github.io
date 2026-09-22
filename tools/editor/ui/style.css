@@ -3041,6 +3041,43 @@ body.pblock-dragging * {
   color: var(--text-muted);
 }
 
+/* 「页面里的位置 / 精华里的某一条」两个页签（2026-09-22 加） */
+.anchorpick__modes {
+  display: flex;
+  gap: 6px;
+}
+.anchorpick__mode {
+  padding: 4px 10px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--text-muted);
+  cursor: pointer;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+}
+.anchorpick__mode:hover {
+  color: var(--text);
+  border-color: var(--border-strong, var(--border));
+}
+.anchorpick__mode.is-active {
+  color: #fff;
+  border-color: var(--accent);
+  background: var(--accent);
+}
+.anchorpick__ess {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 0;
+}
+.anchorpick__ess[hidden] {
+  display: none;
+}
+.anchorpick__ess .anchorpick__list {
+  max-height: 56vh;
+}
+
 /* ---------------------------------------------------------------
    导航分类库面板：左栏分类清单 / 中栏子分类 + 条目 / 右栏预览
 --------------------------------------------------------------- */

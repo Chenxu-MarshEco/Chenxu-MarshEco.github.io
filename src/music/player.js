@@ -27,6 +27,8 @@
 
   var STATE_KEY = 'huajiantang.music.state';
   var VOL_KEY = 'huajiantang.music.volume';
+  /* 每首歌各记各的进度（用户 2026-09-22 要的「所有拥有同一首歌的网页播放进度相同」） */
+  var POS_KEY = 'huajiantang.music.positions';
 
   // 淡入淡出时长（秒）
   var IN_RESUME = 0.18; // 接着放：只需抹掉起播那一下的爆音
@@ -169,6 +171,19 @@
   }
 
   // ---- 存档（跨页面接着播全靠它）------------------------------------
+  /*
+    两本账：
+      · STATE_KEY —— 上一首是**哪一首**、放到第几秒（决定"下一页要不要接着放它"）；
+      · POS_KEY   —— **每一首**各自停在第几秒。用户 2026-09-22 的原话：
+        「所有拥有同一首歌的网页播放进度相同。举个例子：我在首页听首页的歌曲 Fly with Me
+          30秒后点进了精华页面 开始播放李箱被我玩喷了 播放10秒后我回到首页
+          那么 Fly with Me 还是应该从30秒处开始播放 而不是从头开始。
+          对于有随机播放歌曲的页面 …… 如果又随机到了李箱被我喷了 就从第10秒开始播放
+          如果随机到了终焉寻常之人 就从头开始播放」
+        以前只有 STATE_KEY 那一份，所以只有"下一页认领的第一首正好是它"才接得上，
+        随机播的页面抽到一首以前听过的歌就白听了 —— 现在按 src 各记各的。
+    两本都放 sessionStorage：和以前一样，**关掉标签页就忘掉**。
+  */
   function readState() {
     try {
       return JSON.parse(sessionStorage.getItem(STATE_KEY) || 'null');
@@ -177,10 +192,61 @@
     }
   }
 
+  function readPositions() {
+    try {
+      var v = JSON.parse(sessionStorage.getItem(POS_KEY) || 'null');
+      return v && typeof v === 'object' ? v : {};
+    } catch (e) {
+      return {};
+    }
+  }
+
+  var positions = readPositions();
+
+  /** 这一首上次停在第几秒；没听过 / 听完了就是 0 */
+  function posOf(src) {
+    var t = Number(positions[src]);
+    return isFinite(t) && t > 0 ? t : 0;
+  }
+
+  /**
+   * 记下某一首放到哪儿了。
+   * 太靠前（不到半秒）不留；**快放完的（离结束不到 2 秒）当作"听完了"，直接忘掉** ——
+   * 下次再遇到它就该从头放，而不是卡在最后 1 秒。
+   */
+  function stashPos(track, seconds) {
+    if (!track || !track.s) return;
+    var s = Number(seconds);
+    if (!isFinite(s) || s < 0.5) {
+      delete positions[track.s];
+      return;
+    }
+    var d = audio.duration;
+    if (track === cur && isFinite(d) && d > 0 && s >= d - 2) {
+      delete positions[track.s];
+      return;
+    }
+    positions[track.s] = Math.round(s * 10) / 10;
+  }
+
+  function persistPositions() {
+    try {
+      sessionStorage.setItem(POS_KEY, JSON.stringify(positions));
+    } catch (e) {}
+  }
+
+  /** 把当前这首的进度收进表里（换歌 / 存档 / 关页面之前都要先收一次） */
+  function stashCurrent() {
+    if (!cur) return;
+    stashPos(cur, audio.currentTime || 0);
+    persistPositions();
+  }
+
   function saveState(playing) {
     // 已经决定「这一站不再捡回来了」：pagehide / timeupdate 随后还会来敲门，
     // 不拦住的话刚清掉的存档又被写回去，下一站就会把这半首歌捡起来接着放。
     if (leaving) return;
+    stashCurrent();
     try {
       sessionStorage.setItem(
         STATE_KEY,
@@ -195,6 +261,9 @@
   }
 
   function clearState() {
+    /* 「这一站不捡回来了」只是不接着放它 —— 它自己的进度还是要记住，
+       下次在别的页面再遇到这首歌，照样从停下的地方接着放。 */
+    stashCurrent();
     try {
       sessionStorage.removeItem(STATE_KEY);
     } catch (e) {}
@@ -345,6 +414,8 @@
    * 没值 = 从头放，淡入也用长一点的那档。
    */
   function startTrack(t, resumeAt) {
+    /* 换歌之前先把上一首的进度收好 —— 它下次再出现还要从那儿接着放 */
+    stashCurrent();
     cur = t;
     pendingResume = resumeAt == null ? null : resumeAt;
     attachSource();
@@ -623,7 +694,11 @@
       · 存档里的这首正好是这一页认领的第一首 —— 接着放（进度 + 页面切换耗掉的时间）；
       · 否则这一页认领了第一首 —— 从头放它；
       · 都没认领 —— 随机挑一首。
-    「同一首歌不要重头开始」就是第一条：上一页点了链接、这一页把它捡回来。
+    「同一首歌不要重头开始」有两条路：
+      · 上面第一条：上一页点了链接、这一页把它捡回来（还要算上跳页耗掉的时间）；
+      · 下面那条 posOf()：这一首**以前在别的页面听过**（哪怕上一首不是它），
+        也从它自己停下的地方接着放。这就是用户举的"回首页 Fly with Me 还从 30 秒开始"、
+        "随机又抽到李箱就从第 10 秒开始、抽到没听过的终焉就从头"。
   */
   var saved = readState();
   var entry = null;
@@ -637,6 +712,11 @@
     entry = bySrc[D.first];
   } else {
     entry = pick(null);
+  }
+  /* 这一首自己以前停在第几秒（0 = 没听过 / 听完了 → 从头放） */
+  if (entry && resumeAt == null) {
+    var own = posOf(entry.s);
+    if (own > 0) resumeAt = own;
   }
 
   if (document.readyState === 'loading') {

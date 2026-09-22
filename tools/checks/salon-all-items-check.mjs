@@ -141,8 +141,8 @@ try {
     const kind = (k) => items.filter((i) => i.dataset.kind === k).length;
     const facesOf = (i) => i.querySelectorAll('.salon__face').length;
     const multi = items.filter((i) => facesOf(i) > 1);
-    const none = items.filter((i) => i.querySelector('.salon__name').textContent === '冰室群成员');
-    const sample = items.map((i) => ({ id: i.id, kind: i.dataset.kind, faces: facesOf(i), name: i.querySelector('.salon__name').textContent }));
+    const none = items.filter((i) => i.querySelector('.salon__name').innerText === '冰室群成员');
+    const sample = items.map((i) => ({ id: i.id, kind: i.dataset.kind, faces: facesOf(i), name: i.querySelector('.salon__name').innerText }));
     const noFace = items.filter((i) => facesOf(i) === 0).length;
     return {
       items: items.length, text: kind('text'), perfect: kind('perfect'), ai: kind('ai'),
@@ -154,7 +154,7 @@ try {
       time: document.querySelectorAll('.salon__time').length,
       pics: document.querySelectorAll('.salon__pic').length,
       sample, multiSample: multi.slice(0, 4).map((i) => i.id),
-      allMultiNames: multi.map((i) => i.id + ' ' + i.querySelector('.salon__name').textContent),
+      allMultiNames: multi.map((i) => i.id + ' ' + i.querySelector('.salon__name').innerText),
       h1: document.querySelector('.salon__head h1')?.textContent.trim() || '',
       headParas: document.querySelectorAll('.salon__head p, .salon__meta, .salon__note').length,
       headText: (document.querySelector('.salon__head')?.textContent || '').replace(/\s+/g, ' ').trim(),
@@ -215,7 +215,7 @@ try {
     const faces = [...it.querySelectorAll('.salon__face')];
     const avs = faces.map((f) => f.querySelector('.salon__avatar'));
     const r = avs.map((a) => { const b = a.getBoundingClientRect(); return { x: +b.left.toFixed(1), y: +b.top.toFixed(1), w: +b.width.toFixed(1), h: +b.height.toFixed(1), txt: a.textContent.trim(), title: a.parentElement.title }; });
-    return { n: faces.length, r, name: it.querySelector('.salon__name').textContent, time: it.querySelector('.salon__time').textContent, imgs: it.querySelectorAll('.salon__pic img').length, kind: it.dataset.kind, members: it.dataset.members };
+    return { n: faces.length, r, name: it.querySelector('.salon__name').innerText, time: it.querySelector('.salon__time').textContent, imgs: it.querySelectorAll('.salon__pic img').length, kind: it.dataset.kind, members: it.dataset.members };
   })()`);
   check(`2023-07-19 那条完美对话：两个成员（${pairNames.join(' + ')}）、名字 + 时间 + 对话图都在`,
     stack && stack.n === 2 && stack.name === pairText && /2023-07-19/.test(stack.time) && stack.imgs >= 1 && stack.kind === 'perfect',
@@ -228,6 +228,12 @@ try {
   const tlSrc = JSON.parse(fs.readFileSync(path.join(SRC, 'src', 'data', 'timelines.json'), 'utf8')).timelines.find((t) => t.id === data.timelineId);
   check('salon.json 里选了一条真实存在的时间轴',
     !!tlSrc, `timelineId=${JSON.stringify(data.timelineId)} → ${tlSrc ? `${tlSrc.title}（${tlSrc.points.length} 点 / ${tlSrc.spans.length} 段）` : '找不到'}`);
+
+  /*
+    这一页现在默认落在**最新**那条（进页面就滚到最下面），轴的窗口也跟着停在最末一段、
+    刻度都贴着面板边缘 —— 挑不到"当前就能点"的那个点。干脆**带一个中段的 hash 重新进页面**（落到 #e0400），轴自然停在中段。
+  */
+  await cdp.goto('/salon/#e0400', 2600);
 
   const tl = await cdp.ev(`(() => {
     const t = document.querySelector('.tl');
@@ -245,7 +251,12 @@ try {
         if (cy > b.top + 40 && cy < b.bottom - 40) break;
         body.dispatchEvent(new WheelEvent('wheel', { deltaY: cy - (b.top + b.height / 2), bubbles: true, cancelable: true }));
       }
-      const a = it.querySelector('a.tl__crane') || it.querySelector('a.tl__name') || it;
+      /*
+        ⚠ 可点的是刻度里的**塔吊 / 名字**（.tl__crane / .tl__name），
+        不是外面那个 .tl__item —— 那是个 0 尺寸的定位壳，量它永远 0×0。
+        名字现在也不一定是 <a>（2026-09-22 起名字里面包的是名片链接），所以按类找。
+      */
+      const a = it.querySelector('.tl__crane') || it.querySelector('.tl__name') || it;
       const b = body.getBoundingClientRect(); const ar = a.getBoundingClientRect();
       const x = ar.left + ar.width / 2, y = ar.top + ar.height / 2;
       if (!(ar.width > 2 && ar.height > 2 && x > 2 && y > 2 && x < innerWidth - 2 && y < innerHeight - 2)) continue;
@@ -373,6 +384,62 @@ try {
   check(`首页每日精华：另外 ${probes.length} 天逐条对账（名字 + 头像个数和 /salon.json 一致）`,
     bad.length === 0, bad.length ? JSON.stringify(bad.slice(0, 2)) : JSON.stringify(probes.slice(0, 3)));
   check('首页每日精华：成员 / 时间 / 内容三样都在', probes.every((p) => p.name && p.time && p.hasText), JSON.stringify(probes[0]));
+/* ============================================================
+     默认落点（用户 2026-09-22）：
+     「如果进入精华页面时并没有指定到某条精华的位置 那么默认进入时不要停留在最早的精华处
+       而是直接跳转到最晚的一条精华 以后加了新的精华也是默认跳转到最新精华处」
+     ============================================================ */
+  /* 前面那些段落把页面带去了别处（首页每日精华那段开的就是 /），
+     这里必须自己重新进一次 /salon/（不带 hash），才有默认落点这回事。 */
+  await cdp.goto('/salon/', 2600);
+  const entry = await cdp.ev(`(async () => {
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+    await sleep(1200);
+    const items = [...document.querySelectorAll('.salon__item')];
+    const first = items[0];
+    const last = items[items.length - 1];
+    const inView = (el) => { const r = el.getBoundingClientRect(); return r.bottom > 0 && r.top < innerHeight; };
+    const dt = (el) => el.querySelector('.salon__time')?.getAttribute('datetime') || '';
+    const all = items.map(dt).filter(Boolean).sort();
+    return {
+      scrollY: Math.round(scrollY),
+      firstId: first.id, firstVisible: inView(first),
+      lastId: last.id, lastTop: Math.round(last.getBoundingClientRect().top), lastVisible: inView(last),
+      lastDt: dt(last), maxDt: all[all.length - 1],
+      items: items.length, vh: innerHeight,
+    };
+  })()`);
+  console.log('默认落点：', JSON.stringify(entry));
+  check('★ 不带 hash 进 /salon/：默认**不在**顶上（最早的精华处），页面确实滚下去了',
+    entry.scrollY > 1000 && entry.firstVisible === false, `scrollY=${entry.scrollY}｜第一条还在视口里=${entry.firstVisible}`);
+  check('★ 落在的是**最后一条**（= 数据里最晚的那一条），而且就在视口里',
+    entry.lastVisible === true && entry.lastDt === entry.maxDt && entry.lastId === 'e0784',
+    `${entry.lastId}（${entry.lastDt}）｜页面最晚 ${entry.maxDt}｜顶边 ${entry.lastTop}px`);
+  check('★ 判据是"时间最晚"而不是"页面最下面"：最后一条的 datetime 就是全部条目里最大的那个',
+    entry.maxDt === entry.lastDt && entry.items === total, `${entry.lastDt === entry.maxDt}`);
+
+  /* 带 hash 的落点不能坏（首页「每日精华」那条路） */
+  await cdp.goto('/salon/#e0012', 2600);
+  const hashEntry = await cdp.ev(`(async () => {
+    await new Promise((r) => setTimeout(r, 1200));
+    const el = document.getElementById('e0012');
+    const items = [...document.querySelectorAll('.salon__item')];
+    const last = items[items.length - 1];
+    const r = el ? el.getBoundingClientRect() : null;
+    return {
+      scrollY: Math.round(scrollY),
+      top: r ? Math.round(r.top) : null,
+      inView: r ? r.bottom > 0 && r.top < innerHeight : false,
+      lastVisible: last.getBoundingClientRect().bottom > 0 && last.getBoundingClientRect().top < innerHeight,
+    };
+  })()`);
+  console.log('带 hash 的落点：', JSON.stringify(hashEntry));
+  check('带 hash 进来还是落在**那一条**上（没被"默认落最新"抢走）',
+    hashEntry.inView === true && hashEntry.top !== null && hashEntry.top >= 0 && hashEntry.top < 200,
+    `#e0012 顶边 ${hashEntry.top}px（scrollY=${hashEntry.scrollY}）`);
+  check('带 hash 时不会同时落到最后一条（两个落点不打架）',
+    hashEntry.lastVisible === false, `最后一条在视口里=${hashEntry.lastVisible}`);
+
   check('这一趟没有 JS 报错', cdp.errors.length === 0, cdp.errors.slice(0, 3).join(' | '));
 
   try { execSync(`taskkill /pid ${chrome.pid} /T /F`, { stdio: 'ignore' }); } catch { /* 已退出 */ }

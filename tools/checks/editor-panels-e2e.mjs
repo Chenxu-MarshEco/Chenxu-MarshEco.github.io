@@ -522,6 +522,47 @@ try {
     }
   }
 
+  /* ================= 2g. 音乐：**所有页面**都能配（不只是板块页） =================
+     用户原话：「编辑器里的每一个带有编辑页面能力的功能都应该能修改到所有页面！！！
+     例如我现在根本无法在音乐页面中为冰室冰山，冰室精华，隐秘页面等页面添加音乐！
+     请把这些目前无法用编辑器互动的页面也加入到编辑器里」。
+     量的是：清单里有这些页面 → 给 /iceberg/ 配上曲子 → 重建后那一页真的内联了
+     key=page:iceberg 的音乐数据（站点那边的 musicKeyForPath 会算出同一个 key）。 */
+  const mus0 = await api('GET', '/api/music');
+  const musPages = mus0.json?.pages ?? [];
+  const pageKind = musPages.filter((p) => p.kind === 'page');
+  console.log('\n音乐页面清单里的「其它页面」：', pageKind.map((p) => p.key + '(' + p.label + ')').slice(0, 10).join(' '));
+  check('2g★ 音乐清单里有「其它页面」这一档，而且冰室冰山 / 冰室精华都在里面',
+    ['page:iceberg', 'page:salon'].every((k) => musPages.some((p) => p.key === k)),
+    JSON.stringify(pageKind.map((p) => p.key)));
+  check('2g 「关于我」这类页面也在（不是只捡板块树里有的）',
+    musPages.some((p) => p.kind === 'page' && /about/.test(p.key)),
+    JSON.stringify(pageKind.filter((p) => /about/.test(p.key)).map((p) => p.key)));
+
+  {
+    /* ⚠ 这个接口的 body 是 { music: { tracks, pages } }（不是直接把 tracks/pages 铺在外面） */
+    const rM = await api('POST', '/api/music', {
+      music: {
+        /* src 必须走 /audio/uploads/ 前缀（服务端的 cleanAudioSrc 只认这个），
+           拿站里真有的一首歌来当验收样本 */
+        tracks: [{ id: 'e2e-track', title: '验收曲子', src: '/audio/uploads/20260918-2329-f6d5-YUNG-BAE-Fly-With-Me.mp3' }],
+        pages: { 'page:iceberg': { list: ['e2e-track'], first: 'e2e-track' } },
+      },
+    });
+    const rB = await api('POST', '/api/build');
+    const iceHtml = html(path.join('iceberg', 'index.html'));
+    const musicKey = /"key"\s*:\s*"([^"]+)"/.exec(iceHtml)?.[1] ?? '';
+    check('2g★ 保存 + 重建成功', rM.json?.ok === true && rB.json?.ok === true,
+      '写=' + rM.json?.ok + '｜重建=' + rB.json?.ok);
+    check('2g★ 给 /iceberg/ 配的音乐真的进了它的构建产物（内联数据 key = page:iceberg、曲子也在）',
+      /__MUSIC_DATA__/.test(iceHtml) && musicKey === 'page:iceberg' && iceHtml.includes('e2e-track'),
+      'key=' + musicKey + '｜有曲子=' + iceHtml.includes('e2e-track'));
+    const diskM = readJson(path.join(DST, 'src', 'data', 'music.json'));
+    check('2g 落盘：music.json 的 pages 里就是 page:iceberg 这一条',
+      !!diskM.pages?.['page:iceberg']?.list?.includes('e2e-track'),
+      JSON.stringify(diskM.pages?.['page:iceberg'] ?? null));
+  }
+
   /* ================= 3. POST /api/salon：只带 members ================= */
   const salon1 = readJson(path.join(DST, 'src', 'data', 'salon.json'));
   const membersNew = salon1.members.map((m) => (m.id === RAW_ID ? { ...m, name: NEW_NAME, avatar: upA.json.path } : m));
