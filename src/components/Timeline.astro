@@ -156,6 +156,20 @@ const bandStroke = (lane: number) => (lane === 0 ? `url(#${gradId})` : laneColor
 const spanBands = spans.flatMap((s) =>
   s.sides.map((side) => ({ id: s.id, side, lane: laneOf(s.id, side), from: s.from, to: s.to, fromT: s.fromT, toT: s.toT }))
 );
+/*
+  每个时间段一共多少天（用户 2026-09-22：鼠标移到「写有年代名字的卡片」上时，
+  卡片微微放大并在名字下面写 xx天 —— 那条轴上的卡片就是这些时间段名字）。
+  端点在数据里是**时间点的 id**，所以要从 points 那头的 day 取。
+  live 的那个点在脚本里会换成"访问者当天"，届时 relayoutLive() 会重算这里的数字。
+*/
+const dayOfPoint = new Map(points.map((p) => [p.id, p.day]));
+const spanDays = (s) => {
+  const a = dayOfPoint.get(s.from);
+  const b = dayOfPoint.get(s.to);
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return 0;
+  return Math.round(Math.max(a, b) - Math.min(a, b)) + 1;
+};
+
 const spanLabels = spans.flatMap((s) =>
   s.sides.map((side) => ({
     id: s.id,
@@ -289,7 +303,18 @@ const initialScaleText = `一刻度约 ${
             {...l.href && isExternal(l.href) ? { target: '_blank', rel: 'noopener' } : {}}
             {...l.href ? { title: `${l.name}（点开看这一段）` } : {}}
           >
-            {l.name}
+            {/*
+              内层再包一层：卡片自己的定位是**内联**的 transform: translateY(-50%)，
+              内联压过样式表 —— 想"微微放大"只能缩放这一层（它没有内联 transform）。
+            */}
+            <span class="tl__spanNameBox">
+              {l.name}
+              {/* 鼠标移上去才展开的「xx天」（见样式里的 .tl__spanName:hover） */}
+              <span class="tl__spanDays" data-tl-spanDays>
+                {spanDays(l) || ''}
+                {spanDays(l) ? ' 天' : ''}
+              </span>
+            </span>
           </Tag>
         );
       })}
@@ -1070,6 +1095,62 @@ const initialScaleText = `一刻度约 ${
     pointer-events: none;
   }
   /*
+    鼠标移到时间段名字上：卡片**微微放大** + 名字下面多一行「xx天」
+    （用户 2026-09-22：「鼠标指针移到写有年代名字的卡片上时 卡片会微微放大并在年代名字
+      下面写出xx天 也就是这个年代总共有几天 鼠标移开后变回原样」）。
+    天数那行平时 max-height:0 + opacity:0 —— 不占布局，进出都不会把轴顶来顶去。
+    ⚠ 两个坑（用户 2026-09-22 报「鼠标移到年代卡上没有任何反应」）：
+      ① 上面那条 `.tl__spanName` 规则里写着 pointer-events: none —— 鼠标根本扫不到这些卡片，
+         hover 永远不会触发，所以这里必须把它打开；
+      ② 卡片的定位是**内联**的 transform: translateY(-50%)，内联压过样式表 ——
+         样式表里再写 transform: scale(...) 既不生效、还会把居中弄丢。
+         改用**独立的 scale 属性**（它和 transform 是两件事，浏览器依次应用），
+         既不动居中，也不用跟内联样式抢。
+  */
+  .tl__spanName {
+    pointer-events: auto;
+  }
+  /*
+    缩放放在**内层**（.tl__spanNameBox）：卡片自己是内联 transform 定位的，
+    样式表里的 transform 抢不过内联 —— 所以内层干净的那一层来负责放大。
+  */
+  .tl__spanNameBox {
+    display: inline-block;
+    transition: transform 0.16s ease;
+  }
+  .tl__spanName:hover .tl__spanNameBox,
+  .tl__spanName:focus-visible .tl__spanNameBox {
+    transform: scale(1.06);
+  }
+  .tl__spanName:focus-visible {
+    outline: 2px solid rgba(255, 120, 190, 0.7);
+    outline-offset: 2px;
+  }
+  .tl__spanDays {
+    display: block;
+    max-height: 0;
+    overflow: hidden;
+    font-size: 0.72rem;
+    line-height: 1.4;
+    font-variant-numeric: tabular-nums;
+    color: #ff9ad5;
+    text-shadow: 0 0 10px rgba(255, 79, 163, 0.5);
+    opacity: 0;
+    transition: max-height 0.16s ease, opacity 0.16s ease;
+  }
+  .tl__spanName:hover .tl__spanDays,
+  .tl__spanName:focus-visible .tl__spanDays {
+    max-height: 1.6rem;
+    opacity: 1;
+  }
+  /* 触屏没有 hover：一直显示 */
+  @media (hover: none) {
+    .tl__spanDays {
+      max-height: 1.6rem;
+      opacity: 1;
+    }
+  }
+  /*
     名字的边框和字色跟着它那条带子的「层」走（--sc 是标记里按层算好写进去的）：
     带子是紫色，名字就是紫色，一眼能对上哪条带子叫什么。
     第 0 层给的就是原来那个粉色，没有重合的场合和以前一模一样。
@@ -1194,8 +1275,9 @@ const initialScaleText = `一刻度约 ${
   .tl__totalDays {
     font-size: 1rem;
     font-variant-numeric: tabular-nums;
-    color: #ffd447;
-    text-shadow: 0 0 10px rgba(255, 212, 71, 0.45);
+    /* 粉色：和站点别处（标题的粉光、链接的 #ffb3dd）一套，不再用黄色 */
+    color: #ff9ad5;
+    text-shadow: 0 0 10px rgba(255, 79, 163, 0.55);
   }
   .tl__totalUnit {
     color: rgba(255, 226, 244, 0.72);
@@ -1826,6 +1908,8 @@ const initialScaleText = `一刻度约 ${
       lastLiveDay = today;
 
       const dayOfEl = new Map<HTMLElement, number>();
+      const byIdAll = new Map<string, HTMLElement>();
+      for (const el of items) byIdAll.set(el.dataset.point ?? '', el);
       for (const el of items) {
         /*
           「难以考据」的点没有日期，不该被卷进"按今天重排"里：
@@ -1872,6 +1956,19 @@ const initialScaleText = `一刻度约 ${
           const em = el.querySelector<HTMLElement>('.tl__tip em');
           if (em) em.textContent = `${iso}（实时）`;
         }
+      }
+
+      /*
+        时间段名字卡上的「xx天」也要跟着重算 —— live 那个端点刚刚被换成"今天"。
+        （用户 2026-09-22 的 hover 显示；有实时的轴它每天自己涨。）
+      */
+      for (const el of document.querySelectorAll<HTMLElement>('.tl__spanName')) {
+        const daysEl = el.querySelector<HTMLElement>('[data-tl-spanDays]');
+        if (!daysEl) continue;
+        const a = dayOfEl.get(byIdAll.get(el.dataset.fromPoint ?? '') as HTMLElement);
+        const b = dayOfEl.get(byIdAll.get(el.dataset.toPoint ?? '') as HTMLElement);
+        if (!Number.isFinite(a) || !Number.isFinite(b)) continue;
+        daysEl.textContent = `${Math.round(Math.abs((a as number) - (b as number))) + 1} 天`;
       }
 
       // 时间段的带子和名字：两端位置要按新的点位置重算

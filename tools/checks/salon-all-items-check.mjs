@@ -542,6 +542,45 @@ try {
   check('★ 鼠标移开：变回原样（缩放回到 1、天数收回去）',
     Math.abs(out.scale - 1) < 0.02 && out.opacity < 0.5, JSON.stringify(out));
 
+  /*
+    时间轴上「写着名字的卡片」（时间段名字卡）也要能 hover 出天数
+    —— 用户原话：「鼠标移到年代卡上没有任何反应」。
+    这些卡片在轴上一侧一个，名字下面平时收着「xx天」，移上去展开 + 卡片微微放大。
+  */
+  const spanCard = await cdp.ev(`(() => {
+    const el = [...document.querySelectorAll('.tl__spanName')].find((x) => getComputedStyle(x).visibility === 'visible' && x.getBoundingClientRect().width > 20);
+    if (!el) return null;
+    el.scrollIntoView({ block: 'center', behavior: 'instant' });
+    const daysEl = el.querySelector('[data-tl-spanDays]');
+    const r = el.getBoundingClientRect();
+    return {
+      x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2),
+      name: el.textContent.replace(/[0-9]+\s*天/, '').trim().slice(0, 12),
+      days: daysEl ? Number((daysEl.textContent.match(/[0-9]+/) || [0])[0]) : null,
+      opacity: daysEl ? Number(getComputedStyle(daysEl).opacity) : null,
+      scale: (() => { const m = /matrix3?d?\\(([-\\d.eE]+)/.exec(getComputedStyle(el).transform); return m ? Number(m[1]) : 1; })(),
+    };
+  })()`);
+  console.log('时间轴名字卡：', JSON.stringify(spanCard));
+  check('★ 时间轴上那些"写着名字的卡片"平时把天数收着（hover 才展开）',
+    !!spanCard && spanCard.days > 0 && spanCard.opacity === 0, JSON.stringify(spanCard));
+  check('★ 天数算得对（和这条轴数据里的起止一致）',
+    !!spanCard && spanCard.days > 0 && spanCard.days < 4000, `${spanCard?.name} = ${spanCard?.days} 天`);
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: spanCard.x, y: spanCard.y, buttons: 0 });
+  await sleep(450);
+  const spanHover = await cdp.ev(`(() => {
+    const el = [...document.querySelectorAll('.tl__spanName')].find((x) => getComputedStyle(x).visibility === 'visible' && x.getBoundingClientRect().width > 20);
+    const daysEl = el.querySelector('[data-tl-spanDays]');
+    const m = /matrix3?d?\\(([-\\d.eE]+)/.exec(getComputedStyle(el).transform);
+    return { scale: m ? Number(m[1]) : 1, opacity: Number(getComputedStyle(daysEl).opacity), days: daysEl.textContent.trim() };
+  })()`);
+  console.log('时间轴名字卡 hover：', JSON.stringify(spanHover));
+  check('★ 鼠标移到那张卡上：卡片微微放大 + 名字下面写出「xx天」（用户报的那件事）',
+    spanHover.scale > 1 && spanHover.opacity > 0.5 && /\d+ 天/.test(spanHover.days),
+    JSON.stringify(spanHover));
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 4, y: 4, buttons: 0 });
+  await sleep(350);
+
   check('这一趟没有 JS 报错', cdp.errors.length === 0, cdp.errors.slice(0, 3).join(' | '));
 
   try { execSync(`taskkill /pid ${chrome.pid} /T /F`, { stdio: 'ignore' }); } catch { /* 已退出 */ }

@@ -35,6 +35,7 @@
  * ============================================================================
  */
 import fs from 'node:fs';
+import crypto from 'node:crypto';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -175,7 +176,12 @@ async function encodeItem(sharp, abs, key) {
     return {
       key, src: key, w: dispW, h: dispH, hasAlpha, lossless: false, animated: true,
       variants: [], fallback: { url: key, bytes: orig.length }, lqip: '',
-      source: { bytes: orig.length, mtimeMs: (await fsp.stat(abs)).mtimeMs, cfg: CFG.version },
+      source: {
+      bytes: orig.length,
+      mtimeMs: (await fsp.stat(abs)).mtimeMs,
+      hash: crypto.createHash('sha1').update(orig).digest('hex').slice(0, 16),
+      cfg: CFG.version,
+    },
     };
   }
 
@@ -247,11 +253,30 @@ async function encodeItem(sharp, abs, key) {
     variants,
     fallback,
     lqip,
-    source: { bytes: orig.length, mtimeMs: (await fsp.stat(abs)).mtimeMs, cfg: CFG.version },
+    source: {
+      bytes: orig.length,
+      mtimeMs: (await fsp.stat(abs)).mtimeMs,
+      hash: crypto.createHash('sha1').update(orig).digest('hex').slice(0, 16),
+      cfg: CFG.version,
+    },
   };
 }
 
 // ---------------------------------------------------------------- 主流程
+
+/**
+ * 源图的内容哈希（sha1 前 16 位）。
+ *
+ * 为什么需要它：`cachedOk` 原先只比 **size + mtime**。本地改图 mtime 会变、缓存自然失效，
+ * 但 **CI 上每次 checkout 出来的 mtime 都是"刚刚"** —— 于是每次推送都把 300 多张图
+ * 从头到尾用 sharp 重编一遍（用户反馈的「github 的构建速度非常非常慢」就是它）。
+ * 换成"mtime 对不上就再比一次内容哈希"之后：内容没变 → 缓存命中 → 秒过。
+ * 50MB 图库算一遍 sha1 不到 1 秒，比重编几分钟划算得多。
+ */
+async function hashOf(abs) {
+  const buf = await fsp.readFile(abs);
+  return crypto.createHash('sha1').update(buf).digest('hex').slice(0, 16);
+}
 
 async function readManifest() {
   try {
@@ -263,10 +288,19 @@ async function readManifest() {
   return { cfg: CFG.version, generated: null, items: {} };
 }
 
-function cachedOk(prev, stat) {
+function cachedOk(prev, stat, hash) {
   if (!prev || !prev.source) return false;
+  if (prev.source.cfg !== CFG.version) return false;
   if (prev.source.bytes !== stat.size) return false;
-  if (Math.abs(prev.source.mtimeMs - stat.mtimeMs) > 1) return false;
+  /*
+    mtime 一致 → 直接命中（本地改图最常走的路）；
+    mtime 不一致 → 比内容哈希：**CI 每次 checkout 的 mtime 都是新的**，
+    只认 mtime 的话每次推送都会全量重编（就是"构建特别慢"的根）。
+    老清单里没有 hash（第一次升级）→ 退回按 mtime 判（那一趟会重编一次，之后就快了）。
+  */
+  if (Math.abs(prev.source.mtimeMs - stat.mtimeMs) > 1) {
+    if (!prev.source.hash || !hash || prev.source.hash !== hash) return false;
+  }
   // 产物文件得都还在（可能被人手删过）
   const files = [];
   for (const v of prev.variants ?? []) {
@@ -332,11 +366,13 @@ export async function optimizeAll(opts = {}) {
           w: pw, h: ph,
           hasAlpha: prev?.hasAlpha ?? false,
           variants: [], fallback: { url: key, bytes: stat.size }, lqip: '',
-          source: { bytes: stat.size, mtimeMs: stat.mtimeMs, cfg: CFG.version },
+          source: { bytes: stat.size, mtimeMs: stat.mtimeMs, hash: await hashOf(abs), cfg: CFG.version },
         };
         continue;
       }
-      if (!force && cachedOk(prev, stat)) {
+      const sameMtime = prev?.source && Math.abs(prev.source.mtimeMs - stat.mtimeMs) <= 1;
+      const hash = !force && !sameMtime ? await hashOf(abs) : null;
+      if (!force && cachedOk(prev, stat, hash)) {
         next[key] = prev;
         stats.reused++;
         stats.inBytes += prev.source.bytes;
