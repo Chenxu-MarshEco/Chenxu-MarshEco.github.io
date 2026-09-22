@@ -461,6 +461,85 @@ const firstParam = list.length && tl ? (params.get(list[0].id) ?? 0) : 0;
     });
     apply();
   }
+
+  /* ============================================================================
+   * 长文字折起来
+   * ---------------------------------------------------------------------------
+   * 用户原话（2026-09-22，看到那 8 条几百上千字的 OCR 转录之后）：「要加折叠」。
+   *
+   * 规矩：
+   *   · 只有**真的溢出**（裁到 8 行以后还剩内容）才给那顆「展开」——
+   *     短的那些一个按钮都不出现（不然 784 条里会多出几百个没用的按钮）；
+   *   · 裁剪的 CSS 挂在 `.is-clamped` 上，而这个类**只有脚本加**：
+   *     没跑 JS 的浏览器看到的是全文（不会有一段被无声切掉）；
+   *   · 窗口变宽变窄会重新判一次（行高换行都变了，原本不用折的可能就要折了）；
+   *     已经点开的那条不动它 —— 用户自己展开的，不该被一次 resize 收回去。
+   * ========================================================================= */
+  const FOLD_LINES = 8;
+  const folded = new Map<HTMLElement, { btn: HTMLButtonElement; open: boolean }>();
+
+  /*
+    ⚠ 这里必须**先一次性写完、再一次性读高度**。
+    一条一条「加上类 → 读 scrollHeight → 去掉类」会让浏览器每条都重排一次：
+    784 条实测把主线程占了 5.07s（salon-perf 那条「任务 < 3s」直接红了）。
+    现在是：全部穿上裁剪类（write）→ 一次读完所有高度（read，只重排一次）→ 再收尾。
+  */
+  const syncFolds = () => {
+    const boxes: HTMLElement[] = [];
+    document.querySelectorAll<HTMLElement>('.salon__item').forEach((item) => {
+      /* 被搜索藏起来的这种量不出高度，跳过；下次 resize / 再搜时会补上 */
+      if (item.hidden) return;
+      const box = item.querySelector<HTMLElement>('.salon__text');
+      if (!box || !box.textContent?.trim()) return;
+      box.style.setProperty('--fold-lines', String(FOLD_LINES));
+      /* 用户自己点开的那条不动它 —— 展开着不该被一次 resize 收回去 */
+      if (folded.get(box)?.open) return;
+      box.classList.add('is-clamped');
+      boxes.push(box);
+    });
+    /* 一次读：从这里到下面那圈循环之间**不能有任何写** */
+    const over = boxes.map((box) => box.scrollHeight - box.clientHeight);
+    boxes.forEach((box, i) => {
+      const state = folded.get(box);
+      if (over[i] > 4) {
+        if (state) return; /* 已经有按钮了 */
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'salon__fold';
+        btn.textContent = '展开';
+        btn.setAttribute('aria-expanded', 'false');
+        btn.addEventListener('click', () => {
+          const st = folded.get(box);
+          if (!st) return;
+          st.open = !st.open;
+          box.classList.toggle('is-clamped', !st.open);
+          st.btn.textContent = st.open ? '收起' : '展开';
+          st.btn.setAttribute('aria-expanded', st.open ? 'true' : 'false');
+        });
+        box.after(btn);
+        folded.set(box, { btn, open: false });
+      } else {
+        box.classList.remove('is-clamped');
+        if (state) {
+          state.btn.remove();
+          folded.delete(box);
+        }
+      }
+    });
+  };
+
+  syncFolds();
+  /* 图 / 字体到位后行数还会变，加载完再判一次 */
+  window.addEventListener('load', () => window.setTimeout(syncFolds, 60));
+  let foldQueued = false;
+  window.addEventListener('resize', () => {
+    if (foldQueued) return;
+    foldQueued = true;
+    window.requestAnimationFrame(() => {
+      foldQueued = false;
+      syncFolds();
+    });
+  });
 </script>
 
 <style>
@@ -760,6 +839,41 @@ const firstParam = list.length && tl ? (params.get(list[0].id) ?? 0) : 0;
   .salon__empty {
     margin: 1.5rem 0;
     color: rgba(255, 226, 244, 0.72);
+  }
+
+  /*
+    长文字折起来（用户 2026-09-22：「要加折叠」）。
+    裁剪只挂在 `.is-clamped` 上，而这个类**只有脚本会加** ——
+    所以没跑 JS 的人看到的是全文，不会有一段莫名其妙被切掉。
+    行数走 --fold-lines（脚本里设成 8）。
+  */
+  .salon__text.is-clamped {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: var(--fold-lines, 8);
+    overflow: hidden;
+  }
+  .salon__fold {
+    display: inline-block;
+    margin: 0.3rem 0 0;
+    padding: 0 0 1px;
+    font: inherit;
+    font-size: 0.78rem;
+    letter-spacing: 0.04em;
+    color: #ff9ad5;
+    cursor: pointer;
+    border: 0;
+    border-bottom: 1px dotted rgba(255, 120, 190, 0.6);
+    background: none;
+  }
+  .salon__fold:hover,
+  .salon__fold:focus-visible {
+    color: #fff;
+    border-bottom-color: #fff;
+  }
+  .salon__fold:focus-visible {
+    outline: 2px solid rgba(255, 120, 190, 0.75);
+    outline-offset: 2px;
   }
 
   /* ============================================================================
