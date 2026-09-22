@@ -170,6 +170,21 @@ const salonHtml = fs.readFileSync(path.join(root, 'salon/index.html'), 'utf8');
 check('★ 冰室精华页（/salon/）一处都没链', (salonHtml.match(/class="mem[ "]/g) || []).length === 0,
   `${(salonHtml.match(/class="mem[ "]/g) || []).length} 处`);
 
+/*
+  冰山图页（/iceberg/）也整页跳过（2026-09-22 加的）。这一条要连**原因**一起钉住：
+  那一页的条目名 / 层标题里本来就写着成员名（Raw、虹星、隰辰煦…），
+  链上去会把文字拆开（层标题 textContent 变成「RawRaw冰室之主…」）、
+  名字上叠两张浮层，而且条目本身是链接时嵌套 <a> 会把结构拆坏。
+  所以这里同时断言：页面上**确实有**成员名，但一处都没被链。
+*/
+const iceHtml = fs.readFileSync(path.join(root, 'iceberg/index.html'), 'utf8');
+const iceMems = (iceHtml.match(/class="mem[ "]/g) || []).length;
+check('★ 冰山图页（/iceberg/）一处都没链（条目名里全是成员名，链上会把文字拆开、链接套链接）',
+  iceMems === 0, `${iceMems} 处`);
+check('（对照）冰山图页上确实写着成员名 —— 跳过是有意的，不是碰巧没有名字',
+  /Raw/.test(iceHtml) && /虹星|隰辰煦|吉吉/.test(iceHtml) && iceMems === 0,
+  `页面上有成员名=${/Raw/.test(iceHtml)}，被链处数=${iceMems}`);
+
 /* 被链的名字必须**全部**来自成员表 —— 这是"只链我输入的那些"的硬判据 */
 const wrapped = new Set();
 for (const [, h] of pages) {

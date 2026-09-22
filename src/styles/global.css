@@ -208,6 +208,60 @@ body.is-board .site-footer a {
   color: #ffb3dd;
 }
 
+/* ---------------------------------------------------------------------------
+ *  冰山图那页（/iceberg/）：深紫底 + 一层**自下往上**走的扫描线
+ * ------------------------------------------------------------------------
+ *  用户 2026-09-22 的两句话：
+ *    「整体页面风格类似冰室精华那个页面」（= 深紫底 #1e0730 + is-board 那套页头页脚，
+ *      和 /salon/ 一个配方，见 salon.astro 顶部那段注释）
+ *    「运动的线类似首页背景上的 只不过改为从下往上」
+ *
+ *  所以这里用的就是首页 `.vapor__scan` 那张 8×32 的内联 PNG（暗线 rgba(0,0,0,.22)，
+ *  每 4 CSS px 一条）、同样的周期 16px 与速度 1.1s、同样 `image-rendering: pixelated`，
+ *  只把方向反过来：首页是 background-position-y 0 → +16px（往下），这里是 0 → **-16px**（往上）。
+ *
+ *  为什么动 background-position 而不是 translateY（照抄首页那段结论）：
+ *  位移一旦交给合成层，贴图会被双线性重采样，硬边当场糊掉，pixelated 也救不回来。
+ *  宁可让这张 153 字节的贴图每帧重绘一次，也要保住硬边。
+ *
+ *  层级：扫描线 z-index:0，正文和页脚在它上面（下面那三行）；页头本来就是 sticky + z-index:20。
+ *  动效会被文件顶部那条 prefers-reduced-motion 规则收掉（时长 0.01ms、只跑一次）。
+ *
+ *  另外那层"电视信号失真"（雪花屏 / 彩色格 / 扭曲）不在这里 ——
+ *  它是**盖在内容上面**的，跟着滚到多深变强，见 IcebergChart.astro 里的 .ibk__vhs。
+ * ------------------------------------------------------------------------ */
+body.is-iceberg {
+  --scan-period: 16px;
+  --scan-speed: 1.1s;
+  background-color: #1e0730;
+}
+body.is-iceberg::before {
+  content: '';
+  position: fixed;
+  /* 底下多留一格：往上走一格时不至于在底部露一条边 */
+  inset: 0 0 calc(-1 * var(--scan-period)) 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image: url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAgAAAAgCAYAAAAv8DnQAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAAuSURBVDhP7cjBCQAwDMNAj9X9J0ufCgiygAX3UX7voJN0kk7SSTpJJ+mk1toqGXoODgG0rk4hAAAAAElFTkSuQmCC');
+  background-repeat: repeat;
+  background-size: 8px var(--scan-period);
+  image-rendering: pixelated;
+  animation: ice-scan-up var(--scan-speed) linear infinite;
+}
+body.is-iceberg .site-main,
+body.is-iceberg .site-footer {
+  position: relative;
+  z-index: 1;
+}
+@keyframes ice-scan-up {
+  from {
+    background-position-y: 0;
+  }
+  to {
+    background-position-y: calc(-1 * var(--scan-period));
+  }
+}
+
 .site-header__inner {
   display: flex;
   align-items: center;

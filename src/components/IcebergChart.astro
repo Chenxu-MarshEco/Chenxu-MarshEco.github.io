@@ -2,20 +2,27 @@
 /**
  * 冰山图（/iceberg/ 的正文部分）。
  *
- * 一张图 = 若干「层级」从上往下叠，每层一个深色卡片：
+ * 一张图 = 若干「层级」从上往下叠，每层一个卡片：
  *   标题（大）+ 副标题（小）+ 这一层的背景图 + 右边的头图 + 一堆条目。
+ *
+ * 卡片和整页风格跟站里别的页一样是**浅色**（--c-bg-raised / --c-border / 落日琥珀字）；
+ * 一进这一页，整页背景上还有一层**自下往上走**的栅格（见 `astro` 那边 bodyClass="is-iceberg"
+ * 和 global.css 里的 body.is-iceberg 那一段）。
  *
  * 条目长什么样全由数据推出来，不让人维护第二份真相：
  *   颜色     ← 它归在哪个分类（分类颜色在编辑器里选）
- *   完备标识 ← 详细描述填没填（填了就在条目背后垫一块粉色带栅格的圆角矩形）
+ *   完备标识 ← 详细描述填没填。样子**照地图上那颗「区域图钉」**做：同一套「横向格栅 + 渐变」，
+ *              去掉下面指向地图的小箭头，拉长成圆角矩形、微微半透明，
+ *              颜色跟着这一条的分类色走（--cat）
  *   悬停卡片 ← 标签 + 详细描述；填了链接就能点
  *   顶上的分类小眼睛 ← 点一下把这一类的条目整批收起 / 放出
  *
- * 图走 <Img>（srcset + width/height，不跳版）；条目颜色只用一个自定义属性
- * --cat 传下去，配色全在 CSS 里算。
+ * 图走 <Img>（srcset + width/height，不跳版）；配色只往下传两个自定义属性：
+ *   --cat  这一条的颜色（= 分类色，页面上的色块 / 条目 / 标识都用它）
+ *   --ink  在**浅底上读得清**的那个色（构建期把分类色压深到 4.5:1，见 utils/iceberg.ts）
  */
 import Img from './Img.astro';
-import { DEFAULT_CATEGORY_COLOR, iceberg } from '../utils/iceberg';
+import { DEFAULT_CATEGORY_COLOR, chipInk, iceberg, itemInk } from '../utils/iceberg';
 import { withBase } from '../utils/url';
 
 const { layers, categories } = iceberg;
@@ -48,7 +55,7 @@ const dataOf = (it: { name: string; tags: string[]; desc: string }, tagNames: st
             data-cat={c.id}
             data-on={c.hidden ? '0' : '1'}
             aria-pressed={c.hidden ? 'false' : 'true'}
-            style={`--cat:${c.color}`}
+            style={`--cat:${c.color};--ink:${chipInk(c.color)}`}
             title={`${c.name}：点一下${c.hidden ? '显示' : '隐藏'}这一类的条目`}
           >
             <span class="ibk__eye" aria-hidden="true">
@@ -94,15 +101,18 @@ const dataOf = (it: { name: string; tags: string[]; desc: string }, tagNames: st
                     .filter(Boolean);
                   const done = it.desc !== '';
                   const extra = dataOf(it, tagList);
+                  /* 深底上就是分类色本身；有标识的那条按标识底再调一档，两边都 ≥4.5:1 */
+                  const ink = itemInk(color, done);
+                  const style = `--cat:${color};--ink:${ink}`;
                   return (
                     <li class="ibk__cell" data-cat={it.categoryId || ''} data-done={done ? '1' : '0'}>
                       {it.href ? (
-                        <a class:list={['ibk__item', done && 'is-done']} href={hrefOf(it.href)} style={`--cat:${color}`} {...extra}>
+                        <a class:list={['ibk__item', done && 'is-done']} href={hrefOf(it.href)} style={style} {...extra}>
                           {done && <span class="ibk__badge" aria-hidden="true" />}
                           <span class="ibk__txt">{it.name}</span>
                         </a>
                       ) : (
-                        <span class:list={['ibk__item', done && 'is-done']} tabindex="0" aria-describedby="ibk-tip" style={`--cat:${color}`} {...extra}>
+                        <span class:list={['ibk__item', done && 'is-done']} tabindex="0" aria-describedby="ibk-tip" style={style} {...extra}>
                           {done && <span class="ibk__badge" aria-hidden="true" />}
                           <span class="ibk__txt">{it.name}</span>
                         </span>
@@ -133,12 +143,38 @@ const dataOf = (it: { name: string; tags: string[]; desc: string }, tagNames: st
   <p class="ibk__tipDesc" data-tip-desc />
 </div>
 
+{/*
+  电视信号失真那一层（用户 2026-09-22 要的新特效）：
+    「屏幕上会偶尔隐隐出现类似电视信号失真的雪花屏 彩色格 扭曲等
+      随着页面下翻越到冰山深处的条目 这种特效越明显」
+  四样叠在一起：雪花噪点 · RGB 彩色格 · 几条横向撕裂（带 backdrop-filter 真扭曲）· 一条慢慢往上滚的亮带。
+  强度 = --ibk-deep（滚到多深，0~1，按页面比例算）×（一点点常驻 + 偶发爆发 --ibk-burst）。
+  全部 pointer-events:none，点不到；prefers-reduced-motion 时脚本根本不启动爆发。
+*/}
+<div class="ibk__vhs" data-ibk-vhs aria-hidden="true">
+  <span class="ibk__vhsSnow"></span>
+  <span class="ibk__vhsRgb"></span>
+  <span class="ibk__vhsTear ibk__vhsTear--a"></span>
+  <span class="ibk__vhsTear ibk__vhsTear--b"></span>
+  <span class="ibk__vhsTear ibk__vhsTear--c"></span>
+  <span class="ibk__vhsBar"></span>
+</div>
+
 <style>
+  /*
+    观感 = 冰室精华那一页（用户 2026-09-22：「整体页面风格类似冰室精华那个页面」）。
+    数值就是 /salon/ 那一套（它自己又是从「隰辰煦家」那一页量出来的）：
+      底 #1e0730（body.is-iceberg，见 global.css）· 块 = 深紫渐变玻璃 + 1px 粉边 + 14px 圆角 ·
+      标题纯白 + 粉色外发光 · 次级文字 rgba(255,226,244,.72) · 强调 #ffb3dd。
+    条目文字用**分类色本身**（深底上亮色才看得清），只对「有完备标识」的那些再调亮一档
+    （标识底是分类色的半透明覆盖，会比卡片亮，字得跟着亮才压得住）。
+  */
   .ibk {
-    --ibk-ink: #fff3fa;
-    --ibk-soft: rgba(255, 236, 248, 0.74);
-    --ibk-card: #1a0527;
-    --ibk-line: rgba(255, 120, 190, 0.3);
+    --ibk-soft: rgba(255, 226, 244, 0.72);
+    --ibk-faint: rgba(255, 226, 244, 0.45);
+    --ibk-card: linear-gradient(180deg, rgba(46, 8, 70, 0.78), rgba(20, 3, 34, 0.78));
+    --ibk-line: rgba(255, 120, 190, 0.42);
+    --ibk-accent: #ffb3dd;
   }
 
   /* ---------- 顶上那排分类（小眼睛） ---------- */
@@ -157,20 +193,22 @@ const dataOf = (it: { name: string; tags: string[]; desc: string }, tagNames: st
     font: inherit;
     font-size: 0.86rem;
     letter-spacing: 0.04em;
-    color: #2a0620;
+    /* 色块是分类色实心的，字用**构建期算好的那个墨色**（亮底深字 / 暗底浅字），
+       用户以后把某一类改成深色也不会变成看不清 */
+    color: var(--ink, #2a0620);
     cursor: pointer;
     border: 0;
     border-radius: var(--r-full);
-    /* 分类色是实心的，字用深色压上去 —— 和参考图里那排粉色/蓝色/棕色分类一致 */
     background: var(--cat, #b9a6c9);
-    box-shadow: 0 2px 10px -4px rgb(0 0 0 / 0.5);
+    box-shadow: var(--shadow-sm);
     transition: filter var(--t-fast) var(--ease), opacity var(--t-fast) var(--ease);
   }
   .ibk__cat:hover {
-    filter: brightness(1.08);
+    filter: brightness(1.06);
   }
+  /* 收着的那一类：不填充，只留一圈同色描边（页面上还是一眼能认出是哪一类） */
   .ibk__cat.is-off {
-    color: rgba(255, 243, 250, 0.72);
+    color: var(--ibk-soft);
     background: transparent;
     box-shadow: inset 0 0 0 1px var(--cat, #b9a6c9);
   }
@@ -211,11 +249,12 @@ const dataOf = (it: { name: string; tags: string[]; desc: string }, tagNames: st
     align-items: stretch;
     overflow: hidden;
     border: 1px solid var(--ibk-line);
-    border-radius: var(--r-lg);
+    border-left: 3px solid rgba(255, 120, 190, 0.6);
+    border-radius: 14px;
     background: var(--ibk-card);
-    box-shadow: 0 18px 44px -26px rgb(0 0 0 / 0.85);
+    box-shadow: 0 14px 40px -22px rgb(0 0 0 / 0.8);
   }
-  /* 背景图铺满整层，压在文字下面（有一层暗罩保证字读得清） */
+  /* 背景图铺满整层，压在文字下面（有一层**暗**罩保证字读得清） */
   .ibk__bgimg,
   .ibk__bg--none,
   .ibk__shade {
@@ -227,11 +266,12 @@ const dataOf = (it: { name: string; tags: string[]; desc: string }, tagNames: st
   .ibk__bgimg {
     object-fit: cover;
   }
+  /* 还没传背景图的层：深紫（和卡片一个调子） */
   .ibk__bg--none {
-    background: linear-gradient(180deg, #2a0a3e 0%, #170425 100%);
+    background: linear-gradient(180deg, rgba(46, 8, 70, 0.55), rgba(18, 2, 30, 0.75));
   }
   .ibk__shade {
-    background: linear-gradient(180deg, rgb(26 5 39 / 0.62), rgb(16 3 26 / 0.82));
+    background: linear-gradient(180deg, rgba(26, 5, 39, 0.66), rgba(16, 3, 26, 0.86));
   }
   /* <Img> 会包一层 <picture>（global.css 里 display:contents），但这里要给
      背景图绝对定位，所以把 picture 也一起摆平 */
@@ -253,8 +293,9 @@ const dataOf = (it: { name: string; tags: string[]; desc: string }, tagNames: st
     margin: 0;
     font-size: clamp(1.25rem, 2.6vw, 1.9rem);
     letter-spacing: 0.14em;
-    color: var(--ibk-ink);
-    text-shadow: 0 0 18px rgb(255 95 176 / 0.55), 0 2px 6px rgb(0 0 0 / 0.6);
+    color: #fff;
+    /* 和 /salon/ 的大标题同一个配方：纯白 + 粉色外发光 */
+    text-shadow: 0 0 18px rgba(255, 79, 163, 0.55), 0 2px 6px rgb(0 0 0 / 0.5);
   }
   .ibk__sub {
     margin: 0.4rem 0 0;
@@ -276,6 +317,11 @@ const dataOf = (it: { name: string; tags: string[]; desc: string }, tagNames: st
   .ibk__cell {
     display: inline-flex;
   }
+  /*
+    条目文字用 --ink：深底上就是分类色本身（亮色才看得清）。
+    「有完备标识」的那些，字会再**调亮一档** —— 标识底是分类色的半透明覆盖，
+    比卡片亮，字不跟着亮就压不住（构建期按各自的底算好，见 utils/iceberg.ts）。
+  */
   .ibk__item {
     position: relative;
     display: inline-flex;
@@ -284,10 +330,10 @@ const dataOf = (it: { name: string; tags: string[]; desc: string }, tagNames: st
     font-size: 0.92rem;
     line-height: 1.75;
     letter-spacing: 0.03em;
-    color: var(--cat, #b9a6c9);
+    color: var(--ink, var(--c-text));
     text-decoration: none;
     border-radius: 7px;
-    text-shadow: 0 0 12px color-mix(in oklab, var(--cat, #b9a6c9) 45%, transparent);
+    text-shadow: 0 0 12px color-mix(in srgb, var(--cat, #b9a6c9) 45%, transparent);
   }
   a.ibk__item:hover {
     filter: brightness(1.15);
@@ -296,7 +342,7 @@ const dataOf = (it: { name: string; tags: string[]; desc: string }, tagNames: st
     display: none;
   }
   .ibk__item:focus-visible {
-    outline: 2px solid var(--ibk-ink);
+    outline: 2px solid #fff;
     outline-offset: 3px;
   }
   .ibk__txt {
@@ -305,33 +351,32 @@ const dataOf = (it: { name: string; tags: string[]; desc: string }, tagNames: st
   }
 
   /*
-    完备标识（详细描述填了才有）：粉色带栅格的蒸汽波圆角矩形，垫在条目背后。
+    完备标识（详细描述填了才有）：**照地图上那颗「区域图钉」的头**做的 ——
+    同一套做法（一道横向格栅 + 从上到下的渐变），三处按用户要求改：
+      · 去掉图钉下面那个指向地图的小箭头（那颗头单独拿出来用）；
+      · 拉长成圆角矩形（图钉的头是 24×24 的方块，这里是横的一条）；
+      · 微微半透明，颜色跟着**这一条的分类色**走（--cat）：
+        两段都是「分类色 + transparent」的 color-mix，所以透出来的就是底下的深紫卡片。
     比条目本身宽出一点（inset 左右 -11px）= 「拉长版」的那个意思。
   */
   .ibk__badge {
     position: absolute;
-    inset: -3px -11px;
+    inset: -2px -11px;
     z-index: 0;
-    border-radius: 7px;
-    background-color: #ff5fb0;
+    border-radius: 9px;
+    opacity: 0.85;
     background-image:
-      repeating-linear-gradient(0deg, rgb(255 255 255 / 0.34) 0 1px, transparent 1px 5px),
-      repeating-linear-gradient(90deg, rgb(255 255 255 / 0.34) 0 1px, transparent 1px 5px),
-      linear-gradient(180deg, #ff9ad8 0%, #ff5fb0 46%, #d62b8b 100%);
-    box-shadow:
-      0 0 0 1px color-mix(in oklab, var(--cat, #ff5fb0) 62%, #ff5fb0),
-      0 6px 16px -8px rgb(255 95 176 / 0.9);
-  }
-  /* 粉色底上换深色字（浅粉底 + 亮色字 = 看不清） */
-  .ibk__item.is-done {
-    color: #2a0620;
-    text-shadow: none;
+      repeating-linear-gradient(180deg, rgb(255 255 255 / 0.22) 0 1px, transparent 1px 3.6px),
+      linear-gradient(180deg,
+        color-mix(in srgb, var(--cat, #b9a6c9) 12%, transparent) 0%,
+        color-mix(in srgb, var(--cat, #b9a6c9) 26%, transparent) 100%);
+    box-shadow: 0 2px 8px -3px color-mix(in srgb, var(--cat, #b9a6c9) 70%, transparent);
   }
   .ibk__empty {
     margin: clamp(0.9rem, 2vw, 1.4rem) 0 0;
     text-align: center;
     font-size: 0.85rem;
-    color: rgba(255, 236, 248, 0.5);
+    color: var(--ibk-faint);
   }
 
   /* ---------- 右边的头图 ---------- */
@@ -351,7 +396,7 @@ const dataOf = (it: { name: string; tags: string[]; desc: string }, tagNames: st
     object-fit: cover;
   }
 
-  /* ---------- 悬停卡片 ---------- */
+  /* ---------- 悬停卡片（深紫浮层，和站里别的浮层一套） ---------- */
   .ibk__tip {
     position: fixed;
     z-index: 60;
@@ -395,6 +440,100 @@ const dataOf = (it: { name: string; tags: string[]; desc: string }, tagNames: st
     line-height: 1.75;
     color: rgba(255, 240, 250, 0.9);
     white-space: pre-wrap;
+  }
+
+  /* ---------- 电视信号失真那一层（VHS） ----------
+     四样叠着：雪花噪点 · RGB 彩色格 · 三条横向撕裂（带 backdrop-filter，是真的把底下
+     的画面扭曲掉）· 一条慢慢往上滚的亮带。
+     强度 = --ibk-deep（滚到多深，0~1） ×（0.16 常驻 + 0.84 偶发爆发）。
+     深处那 0.16 是「越深越能一直看到一点失真」，爆发是「偶尔隐隐出现」。
+  */
+  .ibk__vhs {
+    position: fixed;
+    inset: 0;
+    z-index: 30;
+    pointer-events: none;
+    opacity: calc(var(--ibk-deep, 0) * (0.16 + 0.84 * var(--ibk-burst, 0)));
+    /* 只动 opacity 和 transform，不碰布局 */
+    will-change: opacity;
+    transition: opacity 90ms linear;
+  }
+  .ibk__vhs > * {
+    position: absolute;
+    inset: 0;
+    display: block;
+  }
+  /* 雪花屏：一张 inline 的 SVG 湍流噪点（293 字节的 SVG → 392 字节 base64，不额外发请求）。
+     ⚠ 必须 base64，不能写成 `data:image/svg+xml;utf8,<svg …>`：里面的 `%23n` 和 `<`
+     会被 vite/lightningcss 当成 CSS 里的百分号，构建直接失败（踩过）。 */
+  .ibk__vhsSnow {
+    background-image: url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyMjAiIGhlaWdodD0iMjIwIj48ZmlsdGVyIGlkPSJuIj48ZmVUdXJidWxlbmNlIHR5cGU9ImZyYWN0YWxOb2lzZSIgYmFzZUZyZXF1ZW5jeT0iMC44NSIgbnVtT2N0YXZlcz0iMiIgc3RpdGNoVGlsZXM9InN0aXRjaCIvPjxmZUNvbG9yTWF0cml4IHR5cGU9InNhdHVyYXRlIiB2YWx1ZXM9IjAiLz48L2ZpbHRlcj48cmVjdCB3aWR0aD0iMjIwIiBoZWlnaHQ9IjIyMCIgZmlsdGVyPSJ1cmwoI24pIiBvcGFjaXR5PSIwLjYiLz48L3N2Zz4=');
+    background-size: 220px 220px;
+    mix-blend-mode: screen;
+    opacity: 0.55;
+  }
+  /* 彩色格：RGB 子像素那种竖条纹 + 一层细横格 */
+  .ibk__vhsRgb {
+    background-image:
+      repeating-linear-gradient(90deg,
+        rgba(255, 0, 90, 0.5) 0 1px,
+        rgba(0, 255, 170, 0.5) 1px 2px,
+        rgba(90, 130, 255, 0.5) 2px 3px,
+        transparent 3px 4px),
+      repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.09) 0 1px, transparent 1px 4px);
+    mix-blend-mode: screen;
+    opacity: 0.5;
+  }
+  /* 横向撕裂：三条不同高度的带子，左右抖 —— backdrop-filter 会真的把底下的字糊一下 */
+  .ibk__vhsTear {
+    inset: auto 0 auto 0;
+    height: 14px;
+    backdrop-filter: blur(2px) saturate(1.7) hue-rotate(8deg);
+    background: linear-gradient(90deg, rgba(255, 0, 120, 0.07), rgba(0, 255, 220, 0.07));
+    mix-blend-mode: screen;
+    animation: ibk-tear 0.42s steps(2, end) infinite;
+  }
+  /*
+    ⚠ 这几条的权重必须比上面那条 `.ibk__vhs > *`（Astro 编译后是
+    `.ibk__vhs[data-cid] > [data-cid]`，0-3-0）**更高**，否则 `inset:0` 会把
+    这里每条带子的 top 直接压掉（第一版就是 `.ibk__vhsTear--a{top:21%}` 的 0-2-0
+    输给了它，三条带子全叠在屏幕顶上 —— 验收脚本量到三个 top 都是 0px）。
+  */
+  .ibk__vhs > .ibk__vhsTear--a {
+    top: 21%;
+  }
+  .ibk__vhs > .ibk__vhsTear--b {
+    top: 53%;
+    height: 9px;
+    animation-duration: 0.31s;
+  }
+  .ibk__vhs > .ibk__vhsTear--c {
+    top: 77%;
+    height: 20px;
+    animation-duration: 0.57s;
+  }
+  @keyframes ibk-tear {
+    from {
+      transform: translate3d(-7px, 0, 0);
+    }
+    to {
+      transform: translate3d(7px, 0, 0);
+    }
+  }
+  /* 往上滚的亮带（老电视那条 hum bar） */
+  .ibk__vhsBar {
+    inset: auto 0 auto 0;
+    height: 22vh;
+    background: linear-gradient(180deg, transparent, rgba(255, 255, 255, 0.06), transparent);
+    animation: ibk-bar 7.3s linear infinite;
+  }
+  @keyframes ibk-bar {
+    from {
+      transform: translate3d(0, 120vh, 0);
+    }
+    to {
+      transform: translate3d(0, -30vh, 0);
+    }
   }
 
   /* ---------- 窄屏：头图挪到最上面当一条横幅 ---------- */
@@ -561,5 +700,66 @@ const dataOf = (it: { name: string; tags: string[]; desc: string }, tagNames: st
     document.addEventListener('keydown', (ev) => {
       if (ev.key === 'Escape') hide();
     });
+  }
+
+  /* ------------------------------------------------------------------
+     电视信号失真那层的强度：深度 + 偶发爆发
+
+     深度 = 滚到哪了 / 还能滚多少（0 一进页面，1 滚到底）。
+     **按页面比例算**，不是按像素 —— 以后冰山图变长了（加层、加条目），
+     同一屏位置对应的深度不会变，"越深越明显"这条性质自动成立。
+
+     爆发：偶尔来一下（浅处间隔长、幅度小；深处间隔短、幅度大、停留久），
+     幅度写进 --ibk-burst，CSS 那边乘进 opacity 里。
+     prefers-reduced-motion 时不启动爆发（那层就一直是 0）。
+     ------------------------------------------------------------------ */
+  const vhs = document.querySelector<HTMLElement>('[data-ibk-vhs]');
+  if (vhs) {
+    const html = document.documentElement;
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)');
+    let deep = -1;
+
+    /*
+      量一次深度：滚到哪了 / 还能滚多少。
+      这里**直接量、不排 rAF** —— 浏览器本来就把 scroll 事件压到一帧一次，
+      再套一层 rAF 只会让变量晚一拍才更新（验收脚本按位置采样时读到的是上一格的值）。
+      一次测量只读 scrollY 和 scrollHeight，很便宜。
+    */
+    const measure = () => {
+      const max = document.documentElement.scrollHeight - window.innerHeight;
+      const p = max > 0 ? Math.min(1, Math.max(0, window.scrollY / max)) : 0;
+      if (Math.abs(p - deep) < 0.002) return;
+      deep = p;
+      html.style.setProperty('--ibk-deep', p.toFixed(3));
+    };
+    window.addEventListener('scroll', measure, { passive: true });
+    window.addEventListener('resize', measure);
+    measure();
+
+    let timer = 0;
+    const schedule = () => {
+      if (reduce.matches) return;
+      /* 深处 1.5s 一次、浅处 5s 一次；再乘一点随机，别像节拍器 */
+      const gap = 5000 - 3500 * Math.max(0, deep);
+      timer = window.setTimeout(fire, gap * (0.5 + Math.random()));
+    };
+    const fire = () => {
+      if (deep > 0.02) {
+        const amp = (0.35 + 0.65 * deep) * (0.55 + Math.random() * 0.45);
+        html.style.setProperty('--ibk-burst', amp.toFixed(3));
+        /* 深处停留更久（120ms → 700ms 上下） */
+        const len = 120 + Math.random() * (120 + 460 * deep);
+        window.setTimeout(() => {
+          html.style.setProperty('--ibk-burst', '0');
+          schedule();
+        }, len);
+      } else {
+        schedule();
+      }
+    };
+    /* 一进页面就先量一次深度，然后才开始排爆发 */
+    window.setTimeout(schedule, 700);
+    /* 页面高度变了（图片加载、窗口缩放）就重新量一次 */
+    if ('ResizeObserver' in window) new ResizeObserver(measure).observe(document.body);
   }
 </script>

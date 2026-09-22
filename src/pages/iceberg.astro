@@ -32,6 +32,7 @@ const body = enhanceHtml(marked.parse(String(ice.text ?? '').trim(), { async: fa
 <BaseLayout
   title={title}
   description={`${title} —— 花涧堂。${iceberg.itemCount ? `共 ${iceberg.itemCount} 条，分 ${iceberg.layers.length} 层。` : ''}`}
+  bodyClass="is-board is-iceberg"
 >
   <article class="icePage">
     <header class="page-header">

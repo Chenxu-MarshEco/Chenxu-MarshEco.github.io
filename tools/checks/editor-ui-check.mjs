@@ -724,8 +724,16 @@ try {
     iceHtml.includes(NEW_ITEM) && iceHtml.includes(NEW_COLOR),
     iceHtml ? `产物 ${iceHtml.length} 字节，条目和颜色都在` : `产物里没找到；这一趟的网络：${net}`);
 
-  /* 构建产物都出来了 → 保存那一次请求肯定已经回来了，这时候读面板的提示才准 */
-  const iceToast = await cdp.ev(`(document.querySelector('#toast') || {}).textContent || ''`);
+  /*
+    构建产物都出来了 → 保存那一次请求肯定已经回来了，这时候读面板的提示才准。
+    ⚠ 但要**等它**：产物里出现新条目这件事，可能是上一轮构建（用户在别的面板刚存的）
+    顺手就做完了 —— 那时候本次保存的响应还没回来，读到的是上一条 toast（踩过）。
+  */
+  let iceToast = '';
+  for (let i = 0; i < 120 && !/冰山图已保存|保存失败/.test(iceToast); i++) {
+    iceToast = await cdp.ev(`(document.querySelector('#toast') || {}).textContent || ''`);
+    if (!/冰山图已保存|保存失败/.test(iceToast)) await sleep(500);
+  }
   check('★ 冰山图：这次保存的构建面板自己也是这么报的（「已保存并重新构建」）',
     /冰山图已保存并重新构建/.test(String(iceToast)), `toast「${String(iceToast).slice(0, 80)}」`);
 

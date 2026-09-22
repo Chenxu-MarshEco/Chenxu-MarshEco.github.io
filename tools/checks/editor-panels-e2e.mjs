@@ -575,6 +575,7 @@ try {
     const done = items.filter((i) => i.classList.contains('is-done'));
     const badge = document.querySelector('.ibk__badge');
     const br = badge && badge.getBoundingClientRect();
+    const bs = badge && getComputedStyle(badge);
     const linked = document.querySelector('a.ibk__item');
     const layer = document.querySelector('.ibk__layer');
     return {
@@ -585,7 +586,25 @@ try {
       src: img && img.getAttribute('src'), w: r && Math.round(r.width), h: r && Math.round(r.height),
       items: items.length, names: items.map((i) => i.querySelector('.ibk__txt').textContent),
       loose: (() => { const l = items.find((i) => i.querySelector('.ibk__txt').textContent === ${JSON.stringify(ICE_LOOSE)}); return l ? l.style.getPropertyValue('--cat').trim() : ''; })(),
-      done: done.length, badge: badge ? { w: Math.round(br.width), bg: getComputedStyle(badge).backgroundColor } : null,
+      done: done.length,
+      /* 条目文字画出来的颜色 == 数据里那个 --ink（浅底上读得清的那个色） */
+      ink: done[0] ? done[0].style.getPropertyValue('--ink').trim() : '',
+      inkOk: done[0]
+        ? (() => {
+            const hex = done[0].style.getPropertyValue('--ink').trim();
+            const m = /^#([0-9a-f]{6})$/i.exec(hex);
+            if (!m) return false;
+            const n = parseInt(m[1], 16);
+            /* ⚠ 这里不能用模板字符串：整段是塞进外层模板字面量里的，反引号会把它截断 */
+            return getComputedStyle(done[0]).color ===
+              'rgb(' + ((n >> 16) & 255) + ', ' + ((n >> 8) & 255) + ', ' + (n & 255) + ')';
+          })()
+        : false,
+      badge: badge ? {
+        w: Math.round(br.width), h: Math.round(br.height),
+        img: bs.backgroundImage, opacity: bs.opacity, radius: parseFloat(bs.borderTopLeftRadius),
+        arrow: getComputedStyle(badge, '::after').content,
+      } : null,
       color: items[0] && items[0].style.getPropertyValue('--cat').trim(),
       href: linked && linked.getAttribute('href'),
       layerH: layer && Math.round(layer.getBoundingClientRect().height),
@@ -602,8 +621,14 @@ try {
     JSON.stringify({ items: ice.items, color: ice.color, names: ice.names }));
   check('冰山图页：引用了不存在分类的那条用默认灰紫（认不出来的引用在页面上也不会串色）',
     ice.loose === '#b9a6c9', `--cat:${ice.loose}`);
-  check('冰山图页：完备标识只有一颗、是粉色的（有描述的那条才有）',
-    ice.done === 1 && !!ice.badge && ice.badge.bg === 'rgb(255, 95, 176)', JSON.stringify({ done: ice.done, badge: ice.badge }));
+  check('冰山图页：条目文字用的是「分类色压深到读得清」的 --ink（浅底上才读得清）',
+    ice.inkOk === true && /^#[0-9a-f]{6}$/i.test(ice.ink),
+    JSON.stringify({ ink: ice.ink, 画出来一致: ice.inkOk }));
+  check('冰山图页：完备标识只有一颗，而且就是地图图钉那颗头的样子（栅格 + 渐变、圆角、没有小箭头、微微半透明）',
+    ice.done === 1 && !!ice.badge &&
+      /repeating-linear-gradient\(/.test(ice.badge.img) && /linear-gradient\(/.test(ice.badge.img) &&
+      ice.badge.radius >= 6 && ice.badge.arrow === 'none' && Number(ice.badge.opacity) > 0.5 && Number(ice.badge.opacity) < 1,
+    JSON.stringify({ done: ice.done, ...(ice.badge ?? {}) }));
   check('冰山图页：填了链接的那条真的是链接（指到 /salon/）',
     ice.href === '/salon/', String(ice.href));
   check('冰山图页：页头那套外框控件还在（右下角三条杠）', ice.corner >= 3, `${ice.corner} 个`);

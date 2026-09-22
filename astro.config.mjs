@@ -14,9 +14,16 @@ export default defineConfig({
     「悬停浮出名片、点了跳介绍页」的小块。名字表就是编辑器「成员」面板那张表
     （src/data/salon.json），链接由你填在成员的 `url` 里。
     冰室精华页（/salon/）整页跳过 —— 那里的名字又多又碎，链上只会碍事。
+    冰山图页（/iceberg/）也整页跳过，两个理由（2026-09-22 量出来的）：
+      · 那里的条目本身就是关键词、自带一张悬停详情卡；名字上再叠一张成员卡，
+        鼠标停在「Raw太小了还不能产奶」这种词上会同时冒出两张浮层；
+      · 名片那坨 DOM 会被插进层标题 / 条目文字里（含成员名的条目有 9 条、
+        还有 1 个层标题），页面上看着没事，但文字被拆开、纯文本/复制/验收读数都不对，
+        而且条目本身是链接时（如「双开门福瑞爸爸狅草」）名片里的链接会**套在条目链接里**
+        （HTML 不允许，解析器会把结构拆坏）。
     细节、边界和怎么关掉：tools/memlink/index.mjs 的头注释。
   */
-  integrations: [memlink({ skip: ['/salon/'] })],
+  integrations: [memlink({ skip: ['/salon/', '/iceberg/'] })],
 
   // 生成 /posts/xxx/index.html 这样的目录式链接，GitHub Pages 上最稳。
   trailingSlash: 'ignore',
