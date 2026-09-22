@@ -177,13 +177,25 @@ const dataOf = (it: { name: string; tags: string[]; desc: string }, tagNames: st
     --ibk-accent: #ffb3dd;
   }
 
-  /* ---------- 顶上那排分类（小眼睛） ---------- */
+  /* ---------- 顶上那排分类（小眼睛）----------
+     滚动时**一直吸在屏幕上方**（用户 2026-09-22：「让花娅奇闻 冰室怪谈等分类卡片
+     在屏幕往下滚动时始终保持在屏幕上方 方便点击开关显示」）。
+     让开的高度由脚本量站点页头写进 --ibk-top（页头高度会随字号、导航换行变），
+     自己再垫一层半透明毛玻璃底 —— 吸顶时下面压着条目，不垫的话字会和条目糊在一起。 */
   .ibk__cats {
+    position: sticky;
+    top: var(--ibk-top, 4.5rem);
+    z-index: 12;
     display: flex;
     flex-wrap: wrap;
     justify-content: center;
     gap: 0.45rem 0.5rem;
-    margin: 0 0 1.4rem;
+    margin: 0 0 1.2rem;
+    padding: 0.5rem 0.55rem;
+    border: 1px solid rgba(255, 120, 190, 0.22);
+    border-radius: 999px;
+    background: color-mix(in srgb, #1e0730 82%, transparent);
+    backdrop-filter: blur(10px);
   }
   .ibk__cat {
     display: inline-flex;
@@ -761,5 +773,34 @@ const dataOf = (it: { name: string; tags: string[]; desc: string }, tagNames: st
     window.setTimeout(schedule, 700);
     /* 页面高度变了（图片加载、窗口缩放）就重新量一次 */
     if ('ResizeObserver' in window) new ResizeObserver(measure).observe(document.body);
+  }
+
+  /* ------------------------------------------------------------------
+     分类那排吸顶：要正好贴在站点页头下面
+
+     页头是 sticky 的，高度会随字号、语言、窗口宽度变（窄到一定程度导航会换行），
+     所以不能写死 —— 量出来写进 --ibk-top，CSS 那边 `top: var(--ibk-top)` 用它。
+     （和 salon.astro 里量 --salon-top 是一个套路。）
+     ------------------------------------------------------------------ */
+  const cats = document.querySelector<HTMLElement>('.ibk__cats');
+  if (cats) {
+    const header = document.querySelector<HTMLElement>('.site-header');
+    const measureTop = () => {
+      const h = Math.round(header?.getBoundingClientRect().height ?? 0);
+      /* +8：贴着页头下沿留一点点缝，别顶死 */
+      document.documentElement.style.setProperty('--ibk-top', `${h + 8}px`);
+    };
+    measureTop();
+    let queued = false;
+    const queue = () => {
+      if (queued) return;
+      queued = true;
+      requestAnimationFrame(() => {
+        queued = false;
+        measureTop();
+      });
+    };
+    window.addEventListener('resize', queue);
+    if ('ResizeObserver' in window && header) new ResizeObserver(queue).observe(header);
   }
 </script>

@@ -337,6 +337,19 @@ const PROBE = `(() => {
       cardShadow: card ? getComputedStyle(card).boxShadow : '',
       titleColor: title ? getComputedStyle(title).color : '',
       titleShadow: title ? getComputedStyle(title).textShadow : '',
+      /* 页面大标题（.page-header__title）：深紫底上站里默认那套深琥珀是看不清的 */
+      h1Color: (() => {
+        const h = document.querySelector('.page-header__title');
+        return h ? getComputedStyle(h).color : '';
+      })(),
+      h1Shadow: (() => {
+        const h = document.querySelector('.page-header__title');
+        return h ? getComputedStyle(h).textShadow : '';
+      })(),
+      h1Text: (() => {
+        const h = document.querySelector('.page-header__title');
+        return h ? h.textContent.trim() : '';
+      })(),
       mainZ: main ? getComputedStyle(main).zIndex : '',
       scan: {
         content: scan.content,
@@ -578,6 +591,21 @@ check('★ 大标题也是那一套：纯白 + 粉色外发光',
   `色 ${T.titleColor}（精华 ${salonRef.titleColor}）｜发光 ${String(T.titleShadow).slice(0, 42)}`);
 
 /*
+  页面大标题（「冰室冰山」四个字）——
+  用户原话：「冰室冰山页面的大标题冰室冰山四个字看不清 改成适合一点的颜色」。
+  原因：深紫底上站里默认那套 `.page-header__title` 用的是 --c-text（深琥珀 #46280f），
+  实测对比度只有 1.5:1。现在换成纯白 + 粉光，和 /salon/ 的 h1 同一个色。
+*/
+const h1Contrast = contrastRgb(rgbOf(T.h1Color), rgbOf(T.bodyBg));
+/* ⚠ hex 要先过 hexToRgb（parseColor 只认 rgb()/color(srgb …)） */
+const oldContrast = contrastRgb(rgbOf(hexToRgb('#46280f')), rgbOf(T.bodyBg));
+check('★ 大标题读得清：纯白 + 粉光（和 /salon/ 大标题同一个色），对比度 ≥ 7:1',
+  T.h1Color === 'rgb(255, 255, 255)' && T.h1Color === salonRef.titleColor &&
+    /rgba?\(255,\s*79,\s*163/.test(T.h1Shadow || '') && h1Contrast >= 7,
+  `「${T.h1Text}」${T.h1Color}，压在 ${T.bodyBg} 上 ${h1Contrast.toFixed(1)}:1` +
+    `（改之前那套深琥珀 #46280f 只有 ${oldContrast.toFixed(2)}:1，所以看不清）`);
+
+/*
   正文对比度：文字压在「卡片」和「标识底（合成之后）」上都得读得清。
   ⚠ 卡片色不写死：从**量到的**那条渐变（.ibk__layer 的 background-image，和 /salon/ 逐项比过相等）
   取最亮的一档，压在量到的 body 底色上算 —— CSS 改了颜色而 utils 那边没跟着改，这条会立刻红。
@@ -694,6 +722,64 @@ check('★ 还有一条往上滚的亮带（老电视那条 hum bar）',
 check(`顶上的分类数 = ${legend.length}（只出「真有条目」的那些）`,
   d.cats.length === legend.length && d.cats.every((c, i) => c.id === legend[i].id),
   d.cats.map((c) => `${c.name}${c.on ? '' : '(收着)'}`).join(' · '));
+
+/*
+  分类那排**吸顶**：用户原话「让花娅奇闻 冰室怪谈等分类卡片在屏幕往下滚动时
+  始终保持在屏幕上方 方便点击开关显示」。
+  所以这里三件事一起量：吸住了没有、那个位置上点得到点不到、点了真的能开关。
+*/
+const sticky = await cdp.ev(`(async () => {
+  const bar = document.querySelector('.ibk__cats');
+  const header = document.querySelector('.site-header');
+  const cs = getComputedStyle(bar);
+  const max = () => document.documentElement.scrollHeight - window.innerHeight;
+  window.scrollTo({ top: 0, behavior: 'instant' });
+  await new Promise((r) => setTimeout(r, 250));
+  const atTop = Math.round(bar.getBoundingClientRect().top);
+  window.scrollTo({ top: Math.round(max() * 0.6), behavior: 'instant' });
+  await new Promise((r) => setTimeout(r, 300));
+  const r = bar.getBoundingClientRect();
+  const hb = header.getBoundingClientRect();
+  const chip = bar.querySelector('.ibk__cat');
+  const cr = chip.getBoundingClientRect();
+  const x = Math.round(cr.left + cr.width / 2);
+  const y = Math.round(cr.top + cr.height / 2);
+  const hit = document.elementFromPoint(x, y);
+  const id = chip.dataset.cat;
+  const items = () => [...document.querySelectorAll('.ibk__cell[data-cat="' + id + '"] .ibk__item')];
+  const before = chip.dataset.on;
+  chip.click();
+  await new Promise((r) => setTimeout(r, 200));
+  const afterOn = chip.dataset.on;
+  const pressed = chip.getAttribute('aria-pressed');
+  const hiddenNow = items().length > 0 && items().every((el) => el.hidden);
+  chip.click();
+  await new Promise((r) => setTimeout(r, 200));
+  return {
+    pos: cs.position, top: cs.top, z: cs.zIndex, bg: cs.backgroundColor, backdrop: cs.backdropFilter,
+    atTop, pinnedTop: Math.round(r.top), headerBottom: Math.round(hb.bottom),
+    hitIsChip: !!(hit && hit.closest && hit.closest('.ibk__cat')),
+    hitCls: hit ? String(hit.className).slice(0, 40) : '',
+    name: (chip.querySelector('.ibk__catName') || {}).textContent, before, afterOn, pressed, hiddenNow,
+    back: chip.dataset.on, n: items().length,
+  };
+})()`);
+console.log('\n================ 分类那排吸顶 ================');
+console.log(JSON.stringify(sticky));
+check('★ 分类那排是吸顶的（position: sticky，让开的高度按站点页头量出来）',
+  sticky.pos === 'sticky' && parseFloat(sticky.top) > 30 && /blur/.test(sticky.backdrop || ''),
+  `position=${sticky.pos} top=${sticky.top} 毛玻璃=${sticky.backdrop} 底=${sticky.bg}`);
+const stickyGap = sticky.pinnedTop - sticky.headerBottom;
+check('★ 往下滚之后它**一直贴在页头下面**（离页头下沿就是脚本量出来的那点缝，2~10px），没被条目顶走',
+  /* 滚下去之后它比静止位置**更靠上**（吸住了），而且紧贴页头下沿 */
+  sticky.pinnedTop < sticky.atTop && stickyGap >= 2 && stickyGap <= 10,
+  `静止时 top=${sticky.atTop}px；滚到 60% 时 top=${sticky.pinnedTop}px，页头下沿 ${sticky.headerBottom}px（缝 ${stickyGap}px）`);
+check('★ 吸顶状态下**点得到**（那个坐标上的元素就是分类小眼睛本身，没被卡片或那层 VHS 挡住）',
+  sticky.hitIsChip === true, `elementFromPoint → ${sticky.hitCls || '（空）'}`);
+check('★ 吸顶状态下点一下真的能开关（这一类的条目整批藏起来，再点一下回来）',
+  sticky.n > 0 && sticky.afterOn !== sticky.before && sticky.pressed === (sticky.afterOn === '1' ? 'true' : 'false') &&
+    sticky.hiddenNow === (sticky.afterOn === '0') && sticky.back === sticky.before,
+  `点「${sticky.name}」（${sticky.n} 条）：${sticky.before} → ${sticky.afterOn}（aria-pressed=${sticky.pressed}，条目藏起来=${sticky.hiddenNow}）→ 回到 ${sticky.back}`);
 /*
   分类色块：这一条的 --cat 必须是数据里的颜色。
   「收着」的那一类底色是透明的（只留一圈同色描边，见 .ibk__cat.is-off），
@@ -764,11 +850,13 @@ if (withHead.length) {
 }
 
 /* ---- 悬停卡片 ---- */
-await cdp.ev('window.scrollTo(0, 0)');
+await cdp.ev('window.scrollTo({ top: 0, behavior: "instant" })');
 const target = await cdp.ev(`(() => {
   const el = [...document.querySelectorAll('.ibk__item')].find((x) => (x.dataset.desc || '').length > 0 && !x.hidden);
   if (!el) return null;
-  el.scrollIntoView({ block: 'center' });
+  /* ⚠ 必须 instant：全站 html{scroll-behavior:smooth}，平滑滚动时当场读到的 rect
+     还是滚动前的位置，鼠标就点空了（分类那排吸顶之后页面更长，更容易踩到） */
+  el.scrollIntoView({ block: 'center', behavior: 'instant' });
   const r = el.getBoundingClientRect();
   return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2), name: el.dataset.name, tags: (el.dataset.tags || '').split('\\u001f').filter(Boolean), desc: el.dataset.desc };
 })()`);
@@ -800,7 +888,7 @@ await sleep(300);
 const blank = await cdp.ev(`(() => {
   const el = [...document.querySelectorAll('.ibk__item')].find((x) => !(x.dataset.desc || '').length && !(x.dataset.tags || '').length && !x.hidden);
   if (!el) return null;
-  el.scrollIntoView({ block: 'center' });
+  el.scrollIntoView({ block: 'center', behavior: 'instant' });
   const r = el.getBoundingClientRect();
   return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2), name: el.dataset.name };
 })()`);
@@ -949,6 +1037,29 @@ if (headFirst.length) {
   skip('数据里还没有任何一层传了头图 —— 跳过「手机端头图挪到上面」这一条');
 }
 check('手机端分类那一排还在（能手动开关）', m.cats.length === d.cats.length, `${m.cats.length} 个`);
+
+/* 手机端那排也要吸得住：窄屏页头会换行变高，--ibk-top 是脚本量的，必须跟着变 */
+const stickyM = await cdp.ev(`(async () => {
+  const bar = document.querySelector('.ibk__cats');
+  const header = document.querySelector('.site-header');
+  const max = () => document.documentElement.scrollHeight - window.innerHeight;
+  window.scrollTo({ top: Math.round(max() * 0.5), behavior: 'instant' });
+  await new Promise((r) => setTimeout(r, 320));
+  const r = bar.getBoundingClientRect();
+  const hb = header.getBoundingClientRect();
+  const chip = bar.querySelector('.ibk__cat');
+  const cr = chip.getBoundingClientRect();
+  const hit = document.elementFromPoint(Math.round(cr.left + cr.width / 2), Math.round(cr.top + cr.height / 2));
+  return {
+    gap: Math.round(r.top - hb.bottom), headerH: Math.round(hb.height), top: getComputedStyle(bar).top,
+    pinned: Math.round(r.top), vh: innerHeight, vw: innerWidth, barW: Math.round(r.width),
+    hitIsChip: !!(hit && hit.closest && hit.closest('.ibk__cat')), barHidden: Number(getComputedStyle(bar).opacity) === 0,
+  };
+})()`);
+check('★ 手机端那排分类也吸得住、也点得到（页头换行变高了，让开的高度跟着量出来）',
+  stickyM.gap >= 0 && stickyM.gap <= 12 && stickyM.pinned >= 0 && stickyM.pinned < stickyM.vh * 0.4 &&
+    stickyM.barW <= stickyM.vw && stickyM.hitIsChip === true,
+  `页头高 ${stickyM.headerH}px、CSS top=${stickyM.top}、滚到 50% 时栏顶 ${stickyM.pinned}px（缝 ${stickyM.gap}px，视口 ${stickyM.vw}×${stickyM.vh}）`);
 
 /* ---- 系统设了「减少动态效果」：这层栅格要自己停下来 ---- */
 await cdp.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });

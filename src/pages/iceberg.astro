@@ -91,6 +91,22 @@ const body = enhanceHtml(marked.parse(String(ice.text ?? '').trim(), { async: fa
   .icePage {
     padding: clamp(1.2rem, 4vh, 2.4rem) 0 4rem;
   }
+  /*
+    深紫底上，站里默认那套 .page-header__title 用的是 --c-text（深琥珀 #46280f），
+    压在 #1e0730 上只有 1.5:1 —— 用户原话「大标题冰室冰山四个字看不清」。
+    换成和 /salon/ 大标题同一套：纯白 + 粉色外发光（那页的 h1 就是白字 + 同样的光）。
+    下面那行介绍、以及"还没内容时"的退回文案也一起换成浅粉白，不然同样看不见。
+  */
+  :global(body.is-iceberg) .page-header {
+    border-bottom-color: rgba(255, 120, 190, 0.42);
+  }
+  :global(body.is-iceberg) .page-header__title {
+    color: #fff;
+    text-shadow: 0 0 18px rgba(255, 79, 163, 0.55), 0 2px 6px rgb(0 0 0 / 0.5);
+  }
+  :global(body.is-iceberg) .page-header__desc {
+    color: rgba(255, 226, 244, 0.72);
+  }
   .icePage__fig {
     margin: 0 0 1.6rem;
   }
@@ -121,16 +137,20 @@ const body = enhanceHtml(marked.parse(String(ice.text ?? '').trim(), { async: fa
   .icePage__cap {
     margin-top: 0.5rem;
     font-size: 0.8rem;
-    color: var(--c-text-faint);
+    color: rgba(255, 226, 244, 0.6);
   }
   .icePage__body {
     line-height: 1.9;
+    color: rgba(255, 236, 248, 0.9);
   }
   .icePage__empty {
-    color: var(--c-text-muted);
+    color: rgba(255, 226, 244, 0.72);
   }
   .icePage__more--none {
-    color: var(--c-text-faint);
+    color: rgba(255, 226, 244, 0.6);
     font-size: 0.85rem;
+  }
+  .icePage__more a {
+    color: #ffb3dd;
   }
 </style>
