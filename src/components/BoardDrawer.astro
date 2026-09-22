@@ -342,6 +342,16 @@ function renderNodes(nodes: BoardNode[]): string {
     display: flex;
     align-items: center;
   }
+  /*
+    ⚠ 没有歌单的页面：播放器脚本根本不会跑（见 MusicPlayer.astro），那颗音量键就靠标记里那个
+    `hidden` 一直藏着。但**作者样式里的 `display: flex` 会压过浏览器自带的
+    `[hidden] { display: none }`** —— 少下面这一条的话，属性是设上了、按钮照样露在右上角，
+    点下去还什么都不发生。2026-09-22 的体检（tools/checks/hidden-elements-check.mjs）
+    在 /salon/、/iceberg/、/about-me/、/huaya/ 上量到的就是这个。
+  */
+  .vol[hidden] {
+    display: none;
+  }
 
   .vol__ico {
     width: 24px;

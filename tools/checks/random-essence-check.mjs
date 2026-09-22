@@ -178,7 +178,14 @@ const PROBE = `(() => {
   const acts = document.querySelector('[data-daily-acts]');
   const rnd = document.querySelector('[data-daily-random]');
   const back = document.querySelector('[data-daily-back]');
-  const vis = (el) => !!el && !el.hidden && el.getClientRects().length > 0;
+  /*
+    ⚠ 「看得见吗」必须**只看排版**：早先这里写的是「!el.hidden && getClientRects().length > 0」，
+    而 hidden 属性会被作者样式里的 display: inline-flex 压掉 —— 属性是设上了、
+    按钮却还在屏幕上，那个写法照样报"看不见"，于是漏掉了一个真 bug（用户报的：
+    「今天的每日精华上方还是有回到每日精华按钮」）。现在两个都读出来分别断言。
+  */
+  const vis = (el) => !!el && el.getClientRects().length > 0 && getComputedStyle(el).visibility !== 'hidden';
+  const display = (el) => (el ? getComputedStyle(el).display : '');
   const href = card ? card.getAttribute('href') : '';
   const name = (card?.querySelector('.daily__name') || {}).textContent || '';
   const time = (card?.querySelector('.daily__time') || {}).textContent || '';
@@ -189,6 +196,7 @@ const PROBE = `(() => {
   return {
     mode: root ? root.dataset.mode : '', built: root ? root.dataset.built : '',
     actsVisible: vis(acts), randomVisible: vis(rnd), backVisible: vis(back),
+    backDisplay: display(back), actsDisplay: display(acts),
     backHidden: back ? back.hidden : null,
     randomText: rnd ? rnd.textContent.trim() : '', backText: back ? back.textContent.trim() : '',
     randomName: rnd ? (rnd.getAttribute('aria-label') || '') : '', backName: back ? (back.getAttribute('aria-label') || '') : '',
@@ -206,9 +214,10 @@ console.log('\n================ 一进页面 ================');
 console.log(JSON.stringify(first));
 check('② 按钮排出来了（脚本拿到 /salon.json 之后才放出来）',
   first.actsVisible === true && first.randomVisible === true, JSON.stringify({ acts: first.actsVisible, rnd: first.randomVisible }));
-check('② 「随机精华」有可访问名、字也对；一开始「回到每日精华」是藏着的、mode=daily',
-  first.randomText === '随机精华' && first.randomName.length > 0 && first.backHidden === true && first.mode === 'daily',
-  JSON.stringify({ 字: first.randomText, 名: first.randomName, backHidden: first.backHidden, mode: first.mode }));
+check('② 「随机精华」有可访问名、字也对；一开始「回到每日精华」是**真看不见**的、mode=daily',
+  first.randomText === '随机精华' && first.randomName.length > 0 &&
+    first.backHidden === true && first.backVisible === false && first.backDisplay === 'none' && first.mode === 'daily',
+  JSON.stringify({ 字: first.randomText, 名: first.randomName, backHidden: first.backHidden, backDisplay: first.backDisplay, 看得见: first.backVisible, mode: first.mode }));
 check('② 卡片这一条是清单里真有的（名字/日期/正文都能在 /salon.json 里对上）',
   !!byId.get(first.id) && byId.get(first.id).member === first.name && String(byId.get(first.id).date) === first.time.slice(0, 10),
   `${first.id} ${first.name} ${first.time}`);
@@ -270,9 +279,10 @@ console.log('\n================ 点「回到每日精华」 ================');
 console.log(JSON.stringify({ id: backState.id, href: backState.href, mode: backState.mode, backHidden: backState.backHidden }));
 check('⑤★ 点「回到每日精华」→ 回到点随机之前那一条（同一个 id、同一个 href）',
   backState.id === dailyId && backState.href === dailyHref, `${backState.id} vs ${dailyId}`);
-check('⑤ 回到每日精华之后，那颗「回到每日精华」自己又藏回去了、mode 回到 daily',
-  backState.backHidden === true && backState.mode === 'daily' && backState.backVisible === false,
-  JSON.stringify({ backHidden: backState.backHidden, mode: backState.mode }));
+check('⑤ 回到每日精华之后，那颗「回到每日精华」**真看不见**了（属性藏 + 排版上也没了）、mode 回到 daily',
+  backState.backHidden === true && backState.mode === 'daily' &&
+    backState.backVisible === false && backState.backDisplay === 'none',
+  JSON.stringify({ backHidden: backState.backHidden, backDisplay: backState.backDisplay, 看得见: backState.backVisible, mode: backState.mode }));
 
 /*
   ★ 规则（用户 2026-09-22 补的）：
@@ -292,11 +302,13 @@ await cdp.ev(`(() => { Math.random = window.__r; return true; })()`);
 console.log('\n================ 随机正好抽到"今天那条" ================');
 console.log(JSON.stringify({ 抽之前: beforeForce.id, 抽到: forced.id, 今天那条: dailyId, backHidden: forced.backHidden, mode: forced.mode }));
 check('★ 随机正好抽到「就是每日精华那条」时：那颗「回到每日精华」**不出现**（显示的已经是每日精华了）',
-  dailyIdx >= 0 && forced.id === dailyId && forced.backHidden === true && forced.backVisible === false && forced.mode === 'daily',
-  `钉住下标 ${dailyIdx} → 抽到 ${forced.id}（今天那条 ${dailyId}）｜backHidden=${forced.backHidden} mode=${forced.mode}`);
+  dailyIdx >= 0 && forced.id === dailyId && forced.backHidden === true && forced.backVisible === false &&
+    forced.backDisplay === 'none' && forced.mode === 'daily',
+  `钉住下标 ${dailyIdx} → 抽到 ${forced.id}（今天那条 ${dailyId}）｜backHidden=${forced.backHidden} display=${forced.backDisplay} mode=${forced.mode}`);
 check('★ 反过来：抽到的是**别的**条目时，那颗按钮就出现（对照组）',
-  beforeForce.id !== dailyId && beforeForce.backHidden === false && beforeForce.mode === 'random',
-  `抽到 ${beforeForce.id}｜backHidden=${beforeForce.backHidden} mode=${beforeForce.mode}`);
+  beforeForce.id !== dailyId && beforeForce.backHidden === false && beforeForce.backVisible === true &&
+    beforeForce.mode === 'random',
+  `抽到 ${beforeForce.id}｜backHidden=${beforeForce.backHidden} 看得见=${beforeForce.backVisible} mode=${beforeForce.mode}`);
 
 /* 回到每日精华，方便后面几条从"每日精华"这个状态开始 */
 await clickBtn('[data-daily-back]');
@@ -364,6 +376,30 @@ check('⑧ 手机端两颗按钮都在卡片里、都在视口内那块区域里
   mob.rndInside && mob.backInside && mob.rndClickable && mob.backClickable,
   `卡片 ${mob.sec.w}×${mob.sec.h}；随机 ${mob.rnd.w}×${mob.rnd.h}｜回到 ${mob.back.w}×${mob.back.h}`);
 check('⑧ 手机端没有横向溢出', mob.overflow <= 1, `scrollWidth - clientWidth = ${mob.overflow}`);
+
+/* ---------------- 关掉 JS 也要藏得住（pin 住 CSS，不只是 pin 住属性） ----------------
+   就是这条逮住的真 bug：`.daily__act` 里写了 `display: inline-flex`，作者样式压过浏览器
+   自带的 `[hidden] { display: none }` —— 只设属性等于没藏，按钮照样显示在"每日精华"上方。 */
+await cdp.send('Emulation.setScriptExecutionDisabled', { value: true });
+await cdp.goto('/', 1500);
+const noJs = await cdp.ev(`(() => {
+  const acts = document.querySelector('[data-daily-acts]');
+  const back = document.querySelector('[data-daily-back]');
+  const rnd = document.querySelector('[data-daily-random]');
+  const box = (el) => (el ? el.getClientRects().length : -1);
+  return {
+    actsBoxes: box(acts), backBoxes: box(back), rndBoxes: box(rnd),
+    actsDisplay: acts ? getComputedStyle(acts).display : '', backDisplay: back ? getComputedStyle(back).display : '',
+    backHidden: back ? back.hidden : null,
+  };
+})()`);
+await cdp.send('Emulation.setScriptExecutionDisabled', { value: false });
+console.log('\n================ 关掉 JS（只看 CSS 藏没藏住） ================');
+console.log(JSON.stringify(noJs));
+check('★ 没有 JS 时：整排按钮 + 「回到每日精华」在排版上**都没有盒子**（CSS 真的藏住了，不只是设了个属性）',
+  noJs.actsBoxes === 0 && noJs.backBoxes === 0 && noJs.rndBoxes === 0 &&
+    noJs.actsDisplay === 'none' && noJs.backDisplay === 'none' && noJs.backHidden === true,
+  `acts boxes=${noJs.actsBoxes} display=${noJs.actsDisplay}；back boxes=${noJs.backBoxes} display=${noJs.backDisplay} hidden=${noJs.backHidden}`);
 check('⑨ 全程没有 JS 报错', cdp.errors.length === 0, cdp.errors.slice(0, 2).join(' | '));
 
 try { await cdp.send('Browser.close'); } catch { /* ignore */ }

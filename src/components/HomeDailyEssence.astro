@@ -331,6 +331,15 @@ const pickLabel = pick ? `跳到冰室精华里的这一条：${pickName} ${pick
   .daily__acts[hidden] {
     display: none;
   }
+  /*
+    ⚠ 这一条不能省：`.daily__act` 里写了 `display: inline-flex`，**作者样式压过浏览器
+    自带的 `[hidden] { display: none }`** —— 只设 `btnBack.hidden = true` 的话按钮照样显示
+    （用户就是这么发现的：「今天的每日精华上方还是有回到每日精华按钮」）。
+    `.daily__acts[hidden]` 只保住了外面那一排，里头的按钮得自己再来一条。
+  */
+  .daily__act[hidden] {
+    display: none;
+  }
   .daily__act {
     display: inline-flex;
     align-items: center;
