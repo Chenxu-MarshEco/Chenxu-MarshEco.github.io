@@ -1,0 +1,83 @@
+---
+/**
+ * /search/ —— 搜索中转页。
+ *
+ * 什么时候会落到这里：在顶栏搜索框里回车（或点放大镜）时，命中的**不够强/有歧义**
+ * （见 src/search/core.js 里的 STRONG/GAP 两个判据），就去这里把所有可能列出来。
+ * 够强的话会被直接送进那一页，根本不会出现在这儿。
+ *
+ * 参考的是 Minecraft Wiki / PRTS 的搜索结果页：查询词跟着地址走（?q=…），
+ * 可以刷新、可以分享、可以直接改；结果按种类分组，每组都能继续展开。
+ *
+ * 本站特有的一条：冰室精华里的**每一条**精华在这里是独立的一条结果，
+ * 点进去是 /salon/#<id>，精华页会直接滚到那一条的位置 —— 不是回到页面顶部。
+ *
+ * 页面本身是静态的：查询词在地址里，过滤在浏览器里（索引是 /search.json）。
+ * 也正因为它没有自己的内容、只有过滤结果，所以标了 noindex，不让搜索引擎收录。
+ */
+import BaseLayout from '../layouts/BaseLayout.astro';
+import searchCore from '../search/core.js?raw';
+import searchTransit from '../search/transit.js?raw';
+
+/*
+  内核 + 这一页自己的逻辑拼成一段内联脚本。core.js 在 /search/ 上会被内联两次
+  （顶栏一次、这里一次），它开头有一句「已经装过就直接返回」，
+  所以两边共用同一份索引，也只会发一次 /search.json 请求。
+*/
+const runtime = `${searchCore}\n${searchTransit}`;
+if (/<\/script/i.test(runtime)) {
+  throw new Error(
+    'src/search/core.js 或 src/search/transit.js 里出现了 </script> 字面量：内联进页面会提前闭合脚本标签，请改成别的写法。'
+  );
+}
+
+const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+---
+
+<BaseLayout
+  title="搜索"
+  description="在花涧堂里搜索：页面、冰室精华里的每一条、文章、手记、冰山条目和地图图钉。"
+  layoutPage="list"
+  noindex
+>
+  <script
+    is:inline
+    set:html={`window.__SEARCH_CFG__={index:"${base}/search.json",home:"${base}/search/"};`}
+  />
+
+  <header class="page-header">
+    <h1 class="page-header__title">搜索</h1>
+    <p class="page-header__desc">
+      全站页面的索引都在这一页过滤。冰室精华里的每一条都是独立结果，点进去会落到那一条的位置。
+    </p>
+  </header>
+
+  <div class="srchPage" id="srch-page">
+    <form class="srchPage__form" id="srch-page-form" role="search">
+      <label class="srchPage__label" for="srch-page-input">搜索全站</label>
+      <div class="srchPage__bar">
+        <input
+          class="srchPage__input"
+          id="srch-page-input"
+          type="search"
+          placeholder="页面、精华、文章…"
+          autocomplete="off"
+        />
+        <button class="srchPage__go" type="submit">搜索</button>
+      </div>
+    </form>
+
+    <!-- 结果条数/说明；aria-live 让读屏在结果换掉时念一句 -->
+    <p class="srchPage__sum" id="srch-page-sum" aria-live="polite">正在载入索引…</p>
+    <div class="srchPage__body" id="srch-page-body"></div>
+
+    <noscript>
+      <p class="srchPage__none">
+        这一页靠脚本过滤站内索引，需要开启 JavaScript。右上角的搜索框同理，
+        不过站内每一个页面都能从首页和目录栏点进去。
+      </p>
+    </noscript>
+  </div>
+
+  <script is:inline set:html={runtime} />
+</BaseLayout>

@@ -134,8 +134,24 @@ export function rewriteHtml(html, match, render) {
   /** 当前是不是在某个 <a> 里面（那样渲染出来不能是链接，只能是带名片的 span） */
   const inLink = () => stack.some((s) => s.link);
 
-  const push = (tagText) => {
-    const m = /^<\s*([a-zA-Z][\w:-]*)/.exec(tagText);
+  /*
+    ⚠ 原始文本元素（raw text elements）：**它们的内容里出现的 `<` 不是标签**。
+    HTML 规范里 <script> / <style> 就是这一类 —— 正文里可以合法地写字面量 `<span>`。
+
+    为什么必须单列一条：下面那个主循环是「遇到 < 就找下一个 > 当成标签」。
+    内联脚本里随便一句 `for (i = 0; i < a.length; i++)` 都会被当成一个标签的开头，
+    一路吞到后面某个 `>` 为止；只要那一段把真正的 `</script>` 也吞进去了，
+    script 这一层就永远弹不出来 —— **它后面的整个 <body> 都被当成"还在脚本里"跳过**，
+    成员名一处都链不上。
+
+    这不是假设：2026-09-23 给顶栏加搜索框时就是这么翻车的。
+    内联的 src/search/*.js 里有 18 个这样的 `<`（`i < list.length` 这种），
+    于是构建日志写着「成员名自动链接：0 个页面、共 0 处」，而页面上明明有名字；
+    tools/checks/member-link-check.mjs 一条条全红，靠它才把范围缩到这里。
+  */
+  const RAW_TEXT = new Set(['script', 'style']);
+
+  const push = (tagText) => {    const m = /^<\s*([a-zA-Z][\w:-]*)/.exec(tagText);
     if (!m) return;
     const name = m[1].toLowerCase();
     if (VOID_TAGS.has(name) || /\/\s*>$/.test(tagText)) return;
@@ -177,6 +193,24 @@ export function rewriteHtml(html, match, render) {
   };
 
   while (last < html.length) {
+    /*
+      ⓞ 正待在 <script>/<style> 里：整段正文**原样拷贝**，直接跳到它自己的结束标签。
+      里面的 < > 一个都不猜（见上面 RAW_TEXT 的说明）。
+    */
+    const top = stack.length ? stack[stack.length - 1] : null;
+    if (top && RAW_TEXT.has(top.name)) {
+      const close = html.toLowerCase().indexOf(`</${top.name}`, last);
+      if (close < 0) {
+        out += html.slice(last);
+        break;
+      }
+      const gtRaw = html.indexOf('>', close);
+      const stop = gtRaw < 0 ? html.length : gtRaw + 1;
+      out += html.slice(last, stop);
+      pop(html.slice(close, stop));
+      last = stop;
+      continue;
+    }
     /* 注释整块当标签处理（里面有名字也不能改，改了注释就烂了） */
     if (html.startsWith('<!--', last)) {
       const end = html.indexOf('-->', last);

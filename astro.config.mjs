@@ -1,6 +1,7 @@
 // @ts-check
 import { defineConfig } from 'astro/config';
 import memlink from './tools/memlink/index.mjs';
+import searchIndex from './tools/search/index.mjs';
 
 // 站点部署在 GitHub Pages 的「用户站点」仓库（仓库名 = 用户名.github.io）上，
 // 所以站点根路径就是 /，不需要额外配置 base。
@@ -29,7 +30,7 @@ export default defineConfig({
     （当初跳过的理由见 tools/memlink/index.mjs 头注释：那会儿名字又多又碎；
     现在成员表规范了、条目文字也补齐了，链上反而有用。）
   */
-  integrations: [memlink({ skip: ['/iceberg/'] })],
+  integrations: [memlink({ skip: ['/iceberg/'] }), searchIndex()],
 
   // 生成 /posts/xxx/index.html 这样的目录式链接，GitHub Pages 上最稳。
   trailingSlash: 'ignore',

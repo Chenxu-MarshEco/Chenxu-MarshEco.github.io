@@ -20,6 +20,9 @@ export const GET: APIRoute = async ({ site: astroSite }) => {
     ⚠ **`/salon/`（冰室精华）故意不收**：那页是 735 条群聊里摘出来的原话，
     属于"首页点得进去、知道地址就能看"的东西，不该主动推给搜索引擎。
     哪天想让它被搜到，把它加进这个数组即可（或者给那页加 noindex）。
+
+    `/search/`（搜索中转页）同样不收 —— 它本身没有内容，只是一堆过滤结果，
+    页面上也已经标了 noindex（src/pages/search.astro）。没写进这个数组就等于不收。
   */
   const staticPages = ['/', '/posts', '/notes', '/tags', '/archive', '/about', '/friends', '/about-me', '/iceberg'];
 

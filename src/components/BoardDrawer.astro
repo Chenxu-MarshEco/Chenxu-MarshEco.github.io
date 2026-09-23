@@ -1,6 +1,7 @@
 ---
 /**
- * 右上角的三个固定控件：目录抽屉（三条杠）+ 回到顶部（塔吊图标）+ 音量（音箱）。
+ * 右上角那一排固定控件（从左到右）：
+ *   搜索框 · 随机跳转 · 回到顶部（塔吊图标）· 音量（音箱）· 目录抽屉（三条杠）
  *
  * 数据就是首页那两棵大板块树，所以它天然反映「当前在哪个板块」。
  * 常见文档站的目录树：点章节名跳转，点箭头展开/收起下一层。
@@ -15,10 +16,14 @@
  *
  * 交互全在这个组件自己的一段小脚本里，不用任何框架 ——
  * 站里其他页面都是纯静态的，为这一个抽屉引入运行时依赖不划算。
+ * 搜索框和随机跳转的脚本另放（src/search/ui.js，靠 ?raw 原样内联，
+ * 同 src/music/player.js 的做法）；它们那部分的样式在 src/styles/search.css。
  */
 import site from '../site.config';
 import { flattenBoards, visibleBoards, visibleChildren, type BoardNode } from '../utils/boards';
 import { withBase } from '../utils/url';
+import searchCore from '../search/core.js?raw';
+import searchUi from '../search/ui.js?raw';
 
 interface Props {
   /** 当前页面路径，用来高亮位置并自动展开到它 */
@@ -26,6 +31,22 @@ interface Props {
 }
 
 const { current } = Astro.props;
+
+/*
+  搜索/随机跳转的运行时：内核（打分、取索引）+ 顶栏那份界面逻辑，
+  拼成一段原样内联的脚本。和音乐播放器一样，内联前先看一眼有没有
+  「闭合脚本标签」的字面字符 —— 有的话 HTML 解析器会在那儿就把 <script>
+  收掉，剩下的代码变成页面上的文字，页面上不报错、功能静悄悄地没了。
+*/
+const searchRuntime = `${searchCore}\n${searchUi}`;
+if (/<\/script/i.test(searchRuntime)) {
+  throw new Error(
+    'src/search/core.js 或 src/search/ui.js 里出现了 </script> 字面量：内联进页面会提前闭合脚本标签，请改成别的写法。'
+  );
+}
+
+/** 站点根路径（base 是 / 时为空串），索引和中转页都按它拼 */
+const base = import.meta.env.BASE_URL.replace(/\/$/, '');
 
 const all = flattenBoards(site.homeBoards as BoardNode[]);
 
@@ -81,29 +102,99 @@ function renderNodes(nodes: BoardNode[]): string {
 ---
 
 <!--
-  右上角两个固定控件：回到顶部 + 目录。
-  套在同一个容器里，位置、间距、两个按钮的皮才好统一 ——
+  右上角这一排固定控件：搜索 · 随机跳转 · 回到顶部 · 音量 · 目录。
+  套在同一个容器里，位置、间距、各按钮的皮才好统一 ——
   分开各自 fixed 的话，改一个尺寸另一个就对不齐了。
 -->
 <div class="corner">
-  <button type="button" class="corner__btn totop" id="totop" aria-label="回到顶部" title="回到顶部">
-    <!-- 简约化的塔吊（本站的记号），不是箭头 -->
-    <svg class="totop__crane" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <!-- 塔身两根主弦 + 腹杆 -->
-      <path d="M8.6 20.6V7.4M11.4 20.6V7.4" />
-      <path d="M8.6 12.4l2.8 3.6M11.4 12.4l-2.8 3.6M8.6 16h2.8" />
-      <!-- 底座 -->
-      <path d="M7 20.6h6" />
-      <!-- 塔尖、横臂、两侧拉杆 -->
-      <path d="M10 3.6v3.8M2 7.4h20" />
-      <path d="M10 3.6 2 7.4M10 3.6l12 3.8" />
-      <!-- 吊索 -->
-      <path d="M18 7.4v3.6" />
-      <!-- 配重（左）与吊钩（右） -->
-      <rect x="2.1" y="7.5" width="2.4" height="2.6" rx="0.5" fill="currentColor" stroke="none" />
-      <rect x="17.1" y="11" width="1.8" height="1.8" rx="0.4" fill="currentColor" stroke="none" />
-    </svg>
-  </button>
+  <!--
+    站内搜索（最左边）。输入就在下面展开结果卡片，见 src/search/ui.js：
+    回车/点放大镜 —— 命中够强就直接进那一页，否则进 /search/ 中转页把所有可能列出来。
+    索引是构建期生成的 /search.json，浏览器本地过滤（静态站没有后端）。
+  -->
+  <div class="srch" id="site-search" role="search">
+    <div class="srch__box" id="site-search-box">
+      <input
+        class="srch__input"
+        id="site-search-input"
+        type="search"
+        placeholder="搜索"
+        autocomplete="off"
+        aria-label="站内搜索"
+        role="combobox"
+        aria-expanded="false"
+        aria-controls="site-search-pop"
+        aria-autocomplete="list"
+      />
+      <button class="srch__go" id="site-search-go" type="button" aria-label="搜索" tabindex="-1">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="10.6" cy="10.6" r="6.4"></circle>
+          <path d="M15.5 15.5 21 21"></path>
+        </svg>
+      </button>
+    </div>
+    <!--
+      结果下拉。分两层：上面那层是会被整块替换掉的结果行，下面那层是固定不动的页脚 ——
+      页脚要一直显示「回车会去哪儿」，不能跟着结果一起被 innerHTML 冲掉。
+    -->
+    <div class="srch__pop" id="site-search-pop" role="listbox" aria-label="搜索结果" hidden>
+      <div class="srch__rows" id="site-search-rows">
+        <p class="srch__note">输入关键词开始搜索…</p>
+      </div>
+      <div class="srch__foot">
+        <span class="srch__hint" id="site-search-hint"></span>
+        <button class="srch__all" id="site-search-all" type="button" hidden></button>
+      </div>
+    </div>
+  </div>
+
+  <!--
+    随机跳转：图标是从兔子洞里探出头的一只兔子（侧视）。
+    点了随机进本站任意一个页面（抽签池＝索引里所有整页，见 src/search/ui.js）。
+    悬停浮出下面那张卡片 —— 用户要的就是「回到顶部」那种卡片，不是浏览器自带的 title。
+  -->
+  <div class="corner__slot">
+    <button type="button" class="corner__btn random__btn" id="random-jump" aria-label="随机跳转">
+      <svg class="random__rabbit" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <!-- 洞口远沿（上半圈）：兔子挡在它前面 -->
+        <path d="M3.6 16.6a8.4 2.4 0 0 1 16.8 0"></path>
+        <!-- 两只耳朵：一前一后，都插进头里（耳根被头挡住） -->
+        <ellipse class="rr__ear" cx="13.4" cy="6.6" rx="1.35" ry="3.9" transform="rotate(9 13.4 6.6)"></ellipse>
+        <ellipse class="rr__ear" cx="10.4" cy="6.1" rx="1.4" ry="4.1" transform="rotate(-7 10.4 6.1)"></ellipse>
+        <!-- 头（侧视朝右）：填底色，压住耳根和远沿 -->
+        <circle class="rr__head" cx="11.8" cy="13.6" r="4"></circle>
+        <!-- 眼睛 + 鼻尖 -->
+        <circle class="rr__eye" cx="13.9" cy="12.7" r="0.78"></circle>
+        <path d="M15.2 14.5h1.3"></path>
+        <!-- 洞口近沿（下半圈）：填底色，压住头的下缘，看着像从洞里钻出来 -->
+        <path class="rr__lip" d="M3.6 16.6a8.4 2.4 0 0 0 16.8 0"></path>
+      </svg>
+    </button>
+    <span class="tip" role="tooltip">随机跳转</span>
+  </div>
+
+  <div class="corner__slot">
+    <button type="button" class="corner__btn totop" id="totop" aria-label="回到顶部">
+      <!-- 简约化的塔吊（本站的记号），不是箭头 -->
+      <svg class="totop__crane" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <!-- 塔身两根主弦 + 腹杆 -->
+        <path d="M8.6 20.6V7.4M11.4 20.6V7.4" />
+        <path d="M8.6 12.4l2.8 3.6M11.4 12.4l-2.8 3.6M8.6 16h2.8" />
+        <!-- 底座 -->
+        <path d="M7 20.6h6" />
+        <!-- 塔尖、横臂、两侧拉杆 -->
+        <path d="M10 3.6v3.8M2 7.4h20" />
+        <path d="M10 3.6 2 7.4M10 3.6l12 3.8" />
+        <!-- 吊索 -->
+        <path d="M18 7.4v3.6" />
+        <!-- 配重（左）与吊钩（右） -->
+        <rect x="2.1" y="7.5" width="2.4" height="2.6" rx="0.5" fill="currentColor" stroke="none" />
+        <rect x="17.1" y="11" width="1.8" height="1.8" rx="0.4" fill="currentColor" stroke="none" />
+      </svg>
+    </button>
+    <!-- 悬停提示做成卡片（原来是个朴素的 title），和「随机跳转」那张同一套皮 -->
+    <span class="tip" role="tooltip">回到顶部</span>
+  </div>
 
   <!--
     音量键（音箱 = 网页上最常见的那只音量图标），挨着回到顶部那颗按钮。
@@ -183,6 +274,9 @@ function renderNodes(nodes: BoardNode[]): string {
     <ul class="tree" set:html={renderNodes(boards)} />
   </nav>
 </aside>
+
+<script is:inline set:html={`window.__SEARCH_CFG__={index:"${base}/search.json",home:"${base}/search/"};`} />
+<script is:inline set:html={searchRuntime} />
 
 <script is:inline>
   (() => {
@@ -298,7 +392,9 @@ function renderNodes(nodes: BoardNode[]): string {
     gap: 0.5rem;
   }
 
-  /* 两个按钮共用这一套皮：一样的方角、边框、底色 */
+  /* 这一排按钮共用这一套皮：一样的方角、边框、底色。
+     搜索框（.srch__box）在 src/styles/search.css 里抄了同样几个值 ——
+     它是全局样式、够不着这里的变量，改这几个值时两边要一起改。 */
   .corner__btn {
     width: 42px;
     height: 42px;
@@ -325,13 +421,17 @@ function renderNodes(nodes: BoardNode[]): string {
   }
 
   /*
-    抽屉拉开时把它藏掉：抽屉停在右边，这层 z-index 比抽屉高，
-    不藏的话这个按钮会浮在抽屉面板上，和抽屉自己的关闭按钮挤在一起。
+    抽屉拉开时把这一排里除「三条杠」以外的都藏掉：抽屉停在右边，
+    这层 z-index 比抽屉高，不藏的话它们会浮在抽屉面板上，
+    和抽屉自己的关闭按钮挤在一起。
     用 visibility 而不是 display —— display:none 会让右边的目录按钮
     往右跳一格，看着像抖了一下。
     音量键同理：抽屉铺开时它也在抽屉底下，一起收掉（音乐照放）。
+    搜索框和随机跳转是后来加的，一起收：抽屉已经盖住那一整块了，
+    浮在上面既点不到也没意义（.tip 卡片也跟着藏）。
   */
-  :global(.drawer-open) .totop,
+  :global(.drawer-open) .corner__slot,
+  :global(.drawer-open) .srch,
   :global(.drawer-open) .vol {
     visibility: hidden;
   }

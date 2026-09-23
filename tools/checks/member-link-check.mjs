@@ -512,8 +512,16 @@ const idle = await cdp.ev(`(() => {
   for (const el of document.querySelectorAll('*')) {
     const cs = getComputedStyle(el);
     if (cs.overflowX === 'visible' && cs.overflowY === 'visible') continue;
-    const dx = el.scrollWidth - el.clientWidth;
-    const dy = el.scrollHeight - el.clientHeight;
+    /*
+      某一条轴被收成 0（clientHeight/clientWidth < 2）时，那一条轴上的"内容比框大"
+      是**故意的折叠**，不是被撑坏：比如时间轴年代卡上那行「xx天」
+      （.tl__spanDays 平时 max-height:0 + overflow:hidden，鼠标移上去才展开）。
+      那种元素一个像素都画不出来，量出来的 dy=14 只是它藏起来的正文高度。
+      2026-09-23 这条规则量到的就是它，5 张年代卡各报一次 +0/14。
+      真正要抓的是「框有实际大小、内容却被切掉」（原来那个 +66px 就是）。
+    */
+    const dx = el.clientWidth < 2 ? 0 : el.scrollWidth - el.clientWidth;
+    const dy = el.clientHeight < 2 ? 0 : el.scrollHeight - el.clientHeight;
     if (dx > 1 || dy > 1) overflowing.push((el.className || el.tagName).toString().slice(0, 40) + ' +' + Math.round(dx) + '/' + Math.round(dy));
   }
   const card = document.querySelector('.mem .mem__card');
@@ -986,11 +994,29 @@ if (devHome) {
   for (let i = 0; i < 200; i++) { await sleep(150); if ((await cdp.ev('document.readyState')) === 'complete') break; }
   await sleep(2500);
 
-  const salonHover = await cdp.ev(`(async () => {
+  /*
+    ⚠ 量坐标之前要等页面**自己安静下来**。
+    精华页落地时会自己滚到最新那条（salon.astro 的 landOnEntry：进页面 600ms 之后
+    一次、document.fonts.ready 之后再一次）。量完坐标它再滚一下，鼠标就落在空处，
+    卡片当然不出来 —— 这条 race 是 2026-09-23 反复跑才定下来的：
+    同一份产物、同一份代码，有时候过、有时候报 count:0。
+    所以这里量之前先等滚动停住（连续 4 次采样没变），后面还留了一次重试。
+  */
+  const settle = `(async () => {
+    let last = -1, still = 0;
+    for (let i = 0; i < 40 && still < 4; i++) {
+      await new Promise((r) => setTimeout(r, 150));
+      const y = Math.round(window.scrollY);
+      if (y === last) still++; else { still = 0; last = y; }
+    }
+    return Math.round(window.scrollY);
+  })()`;
+
+  const salonProbe = `(async () => {
     const target = document.querySelector('.salon__text .mem') || document.querySelector('.salon .mem');
     if (!target) return { ok: false, why: '页面上找不到 .mem' };
     target.scrollIntoView({ block: 'center', behavior: 'instant' });
-    await new Promise((r) => setTimeout(r, 200));
+    await ${settle};
     const r = target.getBoundingClientRect();
     return {
       ok: true,
@@ -1000,11 +1026,11 @@ if (devHome) {
       inText: !!target.closest('.salon__text'),
       hasFace: !!target.querySelector('img.mem__face'),
     };
-  })()`);
+  })()`;
+
+  const salonHover = await cdp.ev(salonProbe);
   if (salonHover.ok) {
-    await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: salonHover.x, y: salonHover.y, buttons: 0 });
-    await sleep(700);
-    const card = await cdp.ev(`(() => {
+    const readCard = `(() => {
       const cards = [...document.querySelectorAll('.mem__card')].filter((c) => {
         const cs = getComputedStyle(c);
         const r = c.getBoundingClientRect();
@@ -1016,7 +1042,21 @@ if (devHome) {
         face: !!(c && c.querySelector('img.mem__face')),
         label: c ? ((c.querySelector('.mem__label') || {}).textContent || '').trim() : '',
       };
-    })()`);
+    })()`;
+    /* 页面跳了一下导致鼠标落空的话，重量一次再来（最多两次） */
+    let card = { count: 0 };
+    let at = salonHover;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: at.x, y: at.y, buttons: 0 });
+      await sleep(700);
+      card = await cdp.ev(readCard);
+      if (card.count >= 1) break;
+      await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 5, y: 5, buttons: 0 });
+      await sleep(150);
+      const again = await cdp.ev(salonProbe);
+      if (!again.ok) break;
+      at = again;
+    }
     check('★ /salon/ 上鼠标移到名字上 → 浮出名片（头像 + 名字）',
       card.count >= 1 && card.face === true && card.label.length > 0,
       JSON.stringify({ 悬停的那条: salonHover.name, 在正文里: salonHover.inText, ...card }));

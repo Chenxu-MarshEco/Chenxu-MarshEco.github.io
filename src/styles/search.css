@@ -1,0 +1,479 @@
+/* ============================================================================
+ *  search.css —— 顶栏搜索框 / 随机跳转 / 悬停卡片 / /search/ 中转页
+ * ----------------------------------------------------------------------------
+ *  为什么单独一个文件、而不是写在 BoardDrawer.astro 的 <style> 里：
+ *  搜索结果是**脚本生成**的 DOM，拿不到 Astro 给组件样式打的那个作用域标记，
+ *  组件里的选择器一律够不着它们（抽屉里那棵树是靠 :global() 绕过去的，
+ *  但搜索结果的选择器有几十条，全写 :global() 不如单独放一个全局样式表）。
+ *
+ *  配色一律走 tokens.css 里的变量；首页和板块页是固定深色（body.is-home /
+ *  body.is-board），它们那几页在本文件末尾单独换一遍 —— 和右上角那几颗
+ *  按钮（BoardDrawer.astro 里 .corner__btn 的深色版）用的是同一套值。
+ * ========================================================================= */
+
+/* ---------------------------------------------------------------------------
+ *  1. 顶栏搜索框
+ * ------------------------------------------------------------------------ */
+
+.srch {
+  position: relative;
+}
+
+/*
+  框的皮和右上角那几颗按钮（.corner__btn：42px 高、11px 圆角、一像素边框）
+  保持一致 —— 用户的要求是「搜索框和随机跳转框样式相同」，
+  所以这几个值要和 BoardDrawer.astro 里那一套同步改。
+  宽度走 clamp：窄屏上自己收窄，不然一整排控件会从左边缘溢出屏幕。
+*/
+.srch__box {
+  display: flex;
+  align-items: center;
+  height: 42px;
+  width: clamp(96px, 22vw, 176px);
+  border: 1px solid var(--c-border-strong);
+  border-radius: 11px;
+  background: var(--c-bg-raised);
+  color: var(--c-text);
+  transition: border-color var(--t-fast) var(--ease);
+}
+.srch__box:hover,
+.srch__box:focus-within {
+  border-color: var(--c-accent);
+}
+
+.srch__input {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+  padding: 0 0.15rem 0 0.62rem;
+  border: 0;
+  background: none;
+  outline: none;
+  font-size: 0.84rem;
+  color: inherit;
+}
+.srch__input::placeholder {
+  color: var(--c-text-faint);
+}
+/* 浏览器自带的那个清除叉各家长得都不一样，还会把框挤变形：统一去掉 */
+.srch__input::-webkit-search-cancel-button,
+.srch__input::-webkit-search-decoration {
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.srch__go {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  opacity: 0.7;
+}
+.srch__go:hover {
+  opacity: 1;
+}
+.srch__go svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+}
+
+/* ---------------------------------------------------------------------------
+ *  2. 结果下拉
+ * ------------------------------------------------------------------------ */
+
+.srch__pop {
+  position: absolute;
+  top: calc(100% + 0.4rem);
+  right: 0;
+  z-index: 62;
+  display: flex;
+  flex-direction: column;
+  width: min(23rem, 82vw);
+  max-height: min(60vh, 26rem);
+  overflow: hidden;
+  padding: 0.3rem;
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-md);
+  background: var(--c-bg-raised);
+  box-shadow: var(--shadow-md);
+}
+/*
+  ⚠ 这一条不能省。作者写的 `display: flex`（见上面）会**压过浏览器自带的
+  `[hidden] { display: none }`** —— 少了它，属性是设上了、那个下拉照样摊在页面上，
+  空着还挡着底下的东西。2026-09-23 的体检（tools/checks/hidden-elements-check.mjs）
+  在 /、/salon/、/iceberg/、/about-me/、/huaya/ 五页上量到的就是这个
+  （同一页里 `.vol[hidden]` 那次踩的是同一个坑，BoardDrawer.astro 里有记）。
+*/
+.srch__pop[hidden] {
+  display: none;
+}
+
+/* 只有结果那一块滚动，页脚钉在下面不动 */
+.srch__rows {
+  overflow-y: auto;
+}
+
+/*
+  窄屏上这个下拉不能贴着框右对齐：框本身就在屏幕右边，
+  往左展开 23rem 会有一半跑到屏幕外面去。改成整幅贴边。
+*/
+@media (max-width: 46rem) {
+  .srch__pop {
+    position: fixed;
+    top: 4.15rem;
+    left: 0.9rem;
+    right: 0.9rem;
+    width: auto;
+    max-height: 55vh;
+  }
+}
+
+.srch__row {
+  display: block;
+  padding: 0.42rem 0.55rem;
+  border-radius: 7px;
+  text-decoration: none;
+  color: var(--c-text);
+}
+.srch__row:hover,
+.srch__row.is-active {
+  background: var(--c-accent-soft);
+}
+
+.srch__rowTop {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+.srch__rowTitle {
+  flex: 1 1 auto;
+  font-size: 0.88rem;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+/* 种类标签：让人一眼看出这条跳过去是整页、还是页里的某一段 */
+.srch__kind {
+  flex: 0 0 auto;
+  padding: 0.02rem 0.36rem;
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-full);
+  color: var(--c-text-faint);
+  font-size: 0.66rem;
+  line-height: 1.6;
+}
+.srch__rowSub {
+  display: block;
+  margin-top: 0.12rem;
+  color: var(--c-text-muted);
+  font-size: 0.74rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.srch__note {
+  padding: 0.5rem 0.6rem;
+  color: var(--c-text-muted);
+  font-size: 0.78rem;
+}
+
+.srch__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-top: 0.3rem;
+  padding: 0.35rem 0.55rem 0.2rem;
+  border-top: 1px solid var(--c-border);
+}
+.srch__hint {
+  color: var(--c-text-muted);
+  font-size: 0.7rem;
+}
+.srch__all {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--c-accent);
+  font-size: 0.7rem;
+}
+.srch__all:hover {
+  text-decoration: underline;
+}
+
+/* 命中的字：只在这两块里生效，别去动正文里 markdown 的 <mark> */
+.srch__row mark,
+.srchPage__body mark {
+  padding: 0 0.06em;
+  border-radius: 2px;
+  background: rgba(212, 0, 123, 0.18);
+  color: inherit;
+}
+
+/* ---------------------------------------------------------------------------
+ *  3. 随机跳转那颗按钮上的兔子 + 两颗按钮的悬停卡片
+ * ------------------------------------------------------------------------ */
+
+/*
+  兔子：侧视，从兔子洞里探出上半身。
+  头、耳朵、洞口近沿都填成**按钮自己的底色**，靠"盖住后面的线"做出前后关系：
+  耳朵先画（在后面）→ 头盖住耳根和洞口远沿 → 洞口近沿再盖住头的下缘。
+  所以底色一变（首页/板块页是深紫），这三块的填充色要跟着换，见本文件末尾。
+*/
+.random__rabbit {
+  width: 24px;
+  height: 24px;
+  stroke: currentColor;
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.random__rabbit .rr__ear,
+.random__rabbit .rr__head,
+.random__rabbit .rr__lip {
+  fill: var(--c-bg-raised);
+}
+.random__rabbit .rr__eye {
+  fill: currentColor;
+  stroke: none;
+}
+
+/* 悬停卡片：两颗按钮（随机跳转 / 回到顶部）共用 */
+.corner__slot {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.tip {
+  position: absolute;
+  top: calc(100% + 0.45rem);
+  left: 50%;
+  padding: 0.3rem 0.62rem;
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-md);
+  background: var(--c-bg-raised);
+  color: var(--c-text);
+  box-shadow: var(--shadow-md);
+  font-size: 0.74rem;
+  line-height: 1.4;
+  white-space: nowrap;
+  opacity: 0;
+  visibility: hidden;
+  transform: translate(-50%, -0.25rem);
+  pointer-events: none;
+  transition:
+    opacity var(--t-fast) var(--ease),
+    transform var(--t-fast) var(--ease),
+    visibility var(--t-fast) linear;
+}
+.corner__slot:hover .tip,
+.corner__slot:focus-within .tip {
+  opacity: 1;
+  visibility: visible;
+  transform: translate(-50%, 0);
+}
+
+/* 窄屏：这一排控件本来就挤，卡片改成贴在按钮下面左对齐，别再横向撑出去 */
+@media (max-width: 30rem) {
+  .srch__box {
+    width: clamp(84px, 20vw, 176px);
+  }
+  .tip {
+    left: auto;
+    right: 0;
+    transform: translate(0, -0.25rem);
+  }
+  .corner__slot:hover .tip,
+  .corner__slot:focus-within .tip {
+    transform: translate(0, 0);
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ *  4. /search/ 中转页
+ * ------------------------------------------------------------------------ */
+
+.srchPage__form {
+  margin: 1.3rem 0 0.9rem;
+}
+.srchPage__label {
+  display: block;
+  margin-bottom: 0.35rem;
+  color: var(--c-text-muted);
+  font-size: 0.8rem;
+}
+.srchPage__bar {
+  display: flex;
+  gap: 0.5rem;
+}
+.srchPage__input {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 42px;
+  padding: 0 0.8rem;
+  border: 1px solid var(--c-border-strong);
+  border-radius: 11px;
+  background: var(--c-bg-raised);
+  color: var(--c-text);
+  font-size: 0.9rem;
+}
+.srchPage__input:focus {
+  outline: none;
+  border-color: var(--c-accent);
+}
+.srchPage__go {
+  flex: 0 0 auto;
+  height: 42px;
+  padding: 0 1.1rem;
+  border: 1px solid var(--c-border-strong);
+  border-radius: 11px;
+  background: var(--c-accent-soft);
+  color: var(--c-accent);
+  font-size: 0.9rem;
+}
+.srchPage__go:hover {
+  border-color: var(--c-accent);
+}
+.srchPage__sum {
+  color: var(--c-text-muted);
+  font-size: 0.82rem;
+  min-height: 1.6em;
+}
+.srchPage__group {
+  margin: 1.5rem 0;
+}
+.srchPage__groupTitle {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding-bottom: 0.3rem;
+  border-bottom: 1px solid var(--c-border);
+  font-size: 1rem;
+}
+.srchPage__count {
+  color: var(--c-text-faint);
+  font-size: 0.72rem;
+  font-weight: var(--fw-normal);
+}
+.srchPage__items {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0.5rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+.srchPage__link {
+  display: block;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-md);
+  background: var(--c-bg-raised);
+}
+.srchPage__link:hover {
+  border-color: var(--c-accent);
+}
+.srchPage__title {
+  display: block;
+  color: var(--c-text);
+  font-size: 0.92rem;
+  line-height: 1.5;
+}
+.srchPage__meta {
+  display: block;
+  margin-top: 0.1rem;
+  color: var(--c-text-muted);
+  font-size: 0.74rem;
+  overflow-wrap: anywhere;
+}
+.srchPage__more {
+  margin-top: 0.5rem;
+  padding: 0.3rem 0.8rem;
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-md);
+  background: none;
+  color: var(--c-accent);
+  font-size: 0.8rem;
+}
+.srchPage__more:hover {
+  border-color: var(--c-accent);
+}
+.srchPage__none {
+  color: var(--c-text-muted);
+  line-height: 1.9;
+}
+.srchPage__items--dir {
+  margin-top: 1rem;
+}
+
+/* ---------------------------------------------------------------------------
+ *  5. 深色页（首页 / 板块页）
+ * ------------------------------------------------------------------------ */
+
+body.is-home .srch__box,
+body.is-board .srch__box,
+body.is-home .srch__pop,
+body.is-board .srch__pop,
+body.is-home .tip,
+body.is-board .tip {
+  background: rgba(38, 4, 52, 0.92);
+  border-color: rgba(255, 120, 190, 0.5);
+  color: #ffd9ef;
+  backdrop-filter: blur(4px);
+}
+body.is-home .srch__input::placeholder,
+body.is-board .srch__input::placeholder {
+  color: rgba(255, 217, 239, 0.6);
+}
+body.is-home .srch__row,
+body.is-board .srch__row {
+  color: #ffe6f6;
+}
+body.is-home .srch__row:hover,
+body.is-board .srch__row:hover,
+body.is-home .srch__row.is-active,
+body.is-board .srch__row.is-active {
+  background: rgba(212, 0, 123, 0.35);
+}
+body.is-home .srch__rowSub,
+body.is-board .srch__rowSub,
+body.is-home .srch__hint,
+body.is-board .srch__hint,
+body.is-home .srch__note,
+body.is-board .srch__note {
+  color: #ffb3dd;
+}
+body.is-home .srch__kind,
+body.is-board .srch__kind {
+  border-color: rgba(255, 120, 190, 0.45);
+  color: #ffb3dd;
+}
+body.is-home .srch__all,
+body.is-board .srch__all {
+  color: #ff9ad5;
+}
+body.is-home .srch__foot,
+body.is-board .srch__foot {
+  border-top-color: rgba(255, 120, 190, 0.3);
+}
+body.is-home .srch__row mark,
+body.is-board .srch__row mark {
+  background: rgba(255, 79, 163, 0.35);
+}
+/* 兔子里那三块"底色填充"必须跟上按钮自己的深紫，否则亮块会浮在深色按钮上 */
+body.is-home .random__rabbit .rr__ear,
+body.is-home .random__rabbit .rr__head,
+body.is-home .random__rabbit .rr__lip,
+body.is-board .random__rabbit .rr__ear,
+body.is-board .random__rabbit .rr__head,
+body.is-board .random__rabbit .rr__lip {
+  fill: rgba(38, 4, 52, 0.72);
+}
