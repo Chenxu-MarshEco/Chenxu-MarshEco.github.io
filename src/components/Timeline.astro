@@ -1095,61 +1095,77 @@ const initialScaleText = `一刻度约 ${
     pointer-events: none;
   }
   /*
-    鼠标移到时间段名字上：卡片**微微放大** + 名字下面多一行「xx天」
-    （用户 2026-09-22：「鼠标指针移到写有年代名字的卡片上时 卡片会微微放大并在年代名字
-      下面写出xx天 也就是这个年代总共有几天 鼠标移开后变回原样」）。
-    天数那行平时 max-height:0 + opacity:0 —— 不占布局，进出都不会把轴顶来顶去。
-    ⚠ 两个坑（用户 2026-09-22 报「鼠标移到年代卡上没有任何反应」）：
-      ① 上面那条 `.tl__spanName` 规则里写着 pointer-events: none —— 鼠标根本扫不到这些卡片，
-         hover 永远不会触发，所以这里必须把它打开；
-      ② 卡片的定位是**内联**的 transform: translateY(-50%)，内联压过样式表 ——
-         样式表里再写 transform: scale(...) 既不生效、还会把居中弄丢。
-         改用**独立的 scale 属性**（它和 transform 是两件事，浏览器依次应用），
-         既不动居中，也不用跟内联样式抢。
+    鼠标移到时间段的**名字卡**上（用户说的「年代卡」）：
+      平时：**就是最开始那个样子** —— 一行名字的胶囊，不多占一点高度；
+      移上去：卡片的**上边往上、下边往下**各撑开一点（卡面变大，不是把内容顶长），
+              名字跟着**微微上移**，下面空出来的地方写出「xx天」。
+
+    用户原话（2026-09-22，第二版）：
+      「修改年代卡放大的表现 …… 不应该像现在这样年代卡比之前高很多而且字在偏上位置
+        把年代卡回调成最开始规范的样子 然后鼠标移上去的时候 年代卡的上下边都微微向上
+        和向下来放大卡面 字跟着微微上移 下面显示出实时计算的【xx天】
+        天数的颜色和风格和年代名字一样 只是字号小一些」
+
+    ⚠ 三个坑：
+      ① 这些卡片原来 `pointer-events: none` —— 鼠标扫不到，hover 永远不触发（第一版没反应就是这个）；
+      ② 它们的定位是**内联**的 `transform: translateY(-50%)`，内联压过样式表：
+         卡片本身的放大只能用 **padding**（上下各撑一点，translateY(-50%) 会重新居中 →
+         上下边同时向外），内层那层干净的元素才用 transform 微移名字；
+      ③ 第一版把天数那行做成了**常显**（`@media (hover: none)` 那条在触屏/某些设备上
+         会一直命中），卡片因此永久变高、字被顶到偏上 —— 现在删掉那条，
+         天数**只在 hover / 键盘聚焦时**出现。
   */
   .tl__spanName {
     pointer-events: auto;
+    transition: padding 0.16s ease;
   }
-  /*
-    缩放放在**内层**（.tl__spanNameBox）：卡片自己是内联 transform 定位的，
-    样式表里的 transform 抢不过内联 —— 所以内层干净的那一层来负责放大。
-  */
   .tl__spanNameBox {
-    display: inline-block;
+    display: block;
+    text-align: center;
     transition: transform 0.16s ease;
   }
+  /* 上下边都向外撑开（translateY(-50%) 会把长高的盒子重新居中 → 上是往上、下是往下） */
+  .tl__spanName:hover,
+  .tl__spanName:focus-visible {
+    padding-top: 0.42rem;
+    padding-bottom: 0.42rem;
+  }
+  /* 名字微微上移，给下面那行天数让位 */
   .tl__spanName:hover .tl__spanNameBox,
   .tl__spanName:focus-visible .tl__spanNameBox {
-    transform: scale(1.06);
+    transform: translateY(-0.22rem);
   }
   .tl__spanName:focus-visible {
     outline: 2px solid rgba(255, 120, 190, 0.7);
     outline-offset: 2px;
   }
+  /*
+    天数：**和年代名字同一套颜色/发光**（颜色继承 --sc、发光抄名字那条），只是字号小一点。
+    平时 max-height:0 + opacity:0 —— 一点高度都不占，卡片就是最开始的样子。
+  */
   .tl__spanDays {
     display: block;
     max-height: 0;
     overflow: hidden;
-    font-size: 0.72rem;
-    line-height: 1.4;
+    font-size: 0.68rem;
+    line-height: 1.3;
     font-variant-numeric: tabular-nums;
-    color: #ff9ad5;
-    text-shadow: 0 0 10px rgba(255, 79, 163, 0.5);
+    color: inherit;
+    text-shadow: inherit;
     opacity: 0;
     transition: max-height 0.16s ease, opacity 0.16s ease;
   }
   .tl__spanName:hover .tl__spanDays,
   .tl__spanName:focus-visible .tl__spanDays {
-    max-height: 1.6rem;
+    max-height: 1.4rem;
     opacity: 1;
   }
-  /* 触屏没有 hover：一直显示 */
-  @media (hover: none) {
-    .tl__spanDays {
-      max-height: 1.6rem;
-      opacity: 1;
-    }
-  }
+  /*
+    触屏没有 hover —— 那条「一直显示天数」的规则**删掉了**（2026-09-22）：
+    它在触屏（以及某些把 hover 报成 none 的设备）上永远命中，
+    卡片因此永久变高、名字被顶到偏上 —— 用户看到的就是"比之前高很多、字偏上"。
+    现在一律只在 hover / 键盘聚焦时出现，卡片平时就是最开始那个样子。
+  */
   /*
     名字的边框和字色跟着它那条带子的「层」走（--sc 是标记里按层算好写进去的）：
     带子是紫色，名字就是紫色，一眼能对上哪条带子叫什么。

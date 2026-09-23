@@ -543,41 +543,68 @@ try {
     Math.abs(out.scale - 1) < 0.02 && out.opacity < 0.5, JSON.stringify(out));
 
   /*
-    时间轴上「写着名字的卡片」（时间段名字卡）也要能 hover 出天数
-    —— 用户原话：「鼠标移到年代卡上没有任何反应」。
-    这些卡片在轴上一侧一个，名字下面平时收着「xx天」，移上去展开 + 卡片微微放大。
+    时间轴上「写着名字的卡片」（用户嘴里的「年代卡」）：
+      平时 = **最开始那个样子**（一行名字的胶囊，天数那行不占高度）；
+      鼠标移上去 = 上下边各向外撑开（卡面变大）、名字微微上移、下面写出实时算的「xx天」，
+                   天数和名字**同色同发光**、只是字号小一点。
+
+    用户原话（2026-09-22，第二版）：
+      「把年代卡回调成最开始规范的样子 然后鼠标移上去的时候 年代卡的上下边都微微向上和
+        向下来放大卡面 字跟着微微上移 下面显示出实时计算的【xx天】
+        天数的颜色和风格和年代名字一样 只是字号小一些」
   */
-  const spanCard = await cdp.ev(`(() => {
-    const el = [...document.querySelectorAll('.tl__spanName')].find((x) => getComputedStyle(x).visibility === 'visible' && x.getBoundingClientRect().width > 20);
+  const SPAN_PROBE = `(() => {
+    const el = [...document.querySelectorAll('.tl__spanName')]
+      .find((x) => getComputedStyle(x).visibility === 'visible' && x.getBoundingClientRect().width > 20);
     if (!el) return null;
-    el.scrollIntoView({ block: 'center', behavior: 'instant' });
+    const box = el.querySelector('.tl__spanNameBox');
     const daysEl = el.querySelector('[data-tl-spanDays]');
     const r = el.getBoundingClientRect();
+    const br = box.getBoundingClientRect();
+    const dr = daysEl.getBoundingClientRect();
+    const cs = getComputedStyle(el);
+    const dcs = getComputedStyle(daysEl);
     return {
       x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2),
-      name: el.textContent.replace(/[0-9]+\s*天/, '').trim().slice(0, 12),
+      name: el.textContent.replace(/[0-9]+\\s*天/, '').trim().slice(0, 12),
       days: daysEl ? Number((daysEl.textContent.match(/[0-9]+/) || [0])[0]) : null,
-      opacity: daysEl ? Number(getComputedStyle(daysEl).opacity) : null,
-      scale: (() => { const m = /matrix3?d?\\(([-\\d.eE]+)/.exec(getComputedStyle(el).transform); return m ? Number(m[1]) : 1; })(),
+      top: Math.round(r.top), bottom: Math.round(r.bottom), h: Math.round(r.height),
+      nameTop: Math.round(br.top), daysTop: Math.round(dr.top), daysH: Math.round(dr.height),
+      daysOpacity: Number(dcs.opacity),
+      /* 天数和名字同一套颜色/发光（字号小一点） */
+      dayColor: dcs.color, nameColor: cs.color,
+      dayShadow: dcs.textShadow, nameShadow: cs.textShadow,
+      dayFont: parseFloat(dcs.fontSize), nameFont: parseFloat(cs.fontSize),
     };
-  })()`);
-  console.log('时间轴名字卡：', JSON.stringify(spanCard));
-  check('★ 时间轴上那些"写着名字的卡片"平时把天数收着（hover 才展开）',
-    !!spanCard && spanCard.days > 0 && spanCard.opacity === 0, JSON.stringify(spanCard));
-  check('★ 天数算得对（和这条轴数据里的起止一致）',
+  })()`;
+
+  const spanCard = await cdp.ev(SPAN_PROBE.replace('(() => {', `(() => {
+    { const el0 = [...document.querySelectorAll('.tl__spanName')].find((x) => getComputedStyle(x).visibility === 'visible' && x.getBoundingClientRect().width > 20);
+      if (el0) el0.scrollIntoView({ block: 'center', behavior: 'instant' }); }`));
+  console.log('时间轴名字卡（平时）：', JSON.stringify(spanCard));
+  check('★ 平时那张卡就是**最开始的样子**：天数那行不占高度（卡片高 = 去掉它之后的高度）',
+    !!spanCard && spanCard.daysH <= 1 && spanCard.h > 0,
+    JSON.stringify({ 卡片高: spanCard?.h, 天数行高: spanCard?.daysH }));
+  check('★ 天数是实时算出来的（>0，跟着这条轴的起止走）',
     !!spanCard && spanCard.days > 0 && spanCard.days < 4000, `${spanCard?.name} = ${spanCard?.days} 天`);
+
   await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: spanCard.x, y: spanCard.y, buttons: 0 });
-  await sleep(450);
-  const spanHover = await cdp.ev(`(() => {
-    const el = [...document.querySelectorAll('.tl__spanName')].find((x) => getComputedStyle(x).visibility === 'visible' && x.getBoundingClientRect().width > 20);
-    const daysEl = el.querySelector('[data-tl-spanDays]');
-    const m = /matrix3?d?\\(([-\\d.eE]+)/.exec(getComputedStyle(el).transform);
-    return { scale: m ? Number(m[1]) : 1, opacity: Number(getComputedStyle(daysEl).opacity), days: daysEl.textContent.trim() };
-  })()`);
-  console.log('时间轴名字卡 hover：', JSON.stringify(spanHover));
-  check('★ 鼠标移到那张卡上：卡片微微放大 + 名字下面写出「xx天」（用户报的那件事）',
-    spanHover.scale > 1 && spanHover.opacity > 0.5 && /\d+ 天/.test(spanHover.days),
-    JSON.stringify(spanHover));
+
+  await sleep(500);
+  const spanHover = await cdp.ev(SPAN_PROBE);
+  console.log('时间轴名字卡（hover）：', JSON.stringify(spanHover));
+  check('★ 鼠标移上去：**上下边都向外**撑开（上边更上、下边更下），卡面变大',
+    !!spanHover && spanHover.top < spanCard.top && spanHover.bottom > spanCard.bottom &&
+      spanHover.h > spanCard.h,
+    JSON.stringify({ 平时: [spanCard?.top, spanCard?.bottom, spanCard?.h], 移上去: [spanHover?.top, spanHover?.bottom, spanHover?.h] }));
+  check('★ 名字跟着**微微上移**，下面写出「xx天」',
+    !!spanHover && spanHover.nameTop < spanCard.nameTop && spanHover.daysOpacity > 0.5 &&
+      /\d+ 天/.test(`${spanHover.days} 天`),
+    JSON.stringify({ 名字顶边: [spanCard?.nameTop, spanHover?.nameTop], 天数: spanHover?.days, 透明度: spanHover?.daysOpacity }));
+  check('★ 天数和年代名字**同色同发光**，只是字号小一点',
+    !!spanHover && spanHover.dayColor === spanHover.nameColor &&
+      spanHover.dayShadow === spanHover.nameShadow && spanHover.dayFont < spanHover.nameFont,
+    JSON.stringify({ 天数: spanHover?.dayColor, 名字: spanHover?.nameColor, 字号: [spanHover?.dayFont, spanHover?.nameFont] }));
   await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 4, y: 4, buttons: 0 });
   await sleep(350);
 
