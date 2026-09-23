@@ -89,7 +89,14 @@ export function hasAvif(item: ImageItem): boolean {
 
 /** <img> 的兜底地址：清单给了就用清单的，否则原图 */
 export function fallbackSrc(item: ImageItem | null, src: string): string {
-  return withBase(item?.fallback.url ?? src);
+  /*
+    <img> 的 src（也就是 <picture> 里 <source> 都不匹配时的兜底）用**最大的那档变体**，
+    不再用原图：2026-09-22 用户要「构建再快一点」，而 CI 慢在打包上传 62MB 的产物 ——
+    原图（19MB）就是因为这里 + 精华页点图放大那处引用才不得不留在 dist 里。
+    变体是同一张图、尺寸一样，只是压过；没有变体的小图（passthrough）照旧回原图。
+  */
+  const biggest = item?.variants?.length ? item.variants[item.variants.length - 1] : null;
+  return withBase(biggest?.webp?.url ?? item?.fallback.url ?? src);
 }
 
 /**

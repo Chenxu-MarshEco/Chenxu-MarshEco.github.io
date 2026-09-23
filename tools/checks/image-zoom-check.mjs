@@ -328,7 +328,8 @@ const fig = await cdp.ev(`(() => {
   return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2), w: Math.round(r.width), full: im.dataset.full || '', inLink: !!im.closest('a'), tab: im.getAttribute('tabindex'), role: im.getAttribute('role'), name: im.getAttribute('aria-label') };
 })()`);
 check('① 正文里的图：不在链接里、可聚焦、有名字、带着原图地址',
-  !!fig && fig.inLink === false && fig.tab === '0' && fig.role === 'button' && !!fig.name && /\/img\/uploads\//.test(fig.full),
+  /* data-full 现在是**最大的那档变体**（1920 webp），不再指向原图 —— 2026-09-22 起原图不进产物了 */
+  !!fig && fig.inLink === false && fig.tab === '0' && fig.role === 'button' && !!fig.name && /^\/img\/(opt\/)?uploads\//.test(fig.full),
   JSON.stringify(fig));
 await cdp.click(fig.x, fig.y);
 await sleep(800);

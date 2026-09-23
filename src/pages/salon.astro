@@ -218,7 +218,9 @@ const firstParam = list.length && tl ? (params.get(list[0].id) ?? 0) : 0;
                          链接又只有一张图，读屏会只念"链接"—— 补一句人能听懂的 */
                       <a
                         class="salon__pic"
-                        href={src}
+                        /* 点图放大打开的是**最大的那档变体**（不再用原图：原图留在产物里
+                           会让 CI 打包上传慢一大截，见 utils/images.ts 的 fallbackSrc） */
+                        href={variantUrl(src, 99999)}
                         target="_blank"
                         rel="noopener"
                         aria-label={`查看大图：${name} ${e.date}`}

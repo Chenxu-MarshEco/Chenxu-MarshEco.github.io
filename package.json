@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "astro dev",
     "images": "node tools/images/optimize.mjs",
-    "build": "node tools/images/optimize.mjs && astro build",
+    "build": "node tools/images/optimize.mjs && astro build && node tools/images/prune-dist.mjs",
     "preview": "astro preview",
     "editor": "node tools/editor/server.mjs",
     "post": "node tools/editor/server.mjs --open=new-post"

@@ -35,11 +35,33 @@ jobs:
           node-version: 24
           cache: pnpm
 
+      # ---------------------------------------------------------------
+      # 把 node_modules 也缓存起来（setup-node 的 cache: pnpm 只缓存 pnpm 的
+      # **下载仓库**，每次仍要把依赖重新链接进 node_modules）。
+      # 键里带 pnpm-lock.yaml 的哈希：锁文件没变就直接复用，省掉一遍安装。
+      # ---------------------------------------------------------------
+      - name: 缓存 node_modules
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: nm-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: nm-${{ runner.os }}-
+
       - name: 安装依赖
-        run: pnpm install --frozen-lockfile
+        # --prefer-offline：能从缓存拿到的就别再联网问一遍
+        run: pnpm install --frozen-lockfile --prefer-offline
 
       - name: 构建站点
         run: pnpm build
+
+      # ---------------------------------------------------------------
+      # 产物里最占地方的是图片（本地量：dist 62MB，其中优化产物 31MB、
+      # 原图 19MB、音频 9MB）。这个小脚本把**构建后没人引用**的文件删掉，
+      # 只删"清单里有变体、而且整个 dist 里一处都没提到"的原图 —— 删错了
+      # 会有裂图，所以 no-broken-assets 那支验收在本地每次都量。
+      # ---------------------------------------------------------------
+      - name: 清掉产物里没人引用的原图
+        run: node tools/images/prune-dist.mjs
 
       - name: 上传构建产物
         uses: actions/upload-pages-artifact@v3

@@ -26,7 +26,7 @@ import Img from './Img.astro';
 import SubCard from './SubCard.astro';
 import NavBlock from './NavBlock.astro';
 import { withBase } from '../utils/url';
-import { enhanceHtml } from '../utils/images';
+import { enhanceHtml, variantUrl } from '../utils/images';
 import type { BlockItem, SubPost } from '../utils/boardPage';
 import { DEFAULT_LINE_COLOR, isLinkUrl, mapPages, type PageBlock } from '../utils/boards';
 import { headingRe, makeSlugger, plainText } from '../utils/anchors';
@@ -304,7 +304,8 @@ const cardsOf = (b: Extract<PageBlock, { type: 'children' }>) => ({
                 /* 点了放大看原图（只有「＋图片」放进来的图才是可点的，见 ImageZoom.astro）。
                    正文里的图不在链接里，所以要自己可聚焦 + 有个名字，键盘 / 读屏才用得上。 */
                 data-zoom="1"
-                data-full={withBase(b.src)}
+                /* 点开放的也是最大那档变体（同 ②，别把原图留在产物里） */
+                data-full={variantUrl(b.src, 99999)}
                 tabindex="0"
                 role="button"
                 aria-label={b.alt ? `放大查看：${b.alt}` : '放大查看这张图'}
