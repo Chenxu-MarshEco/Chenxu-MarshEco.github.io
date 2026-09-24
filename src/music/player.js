@@ -80,6 +80,22 @@
   var silentStart = false;
   /** 长淡出到静音、正在离场：这时任何「顺手存一下」都不许再写存档 */
   var leaving = false;
+  /**
+   * 这一页**有没有真的出过声**（有声、页面对用户可见的时候）。
+   *
+   * 用户反馈（2026-09-24）：「网页在后台的时候如果停留在播放歌曲的界面 静音会失效
+   * 依然能播出歌曲」—— 量出来的根子就在这个变量上：
+   *   · 进页面时 `fade = 0`（从 0 淡入），音量是 0，本来不该有声；
+   *   · 淡入靠 `requestAnimationFrame` 推进，而 **rAF 在后台标签页里根本不跑**；
+   *   · `rampTo()` 有个 setTimeout 兜底，它在后台照样会到点 —— 一到点就把 fade 一把
+   *     推到 1 并 `applyVol()`。实测（tools/checks/_mute-dbg2.mjs）：
+   *     后台加载第 1.9 秒，音量从 0 跳到 0.7，`audible` 从 false 翻成 true，
+   *     而这一页从没被用户看过一眼、也没有任何手势。
+   * 所以加这条判据：**后台标签页里，没出过声的就不许出声**（音量按 0 算）。
+   * 已经出过声的（用户在听着，只是切到了别的标签页）不受影响 —— 那样的切后台
+   * 必须继续放，这是这个播放器存在的意义。
+   */
+  var audibleEver = false;
 
   var box = null;
   var btn = null;
@@ -107,7 +123,27 @@
   }
 
   function applyVol() {
-    audio.volume = muted ? 0 : clamp01(vol * fade);
+    var v = muted ? 0 : clamp01(vol * fade);
+    /*
+      还没轮到用户听：静音预放 / 等手势这两个状态下，音量一律按 0 算。
+      以前只靠 `audio.muted = true` 拦着，两个静音开关（元素 muted 与 volume）
+      各管各的 —— 只要有一条路径把元素解开（比如 ensureSound 里那句
+      `audio.muted = false`），音量那一半已经把值抬上去了，声音当场就出来。
+      现在两边都掐住，谁解开都漏不出声。
+    */
+    if (silentStart || needsGesture) v = 0;
+    /*
+      后台标签页：没出过声就压住（细节见 audibleEver 那段注释）。
+      `document.hidden` 与 visibilityState 等价，这里用 hidden 更直白。
+    */
+    if (v > 0.001) {
+      if (document.hidden) {
+        if (!audibleEver) v = 0;
+      } else {
+        audibleEver = true; // 用户看得见、而且真的出声了：从此切后台也照样放
+      }
+    }
+    audio.volume = v;
   }
 
   function persistVol() {
@@ -141,6 +177,17 @@
     }
 
     if (!ms) {
+      finish();
+      return;
+    }
+
+    /*
+      后台标签页里不做淡入淡出：rAF 不跑，兜底的 setTimeout 又会被节流
+      （Chrome 后台最低 1 秒一次，放久了更狠），淡到一半能停在那儿好几十秒 ——
+      换首歌就"哑"一阵子。反正没人看得见，直接到位。
+      （"后台不许出声"那条判据在 applyVol() 里，这里提前到位不会让声音漏出去。）
+    */
+    if (document.hidden) {
       finish();
       return;
     }
@@ -483,6 +530,12 @@
           muted = false;
           if (vol <= 0.001) vol = 0.7;
           ensureSound();
+          /*
+            这一条是"让它响"，但 ensureSound() 在"已经在放"时会直接返回、
+            不重算音量 —— 于是切了 muted 之后元素上还是 0，而按钮已经写着「音量 70%」，
+            界面和实际对不上（用户会以为点了没反应）。这里补一次。
+          */
+          applyVol();
           persistVol();
           paint();
           return;
@@ -667,7 +720,25 @@
     saveState();
   });
   document.addEventListener('visibilitychange', function () {
-    if (document.visibilityState === 'hidden') saveState();
+    if (document.visibilityState === 'hidden') {
+      saveState();
+      return;
+    }
+    /*
+      回到前台：把音量补上。
+      后台期间 applyVol() 会把"还没出过声"的那种压成 0（用户反馈的那条），
+      所以回到前台要主动重算一次 —— 否则用户切回来发现音乐是哑的，
+      得再点一下才有声音。已经出过声的（听着歌切走又切回来的）不受影响。
+      静音预放 / 等手势 / 已静音这几种情况不在这里出声：它们是"等用户动手"，
+      由 ensureSound() 那条路负责（否则就成了"切个标签页就擅自出声"）。
+    */
+    if (!silentStart && !needsGesture && !muted && !audibleEver && cur && !audio.paused) {
+      fade = 0;
+      rampTo(1, IN_RESUME);
+    } else {
+      applyVol();
+    }
+    paint();
   });
   document.addEventListener('keydown', function (e) {
     // 空格暂停/继续，M 静音 —— 不抢输入框里的键
