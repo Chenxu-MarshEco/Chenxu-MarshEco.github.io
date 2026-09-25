@@ -3494,6 +3494,24 @@ body.pblock-dragging * {
   color: var(--text-muted);
 }
 
+/*
+  单张子页面卡 / 子版块框（2026-09-24）。
+  勾选那一栏和顺序那一栏直接复用上面 .pblock-nav__* 那套（同一个交互、同一个长相）；
+  这里只补三个自己特有的：框高输入框的宽度、坏引用的警告色、"还有子页面没摆"那行提示。
+*/
+.pblock-cardbox__max {
+  flex: 0 0 7.5rem;
+  min-width: 0;
+}
+.pblock-card__warn {
+  color: var(--danger);
+}
+.pblock-add__loose {
+  flex-basis: 100%;
+  margin-top: 4px;
+  color: var(--text-muted);
+}
+
 /* 页面工作台里「对应时间」那一行 */.pblock-edit__row--time {
   margin-top: 6px;
   padding-top: 6px;

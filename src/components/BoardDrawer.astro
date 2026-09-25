@@ -105,6 +105,14 @@ function renderNodes(nodes: BoardNode[]): string {
   右上角这一排固定控件：搜索 · 随机跳转 · 回到顶部 · 音量 · 目录。
   套在同一个容器里，位置、间距、各按钮的皮才好统一 ——
   分开各自 fixed 的话，改一个尺寸另一个就对不齐了。
+
+  **手机端只留「搜索框 + 展开按钮」**（用户 2026-09-25 反馈）：
+  五颗排开会一直顶到屏幕左边，压住页头那两颗（回到首页 / 花娅域主），
+  实测 320~540px 都能压住，320/360 上连站名都点不到。
+  所以 46rem 以下：随机跳转 / 回到顶部 / 音量 / 目录 收进 .corner__fold，
+  由 #corner-more 那颗同款按钮向下拉出来。
+  桌面端 .corner__fold 是 display:contents —— 这几个按钮还是直接排在这一排里，
+  布局和加这个功能之前**一模一样**。
 -->
 <div class="corner">
   <!--
@@ -148,6 +156,25 @@ function renderNodes(nodes: BoardNode[]): string {
     </div>
   </div>
 
+  <!--
+    展开按钮：手机端才出现（桌面 display:none）。
+    和旁边几颗一样的皮，图标是一个向下的箭头；展开后转成向上（见样式里的
+    .corner.is-open .corner__moreIco）。它只管开合下面那个 .corner__fold。
+  -->
+  <button
+    type="button"
+    class="corner__btn corner__more"
+    id="corner-more"
+    aria-label="展开更多按钮"
+    aria-expanded="false"
+    aria-controls="corner-fold"
+  >
+    <svg class="corner__moreIco" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M6.6 9.8 12 15.2l5.4-5.4" />
+    </svg>
+  </button>
+
+  <div class="corner__fold" id="corner-fold">
   <!--
     随机跳转：图标是从兔子洞里探出头的一只兔子（侧视）。
     点了随机进本站任意一个页面（抽签池＝索引里所有整页，见 src/search/ui.js）。
@@ -258,6 +285,7 @@ function renderNodes(nodes: BoardNode[]): string {
   >
     <span class="drawer__bars" aria-hidden="true"><i></i><i></i><i></i></span>
   </button>
+  </div>
 </div>
 
 <div class="drawer__scrim" id="drawer-scrim" hidden></div>
@@ -290,6 +318,43 @@ function renderNodes(nodes: BoardNode[]): string {
     const totop = document.getElementById('totop');
     if (totop) {
       totop.addEventListener('click', () => window.scrollTo({ top: 0 }));
+    }
+
+    /*
+      手机端那颗展开按钮：把折叠的四颗（随机跳转 / 回到顶部 / 音量 / 目录）向下拉出来。
+      桌面端这颗按钮是 display:none（见样式里的媒体查询），而且 .corner__fold 是
+      display:contents —— 桌面那边四个按钮一直就在这一排里，这里做了也不影响它。
+    */
+    const corner = document.querySelector('.corner');
+    const more = document.getElementById('corner-more');
+    if (corner && more) {
+      const setFold = (open) => {
+        corner.classList.toggle('is-open', open);
+        more.setAttribute('aria-expanded', open ? 'true' : 'false');
+        more.setAttribute('aria-label', open ? '收起更多按钮' : '展开更多按钮');
+      };
+      more.addEventListener('click', () => setFold(!corner.classList.contains('is-open')));
+      // 点别处收起。mousedown 比 click 早，但面板里的按钮照样点得到（它们在 .corner 里面）
+      document.addEventListener('mousedown', (e) => {
+        if (!corner.classList.contains('is-open')) return;
+        if (corner.contains(e.target)) return;
+        setFold(false);
+      });
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && corner.classList.contains('is-open')) setFold(false);
+      });
+      /*
+        开始打字就把面板收起来：搜索结果那张卡是整屏宽的（见 search.css 的
+        46rem 那档），铺下来会正好盖住这个面板。
+      */
+      const searchInput = document.getElementById('site-search-input');
+      if (searchInput) searchInput.addEventListener('focus', () => setFold(false));
+      /*
+        在面板里点「目录」之后也收起来：抽屉拉开的这一瞬间面板就该退场
+        （样式里抽屉打开时它本来也是隐藏的，不收的话关掉抽屉它会自己冒出来）。
+      */
+      const drawerBtn = document.getElementById('drawer-toggle');
+      if (drawerBtn) drawerBtn.addEventListener('click', () => setFold(false));
     }
 
     const toggle = document.getElementById('drawer-toggle');
@@ -411,6 +476,32 @@ function renderNodes(nodes: BoardNode[]): string {
     border-color: var(--c-accent);
   }
 
+  /*
+    展开按钮：桌面端不出现（那五颗排得下），手机端才由下面的媒体查询放出来。
+    它自己就是一颗 .corner__btn，皮和旁边几颗完全一样；图标是个向下的箭头。
+  */
+  .corner__more {
+    display: none;
+  }
+  .corner__moreIco {
+    width: 18px;
+    height: 18px;
+    stroke: currentColor;
+    stroke-width: 1.8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    transition: transform var(--t-fast) var(--ease);
+  }
+
+  /*
+    被折叠的那四颗（随机跳转 / 回到顶部 / 音量 / 目录）套在这一层里。
+    桌面端 display:contents —— 这一层盒子从布局里消失，四个孩子还是 .corner 的直接
+    flex 项，和加折叠之前排出来的一模一样（所以桌面端一个像素都不会变）。
+  */
+  .corner__fold {
+    display: contents;
+  }
+
   .totop__crane {
     width: 24px;
     height: 24px;
@@ -434,6 +525,77 @@ function renderNodes(nodes: BoardNode[]): string {
   :global(.drawer-open) .srch,
   :global(.drawer-open) .vol {
     visibility: hidden;
+  }
+
+  /* ==========================================================================
+   *  手机端：只留「搜索框 + 展开按钮」，其余四颗向下拉出来
+   * --------------------------------------------------------------------------
+   *  用户原话（2026-09-25）：
+   *    「右上角的搜索 随机跳转 回到顶部 音量 目录UI在手机端排开后会完全挡住左上的
+   *     回到首页和花娅域主按钮 请你在手机端只保留一个搜索框和一个同风格的展开按钮
+   *     点击展开按钮以后会向下拉出被折叠的随机跳转 回到顶部 音量 目录按钮」
+   *
+   *  实测量到的（tools/checks/mobile-corner-check.mjs 的 --probe 那一栏）：
+   *    五颗排开时整簇宽 284px，320~540px 全部压住左边那两颗；
+   *    320px 上整簇从 x=25 开始（页头左簇到 174），站名和「花娅域主」都点不到。
+   *  所以这一档里把它拆成两行：顶排 [搜索][⌄]，其余四颗竖着排在下面那张卡里。
+   * ======================================================================== */
+  @media (max-width: 46rem) {
+    .corner__more {
+      display: grid;
+    }
+    /*
+      手机端右边距收一点（桌面那档 clamp 最小 0.9rem）：320px 这种窄屏上，
+      顶排「搜索 + 展开」要抢在页头左簇右边，多 8px 就是压住和不压住的区别。
+      （搜索框本身的宽度在 src/styles/search.css 的 46rem 那档里收窄 ——
+        .srch__box 的样式归那个文件管，别在这儿再来一份。）
+    */
+    .corner {
+      right: 0.6rem;
+    }
+
+    /*
+      折叠面板：从顶排下面往下拉出来的一张小卡片（竖着一列、贴右边）。
+      用 position:absolute 挂在 .corner 上（.corner 是 fixed，就是它的定位祖辈）。
+    */
+    .corner__fold {
+      position: absolute;
+      top: calc(100% + 0.5rem);
+      right: 0;
+      display: none;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 0.5rem;
+      padding: 0.5rem;
+      border: 1px solid var(--c-border);
+      border-radius: var(--r-md);
+      background: var(--c-bg-raised);
+      box-shadow: var(--shadow-md);
+    }
+    .corner.is-open .corner__fold {
+      display: flex;
+    }
+    /* 展开时箭头翻上来，一眼看出还能收回去 */
+    .corner.is-open .corner__moreIco {
+      transform: rotate(180deg);
+    }
+    /* 深色页面（首页 / 板块页）上换成站点那套深紫卡片 */
+    :global(body.is-home) .corner__fold,
+    :global(body.is-board) .corner__fold {
+      background: rgba(38, 4, 52, 0.92);
+      border-color: rgba(255, 120, 190, 0.5);
+      backdrop-filter: blur(4px);
+    }
+
+    /*
+      抽屉铺开时，这一簇整个让开（含展开按钮）：手机上抽屉面板几乎占满屏宽，
+      浮在上面既点不到也没意义；抽屉自己那个 × 关得掉（.drawer__close）。
+      桌面端不套这条 —— 那边抽屉只占右边 320px，三条杠那颗按钮要留下来当 × 用。
+    */
+    :global(.drawer-open) .corner__more,
+    :global(.drawer-open) .corner__fold {
+      visibility: hidden;
+    }
   }
 
   /* ---------- 音量键（音箱） ---------- */

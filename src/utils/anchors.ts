@@ -84,8 +84,13 @@ export interface Anchor {
   kind: string;
 }
 
-/** 一个块的锚点文字：块本身的类型 + 一点能认出是哪个块的内容 */
-function blockLabel(b: PageBlock, html: string | null): string {
+/**
+ * 一个块的锚点文字：块本身的类型 + 一点能认出是哪个块的内容。
+ *
+ * titles 是「子页面 id → 标题」那张表：单张卡 / 卡片框在「位置」选择器里
+ * 只写一个 id（`page-mu9w6v28-2`）没人看得懂，得换成子页面自己的名字。
+ */
+function blockLabel(b: PageBlock, html: string | null, titles?: Map<string, string>): string {
   const cut = (s: string, n = 24) => {
     const t = s.replace(/\s+/g, ' ').trim();
     return t.length > n ? `${t.slice(0, n)}…` : t;
@@ -113,6 +118,11 @@ function blockLabel(b: PageBlock, html: string | null): string {
       return '地图';
     case 'children':
       return '子页面';
+    /* 单张卡 / 卡片框：位置选择器里要能一眼认出是哪张卡（2026-09-24 加的） */
+    case 'card':
+      return `子页面卡：${cut(titles?.get(b.ref) || b.ref)}`;
+    case 'cardbox':
+      return b.refs.length ? `子版块框（${b.refs.length} 张）` : '子版块框';
     case 'nav':
       return b.text ? `导航表：${cut(b.text)}` : '导航表';
     default:
@@ -127,7 +137,10 @@ function blockLabel(b: PageBlock, html: string | null): string {
  * 标题序号必须按页面的渲染顺序走（同一页重名才加 -2），所以这里也按
  * 「先左后右、一个块一个块往下」的顺序扫，和 PageContent 那边一致。
  */
-export function blockAnchors(blocks: readonly PageBlock[]): Anchor[] {
+export function blockAnchors(
+  blocks: readonly PageBlock[],
+  titles?: Map<string, string>
+): Anchor[] {
   const slug = makeSlugger();
   const out: Anchor[] = [];
 
@@ -146,7 +159,7 @@ export function blockAnchors(blocks: readonly PageBlock[]): Anchor[] {
     // 标题里写悬停卡片是极少数情况，真写了也只是这一条的名字难看一点，
     // 锚点 id 照样对得上（slugify 会把多出来的符号去掉）。
     const html = b.type === 'text' ? renderForAnchors(b.text) : null;
-    out.push({ id: `blk-${b.id}`, text: blockLabel(b, html), kind: b.type });
+    out.push({ id: `blk-${b.id}`, text: blockLabel(b, html, titles), kind: b.type });
     if (html !== null) takeHeadings(html);
     else if (b.type === 'columns') {
       takeHeadings(renderForAnchors(b.left));

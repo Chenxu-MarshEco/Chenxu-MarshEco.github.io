@@ -27,7 +27,11 @@ export const GET: APIRoute = async () => {
       /** 这一页在编辑器的哪个位置：方便面板里排序、也方便人找 */
       board: f.boardId,
       depth: f.depth,
-      anchors: blockAnchors(f.node.page ?? []),
+      anchors: blockAnchors(
+        f.node.page ?? [],
+        /* 单张卡 / 卡片框里存的是子页面 id，面板上要显示名字（见 utils/anchors.ts 的 blockLabel） */
+        new Map((f.node.children ?? []).map((k) => [k.id, k.title]))
+      ),
     }))
     // 没有自己写内容的页面（比如纯卡片的目录页）没什么可跳的，不占位置
     .filter((p) => p.anchors.length > 0);

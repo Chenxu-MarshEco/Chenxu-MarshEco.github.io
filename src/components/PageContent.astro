@@ -2,7 +2,7 @@
 /**
  * 版块页里「自己写的那段内容」。
  *
- * 数据是节点上的 page 数组，十种块：
+ * 数据是节点上的 page 数组，十二种块：
  *   text      介绍文字（Markdown：段落、粗体、列表、行内链接、行内图片都能写；
  *             还支持 [[文字|图片地址|链接地址]] 这种悬停出图的写法）
  *   image     一张图，宽度可分档
@@ -14,12 +14,16 @@
  *   toc       这一页的目录：自动收集上面的小标题，做成可跳转的列表
  *   map       一张能缩放、能拖的地图，上面钉着若干塔吊地标：
  *             鼠标移上去显示建筑名，点它跳到那一页；旁边还有开关可以把地标全藏起来
- *   children  把这一层的子页面铺在这里，卡片的横竖比例和大小可分档
+ *   card      单张子页面卡：把这一层的某一项摆在**这个位置**（2026-09-24 加的）
+ *   cardbox   子版块框：有边框、自己会滚的容器，按顺序装若干张子页面卡（2026-09-24 加的）
+ *   children  把这一层**还没被单张卡 / 框挑走**的子页面铺在这里，卡片的比例和大小可分档
+ *
+ * 没被任何卡片块摆出来的子页面，会在页面最后自动补一块列出来（见下面的 leftovers）——
+ * 以前正文里没放就是彻底不显示，等于"忘了摆"就找不到了。
  *
  * 每个块外面都包了一层 [data-edit="pg-<id>"]：
- * 编辑器「排版」模式就是靠它把块拖走、缩放的。所以块 id 必须全站唯一。
- *
- * 没写 page 的页面不走这里 —— 它们仍然沿用老的「子版块自动铺开」。
+ * 编辑器「排版」模式就是靠它把块拖走、缩放的。所以块 id 必须全站唯一
+ * （自动补的那一块没有数据 id，用的是固定的 pg-leftover）。
  */
 import { marked } from 'marked';
 import Img from './Img.astro';
@@ -260,11 +264,69 @@ const videoOf = (raw: string): VideoPlan => {
   return { kind: 'link', src: url };
 };
 
-/** 子页面块里的卡片怎么排（整块的默认值） */
-const cardsOf = (b: Extract<PageBlock, { type: 'children' }>) => ({
-  shape: (b.shape ?? 'wide') as 'wide' | 'square' | 'tall',
-  size: (b.size ?? 'l') as 'l' | 'm' | 's',
-});
+/** 卡片类块（单张卡 / 卡片框 / 子页面）的默认横竖比例与大小 */
+const cardDefs = (b: PageBlock) => {
+  const any = b as { shape?: 'wide' | 'square' | 'tall'; size?: 'l' | 'm' | 's' };
+  return { shape: any.shape ?? 'wide', size: any.size ?? 'l' } as const;
+};
+
+/** 这个块是不是「摆子页面卡」的块 */
+const isCardBlock = (b: PageBlock) =>
+  b.type === 'card' || b.type === 'cardbox' || b.type === 'children';
+
+/* ------------------------------------------------------------------
+   子页面卡的摆放（2026-09-24 重构）
+
+   以前只有「子页面」一种块，它把这一层**全部**子页面铺在一个地方，
+   两张卡之间插不进任何东西（用户原话：「两个链接作为子版块卡片永远只能黏在一起」）。
+   现在多了两种：
+     card     单张卡：挑这一层的某一项摆在任意位置
+     cardbox  子版块框：一个有边框、自己会滚的容器，按顺序装若干张卡
+   而「子页面」块的含义跟着收窄成「**还没单独摆过的**那些」——
+   单张卡能摆之后，同一张卡再被整块铺一遍就是重复。
+   老数据（只写了「子页面」块、没有单张卡）行为完全不变。
+*/
+const childById = new Map(children.map((c) => [c.id, c]));
+
+/** 被 card / cardbox 明确挑走的子页面 id —— 「子页面」块要跳过它们 */
+const picked = new Set<string>();
+for (const b of blocks) {
+  if (b.type === 'card' && b.ref) picked.add(b.ref);
+  else if (b.type === 'cardbox') for (const r of b.refs ?? []) picked.add(r);
+}
+/** 「子页面」块要铺的那些：没被挑走、且顺序照树里来 */
+const restChildren = children.filter((c) => !picked.has(c.id));
+/**
+ * 页面底部兜底补的那一块：这一页压根没写「子页面」块、又有子页面没被摆出来。
+ * 用户 2026-09-24 选的就是这一条：「页面底部自动补一块列出它们」——
+ * 子页面永远不会因为"忘了摆"而从页面上消失（以前正文里没放就是彻底不显示）。
+ */
+const leftovers = blocks.some((b) => b.type === 'children') ? [] : restChildren;
+
+/**
+ * 一个卡片块要摆哪些卡。
+ * 认不出来的 ref 单独收进 missing：站点上**不显示**（和导航块里认不出的分类一个态度，
+ * 已经发布的页面不该冒出作者没打算给读者看的提示），但会在块上留一个
+ * data-missing 属性，编辑器那边会重点提示，验收脚本也靠它读数。
+ */
+function cardsForBlock(b: PageBlock): { list: BlockItem[]; missing: string[] } {
+  if (b.type === 'card') {
+    if (!b.ref) return { list: [], missing: [] };
+    const hit = childById.get(b.ref);
+    return { list: hit ? [hit] : [], missing: hit ? [] : [b.ref] };
+  }
+  if (b.type === 'cardbox') {
+    const list: BlockItem[] = [];
+    const missing: string[] = [];
+    for (const id of b.refs ?? []) {
+      const hit = childById.get(id);
+      if (hit) list.push(hit);
+      else missing.push(id);
+    }
+    return { list, missing };
+  }
+  return { list: restChildren, missing: [] };
+}
 ---
 
 <div class="page">
@@ -275,6 +337,12 @@ const cardsOf = (b: Extract<PageBlock, { type: 'children' }>) => ({
       const video = b.type === 'video' ? videoOf(b.src) : null;
       /* 地图读成「页」的数组；老数据只有一页，见 utils/boards.ts 的 mapPages */
       const pages = b.type === 'map' ? mapPages(b) : [];
+      /*
+        卡片类块：先算好这一块要摆哪些卡。
+        认不出来的 ref 只在外层留一个 data-missing 记号（读者看不见），
+        编辑器那边会重点提示，验收脚本也靠它读数。
+      */
+      const cards = isCardBlock(b) ? cardsForBlock(b) : null;
 
       return (
         <div
@@ -288,6 +356,7 @@ const cardsOf = (b: Extract<PageBlock, { type: 'children' }>) => ({
           id={`blk-${b.id}`}
           data-edit={`pg-${b.id}`}
           data-block-type={b.type}
+          data-missing={cards?.missing.length ? cards.missing.join(' ') : undefined}
           data-tl-param={
             refParam(timeline, { point: b.timePoint, span: b.timeSpan }) === null
               ? undefined
@@ -632,22 +701,74 @@ const cardsOf = (b: Extract<PageBlock, { type: 'children' }>) => ({
             </div>
           )}
 
-          {b.type === 'children' && (
-            <div class="pcards" data-shape={cardsOf(b).shape} data-size={cardsOf(b).size}>
-              {children.length === 0 && <p class="pcards__empty">这一层还没有子页面。</p>}
-              {children.map((c) => (
-                <SubCard
-                  title={c.title}
-                  url={c.url}
-                  image={c.image}
-                  shape={c.cardShape ?? cardsOf(b).shape}
-                  size={c.cardSize ?? cardsOf(b).size}
-                  external={c.external}
-                  width={c.cardW}
-                  height={c.cardH}
-                />
-              ))}
-            </div>
+          {isCardBlock(b) && (
+            (() => {
+              const { list, missing } = cards;
+              const defs = cardDefs(b);
+              /*
+                卡片框：外面那层是「框」（有边框、有内边距），
+                里面那层 .pcards 才是栅格。高度超过 --pcardbox-max 就在框里上下滚 ——
+                卡片多的时候整页不会被撑长（用户 2026-09-24 要的「向内放入许多子页面卡片
+                从而能够滚动」）。max 是块上填的像素值，没填就用样式里的默认高度。
+              */
+              if (b.type === 'cardbox') {
+                /* 一张卡都摆不出来的空框，站点上就整块不画（读者没必要看见一个空框） */
+                if (!list.length) return null;
+                return (
+                  <div
+                    class="pcardbox"
+                    data-cardbox="1"
+                    style={b.max ? `--pcardbox-max:${b.max}px` : undefined}
+                  >
+                    <div class="pcards" data-shape={defs.shape} data-size={defs.size}>
+                      {list.map((c) => (
+                        <SubCard
+                          title={c.title}
+                          url={c.url}
+                          image={c.image}
+                          shape={c.cardShape ?? defs.shape}
+                          size={c.cardSize ?? defs.size}
+                          external={c.external}
+                          width={c.cardW}
+                          height={c.cardH}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                );
+              }
+              /*
+                单张卡：list 里最多一条。
+                没挑（ref 空）或者指向的子页面不在了 → 整块不画，只在 data-missing 上留个记号。
+              */
+              if (!list.length) {
+                return b.type === 'card' ? null : (
+                  <div class="pcards" data-shape={defs.shape} data-size={defs.size}>
+                    <p class="pcards__empty">
+                      {missing.length
+                        ? '这一层的子页面都已经摆在这个页面上了。'
+                        : '这一层还没有子页面。'}
+                    </p>
+                  </div>
+                );
+              }
+              return (
+                <div class="pcards" data-shape={defs.shape} data-size={defs.size}>
+                  {list.map((c) => (
+                    <SubCard
+                      title={c.title}
+                      url={c.url}
+                      image={c.image}
+                      shape={c.cardShape ?? defs.shape}
+                      size={c.cardSize ?? defs.size}
+                      external={c.external}
+                      width={c.cardW}
+                      height={c.cardH}
+                    />
+                  ))}
+                </div>
+              );
+            })()
           )}
 
           {/* 导航表：引用「导航分类库」里的几个大分类（分类本身在编辑器里建、可被多页共用） */}
@@ -656,6 +777,27 @@ const cardsOf = (b: Extract<PageBlock, { type: 'children' }>) => ({
       );
     })
   }
+
+  {/* 兜底：这一页没写「子页面」块、又有子页面没被摆出来 → 自动补在最后 */}
+  {leftovers.length > 0 && (
+    <div class="pblock" id="blk-leftover" data-edit="pg-leftover" data-block-type="leftover">
+      <p class="pleftover__title">这一层的子页面</p>
+      <div class="pcards" data-shape="wide" data-size="l">
+        {leftovers.map((c) => (
+          <SubCard
+            title={c.title}
+            url={c.url}
+            image={c.image}
+            shape={c.cardShape ?? 'wide'}
+            size={c.cardSize ?? 'l'}
+            external={c.external}
+            width={c.cardW}
+            height={c.cardH}
+          />
+        ))}
+      </div>
+    </div>
+  )}
 
   {/*
     没有 JS 时把子标题重新铺开。
@@ -1509,6 +1651,44 @@ const cardsOf = (b: Extract<PageBlock, { type: 'children' }>) => ({
     margin: 0;
     color: rgba(255, 226, 244, 0.6);
     font-size: 0.9rem;
+  }
+  /* ref 指向的子页面已经不在这一层了：站点上不显示（data-missing 留了记号），
+     编辑器里会重点提示；这条样式给「哪天真要在页面上说明」留个现成的样子。 */
+  .pcards__missing {
+    grid-column: 1 / -1;
+    margin: 0.2rem 0 0;
+    color: rgba(255, 196, 120, 0.85);
+    font-size: 0.82rem;
+  }
+
+  /*
+    子版块框（2026-09-24）：一个**有边框、自己会滚**的容器，里面装若干张子页面卡。
+    用户要的是「建立一个子版块框 然后向内放入许多子页面卡片 从而能够滚动」——
+    卡片再多也不会把整页撑长。
+    max-height 走 CSS 变量：块上填了「框高」就内联 --pcardbox-max 盖过这个默认值。
+    滚动条那几条是照 NodeView 里 .block__scroll 抄的，两处观感一致。
+  */
+  .pcardbox {
+    max-height: var(--pcardbox-max, clamp(180px, 34vh, 360px));
+    overflow-y: auto;
+    padding: clamp(0.55rem, 1.1vw, 0.85rem);
+    border: 1px solid rgba(255, 120, 190, 0.28);
+    border-radius: var(--r-md);
+    background: rgba(255, 255, 255, 0.03);
+    scrollbar-gutter: stable;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 120, 190, 0.85) rgba(255, 255, 255, 0.07);
+  }
+  /* 框里那一份栅格不用再留外边距：框自己的 padding 已经当留白了 */
+  .pcardbox > .pcards {
+    gap: clamp(0.55rem, 1.1vw, 0.9rem);
+  }
+  /* 自动补的那一块：给一行小字说明它是"剩下的"，别让人以为是随便冒出来的 */
+  .pleftover__title {
+    margin: 0 0 0.6rem;
+    color: rgba(255, 226, 244, 0.62);
+    font-size: 0.84rem;
+    letter-spacing: 0.04em;
   }
 
   /* ---------- 悬停图片 ---------- */

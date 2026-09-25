@@ -1761,6 +1761,8 @@ const BLOCK_LABEL = {
   toc: '目录',
   map: '地图',
   children: '子页面',
+  card: '单张卡',
+  cardbox: '卡片框',
   nav: '导航',
 };
 const TEXT_HINT =
@@ -3854,6 +3856,9 @@ function blockFields(block) {
     return wrap;
   }
 
+  if (block.type === 'card') return cardBlockFields(block);
+  if (block.type === 'cardbox') return cardboxBlockFields(block);
+
   // children：把这一层的子页面铺在这里
   const row = document.createElement('div');
   row.className = 'pblock-edit__row';
@@ -3875,7 +3880,224 @@ function blockFields(block) {
     none.className = 'pblock-edit__hint';
     none.textContent = '这一页还没有子版块 —— 在下面「这一页的子版块」里加几个，它们就会铺在这里。';
     wrap.appendChild(none);
+    return wrap;
   }
+  /*
+    2026-09-24 起这一块铺的是「**还没被单张卡 / 卡片框挑走**的」子页面。
+    所以这里要报一下这一块实际会铺哪几张 —— 不然用户会以为"卡片丢了"。
+  */
+  const restHere = kids.filter((k) => !pickedChildIds().has(k.id));
+  const rest = document.createElement('p');
+  rest.className = 'pblock-edit__hint pblock-rest-hint';
+  rest.textContent = restHere.length
+    ? `这一块铺的是还没被单张卡 / 卡片框挑走的 ${restHere.length} 张：${restHere.map((k) => k.title || '(没写名字)').join('、')}`
+    : '这一层的子页面都已经被单张卡 / 卡片框挑走了，这一块现在是空的。';
+  wrap.appendChild(rest);
+  return wrap;
+}
+
+/**
+ * 这一页上已经被「单张卡 / 卡片框」挑走的子页面 id。
+ *
+ * 站点那边（PageContent.astro）也是按这个口径算「子页面块还剩哪些要铺」的 ——
+ * 两边必须一致，不然编辑器里说的和页面上看到的就是两回事。
+ */
+function pickedChildIds() {
+  const out = new Set();
+  for (const b of pageDraft) {
+    if (!b) continue;
+    if (b.type === 'card' && b.ref) out.add(b.ref);
+    else if (b.type === 'cardbox') for (const r of b.refs ?? []) out.add(r);
+  }
+  return out;
+}
+
+/**
+ * 单张子页面卡（2026-09-24）。
+ *
+ * 挑的就是**这一页的子版块**：卡片的名字 / 封面 / 链接都跟着树走，
+ * 这里只决定"摆哪一张"和这一块的默认比例 / 大小。
+ * 想在一张卡前后加文字？加完文字再加一张卡就行 —— 这正是这次重构要解决的问题。
+ */
+function cardBlockFields(block) {
+  const wrap = document.createElement('div');
+  wrap.className = 'pblock-edit__body';
+  const kids = Array.isArray(pageNode?.children) ? pageNode.children : [];
+
+  if (!kids.length) {
+    const none = document.createElement('p');
+    none.className = 'pblock-edit__hint';
+    none.textContent = '这一页还没有子版块 —— 先到下面「这一页的子版块」里加一个，再回来挑。';
+    wrap.appendChild(none);
+    return wrap;
+  }
+
+  const row = document.createElement('div');
+  row.className = 'pblock-edit__row';
+  const cap = document.createElement('span');
+  cap.className = 'pblock-edit__sub';
+  cap.textContent = '摆哪一张';
+  const pick = pageSelect(
+    [['', '（挑一张子页面）'], ...kids.map((k) => [k.id, k.title || '(没写名字)'])],
+    block.ref ?? '',
+    (v) => {
+      if (v) block.ref = v;
+      else block.ref = '';
+      markStudioDirty();
+      renderPageEditor();
+    }
+  );
+  const shape = pageSelect(CARD_SHAPES, block.shape ?? 'wide', (v) => {
+    block.shape = v;
+    markStudioDirty();
+  });
+  const size = pageSelect(CARD_SIZES, block.size ?? 'l', (v) => {
+    block.size = v;
+    markStudioDirty();
+  });
+  const hint = document.createElement('span');
+  hint.className = 'pblock-edit__hint pblock-edit__hint--inline';
+  hint.textContent = '卡片的标题 / 封面 / 链接都跟着那个子版块走；单张要不一样，在下面「这一页的子版块」里单独设。';
+  row.append(cap, pick, shape, size, hint);
+  wrap.appendChild(row);
+
+  if (block.ref && !kids.some((k) => k.id === block.ref)) {
+    const warn = document.createElement('p');
+    warn.className = 'pblock-edit__hint pblock-card__warn';
+    warn.textContent = `这张卡指向的子版块（${block.ref}）已经不在了 —— 页面上不会画它，请重新挑一张。`;
+    wrap.appendChild(warn);
+  }
+  return wrap;
+}
+
+/**
+ * 子版块框（2026-09-24）：有边框、自己会滚的容器，按顺序装若干张子页面卡。
+ * 面板和导航块那张一个做法：上面勾选 = 放进框，下面那一栏排顺序（页面上就按那个顺序）。
+ */
+function cardboxBlockFields(block) {
+  const wrap = document.createElement('div');
+  wrap.className = 'pblock-edit__body';
+  const kids = Array.isArray(pageNode?.children) ? pageNode.children : [];
+  block.refs = Array.isArray(block.refs) ? block.refs.filter((r) => typeof r === 'string') : [];
+
+  if (!kids.length) {
+    const none = document.createElement('p');
+    none.className = 'pblock-edit__hint';
+    none.textContent = '这一页还没有子版块 —— 先到下面「这一页的子版块」里加几个，再回来往框里放。';
+    wrap.appendChild(none);
+    return wrap;
+  }
+
+  /* 框高：留空 = 用样式里的默认高度（约 360px） */
+  const maxRow = document.createElement('div');
+  maxRow.className = 'pblock-edit__row';
+  const maxCap = document.createElement('span');
+  maxCap.className = 'pblock-edit__sub';
+  maxCap.textContent = '框高';
+  const maxInput = document.createElement('input');
+  maxInput.type = 'number';
+  maxInput.className = 'input pblock-cardbox__max';
+  maxInput.min = '120';
+  maxInput.max = '2400';
+  maxInput.step = '10';
+  maxInput.placeholder = '默认（约 360px）';
+  maxInput.value = block.max ? String(block.max) : '';
+  maxInput.title = '超过这个高度就在框里上下滚动；留空用默认高度';
+  maxInput.addEventListener('input', () => {
+    const n = Number(maxInput.value);
+    if (maxInput.value === '' || !Number.isFinite(n)) delete block.max;
+    else block.max = Math.round(n);
+    markStudioDirty();
+  });
+  const px = document.createElement('span');
+  px.className = 'pblock-edit__hint pblock-edit__hint--inline';
+  px.textContent = '像素；卡片多出这个高度就在框里滚，整页不会被撑长';
+  maxRow.append(maxCap, maxInput, px);
+  wrap.appendChild(maxRow);
+
+  const pickCap = document.createElement('p');
+  pickCap.className = 'pblock-edit__hint';
+  pickCap.textContent = '勾上要放进这个框的子页面（勾的顺序就是放进来的先后，下面还能调）：';
+  wrap.appendChild(pickCap);
+
+  const pickBox = document.createElement('div');
+  pickBox.className = 'pblock-nav__pick';
+  for (const k of kids) {
+    const label = document.createElement('label');
+    label.className = 'pblock-nav__check';
+    label.dataset.kidId = k.id;
+    const box = document.createElement('input');
+    box.type = 'checkbox';
+    box.checked = block.refs.includes(k.id);
+    box.addEventListener('change', () => {
+      const i = block.refs.indexOf(k.id);
+      if (box.checked && i < 0) block.refs.push(k.id);
+      if (!box.checked && i >= 0) block.refs.splice(i, 1);
+      markStudioDirty();
+      renderPageEditor();
+    });
+    const name = document.createElement('span');
+    name.className = 'pblock-nav__cname';
+    name.textContent = k.title || '(没写名字)';
+    label.append(box, name);
+    pickBox.appendChild(label);
+  }
+  wrap.appendChild(pickBox);
+
+  const orderCap = document.createElement('p');
+  orderCap.className = 'pblock-edit__hint';
+  orderCap.textContent = '框里的顺序（页面上就按这个排）：';
+  wrap.appendChild(orderCap);
+
+  const orderBox = document.createElement('div');
+  orderBox.className = 'pblock-nav__order';
+  if (!block.refs.length) {
+    const none = document.createElement('span');
+    none.className = 'pblock-nav__none';
+    none.textContent = '（框里还没有卡片）';
+    orderBox.appendChild(none);
+  }
+  block.refs.forEach((id, i) => {
+    const kid = kids.find((k) => k.id === id);
+    const row = document.createElement('span');
+    row.className = 'pblock-nav__orow' + (kid ? '' : ' is-missing');
+    row.dataset.kidId = id;
+    const name = document.createElement('span');
+    name.className = 'pblock-nav__oname';
+    name.textContent = kid ? kid.title || '(没写名字)' : `（这一层没有「${id}」）`;
+    if (!kid) row.title = '这个 id 在这一层里找不到：页面上会跳过它（不会因此报错）。要么去树里把它加回来，要么在这儿删掉。';
+    const mini = (label, t, fn) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'btn btn--ghost boardedit__mini';
+      b.textContent = label;
+      b.title = t;
+      b.addEventListener('click', fn);
+      return b;
+    };
+    row.append(
+      name,
+      mini('↑', '往前挪', () => {
+        if (i === 0) return;
+        [block.refs[i - 1], block.refs[i]] = [block.refs[i], block.refs[i - 1]];
+        markStudioDirty();
+        renderPageEditor();
+      }),
+      mini('↓', '往后挪', () => {
+        if (i === block.refs.length - 1) return;
+        [block.refs[i + 1], block.refs[i]] = [block.refs[i], block.refs[i + 1]];
+        markStudioDirty();
+        renderPageEditor();
+      }),
+      mini('✕', '从框里拿掉（子版块本身还在这一层）', () => {
+        block.refs.splice(i, 1);
+        markStudioDirty();
+        renderPageEditor();
+      })
+    );
+    orderBox.appendChild(row);
+  });
+  wrap.appendChild(orderBox);
   return wrap;
 }
 
@@ -4343,7 +4565,17 @@ function renderPageEditor() {
     ['text', '文字', () => ({ id: newBlockId(pageNode.id), type: 'text', text: '' })],
     ['image', '图片', () => ({ id: newBlockId(pageNode.id), type: 'image', src: '', width: 'wide' })],
     ['link', '链接', () => ({ id: newBlockId(pageNode.id), type: 'link', text: '', href: '' })],
-    ['children', '子页面', () => ({ id: newBlockId(pageNode.id), type: 'children', shape: 'wide', size: 'l' })],
+    ['children', '子页面', () => ({ id: newBlockId(pageNode.id), type: 'children', shape: 'wide', size: 'l' }),
+      '把这一层**还没被单张卡 / 卡片框挑走**的子页面铺在这里'],
+    /*
+      单张卡 / 卡片框（2026-09-24 加的，用户要的就是它们）：
+      以前卡片只能靠上面那个「子页面」块一次全铺在一块儿，中间插不进任何东西 ——
+      用户的原话是「两个链接作为子版块卡片永远只能黏在一起」。
+    */
+    ['card', '单张卡', () => ({ id: newBlockId(pageNode.id), type: 'card', ref: '', shape: 'wide', size: 'l' }),
+      '摆一张子页面卡在这里（挑这一层的某一项）—— 想在哪张卡旁边写一段话就加它'],
+    ['cardbox', '卡片框', () => ({ id: newBlockId(pageNode.id), type: 'cardbox', refs: [], shape: 'wide', size: 'l' }),
+      '一个有边框、自己会滚的框，往里放许多张子页面卡'],
     ['divider', '分隔线', () => ({ id: newBlockId(pageNode.id), type: 'divider', text: '' })],
     ['columns', '两栏', () => ({ id: newBlockId(pageNode.id), type: 'columns', left: '', right: '' })],
     ['video', '视频', () => ({ id: newBlockId(pageNode.id), type: 'video', src: '', caption: '' })],
@@ -4354,11 +4586,12 @@ function renderPageEditor() {
     // 地图是分页的，新建时就直接建成分页形状（别再造老那种 src+markers 挂在块上的了）
     ['map', '地图', () => ({ id: newBlockId(pageNode.id), type: 'map', pages: [] })],
   ];
-  for (const [, label, make] of adders) {
+  for (const [, label, make, tip] of adders) {
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'btn btn--ghost';
     btn.textContent = `＋ ${label}`;
+    if (tip) btn.title = tip.replace(/\*\*/g, '');
     btn.addEventListener('click', () => {
       const made = make();
       const at = pageInsertAt();
@@ -4382,6 +4615,23 @@ function renderPageEditor() {
   note.textContent = pageInsertNote();
   addRow.appendChild(note);
 
+  /*
+    还有子页面没摆出来的时候说一句：站点那边会自动补在页面最后，
+    所以这里不是"报警"，是告诉作者"它们不会消失，但你可以自己摆得更好看"。
+  */
+  const kids = Array.isArray(pageNode?.children) ? pageNode.children : [];
+  const picked = pickedChildIds();
+  const loose = kids.filter((k) => !picked.has(k.id));
+  const hasChildrenBlock = pageDraft.some((b) => b && b.type === 'children');
+  if (loose.length && !hasChildrenBlock) {
+    const tip = document.createElement('p');
+    tip.className = 'pblock-add__note pblock-add__loose';
+    tip.textContent =
+      `还有 ${loose.length} 个子页面没有摆到页面上：${loose.map((k) => k.title || '(没写名字)').join('、')}` +
+      '（保存后会自动补在页面最后；想自己安排位置就加「单张卡」或「卡片框」）';
+    els.pageEditor.appendChild(tip);
+  }
+
   els.pageEditor.appendChild(addRow);
 }
 
@@ -4396,7 +4646,18 @@ function commitPageBlocks() {
     // （一条线、一份自动生成的目录、一列这一页的文章、一组分类引用），
     // 不因为它们「空」就删掉 —— 导航块尤其不能删：cats 还没勾完就被丢掉，
     // 用户会以为「加了块它自己没了」。
-    if (b.type === 'divider' || b.type === 'posts' || b.type === 'toc' || b.type === 'nav') return true;
+    if (
+      b.type === 'divider' ||
+      b.type === 'posts' ||
+      b.type === 'toc' ||
+      b.type === 'nav' ||
+      /* 单张卡 / 卡片框本身就是作者特意放的结构：还没挑子页面也得留着，
+         不然「先加个框、再去挑卡」中间保存一次，框就没了 */
+      b.type === 'card' ||
+      b.type === 'cardbox'
+    ) {
+      return true;
+    }
     if (b.type === 'columns') return String(b.left ?? '').trim() || String(b.right ?? '').trim();
     if (b.type === 'video') return String(b.src ?? '').trim();
     /*

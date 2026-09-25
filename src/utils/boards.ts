@@ -71,8 +71,37 @@ export type PageBlock = (
    * 把这一层的子页面铺在这里。
    * shape / size 是整块的默认值，单张卡想不一样就在那个子版块上设
    * cardShape / cardSize（见 BoardNode），单个永远压过整块。
+   *
+   * ⚠ 2026-09-24 起它的含义收窄成「**还没单独摆过的**那些子页面」：
+   * 用户报的原话是「子页面板块只能放在固定的位置 …… 两个链接作为子版块卡片永远只能黏在一起」，
+   * 于是有了下面两种新块（card / cardbox）可以把卡片摆到任意位置。
+   * 既然单张卡能摆，这一块再铺一遍同一张就是重复 —— 所以它现在铺的是
+   * 「这一层里没被 card / cardbox 挑走的」那些，顺序照树里来。
+   * 老数据（只写了这一块、没有单张卡）行为完全不变。
    */
   | { id: string; type: 'children'; shape?: CardShape; size?: CardSize }
+  /**
+   * 子页面卡：把这一层的**某一项**摆在这个位置。
+   *
+   * ref 是子节点的 id（不是地址 —— 地址会跟着树上位置变，id 不会）。
+   * 卡片长什么样一律跟着那个子版块走（标题 / 封面 / 链接 / 站外与否），
+   * shape / size 只是这一块的默认档位，子版块自己设了 cardShape / cardSize 就听它的。
+   *
+   * 为什么要它：以前卡片只能靠 `children` 块一次全铺在一块儿，
+   * 中间插不进任何东西（用户的例子：两张 bilibili 卡之间想写一段话）。
+   */
+  | { id: string; type: 'card'; ref: string; shape?: CardShape; size?: CardSize }
+  /**
+   * 子版块框：一个**有边框、自己会滚**的容器，里面按 refs 的顺序摆若干张子页面卡。
+   *
+   * max 是框的最高高度（像素）：卡片多了超过它就在框里上下滚，整页不会被撑长；
+   * 不填就用样式里的默认高度（见 PageContent.astro 的 --pcardbox-max）。
+   *
+   * refs 里认不出来的 id **故意保留**（和 nav 的 cats 一个态度）：
+   * 作者可能先摆好位置、再去树里建那一项；站点那边认不出来就跳过、并留个提示，
+   * 不会因此构建失败。refs 去重、顺序就是显示顺序。
+   */
+  | { id: string; type: 'cardbox'; refs: string[]; shape?: CardShape; size?: CardSize; max?: number }
   /**
    * 导航表：把「导航分类库」（`src/data/navs.json`）里的几个**大分类**铺成一块。
    *

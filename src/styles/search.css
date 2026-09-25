@@ -282,21 +282,34 @@
   transform: translate(-50%, 0);
 }
 
-/* 窄屏：这一排控件本来就挤，卡片改成贴在按钮下面左对齐，别再横向撑出去 */
-@media (max-width: 30rem) {
+/*
+  手机端（和右上角那个折叠面板同一档 46rem）：搜索框收窄。
+  320px 这种窄屏上，顶排是「搜索框 + 展开按钮」两件东西，右边只剩 130 来像素，
+  搜索框不收窄就会一直顶到页头左边的「回到首页 / 花娅域主」上面
+  （实测见 tools/checks/mobile-corner-check.mjs）。
+  里面那颗放大镜和左内边距一起收一点，窄屏上多露出两个字。
+*/
+@media (max-width: 46rem) {
   .srch__box {
-    width: clamp(84px, 20vw, 176px);
+    width: clamp(78px, 24vw, 176px);
   }
+  .srch__input {
+    padding-left: 0.5rem;
+  }
+  .srch__go {
+    width: 28px;
+  }
+  /*
+    悬停卡片在手机上收掉：触屏没有 hover，而有些手机会把"点一下"当成 hover，
+    于是点按钮的同时弹出一张挡着折叠面板的卡片。这几个按钮本来就带 aria-label。
+  */
   .tip {
-    left: auto;
-    right: 0;
-    transform: translate(0, -0.25rem);
-  }
-  .corner__slot:hover .tip,
-  .corner__slot:focus-within .tip {
-    transform: translate(0, 0);
+    display: none;
   }
 }
+
+/* 早先 30rem 那档还单独收过一次搜索框宽度、并把卡片改成右对齐；
+   现在 46rem 这档已经统一处理（卡片直接不显示），那两条就删了 —— 留着只会打架。 */
 
 /* ---------------------------------------------------------------------------
  *  4. /search/ 中转页

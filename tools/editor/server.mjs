@@ -2084,6 +2084,59 @@ function cleanBlocks(raw, ownerId) {
         shape: CARD_SHAPES.has(b.shape) ? b.shape : 'wide',
         size: CARD_SIZES.has(b.size) ? b.size : 'l',
       });
+      return;
+    }
+
+    /*
+      单张子页面卡（2026-09-24）：把这一层的**某一项**摆在这个位置。
+
+      ref 存的是子节点的 id（不是地址 —— 地址会跟着树上位置变，id 不会）。
+      认不出来的 id **故意留着**（和下面 nav 的 cats 一个态度）：作者可能先把位置
+      摆好、再去树里建那一项；站点那边认不出来就跳过、并在页面上留一句提示，
+      不会因此构建失败。
+    */
+    if (type === 'card') {
+      /*
+        ⚠ 这里**不**因为 ref 是空的就丢掉整块（和 cardbox 一样）：
+        编辑器里「先放一张卡、再去挑是哪张」是正常流程，
+        保存一次就把卡片弄没了会很莫名。站点那边认不出 ref 就整块不画。
+      */
+      pushBlock({
+        id,
+        type,
+        ref: String(b.ref || '').trim(),
+        shape: CARD_SHAPES.has(b.shape) ? b.shape : 'wide',
+        size: CARD_SIZES.has(b.size) ? b.size : 'l',
+      });
+      return;
+    }
+
+    /*
+      子版块框：一个有边框、自己会滚的容器，按 refs 的顺序装若干张卡。
+
+      · refs 去重、丢掉空串；
+      · **空框也留着**：编辑器里「先加个框、再往里挑卡」是正常流程，
+        保存一次就把框弄没了会很莫名（columns 那种"两边都空就没意义"的判断
+        在这里不成立 —— 框本身是作者特意放的结构）；
+      · max 是框的最高高度（像素），和卡片宽高共用一套清洗。
+    */
+    if (type === 'cardbox') {
+      const refs = [];
+      for (const r of Array.isArray(b.refs) ? b.refs : []) {
+        const s = String(r ?? '').trim();
+        if (s && !refs.includes(s)) refs.push(s);
+      }
+      const block = {
+        id,
+        type,
+        refs,
+        shape: CARD_SHAPES.has(b.shape) ? b.shape : 'wide',
+        size: CARD_SIZES.has(b.size) ? b.size : 'l',
+      };
+      const max = cleanCardPx(b.max);
+      if (max) block.max = max;
+      pushBlock(block);
+      return;
     }
   });
 
@@ -2116,7 +2169,8 @@ function cleanNode(raw, parentId, used) {
   // 但必须原样带过去 —— 不认识的字段会被这里丢掉，用户一保存版式就没了。
   const layout = String(raw.layout || '').trim();
   if (layout) out.layout = layout;
-  // 页面内容（介绍文字 / 图片 / 链接 / 分隔线 / 两栏 / 视频 / 文章 / 子页面块）
+  // 页面内容（介绍文字 / 图片 / 链接 / 分隔线 / 两栏 / 视频 / 文章 / 目录 / 地图 /
+  //          子页面块 / 单张子页面卡 / 子版块框）
   const page = cleanBlocks(raw.page, id);
   if (page.length) out.page = page;
 
