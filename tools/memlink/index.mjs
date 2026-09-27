@@ -239,18 +239,34 @@ export function rewriteHtml(html, match, render) {
 }
 
 /* ---------------------------------------------------------------------------
-   图片地址：清单里挑一档够用的 WebP 小图
+   图片地址：清单里挑一档够用的图（WebP + AVIF 两种都给）
    ------------------------------------------------------------------------ */
 export function faceUrlOf(src, manifest, base = '/', need = 200) {
+  return faceVariantsOf(src, manifest, base, need).webp;
+}
+
+/**
+ * 头像 / 放大图那一档的**两种格式**地址：`{ webp, avif }`。
+ *
+ * 为什么要 avif（2026-09-26）：用户报「成员头像的放大图 鼠标移上去还是要加载一段时间
+ * 才会出现」。那张图当时拿的是 800 档的 WebP（Raw 那张 104.1KB），同一档的 AVIF 只有
+ * 60.7KB —— 现代浏览器都解得了 AVIF，写成 `<picture><source type="image/avif">`
+ * 让浏览器自己挑就行，挑不中的老浏览器照旧拿 webp（没有 avif 变体时 avif 是空串，
+ * 调用方就只写 <img>）。
+ */
+export function faceVariantsOf(src, manifest, base = '/', need = 200) {
   const a = String(src || '').trim();
-  if (!a) return '';
+  if (!a) return { webp: '', avif: '' };
   const withBase = (u) => (base && base !== '/' ? base.replace(/\/$/, '') + u : u);
-  if (/^(https?:)?\/\//i.test(a) || a.startsWith('data:')) return a;
+  /* 站外地址 / data URI：原样给，没有第二种格式 */
+  if (/^(https?:)?\/\//i.test(a) || a.startsWith('data:')) return { webp: a, avif: '' };
   const item = manifest?.items?.[a];
   const variants = Array.isArray(item?.variants) ? [...item.variants].sort((x, y) => x.w - y.w) : [];
   const pick = variants.find((v) => v.w >= need) ?? variants[variants.length - 1];
-  if (pick?.webp?.url) return withBase(pick.webp.url);
-  return withBase(a);
+  return {
+    webp: pick?.webp?.url ? withBase(pick.webp.url) : withBase(a),
+    avif: pick?.avif?.url ? withBase(pick.avif.url) : '',
+  };
 }
 
 /**
@@ -263,11 +279,28 @@ export function faceUrlOf(src, manifest, base = '/', need = 200) {
  *   · `zoom` → 鼠标移到**头像**上时，头像放大成一个方形框显示**整张图**
  *     （`object-fit: contain`）。没填 `zoom` 就用头像自己那张，填了就固定显示那张
  *     （Raw 就是这种情况）。
+ *
+ * 放大那张走 `<picture>`（AVIF 优先），而且是**名片一出现就开拉**（见
+ * src/components/MemberCard.astro 的 show()：把卡片里的懒加载图提成 eager）——
+ * 以前它要等鼠标移到头像上才开始下载，那正是用户说的"要加载一段时间"。
+ * ⚠ 有 `zoom` 时 `<picture>` 是**放大框里面**的一层，不能包住头像那颗 `<img>`：
+ *   样式里靠 `.mem__face:hover ~ .mem__zoom` 选中放大框，包一层就选不中了。
  */
 export function cardHtml(m, name, manifest, base = '/', inLink = false) {
   const face = faceUrlOf(m.avatar, manifest, base, 200);
-  /* 放大框：没填 zoom 就复用头像那张地址（同一个 URL 不会再发一次请求） */
-  const zoom = m.zoom ? faceUrlOf(m.zoom, manifest, base, 480) : face;
+  /*
+    放大框：没填 zoom 就复用头像那张地址 —— 同一个 URL 不会再发一次请求，
+    也就不需要 picture（那种情况下 avatar 和 zoom 是同一张图，没必要再来一份 avif）。
+    填了 zoom（Raw 就是）才按 480 档挑，并给出 avif。
+  */
+  const zoomV = m.zoom
+    ? faceVariantsOf(m.zoom, manifest, base, 480)
+    : { webp: face, avif: '' };
+  const zoom = (webp, avif) =>
+    `<span class="mem__zoom"><picture>` +
+    (avif ? `<source type="image/avif" srcset="${esc(avif)}">` : '') +
+    `<img class="mem__zoomImg" src="${esc(webp)}" alt="" loading="lazy" decoding="async">` +
+    `</picture></span>`;
   const card =
     `<span class="mem__card${m.sun ? ' mem__card--sun' : ''}" aria-hidden="true">` +
     (m.sun ? '<span class="mem__sun"></span>' : '') +
@@ -279,9 +312,7 @@ export function cardHtml(m, name, manifest, base = '/', inLink = false) {
     (m.title ? `<span class="mem__title">${esc(m.title)}</span>` : '') +
     '</span>' +
     (m.url ? '<span class="mem__go">介绍页 →</span>' : '') +
-    (zoom
-      ? `<span class="mem__zoom"><img class="mem__zoomImg" src="${esc(zoom)}" alt="" loading="lazy" decoding="async"></span>`
-      : '') +
+    (zoomV.webp ? zoom(zoomV.webp, zoomV.avif) : '') +
     '</span>';
   const inner = `<span class="mem__text">${esc(name)}</span>${card}`;
   /*

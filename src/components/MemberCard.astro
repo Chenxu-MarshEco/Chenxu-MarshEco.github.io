@@ -104,6 +104,18 @@
       card = el;
       home = mem;
       place(mem, el);
+      /*
+        名片一出现，就把里面的懒加载图**立刻**提成 eager。
+        用户报的那条（2026-09-26）：「成员头像的放大图 鼠标移上去还是要加载一段时间才会出现」——
+        就是因为这张放大图平时躺在 display:none 的名片里、还挂着 loading="lazy"，
+        浏览器要等它"可见"（= 鼠标真的移到头像上）才开始下载。
+        提到 eager 之后，鼠标从名字挪到头像那几百毫秒里它已经在下了；
+        配合 memlink 那边给它加的 <picture>（AVIF 优先，Raw 那张 104KB → 60KB），
+        移上去基本就是瞬间出来。
+      */
+      for (const img of el.querySelectorAll('img[loading="lazy"]')) {
+        (img as HTMLImageElement).loading = 'eager';
+      }
       /* 头像/放大图是懒加载的：图到齐之后名片可能高了两三像素，
          那时候之前算好的位置就偏了两像素 —— 图一加载完再摆一次 */
       for (const img of el.querySelectorAll('img')) {

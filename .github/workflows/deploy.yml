@@ -47,6 +47,21 @@ jobs:
           key: nm-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
           restore-keys: nm-${{ runner.os }}-
 
+      # ---------------------------------------------------------------
+      # 缓存图片优化产物（public/img/opt）。
+      # 这份产物本来不进仓库（.gitignore 里排掉了：一张图四五个变体，进仓库会翻好几倍），
+      # 于是**每次部署都要把三百多张图重编一遍**（AVIF 编码是大头，2 核 runner 上要几分钟，
+      # 发布就是在这儿等的）。管线自己按「源文件大小 + mtime + 内容哈希」判断哪些不用重编，
+      # 所以只要把上一轮的 opt/ 还给下一次就行 —— 变了的那几张照旧会重编。
+      # key 里带上工具自己的哈希：一改质量档位（= 换一套产物）键就变，不会吃到旧产物。
+      # ---------------------------------------------------------------
+      - name: 缓存图片优化产物
+        uses: actions/cache@v4
+        with:
+          path: public/img/opt
+          key: imgopt-${{ runner.os }}-${{ hashFiles('tools/images/optimize.mjs', 'public/img/**') }}
+          restore-keys: imgopt-${{ runner.os }}-
+
       - name: 安装依赖
         # --prefer-offline：能从缓存拿到的就别再联网问一遍
         run: pnpm install --frozen-lockfile --prefer-offline

@@ -114,6 +114,27 @@ export function variantUrl(src: string, w: number): string {
 }
 
 /**
+ * 「点开看大图」（灯箱）那一档的地址：`{ webp, avif }`。
+ *
+ * 以前这里用的是 `variantUrl(src, 99999)`，也就是**最大的那档**——上传时封到 1920，
+ * 再加"原始宽度"那一档，所以一张图点开可能要下 200KB 上下。用户 2026-09-26 要求
+ * 「尽量想办法压缩本网站内所有的图片类内容保证加载速度」，于是：
+ *   · 封到 **1600**（1440 的屏上正好 1:1，再大只是白下）；
+ *   · 顺带给出同档的 **avif**（现代浏览器比 webp 省四成左右），
+ *     由灯箱那层 `<picture><source type="image/avif">` 自己挑。
+ * 没有清单（站外图 / 小图 passthrough）时 avif 为 null，调用方只写一个地址。
+ */
+export function viewUrls(src: string, max = 1600): { webp: string; avif: string | null } {
+  const item = imageItem(src);
+  if (!item?.variants?.length) return { webp: withBase(src), avif: null };
+  const box = pickVariant(item, max);
+  return {
+    webp: withBase(box.webp?.url ?? src),
+    avif: box.avif?.url ? withBase(box.avif.url) : null,
+  };
+}
+
+/**
  * 模糊占位（LQIP）：把那张 20px 宽的极小图当 <img> 自己的背景。
  * 图还没到时先显示它，到了以后真图直接盖在上面 —— 纯 CSS，不需要一行 JS。
  * 带透明的图清单里不给 LQIP（那张模糊图会从透明区域透出来），返回空串。

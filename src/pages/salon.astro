@@ -31,7 +31,7 @@ import {
   membersOf,
 } from '../utils/salon';
 import { getTimeline } from '../utils/timelines';
-import { variantUrl, imageDims } from '../utils/images';
+import { variantUrl, imageDims, viewUrls } from '../utils/images';
 /*
   左边那条时间轴：编辑器里选中的那一条，**原样**渲染。
   以前这里是按精华日期自己生成几百个点（还写死比例尺），又卡又超出用户要求 ——
@@ -213,14 +213,15 @@ const firstParam = list.length && tl ? (params.get(list[0].id) ?? 0) : 0;
                       下面的几百条一起顶下去 —— 页面一边滚一边跳版就是这么来的。
                     */
                     const dim = imageDims(src);
+                    /* 点开看大图那一档：封到 1600 + 同档 avif（见 utils/images.ts 的 viewUrls）。
+                       以前这里是最大那档的 webp，点开一张截图可能要多下几十上百 KB。 */
+                    const view = viewUrls(src);
                     return (
                       /* aria-label：图片本身 alt 是空的（截图内容说不清），
                          链接又只有一张图，读屏会只念"链接"—— 补一句人能听懂的 */
                       <a
                         class="salon__pic"
-                        /* 点图放大打开的是**最大的那档变体**（不再用原图：原图留在产物里
-                           会让 CI 打包上传慢一大截，见 utils/images.ts 的 fallbackSrc） */
-                        href={variantUrl(src, 99999)}
+                        href={view.webp}
                         target="_blank"
                         rel="noopener"
                         aria-label={`查看大图：${name} ${e.date}`}
@@ -233,6 +234,7 @@ const firstParam = list.length && tl ? (params.get(list[0].id) ?? 0) : 0;
                           loading="lazy"
                           decoding="async"
                           data-zoom="1"
+                          data-full-avif={view.avif ?? undefined}
                         />
                       </a>
                     );

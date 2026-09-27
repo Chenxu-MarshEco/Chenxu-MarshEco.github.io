@@ -47,15 +47,23 @@ const MANIFEST_FILE = path.join(OPT_DIR, 'manifest.json');
 
 /** 改这里就等于「换一套产物」，版本号会自动让全量缓存失效 */
 const CFG = {
-  version: 4,
+  version: 5,
   /** 宽度档位；每张图只会用它自己够得着的那些档，最后一定再补一个原始宽度 */
   steps: [400, 800, 1200, 1600],
   maxWidth: 1920,
   /** 小于这个字节数的图不折腾 */
   minBytes: 20 * 1024,
-  webp: { quality: 76, effort: 4 },
+  /*
+    质量（2026-09-26 实测后调的，见 tools/checks/_quality-probe.mjs 那次的数）：
+      · webp q76 → q72：同一张图小 8%，编码时间不变；
+      · avif q52 → q46：小 16%（对比同一档 webp 是 -39%），effort 保持 4。
+        effort 从 4 提到 6 只再多 3%，编码却要 3 倍时间 —— 不值，尤其 CI 每次部署
+        都要重编一遍（.github 那边现在也缓存 public/img/opt 了）。
+    AVIF 是现在浏览器实际会选的那一份，所以它的质量档才是最值钱的那个数。
+  */
+  webp: { quality: 72, effort: 5 },
   webpLossless: { lossless: true, effort: 6 },
-  avif: { quality: 52, effort: 4 },
+  avif: { quality: 46, effort: 4 },
   jpeg: { quality: 82, mozjpeg: true, progressive: true },
   lqipWidth: 20,
   concurrency: 4,
@@ -318,6 +326,40 @@ function cachedOk(prev, stat, hash) {
  * 跑一遍管线。
  * @param {{only?: string[]|null, force?: boolean, log?: (s: string) => void, quiet?: boolean}} opts
  */
+/**
+ * 护栏：public/ 下**不属于** public/img/ 的栅格图，管线一个都不会处理。
+ *
+ * 为什么要有这条（2026-09-26）：用户要求「以后增添的可以上传图片的板块也都做同样处理」。
+ * 现在编辑器只有一个上传落点（public/img/uploads），新板块自然也走它；
+ * 但万一以后有人图省事把某个板块的图传到 public/uploads、public/assets 之类的地方，
+ * 那些图就会**原样发出去** —— 没有多尺寸、没有 avif、没有模糊占位、也不进清单，
+ * 页面上还看不出毛病，只是慢。所以每次跑管线都扫一眼，发现了就明说。
+ */
+async function strayImages() {
+  /*
+    img/   = 管线自己的地盘
+    audio/ fonts/ = 不是图片
+    secret/ = public/secret/xianbao 那个手写的 Spine 演示页（首页雕像点进去的彩蛋）：
+              它整个页面和素材都是独立的一份，按设计不走站点的图片管线
+    .开头的目录（.tmp 之类）不扫
+  */
+  const SKIP_DIRS = new Set(['img', 'audio', 'fonts', 'secret']);
+  const found = [];
+  let top = [];
+  try {
+    top = await fsp.readdir(PUBLIC_DIR, { withFileTypes: true });
+  } catch {
+    return found;
+  }
+  for (const entry of top) {
+    if (!entry.isDirectory() || SKIP_DIRS.has(entry.name) || entry.name.startsWith('.')) continue;
+    for (const abs of await walk(path.join(PUBLIC_DIR, entry.name))) {
+      if (RASTER.has(path.extname(abs).toLowerCase())) found.push(srcKey(abs));
+    }
+  }
+  return found;
+}
+
 export async function optimizeAll(opts = {}) {
   const { only = null, force = false, log = () => {}, quiet = false } = opts;
   const sharp = await loadSharp();
@@ -325,6 +367,17 @@ export async function optimizeAll(opts = {}) {
   const manifest = force ? { cfg: CFG.version, items: {} } : await readManifest();
   const prevItems = manifest.items ?? {};
   const files = await walk(path.join(PUBLIC_DIR, 'img'));
+
+  /* 先看一眼有没有"漏网"的图（只报不改：它可能压根不该由这条管线管） */
+  const stray = await strayImages();
+  if (stray.length) {
+    log(
+      `⚠️ 有 ${stray.length} 张图不在 public/img/ 下面，图片管线不会处理它们`
+        + `（不会有多尺寸 / AVIF / 模糊占位）：${stray.slice(0, 5).join(' ')}`
+        + (stray.length > 5 ? ' …' : '')
+        + '\n   要么把它们挪到 public/img/ 下面，要么把那个目录加进 tools/images/optimize.mjs 的扫描范围。'
+    );
+  }
 
   const candidates = [];
   for (const abs of files) {
@@ -471,10 +524,46 @@ export async function compressUpload(buf, ext, mime) {
     if ((meta.pages ?? 1) > 1) {
       return { buf, ext: e, before: buf.length, after: buf.length, note: '动图原样保留' };
     }
-    const base = sharp(buf, { failOn: 'none' }).rotate().resize({ width: CFG.maxWidth, height: CFG.maxWidth, fit: 'inside', withoutEnlargement: true });
+    /** 每次都从原图重新起一条管线（一次次 toBuffer 之后实例状态不好复用） */
+    const mk = () =>
+      sharp(buf, { failOn: 'none' })
+        .rotate()
+        /*
+          ⚠ 只封**宽度**，不封高度（2026-09-26 改）。
+          以前这里是 width + height 都限 1920、fit:'inside' —— 于是聊天记录那种
+          「窄而极长」的截图（站里现成那几张是 520×4747）一上传就被压到 1920 高、
+          字也跟着缩到四成，正好砸在这个站最需要看清的地方。
+          现在长图原样保留高度，体积交给 WebP / AVIF 的质量档去省。
+        */
+        .resize({ width: CFG.maxWidth, withoutEnlargement: true });
+
+    /*
+      PNG 上传：**比一比再决定格式**（2026-09-26）。
+      截图/照片存成 PNG 是家常便饭 —— 一张 1920 宽的 PNG 常有 1~3MB，而同样内容的
+      WebP 往往只有它的四分之一；再说页面本来就是发 WebP/AVIF 的，源图留 PNG 没意义。
+      三种都编一遍，谁小用谁：
+        · 无损 WebP  —— 纯色/线条图（图标、界面截图）通常比 PNG 小一大截，而且像素不变；
+        · WebP q80   —— 照片类 PNG 小得多；
+        · PNG 自己（压缩级别 9）—— 前两种都没更小就还是留 PNG。
+      这样以后不管哪个板块上传什么图，落盘的就已经是小的那一份了。
+    */
+    if (e === '.png') {
+      const cands = [
+        { buf: await mk().webp({ lossless: true, effort: 6 }).toBuffer(), ext: '.webp', note: 'PNG → 无损 WebP' },
+        { buf: await mk().webp({ quality: 80, effort: 5 }).toBuffer(), ext: '.webp', note: 'PNG → WebP q80' },
+        { buf: await mk().png({ compressionLevel: 9, effort: 8 }).toBuffer(), ext: '.png', note: 'PNG（重新压过）' },
+      ];
+      cands.sort((a, b) => a.buf.length - b.buf.length);
+      const pick = cands[0];
+      if (pick.buf.length >= buf.length) {
+        return { buf, ext: e, before: buf.length, after: buf.length, note: '已经是压过的，保持原样' };
+      }
+      return { buf: pick.buf, ext: pick.ext, before: buf.length, after: pick.buf.length, note: pick.note };
+    }
+
+    const base = mk();
     let out;
-    if (e === '.png') out = await base.png({ compressionLevel: 9, effort: 8 }).toBuffer();
-    else if (e === '.webp') out = await base.webp({ quality: 80, effort: 4 }).toBuffer();
+    if (e === '.webp') out = await base.webp({ quality: 80, effort: 5 }).toBuffer();
     else out = await base.jpeg(CFG.jpeg).toBuffer();
     // 万一压完反而更大（小图/已高度优化过），就保留原图
     if (out.length >= buf.length) {

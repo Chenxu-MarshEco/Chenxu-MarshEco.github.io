@@ -23,13 +23,21 @@
 
 <div class="izoom" data-izoom hidden role="dialog" aria-modal="true" aria-label="查看大图">
   <button type="button" class="izoom__close" data-izoom-close aria-label="关闭大图（Esc）">×</button>
-  <img class="izoom__img" data-izoom-img alt="" decoding="async" />
+  <!--
+    放大那张走 <picture>：AVIF 那一档有就给 <source>，浏览器自己挑（挑不中就回落 <img> 的 webp）。
+    比"写死 webp"省四成左右，而这一张偏偏是用户点开才会下的大图 —— 最值钱的一处。
+  -->
+  <picture class="izoom__pic">
+    <source data-izoom-src type="image/avif" />
+    <img class="izoom__img" data-izoom-img alt="" decoding="async" />
+  </picture>
   <p class="izoom__cap" data-izoom-cap hidden></p>
 </div>
 
 <script>
   const box = document.querySelector<HTMLElement>('[data-izoom]');
   const pic = box?.querySelector<HTMLImageElement>('[data-izoom-img]');
+  const src = box?.querySelector<HTMLSourceElement>('[data-izoom-src]');
   const cap = box?.querySelector<HTMLElement>('[data-izoom-cap]');
   const closeBtn = box?.querySelector<HTMLButtonElement>('[data-izoom-close]');
 
@@ -39,9 +47,19 @@
 
     const open = (im: HTMLImageElement) => {
       const a = im.closest('a');
-      const src = im.dataset.full || a?.getAttribute('href') || im.currentSrc || im.src;
-      if (!src) return;
-      pic.src = src;
+      const webp = im.dataset.full || a?.getAttribute('href') || im.currentSrc || im.src;
+      if (!webp) return;
+      /*
+        avif 那一档单独挂在 data-full-avif 上（构建期写好的）。
+        有就把 <source> 的 srcset 填上 —— 浏览器支持就选它，不支持就继续用 <img> 的 webp。
+        上一张留下的 srcset 必须先清掉，否则开第二张时会拿着旧地址。
+      */
+      const avif = im.dataset.fullAvif || '';
+      if (src) {
+        if (avif) src.srcset = avif;
+        else src.removeAttribute('srcset');
+      }
+      pic.src = webp;
       pic.alt = im.alt || '';
       /* 图注：正文里那层 <figcaption> 的字、或者图片自己的 alt */
       const fig = im.closest('figure');
