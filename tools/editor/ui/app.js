@@ -11551,6 +11551,113 @@ function closeMembersModal() {
   els.membersModal.hidden = true;
 }
 
+/**
+ * 成员「马甲」那一栏：一条一个小芯片（和文章「标签」同一套手感：回车 / 逗号确认、
+ * 点 ✕ 删、空框按退格删最后一条）。
+ *
+ * 用户原话（2026-09-27）：
+ *   「为成员编辑器里增加一个马甲功能。例如羽之颂有时也会以澄净羽之颂出现在文本里，
+ *     SSW 有时也会以 SSWTLZZ 出现在文本里，虹星有时候也会以亚卡莱特或是其声出现，
+ *     应当可以给成员编入多条马甲。当网页中出现马甲字段时，鼠标指上一样会和成员名字
+ *     一样出现应该有的所有要素（头像 名字 链接等）。若是成员名字叫 SSW、马甲是
+ *     SSWTLZZ 这种完全覆盖的情况，则取 SSWTLZZ 这个更长的；若是名字叫 SSWTLZZ、
+ *     马甲是 SSW，也一样取 SSWTLZZ 整体划线。」
+ *
+ * 这一栏**只负责收集字符串**：谁会被链上、长名怎么赢，是构建期 tools/memlink 的
+ * buildMatcher 现算的（正式名和马甲平等地按长度从长到短排）。面板这边一条都不预判、
+ * 也不拦 —— 用户选的「保持面板干净」，不要包含关系的提示。
+ *
+ * 上限 20 条跟着服务端 cleanAliases 走：超了会被静默截掉，所以这里到顶就不再收，
+ * 并且把那句话写在下面那行小字里（否则"填了第 21 条、保存后没了"最难查）。
+ */
+function memberAliasField(m, onDirty) {
+  const MAX = 20;
+  /** 马甲都存 m.aliases；老数据没有这个字段时补一个空数组 */
+  const list = () => (Array.isArray(m.aliases) ? m.aliases : (m.aliases = []));
+
+  const wrap = document.createElement('div');
+  wrap.className = 'wmem__alias';
+
+  const chips = document.createElement('div');
+  chips.className = 'chips';
+  chips.dataset.aliasBox = '';
+
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.className = 'chips__input';
+  input.placeholder = '回车或逗号添加，例如：澄净羽之颂';
+
+  const note = document.createElement('p');
+  note.className = 'hint wrow__hint';
+
+  const paint = () => {
+    for (const node of Array.from(chips.querySelectorAll('.chip'))) node.remove();
+    for (const a of list()) {
+      const chip = document.createElement('span');
+      chip.className = 'chip';
+      const label = document.createElement('span');
+      label.textContent = a;
+      const x = document.createElement('button');
+      x.type = 'button';
+      x.className = 'chip__x';
+      x.textContent = '✕';
+      x.title = `删掉马甲「${a}」`;
+      x.addEventListener('click', () => remove(a));
+      chip.append(label, x);
+      chips.insertBefore(chip, input);
+    }
+    const n = list().length;
+    note.textContent = n >= MAX ? `已经 ${MAX} 条，到上限了（再多会被截掉）` : `已填 ${n} 条（最多 ${MAX}）`;
+  };
+
+  const add = (raw) => {
+    const a = String(raw ?? '').trim();
+    if (!a) return false;
+    if (list().includes(a)) return false;   // 同一个人的写法不重复
+    if (list().length >= MAX) return false;
+    list().push(a);
+    onDirty();
+    paint();
+    return true;
+  };
+
+  function remove(a) {
+    m.aliases = list().filter((x) => x !== a);
+    onDirty();
+    paint();
+  }
+
+  const commit = () => {
+    const value = input.value;
+    if (!value.trim()) return;
+    value
+      .split(/[,，\n]/)
+      .map((v) => v.trim())
+      .filter(Boolean)
+      .forEach(add);
+    input.value = '';
+    paint();
+  };
+
+  input.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Enter') {
+      ev.preventDefault();
+      commit();
+    } else if (ev.key === 'Backspace' && input.value === '' && list().length) {
+      remove(list()[list().length - 1]);
+    }
+  });
+  input.addEventListener('input', () => {
+    if (/[,，\n]/.test(input.value)) commit();
+  });
+  input.addEventListener('blur', commit);
+
+  chips.append(input);
+  wrap.append(chips, note);
+  paint();
+  return wrap;
+}
+
 function renderMembersPanel() {
   const { body, foot, status } = panelShell(els.memEditor, {
     hint:
@@ -11579,8 +11686,9 @@ function renderMembersPanel() {
     `成员（${members.length} 人）`,
     '「精华」面板里的每一条都指向这里的一个 id（可以指向好几个人）。删掉一个成员，引用他的精华会显示成「未知成员」' +
       '（站点那边就是这么兜底的），精华本身不会消失。' +
-      '另外：这张表还会被构建期用来把**全站正文里**出现的成员名自动链上（悬停浮出头像名片，点进「介绍页」）——' +
-      '只链这里写的名字，所以旧名（比如「花花」）不在表里就永远不会被链；冰室精华页整页跳过。',
+      '另外：这张表还会被构建期用来把**全站正文里**出现的成员名（含每个人的「马甲」）自动链上' +
+      '（悬停浮出头像名片，点进「介绍页」）—— 只链这里写下的写法，所以旧名（比如「花花」）' +
+      '不写进马甲就永远不会被链。',
   );
   const tally = document.createElement('p');
   tally.className = 'hint';
@@ -11670,6 +11778,21 @@ function renderMembersPanel() {
       )
     );
     fields.appendChild(panelRow('头像地址', avatarInput));
+
+    /* 马甲（可选，可以多条）：正文里写到这些写法时，跟正式名一样浮出名片、点进介绍页。
+       名片上写的永远是正式名 —— 正文写「亚卡莱特」，浮出来的是「虹星」。 */
+    fields.appendChild(
+      panelRow(
+        '马甲',
+        memberAliasField(m, () => markPanelDirty(status, 'salon')),
+        '同一个人的别的写法，可以填很多条（例如羽之颂 → 澄净羽之颂、虹星 → 亚卡莱特 / 其声）。' +
+          '正文里出现马甲时，跟正式名一样浮出名片（头像 + 正式名）并点进「介绍页」。' +
+          '**长的优先**：写了「SSW」又写了「SSWTLZZ」，正文里的「SSWTLZZ」会整段认成一个人，' +
+          '不会拆成「SSW」+「TLZZ」；反过来（名字 SSWTLZZ、马甲 SSW）也一样。' +
+          '纯英文/数字的马甲要求左右不是字母数字（否则 Draw 里的 raw 也会被链上）；中文马甲不要求，' +
+          '所以太短的容易误伤（例如「其声」会把「其声音」也链上）。',
+      )
+    );
 
     /* 卡片特效（可选）：名片上那轮落日 + 名字下面那行小字 + 放大头像时固定显示的图。
        三样都只有"特殊化"的成员才用得上（Raw 现在用了全套），留空就什么都不加。 */

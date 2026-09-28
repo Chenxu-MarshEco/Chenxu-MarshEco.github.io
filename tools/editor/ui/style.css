@@ -4284,6 +4284,14 @@ body.pblock-dragging * {
   gap: 6px;
 }
 
+/* 成员「马甲」：一条一个小芯片（复用文章标签那套 .chips / .chip），下面一行小字报条数 */
+.wmem__alias {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
 
 /* 成员卡片的「卡片特效」那一行：落日勾选框 + 称号输入框并排 */
 .wmem__fx {

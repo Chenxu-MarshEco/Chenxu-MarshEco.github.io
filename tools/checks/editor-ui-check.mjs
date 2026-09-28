@@ -8,6 +8,7 @@
  * 量的是这五件事：
  *   ① 五个工作面都打得开，开出来的确实是那一块（提示文案对得上）
  *   ② 「成员」面板：16 行、每行一个头像上传口 + 名字输入框、「名下 N 条精华」加起来 = 735
+ *   ②c 「成员」面板的**马甲**那一栏：芯片式（回车 / 逗号添加、点 ✕ 删、去重、上限 20 条）
  *   ③ 在「成员」面板里把某个成员改名 → 切到「精华」面板搜这个名字 → 命中条数 = 他的精华数
  *      （成员和精华的绑定，在 UI 这一层也是通的；全程不保存，盘上数据不动）
  *   ④ 「精华」面板：735 条、搜索能筛、有「＋ 新增一条」的入口
@@ -33,6 +34,7 @@ const check = (n, ok, d = '') => {
   ok ? pass++ : fail++;
   console.log(`${ok ? 'PASS' : 'FAIL'}  ${n}${d ? `   :: ${d}` : ''}`);
 };
+const info = (s) => console.log(`      · ${s}`);
 
 /* ---------- 副本（public / node_modules 走 junction，测试不写盘） ---------- */
 if (fs.existsSync(DST)) {
@@ -201,6 +203,101 @@ try {
   check('「日历」面板能写事件（特殊日子那张表有「＋ 添加一天」）',
     panels.calendar.textareas >= 2 && panels.calendar.boxes.some((t) => t.includes('特殊日子')),
     JSON.stringify({ textareas: panels.calendar.textareas, boxes: panels.calendar.boxes }));
+  /* ---------- ②c 马甲：芯片式输入（2026-09-27 加的那一栏） ----------
+     用户原话：「为成员编辑器里增加一个马甲功能……应当可以给成员编入多条马甲。」
+     这里在**真界面**上把这一栏用一遍：填、逗号切、去重、点 ✕ 删、到上限。
+     全程只在草稿里改（这个 harness 本来就不保存，盘上数据不动）。 */
+  const aliasTest = await cdp.ev(`(async () => {
+    const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+    const key = (el, k) => el.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true }));
+    const pick = () => [...document.querySelectorAll('.wpanel')].find((el) => el.getBoundingClientRect().height > 0);
+    const rowOf = (id) => pick().querySelector('.wmem[data-member-id="' + id + '"]');
+    const boxOf = (row) => row.querySelector('[data-alias-box]');
+    const chipsOf = (row) => [...boxOf(row).querySelectorAll('.chip')].map((c) => c.firstChild.textContent);
+    const noteOf = (row) => (row.querySelector('.wmem__alias .hint') || {}).textContent || '';
+
+    /* ① 每一行都有这一栏，条数和盘上的数据对得上 */
+    const rows = [...pick().querySelectorAll('.wmem')];
+    const boxes = pick().querySelectorAll('[data-alias-box]').length;
+    const allChips = rows.map((r) => chipsOf(r));
+    const total = allChips.reduce((n, c) => n + c.length, 0);
+
+    /* ② 回车加一条 */
+    const row = rowOf('m08-e2cf');
+    if (!row) return { ok: false, why: '找不到 m08-e2cf 那一行' };
+    const input = boxOf(row).querySelector('input');
+    const before = chipsOf(row).length;
+    set.call(input, '验收马甲A');
+    key(input, 'Enter');
+    await new Promise((r) => setTimeout(r, 60));
+    const afterEnter = chipsOf(row);
+    const noteAfterEnter = noteOf(row);
+
+    /* ③ 逗号一次切两条 */
+    set.call(input, '验收马甲B,验收马甲C');
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    await new Promise((r) => setTimeout(r, 60));
+    const afterComma = chipsOf(row);
+
+    /* ④ 重复的加不进去 */
+    set.call(input, '验收马甲B');
+    key(input, 'Enter');
+    await new Promise((r) => setTimeout(r, 60));
+    const afterDup = chipsOf(row);
+
+    /* ⑤ 点 ✕ 删掉中间那一条 */
+    const target = [...boxOf(row).querySelectorAll('.chip')].find((c) => c.firstChild.textContent === '验收马甲B');
+    target.querySelector('.chip__x').click();
+    await new Promise((r) => setTimeout(r, 60));
+    const afterDel = chipsOf(row);
+
+    /* ⑥ 上限 20：一次塞 25 条进去 */
+    set.call(input, Array.from({ length: 25 }, (_, i) => '上限' + (i + 1)).join(','));
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    await new Promise((r) => setTimeout(r, 80));
+    const afterCap = chipsOf(row);
+    const noteAtCap = noteOf(row);
+
+    /* ⑦ 面板状态栏认得出"有改动没保存" */
+    const status = [...pick().querySelectorAll('.wpanel__status')].map((s) => s.textContent).filter(Boolean);
+    /* ⑧ 这一栏真的画出来了（量得到宽高，不是 0×0 藏在别处） */
+    const r = boxOf(row).getBoundingClientRect();
+    const boxRect = { w: Math.round(r.width), h: Math.round(r.height), visible: r.width > 200 && r.height > 30 };
+    return { ok: true, rows: rows.length, boxes, total, allChips: allChips.map((c) => c.length),
+      before, afterEnter, noteAfterEnter, afterComma, afterDup, afterDel, afterCap, noteAtCap, status, boxRect,
+      inputType: input.type, placeholder: input.placeholder };
+  })()`);
+  info('马甲芯片：' + JSON.stringify({
+    行数: aliasTest.rows, 这一栏: aliasTest.boxes, 盘上马甲: aliasTest.total,
+    每行条数: aliasTest.allChips, 提示: aliasTest.noteAfterEnter,
+  }));
+  const diskAliasTotal = salon.members.reduce((n, m) => n + ((m.aliases || []).length), 0);
+  check(`成员面板：${aliasTest.rows} 行每行都有「马甲」芯片框（共 ${aliasTest.total} 条，盘上就是 ${diskAliasTotal} 条）`,
+    aliasTest.ok === true && aliasTest.boxes === aliasTest.rows && aliasTest.total === diskAliasTotal,
+    JSON.stringify({ boxes: aliasTest.boxes, rows: aliasTest.rows, total: aliasTest.total }));
+  check('马甲：正式名底下那行小字写着「已填 N 条（最多 20）」（看得见条数）',
+    /已填 \d+ 条（最多 20）/.test(aliasTest.noteAfterEnter || ''), aliasTest.noteAfterEnter);
+  check('马甲：输入框的提示文字说了"怎么确认"（回车 / 逗号 + 一个例子）',
+    aliasTest.inputType === 'text' && /回车|逗号/.test(aliasTest.placeholder || ''), String(aliasTest.placeholder));
+  check('马甲：这一栏在面板里真的画出来了（量得到宽高，不是 0×0）',
+    !!aliasTest.boxRect && aliasTest.boxRect.visible === true, JSON.stringify(aliasTest.boxRect));
+  check('★ 马甲：打一条按回车 → 变成一个可删的小标签（芯片式）',
+    aliasTest.ok === true && aliasTest.afterEnter.length === aliasTest.before + 1 && aliasTest.afterEnter.includes('验收马甲A'),
+    JSON.stringify(aliasTest.afterEnter));
+  check('★ 马甲：逗号能一次切两条进来（从别处整段粘也行）',
+    aliasTest.afterComma.length === aliasTest.before + 3 &&
+      aliasTest.afterComma.includes('验收马甲B') && aliasTest.afterComma.includes('验收马甲C'),
+    JSON.stringify(aliasTest.afterComma));
+  check('马甲：同一个人的写法重复填不进去（不会出现两个一模一样的标签）',
+    aliasTest.afterDup.length === aliasTest.afterComma.length, JSON.stringify(aliasTest.afterDup));
+  check('★ 马甲：点标签上的 ✕ 就删掉那一条',
+    !aliasTest.afterDel.includes('验收马甲B') && aliasTest.afterDel.length === aliasTest.afterDup.length - 1,
+    JSON.stringify(aliasTest.afterDel));
+  check('★ 马甲：最多 20 条（塞 25 条进去只留下 20 条，并且那行小字说了"到上限"）',
+    Array.isArray(aliasTest.afterCap) && aliasTest.afterCap.length === 20 && /上限/.test(aliasTest.noteAtCap || ''),
+    `留下 ${aliasTest.afterCap && aliasTest.afterCap.length} 条；提示「${aliasTest.noteAtCap}」`);
+  check('马甲：填完状态栏说「有改动没保存」（和别的面板一套草稿保护）',
+    Array.isArray(aliasTest.status) && aliasTest.status.some((s) => /保存/.test(s)), JSON.stringify(aliasTest.status));
 
   /* ---------- ③ 面板里改名 → 精华面板里搜得到（绑定是通的） ---------- */
   const rename = await cdp.ev(`(async () => {

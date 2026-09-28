@@ -3,6 +3,7 @@
     "冰室精华（群精华）数据：成员表 + 年代 + 精华条目。由 tools/salon/import.mjs 从导出 HTML 生成。",
     "一条精华 = 成员(memberIds) + 时间(date/time) + 内容(text/images)。**一条可以有多个成员。**",
     "members 是成员表：改这里的 name/avatar，所有引用它的精华（含首页随机展示）都会跟着变 —— 精华里只存 memberId。",
+    "members 里的 aliases 是「马甲」（同一个人的别的写法，一人可以有多条）：正文里出现马甲时，跟正式名一样浮出名片、点进介绍页；名片上写的永远是正式名。同一个人的写法里**长名优先**，所以名字叫 SSW、马甲写 SSWTLZZ 时，正文里的 SSWTLZZ 会整段认成一个人（不会拆成 SSW + TLZZ）。马甲由编辑器成员面板那一栏维护。",
     "eras 是五个年代（时间轴上的\"段\"）；精华用 eraId 指回年代，时间轴上的\"点\"由精华的日期生成。",
     "kind 是数据来源的类别：text 文字 / perfect 完美对话 / ai AI 创作。站点页面**不按它分组**，只是留着方便编辑器筛选。",
     "ocr: true 表示这条的正文是截图 OCR 自动转录（尚未人工校对）。",
@@ -75,7 +76,9 @@
       "name": "SSW",
       "avatar": "/img/uploads/20260920-2141-c3a1-2ace38273addfad17d035d38aea8103e.jpg",
       "url": "",
-      "aliases": [],
+      "aliases": [
+        "SSWTLZZ"
+      ],
       "title": "",
       "sun": false,
       "zoom": ""
@@ -175,7 +178,9 @@
       "name": "羽之颂",
       "avatar": "/img/uploads/20260920-2147-10ea-71666150ed580ed9d2aaf1662558d0ee.jpg",
       "url": "",
-      "aliases": [],
+      "aliases": [
+        "澄净羽之颂"
+      ],
       "title": "",
       "sun": false,
       "zoom": ""
@@ -205,7 +210,10 @@
       "name": "虹星",
       "avatar": "/img/uploads/20260921-0023-3043-3896d8a7ccec5a608f5daaf958df2491.jpg",
       "url": "",
-      "aliases": [],
+      "aliases": [
+        "亚卡莱特",
+        "其声"
+      ],
       "title": "",
       "sun": false,
       "zoom": ""
