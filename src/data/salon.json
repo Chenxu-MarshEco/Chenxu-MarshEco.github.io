@@ -12,7 +12,7 @@
   "title": "冰室精华",
   "note": "由群精华导出文件整理：文字 / 完美对话 / AI 创作三类都在，一条没丢。",
   "timelineId": "tl-mu6e19cb793",
-  "updated": "2026-09-25",
+  "updated": "2026-09-28",
   "eras": [
     {
       "id": "era1",
@@ -66,18 +66,20 @@
       "name": "Raw",
       "avatar": "/img/uploads/20260920-2140-9e6b-Raw.jpg",
       "url": "",
-      "aliases": [],
+      "aliases": [
+        "挼无"
+      ],
       "title": "冰室之主",
       "sun": true,
       "zoom": "/img/uploads/20260921-1350-8ab5-027FA3A2220FA1FB9A5988EA38BE0E02.jpg"
     },
     {
       "id": "m03-018b",
-      "name": "SSW",
+      "name": "SSWTLZZ",
       "avatar": "/img/uploads/20260920-2141-c3a1-2ace38273addfad17d035d38aea8103e.jpg",
       "url": "",
       "aliases": [
-        "SSWTLZZ"
+        "SSW"
       ],
       "title": "",
       "sun": false,
@@ -88,7 +90,9 @@
       "name": "桑芙",
       "avatar": "/img/uploads/20260920-2141-a969-ff8be2784d1edffad0a36fcc4bccc092.jpg",
       "url": "",
-      "aliases": [],
+      "aliases": [
+        "Sunf"
+      ],
       "title": "",
       "sun": false,
       "zoom": ""
@@ -98,7 +102,9 @@
       "name": "马斯",
       "avatar": "/img/uploads/20260922-1520-248f-8eb1a717e41b86e2c5f1be579d31b898.jpg",
       "url": "",
-      "aliases": [],
+      "aliases": [
+        "Maths"
+      ],
       "title": "",
       "sun": false,
       "zoom": ""
@@ -125,10 +131,12 @@
     },
     {
       "id": "m08-e2cf",
-      "name": "吉吉",
+      "name": "小石吉吉",
       "avatar": "/img/uploads/20260920-2143-b629-JIJI.jpg",
       "url": "",
-      "aliases": [],
+      "aliases": [
+        "吉吉"
+      ],
       "title": "",
       "sun": false,
       "zoom": ""
@@ -148,7 +156,9 @@
       "name": "沃伊德",
       "avatar": "/img/uploads/20260920-2158-1171-45a05fd36565d219fe9869843bbd1957.jpg",
       "url": "",
-      "aliases": [],
+      "aliases": [
+        "Void"
+      ],
       "title": "",
       "sun": false,
       "zoom": ""
@@ -175,11 +185,11 @@
     },
     {
       "id": "m13-d1c9",
-      "name": "羽之颂",
+      "name": "澄净羽之颂",
       "avatar": "/img/uploads/20260920-2147-10ea-71666150ed580ed9d2aaf1662558d0ee.jpg",
       "url": "",
       "aliases": [
-        "澄净羽之颂"
+        "羽之颂"
       ],
       "title": "",
       "sun": false,
@@ -200,7 +210,9 @@
       "name": "隰辰煦",
       "avatar": "/img/uploads/20260920-2148-219a-Crane.jpg",
       "url": "",
-      "aliases": [],
+      "aliases": [
+        "花花"
+      ],
       "title": "",
       "sun": false,
       "zoom": ""

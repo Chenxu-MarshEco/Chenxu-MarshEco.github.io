@@ -156,91 +156,104 @@
                   "kind": "building",
                   "x": 72.38,
                   "y": 75.03,
-                  "title": "海龟农场"
+                  "title": "海龟农场",
+                  "href": "/huaya/years/fenhu/xichenxuhome#海龟农场"
                 },
                 {
                   "id": "page-mu9fd13e-pmu9jbq2s2-mmu9jd2lh1423",
                   "kind": "building",
                   "x": 70.68,
                   "y": 51.09,
-                  "title": "自动熔炉组"
+                  "title": "自动熔炉组",
+                  "href": "/huaya/years/fenhu/xichenxuhome#公共仓库"
                 },
                 {
                   "id": "page-mu9fd13e-pmu9jbq2s2-mmu9jd3tx5287",
                   "kind": "building",
                   "x": 63.41,
                   "y": 54.08,
-                  "title": "嗅探兽农场"
+                  "title": "嗅探兽农场",
+                  "href": "/huaya/years/fenhu/xichenxuhome#嗅探兽农场"
                 },
                 {
                   "id": "page-mu9fd13e-pmu9jbq2s2-mmu9jd5yl2595",
                   "kind": "building",
                   "x": 59.21,
                   "y": 39.12,
-                  "title": "纷湖公共仓库"
+                  "title": "纷湖公共仓库",
+                  "href": "/huaya/years/fenhu/xichenxuhome#公共仓库"
                 },
                 {
                   "id": "page-mu9fd13e-pmu9jbq2s2-mmu9jd7d89388",
                   "kind": "building",
                   "x": 57.74,
                   "y": 29.9,
-                  "title": "龙蛋祭坛"
+                  "title": "龙蛋祭坛",
+                  "href": "/huaya/years/fenhu/xichenxuhome#龙蛋祭坛"
                 },
                 {
                   "id": "page-mu9fd13e-pmu9jbq2s2-mmu9jd85o1011",
                   "kind": "building",
                   "x": 52.75,
                   "y": 23.67,
-                  "title": "地狱门"
+                  "title": "地狱门",
+                  "href": "/huaya/years/fenhu/xichenxuhome#地铁站"
                 },
                 {
                   "id": "page-mu9fd13e-pmu9jbq2s2-mmu9jd92c4002",
                   "kind": "building",
                   "x": 48.89,
                   "y": 13.44,
-                  "title": "信标高塔"
+                  "title": "信标高塔",
+                  "href": "/huaya/years/fenhu/xichenxuhome#信标塔"
                 },
                 {
                   "id": "page-mu9fd13e-pmu9jbq2s2-mmu9je78l6294",
                   "kind": "building",
                   "x": 48.32,
                   "y": 31.89,
-                  "title": "地铁口"
+                  "title": "地铁口",
+                  "href": "/huaya/years/fenhu/xichenxuhome#地铁站"
                 },
                 {
                   "id": "page-mu9fd13e-pmu9jbq2s2-mmu9jea2t5189",
                   "kind": "building",
                   "x": 45.14,
                   "y": 29.9,
-                  "title": "主宅"
+                  "title": "主宅",
+                  "href": "/huaya/years/fenhu/xichenxuhome#主宅"
                 },
                 {
                   "id": "page-mu9fd13e-pmu9jbq2s2-mmu9jeat98601",
                   "kind": "building",
                   "x": 43.33,
                   "y": 33.89,
-                  "title": "猫爬架"
+                  "title": "猫爬架",
+                  "href": "/huaya/years/fenhu/xichenxuhome#猫爬架"
                 },
                 {
                   "id": "page-mu9fd13e-pmu9jbq2s2-mmu9jec4s3677",
                   "kind": "building",
                   "x": 41.51,
                   "y": 24.16,
-                  "title": "TNT复制机纪念馆"
+                  "title": "TNT复制机纪念馆",
+                  "href": "/huaya/years/fenhu/xichenxuhome#tnt复制机纪念馆"
                 },
                 {
                   "id": "page-mu9fd13e-pmu9jbq2s2-mmu9jefgc4789",
                   "kind": "building",
                   "x": 37.2,
                   "y": 26.16,
-                  "title": "磨坊风车"
+                  "title": "磨坊风车",
+                  "href": "/huaya/years/fenhu/xichenxuhome#小风车"
                 },
                 {
                   "id": "page-mu9fd13e-pmu9jbq2s2-mmu9jeg4e7849",
                   "kind": "building",
                   "x": 36.4,
                   "y": 34.14,
-                  "title": "马厩"
+                  "title": "马厩",
+                  "href": "/huaya/years/fenhu/xichenxuhome#马厩"
                 },
                 {
                   "id": "page-mu9fd13e-pmu9jbq2s2-mmu9jegz11812",
@@ -261,21 +274,24 @@
                   "kind": "building",
                   "x": 63.98,
                   "y": 23.67,
-                  "title": "结档大圆环"
+                  "title": "结档大圆环",
+                  "href": "/huaya/years/fenhu/xichenxuhome#结档大圆环"
                 },
                 {
                   "id": "page-mu9fd13e-pmu9jbq2s2-mmu9jgf456294",
                   "kind": "building",
                   "x": 54.45,
                   "y": 31.39,
-                  "title": "悦灵小屋"
+                  "title": "悦灵小屋",
+                  "href": "/huaya/years/fenhu/xichenxuhome#轻心小屋"
                 },
                 {
                   "id": "page-mu9fd13e-pmu9jbq2s2-mmu9jitud9461",
                   "kind": "building",
                   "x": 51.04,
                   "y": 37.13,
-                  "title": "美西螈池塘"
+                  "title": "美西螈池塘",
+                  "href": "/huaya/years/fenhu/xichenxuhome#美西螈池"
                 },
                 {
                   "id": "page-mu9fd13e-pmu9jbq2s2-mmu9jp7ot4234",
@@ -341,6 +357,265 @@
           "src": "/img/uploads/20260922-1620-090f-9448569793f53a973eed910b91c7d0a5.jpg",
           "alt": "公共仓库的内饰",
           "width": "half"
+        },
+        {
+          "id": "page-mu9fd13e-pmuks7a1h1",
+          "type": "text",
+          "text": "### 小风车\n用来存放待交易作物的风车。"
+        },
+        {
+          "id": "page-mu9fd13e-pmuksd26g2",
+          "type": "image",
+          "src": "/img/uploads/20260928-1307-6bf9-10ad859052d441ad20473867f859df23.jpg",
+          "alt": "刚刚建成的小风车",
+          "width": "half"
+        },
+        {
+          "id": "page-mu9fd13e-pmuksdlxx3",
+          "type": "image",
+          "src": "/img/uploads/20260928-1307-ae4b-6bd15cdee4e9aab616903d2f88a4ff8d.jpg",
+          "alt": "小风车内的仓库",
+          "width": "half"
+        },
+        {
+          "id": "page-mu9fd13e-pmuksg12t4",
+          "type": "text",
+          "text": "### 嗅探兽农场\n用来饲养历经千辛万苦刷到的嗅探兽蛋的农场，同时兼顾蜜蜂农场。"
+        },
+        {
+          "id": "page-mu9fd13e-pmukshkkt5",
+          "type": "image",
+          "src": "/img/uploads/20260928-1311-78e7-ab306c1e6836e76ffa96fce2abc00a46.jpg",
+          "alt": "嗅探兽农场",
+          "width": "half"
+        },
+        {
+          "id": "page-mu9fd13e-pmuksi2il6",
+          "type": "image",
+          "src": "/img/uploads/20260928-1311-dae9-ec7ef53d7ebce32b40d2fb2044d8aeff.jpg",
+          "alt": "农场里的蜂箱和熊猫",
+          "width": "half"
+        },
+        {
+          "id": "page-mu9fd13e-pmuksivov7",
+          "type": "image",
+          "src": "/img/uploads/20260928-1312-240e-bbc8a583de8b747a27c0e9bb718d0178.jpg",
+          "alt": "围观嗅探兽宝宝诞生的众人",
+          "width": "third"
+        },
+        {
+          "id": "page-mu9fd13e-pmuksjolp8",
+          "type": "image",
+          "src": "/img/uploads/20260928-1312-c017-97fa3333fdcdde55af0558641f6757c5.jpg",
+          "alt": "小小嗅探兽！",
+          "width": "third"
+        },
+        {
+          "id": "page-mu9fd13e-pmuksk3pp9",
+          "type": "text",
+          "text": "### 龙蛋祭坛\n龙蛋的居所。"
+        },
+        {
+          "id": "page-mu9fd13e-pmukskotz10",
+          "type": "image",
+          "src": "/img/uploads/20260928-1313-36b1-7ad4cea0840e9f710bb69aff4b657738.jpg",
+          "alt": "龙蛋祭坛",
+          "width": "half"
+        },
+        {
+          "id": "page-mu9fd13e-pmukskzql11",
+          "type": "image",
+          "src": "/img/uploads/20260928-1313-602a-cd0c45e30cb57b86b75846830ae42eba.jpg",
+          "alt": "危险！勿触！",
+          "width": "third"
+        },
+        {
+          "id": "page-mu9fd13e-pmuksmd8d13",
+          "type": "text",
+          "text": "### 美西螈池\n为了饲养美西螈挖掘的美丽小池塘，然而其中经常发生美西螈失踪事件。"
+        },
+        {
+          "id": "page-mu9fd13e-pmukso2p914",
+          "type": "image",
+          "src": "/img/uploads/20260928-1316-d932-adac40a97f45dfc6a25930123154b348.jpg",
+          "alt": "池塘中的美西螈",
+          "width": "half"
+        },
+        {
+          "id": "page-mu9fd13e-pmuksoen915",
+          "type": "image",
+          "src": "/img/uploads/20260928-1316-0abc-870ac9433f579114fd0517c7195e1cc9.jpg",
+          "alt": "跳入池塘的虹星",
+          "width": "half"
+        },
+        {
+          "id": "page-mu9fd13e-pmuksp48f16",
+          "type": "image",
+          "src": "/img/uploads/20260928-1316-e7ba-daa5c5a3f64bac6b13f986cb217ebd18.jpg",
+          "alt": "在没有AE与机械动力的时代古法填水的池塘",
+          "width": "third"
+        },
+        {
+          "id": "page-mu9fd13e-pmuksqcrx17",
+          "type": "text",
+          "text": "### 马厩\n出于隰辰煦对骷髅马的喜爱而打造的马厩。"
+        },
+        {
+          "id": "page-mu9fd13e-pmuksr46m18",
+          "type": "image",
+          "src": "/img/uploads/20260928-1318-4c2a-938c0fee4485f246eda45a88e6102fd9.jpg",
+          "alt": "饲养着骷髅马的马厩",
+          "width": "half"
+        },
+        {
+          "id": "page-mu9fd13e-pmuksro1l19",
+          "type": "text",
+          "text": "### TNT复制机纪念馆\n临时的生电作品，实际上除了炸出一个大深坑外并没有对隰辰煦的建设起到什么帮助。因为深板岩实在是太难挖了！"
+        },
+        {
+          "id": "page-mu9fd13e-pmukst9ml20",
+          "type": "image",
+          "src": "/img/uploads/20260928-1320-87d9-0c5a4df44dc8f7064ffd78b4785be97c.jpg",
+          "alt": "刚刚部署的TNT复制机",
+          "width": "half"
+        },
+        {
+          "id": "page-mu9fd13e-pmukstw6t21",
+          "type": "text",
+          "text": "### 猫爬架\n可爱的猫爬架，也是第一个主要使用樱花制作的建筑，标志着隰辰煦的建筑风格开始向着樱深风急速倾斜。"
+        },
+        {
+          "id": "page-mu9fd13e-pmuksvn2522",
+          "type": "image",
+          "src": "/img/uploads/20260928-1321-e6c4-6de580b589142a4d9439885b4977dc08.jpg",
+          "alt": "樱花与深板岩组成的猫爬架",
+          "width": "half"
+        },
+        {
+          "id": "page-mu9fd13e-pmuksw3p924",
+          "type": "text",
+          "text": "### 信标塔\n贯穿了纷湖，花娅地，新花娅地的经典款信标塔。"
+        },
+        {
+          "id": "page-mu9fd13e-pmukswvw925",
+          "type": "image",
+          "src": "/img/uploads/20260928-1322-80b9-febd2970df5588020b72e9523c642e7e.jpg",
+          "alt": "山顶的信标塔",
+          "width": "half"
+        },
+        {
+          "id": "page-mu9fd13e-pmuksxbol26",
+          "type": "image",
+          "src": "/img/uploads/20260928-1323-27d3-a608e8c679ee753c8016974f7a7b3762.jpg",
+          "alt": "在没有喷气背包的时代纯脚手架高空作业搭建的信标塔",
+          "width": "third"
+        },
+        {
+          "id": "page-mu9fd13e-pmuksy0xi27",
+          "type": "text",
+          "text": "### 海龟农场\n原本是吉吉为了做成就而临时搭建的龟棚，因为地处隰辰煦家山脚且过于突兀被隰辰煦爆改。"
+        },
+        {
+          "id": "page-mu9fd13e-pmukszbo628",
+          "type": "image",
+          "src": "/img/uploads/20260928-1325-649e-7c3ce5d8a3425a8e47e670c074a0e346.jpg",
+          "width": "half"
+        },
+        {
+          "id": "page-mu9fd13e-pmukt04vr29",
+          "type": "image",
+          "src": "/img/uploads/20260928-1325-7382-3334def9eb168976d1c284a2e7ee8be1.jpg",
+          "alt": "改造后的海龟农场",
+          "width": "half"
+        },
+        {
+          "id": "page-mu9fd13e-pmukt0pa630",
+          "type": "image",
+          "src": "/img/uploads/20260928-1325-7497-4a0f2141678d000d5db85e8641ce39f5.jpg",
+          "alt": "海龟农场的前身",
+          "width": "third"
+        },
+        {
+          "id": "page-mu9fd13e-pmukt305a31",
+          "type": "image",
+          "src": "/img/uploads/20260928-1328-a31e-f9f2df1dd11f4959e80dc3d366f9ca3d.jpg",
+          "width": "third"
+        },
+        {
+          "id": "page-mu9fd13e-pmukt3t7z33",
+          "type": "text",
+          "text": "### 轻心小屋\n饲养了悦灵的小屋，不知为何在结档前悦灵全都神秘失踪了。"
+        },
+        {
+          "id": "page-mu9fd13e-pmukt4utq34",
+          "type": "image",
+          "src": "/img/uploads/20260928-1329-6798-e97209d051f7b40cc7c4c6ce85f9a492.jpg",
+          "alt": "轻心小屋与门前的小餐亭",
+          "width": "half"
+        },
+        {
+          "id": "page-mu9fd13e-pmukt6bjt35",
+          "type": "image",
+          "src": "/img/uploads/20260928-1330-ea53-bbde12330927b23d752ec9972f0a6041.jpg",
+          "alt": "正在与悦灵互动的桑芙",
+          "width": "half"
+        },
+        {
+          "id": "page-mu9fd13e-pmukt6by636",
+          "type": "image",
+          "src": "/img/uploads/20260928-1330-4959-5cf3dae330b8dfc6470f6da04b065630.jpg",
+          "width": "half"
+        },
+        {
+          "id": "page-mu9fd13e-pmukt777z37",
+          "type": "text",
+          "text": "### 地铁站\n连接着冰道船系统的地铁站，门口的大宝剑地狱门因为串门已经失去了交通功能。"
+        },
+        {
+          "id": "page-mu9fd13e-pmukt8kpz38",
+          "type": "image",
+          "src": "/img/uploads/20260928-1332-f612-9e455b4ff6559711fe672313f454acdc.jpg",
+          "alt": "地铁口入口",
+          "width": "half"
+        },
+        {
+          "id": "page-mu9fd13e-pmukt8w0e39",
+          "type": "image",
+          "src": "/img/uploads/20260928-1333-edcc-c3e959b0a514bbe086612d3174d0179a.jpg",
+          "alt": "地铁站的二层站台",
+          "width": "third"
+        },
+        {
+          "id": "page-mu9fd13e-pmuktaveq40",
+          "type": "image",
+          "src": "/img/uploads/20260928-1333-1ed0-463d0621bc523da29b6f3d06276c847a.jpg",
+          "width": "third"
+        },
+        {
+          "id": "page-mu9fd13e-pmuktb2e841",
+          "type": "image",
+          "src": "/img/uploads/20260928-1333-6dca-e51f616920438c072bfdd0cbde24df5d.jpg",
+          "alt": "地铁站的月台鱼缸",
+          "width": "half"
+        },
+        {
+          "id": "page-mu9fd13e-pmuktbqdi42",
+          "type": "image",
+          "src": "/img/uploads/20260928-1334-4286-515b0312464e6d49e019d848a396e194.jpg",
+          "alt": "熙熙攘攘的地铁站",
+          "width": "half"
+        },
+        {
+          "id": "page-mu9fd13e-pmuktcmye43",
+          "type": "text",
+          "text": "### 结档大圆环\n隰辰煦为纪念结档而做的原版生存收官大作，在没有蓝图炮与喷气背包的时代耗时七集才终于施工完成。"
+        },
+        {
+          "id": "page-mu9fd13e-pmuktel0q44",
+          "type": "image",
+          "src": "/img/uploads/20260928-1336-1568-70d9b7d59f6292a6e40fb36916c676a3.jpg",
+          "alt": "大圆环完工之日",
+          "width": "wide"
         },
         {
           "id": "page-mu9fd13e-pmuayn1lp17",
