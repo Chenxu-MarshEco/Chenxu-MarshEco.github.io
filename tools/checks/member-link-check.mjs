@@ -89,10 +89,19 @@ const render = (m, name, inLink) => {
 };
 const run = (html) => rewriteHtml(html, match, render);
 
+/*
+  「不在表里的写法不会被链」这一条要**自己造一把尺子**，不能拿某个具体名字当例子：
+  2026-09-28 用户就在编辑器里把「花花」填成了隰辰煦的马甲（旧名想链就加一条），
+  于是"花花不该被链"这句当场过期。所以下面这几条一律用**临时成员表**来测，
+  只有 "B 段产物" 那边才拿真数据说话（而且是按真数据现算的）。
+*/
+const runWith = (list, html) => rewriteHtml(html, buildMatcher(list), (m) => `[${m.id}]`).html;
 check('中文名能匹配', run('<p>今天隰辰煦来了</p>').count === 1);
 check('英文名紧挨汉字照样匹配（正文里就是「Raw考进北大」这种写法）', run('<p>Raw考进北大</p>').count === 1);
 check('英文名夹在英文词里**不**匹配（Draw / raws / RawX）', run('<p>Draw raws RawX</p>').count === 0);
-check('旧名「花花」不匹配（它不在成员表里）', run('<p>花花和隰辰煦</p>').count === 1);
+check('不在成员表里的写法一个字都不链（拿临时表测：表里只有隰辰煦）',
+  runWith([{ id: 'a', name: '隰辰煦', url: '' }], '<p>花花和隰辰煦</p>') === '<p>花花和[a]</p>',
+  runWith([{ id: 'a', name: '隰辰煦', url: '' }], '<p>花花和隰辰煦</p>'));
 check('一段里两个名字都链上', run('<p>桑芙和虹星</p>').count === 2);
 check('长的优先：有包含关系的两个名字命中长的那个', (() => {
   const m = buildMatcher([
@@ -105,7 +114,7 @@ check('aliases 里的写法也链（旧名想链就加这一条）', (() => {
   const m = buildMatcher([{ id: 'a', name: '隰辰煦', url: '', aliases: ['花花'] }]);
   return rewriteHtml('<p>花花和隰辰煦</p>', m, (mm) => `[${mm.id}]`).html === '<p>[a]和[a]</p>';
 })());
-check('默认（aliases 空）只链正式名 —— 这正是「不能链花花」的实现', (() => {
+check('默认（aliases 空）只链正式名 —— 这正是「旧名想链就得自己填进去」的实现', (() => {
   const m = buildMatcher([{ id: 'a', name: '隰辰煦', url: '' }]);
   return rewriteHtml('<p>花花和隰辰煦</p>', m, (mm) => `[${mm.id}]`).html === '<p>花花和[a]</p>';
 })());
@@ -298,7 +307,13 @@ const extra = [...wrapped].filter((n) => !writingsOfAll.has(n));
 info(`被链过的写法：${[...wrapped].sort().join(' / ')}`);
 check('★ 被链的写法全部来自成员表（正式名或马甲，没有一个例外）', extra.length === 0, extra.join(' '));
 
-/* 旧名「花花」：正文里有，但一次都不许被链 */
+/*
+  旧名「花花」：这一条是**跟着数据走**的，不能写死"一次都不许被链"。
+  2026-09-28 用户在编辑器里把「花花」填成了隰辰煦的马甲（"旧名想链就加一条"这条
+  逃生口，用户自己用上了），于是它现在**应该**被链。所以这里两种状态各断言一次：
+    · 「花花」不是任何人的写法 → 一次都不许被链（用户当初的原话）；
+    · 是 → 出现几次就链几次，而且名片上写的是正式名。
+*/
 let huaTotal = 0;
 let huaWrapped = 0;
 for (const [, h] of pages) {
@@ -307,9 +322,16 @@ for (const [, h] of pages) {
     if (m[0].includes('花花')) huaWrapped++;
   }
 }
-info(`旧名「花花」在产物里出现 ${huaTotal} 次，被链 ${huaWrapped} 次`);
-check('★ 旧名「花花」一次都没被链（用户点名的例子）', huaTotal > 0 && huaWrapped === 0,
-  `出现 ${huaTotal} 次 / 链了 ${huaWrapped} 次`);
+const huaOwner = members.find((m) => (m.aliases || []).includes('花花')) ?? null;
+info(`「花花」在产物里出现 ${huaTotal} 次，被链 ${huaWrapped} 次${huaOwner ? `（它现在是 ${huaOwner.name} 的马甲）` : '（它不在成员表里）'}`);
+if (huaOwner) {
+  check('★ 「花花」填成马甲之后就**该**链上：出现几次链几次，而且名片写的是正式名',
+    huaTotal > 0 && huaWrapped === huaTotal,
+    `出现 ${huaTotal} 次 / 链了 ${huaWrapped} 次；正式名 ${huaOwner.name}`);
+} else {
+  check('★ 旧名「花花」一次都没被链（它不在成员表里 —— 用户点名的例子）', huaTotal > 0 && huaWrapped === 0,
+    `出现 ${huaTotal} 次 / 链了 ${huaWrapped} 次`);
+}
 
 /* 标记完整性 + 头像 */
 const memCount = countAll(/class="mem__card[ "]/g);
@@ -462,6 +484,18 @@ const globalMatch = buildMatcher(members);
 const pageHits = memPages.map(([f, h]) => [f, globalMatch(visibleText(h))]);
 const aliasReport = [];
 for (const m of members) {
+  /*
+    ⚠ 正式名的落点要**从产物里数**（`<span class="mem__text">正式名</span>`），
+    不能拿"匹配器在这页的可见文字上命中过这个名字"来算：名片里的
+    `.mem__label` 也是纯文字，剥掉标签之后它就是那个正式名 —— 于是每一张
+    "马甲名片"都会顺带贡献一次"正式名命中"，C 段就会被骗到一页只有马甲、
+    没有正式名的页上去抓卡片（2026-09-28 用户把名字换成更长的写法之后踩到的）。
+  */
+  const wrappedNamePages = new Set(
+    pages
+      .filter(([, h]) => h.includes(`<span class="mem__text">${m.name}</span>`))
+      .map(([f]) => path.relative(root, f).replace(/\\/g, '/'))
+  );
   for (const a of m.aliases || []) {
     let expected = 0;
     const where = [];
@@ -473,7 +507,9 @@ for (const m of members) {
     const actual = occ(joinedPages, `<span class="mem__text">${a}</span>`);
     /* 每一处这个马甲的外层名片，data-mem 必须正好是**本人** */
     const own = new RegExp(`data-mem="${escRe(m.id)}"[^>]*><span class="mem__text">${escRe(a)}</span>`).test(joinedPages);
-    aliasReport.push({ member: m, alias: a, expected, actual, where, own });
+    /* 正式名在哪些页被链过（同一页上没有的话，C 段换一页去抓那张名片） */
+    const nameWhere = [...wrappedNamePages];
+    aliasReport.push({ member: m, alias: a, expected, actual, where, own, nameWhere });
   }
 }
 info(
@@ -530,15 +566,23 @@ info(
 check('★ 长的写法是**整段**划线的：产物里没有「短写法 + 剩下的字」这种拆开来的拼接',
   splits.length === 0, splits.map((c) => c.needle).join(' ; ') || `${splitCases.length} 对重叠写法，都没被拆开`);
 
-/* C 段要在浏览器里悬停一个「马甲」，这里先把落点挑好：
-   优先挑 /huaya/bingshi/ 上的（那一页本来就是 C 段的主战场），没有再退到别的页 */
+/* C 段要在浏览器里悬停一个「马甲」，这里先把落点挑好。
+   ⚠ 挑的**不是**"哪一页有马甲"，而是"哪一页上马甲和这个人的**正式名**都有" ——
+   2026-09-28 用户把几个成员的名字直接改成了更长的那个写法（SSW → 名字 SSWTLZZ、
+   马甲 SSW），于是"有马甲的那一页上一定有正式名"这条就不成立了，
+   挑错了 C 段那张对比名片就抓不到（假红）。同一页上没有就退到别处：
+   `aliasSpot.namePage` 是正式名出现过的页，C 段会额外跳过去抓那张卡片。 */
+const preferPage = (row, f) => row.where.find(([p]) => p === f) && row.nameWhere.includes(f);
 const aliasSpot =
-  aliasLive.find((r) => r.where.some(([f]) => f === 'huaya/bingshi/index.html')) ??
+  aliasLive.find((r) => preferPage(r, 'huaya/bingshi/index.html')) ??
+  aliasLive.find((r) => r.where.some(([f]) => r.nameWhere.includes(f))) ??
   aliasLive.find((r) => r.where.length) ??
   null;
 if (aliasSpot) {
-  const [page] = aliasSpot.where.find(([f]) => f === 'huaya/bingshi/index.html') ?? aliasSpot.where[0];
-  aliasSpot.page = page;
+  const same = aliasSpot.where.find(([f]) => aliasSpot.nameWhere.includes(f) || f === 'huaya/bingshi/index.html');
+  aliasSpot.page = (same ?? aliasSpot.where[0])[0];
+  aliasSpot.samePage = aliasSpot.nameWhere.includes(aliasSpot.page);
+  aliasSpot.namePage = aliasSpot.nameWhere[0] ?? '';
 }
 
 /* ================================================================
@@ -1045,10 +1089,23 @@ const hoverTextPoint = (text, memberId) => cdp.ev(`(() => {
   return null;
 })()`);
 if (aliasSpot) {
-  const url = '/' + aliasSpot.page.replace(/index\.html$/, '');
   const M = aliasSpot.member;
-  await cdp.goto(url, 1100);
-  const aliasPt = await hoverTextPoint(aliasSpot.alias, M.id);
+  /*
+    ⚠ 一页一页试：马甲在某一页上"有"不等于"悬停得到" ——
+    同一个名字在冰室页的时间轴里可能是被裁掉的格子（宽高量出来是 0），
+    在手机上又可能只存在于另一套被隐藏的排版里。所以按「挑出来的那页 → 所有出现过的页」
+    顺序挨个找，找到第一个**真的在视口里、量得到宽高**的落点为止。
+  */
+  const tryPages = [...new Set([aliasSpot.page, ...aliasSpot.where.map(([f]) => f)])].slice(0, 5);
+  let url = '/' + tryPages[0].replace(/index\.html$/, '');
+  let aliasPt = null;
+  for (const p of tryPages) {
+    url = '/' + p.replace(/index\.html$/, '');
+    await cdp.goto(url, 1000);
+    aliasPt = await hoverTextPoint(aliasSpot.alias, M.id);
+    if (aliasPt) break;
+    info(`（${url} 上这个名字量不到可悬停的位置，换下一页试）`);
+  }
   info(`在 ${url} 上找「${aliasSpot.alias}」：` + JSON.stringify(aliasPt));
   check(`产物的 ${url} 上找得到「${aliasSpot.alias}」这个马甲（而且归在 ${M.id} 名下）`,
     !!aliasPt && aliasPt.id === M.id, JSON.stringify(aliasPt));
@@ -1066,15 +1123,29 @@ if (aliasSpot) {
     await cdp.move(5, 5);
     await sleep(320);
 
-    /* 同一个人在**同一页**上的正式名那张名片：逐项比 */
-    const memCard = await grabShapeByText(M.id, M.name);
+    /* 同一个人正式名那张名片：先在本页抓（免费），不中再按 nameWhere 挨个跳 ——
+       名片的内容只跟成员本身有关，跟在哪一页上没关系。
+       正式名在产物里一次都没被链过（正文里根本没写这个名字）就跳过这条。 */
+    let memCard = await grabShapeByText(M.id, M.name);
+    for (const p of aliasSpot.nameWhere.slice(0, 3)) {
+      if (memCard && !memCard.none) break;
+      const target = '/' + p.replace(/index\.html$/, '');
+      if (target === url) continue;
+      await cdp.goto(target, 900);
+      info(`（换到 ${target} 抓「${M.name}」那张名片）`);
+      memCard = await grabShapeByText(M.id, M.name);
+    }
     info('正式名的名片：' + JSON.stringify(memCard));
-    check(`★ 马甲的名片和正式名（「${M.name}」）的名片**逐项一样** —— 该有的要素（头像 / 名字 / 称号 / 介绍页入口 / 放大图）一个不差`,
-      !!memCard && !memCard.none &&
-        JSON.stringify({ ...aliasCard, faceOk: null }) === JSON.stringify({ ...memCard, faceOk: null }),
-      memCard && memCard.none
-        ? `这一页上没有「${M.name}」的正式名`
-        : JSON.stringify({ 马甲: aliasCard, 正式名: memCard }));
+    if (!aliasSpot.nameWhere.length) {
+      info(`「${M.name}」这个正式名在产物里一次都没出现过（正文里没人这么写），跳过两张名片的对比`);
+    } else {
+      check(`★ 马甲的名片和正式名（「${M.name}」）的名片**逐项一样** —— 该有的要素（头像 / 名字 / 称号 / 介绍页入口 / 放大图）一个不差`,
+        !!memCard && !memCard.none &&
+          JSON.stringify({ ...aliasCard, faceOk: null }) === JSON.stringify({ ...memCard, faceOk: null }),
+        memCard && memCard.none
+          ? `产物里找不到「${M.name}」的正式名`
+          : JSON.stringify({ 马甲: aliasCard, 正式名: memCard }));
+    }
   }
 } else {
   info('成员表里没有"在正文里真出现过的马甲"，这一段没有可悬停的对象');
@@ -1100,35 +1171,53 @@ try {
 }
 const copyData = path.join(tmp, 'src/data/salon.json');
 const copy = JSON.parse(fs.readFileSync(copyData, 'utf8'));
+/**
+ * 按「名字**或**马甲」找成员。
+ * ⚠ 用户 2026-09-28 把几个成员的名字直接改成了更长的那个写法（吉吉 → 小石吉吉、
+ *   SSW → SSWTLZZ，旧写法留作马甲），所以"按名字找人"随时会找不到 ——
+ *   验收脚本一律走这个定位函数，不写死名字。
+ */
+const findMember = (list, key) =>
+  list.find((m) => m.name === key) ?? list.find((m) => (m.aliases || []).includes(key)) ?? null;
 /* ⚠ 从**正式名**里挑（wrapped 现在也装马甲了 —— 拿马甲当名字去改数据会改不到人）；
    优先还是原来那个「隰辰煦」，他不在表里才退到"随便一个真被链过的正式名" */
 const pickName = names.includes('隰辰煦') ? '隰辰煦' : (names.find((n) => wrapped.has(n)) ?? names[0]);
 const target2 = '/about/';
 /*
- 副本里顺手动三处马甲（都在真数据上做，不另造页面）：
+ 副本里顺手动这几处（都在真数据上做，不另造页面）：
    ① pickName（隰辰煦）→ 介绍页 /about/：验"正式名带链接"（这一段的老验收）；
-   ② 虹星 → 马甲「亚卡莱特」（正文里 20 处）：验**马甲也会带上那个 <a href>**；
-   ③ 隰辰煦 → 马甲「花花」（正文里 64 处，用户点名的旧名）：验"想链旧名就加一条马甲"；
-   ④ 吉吉 → 马甲「辰煦」：和隰辰煦撞车，验"长的赢"在真产物上也没被拆开。
- */
-const aliasFor = { 虹星: '亚卡莱特', [pickName]: '花花', 吉吉: '辰煦' };
-copy.members = copy.members.map((m) => {
-  const next = { ...m };
-  if (m.name === pickName) next.url = target2;
-  /* 虹星也顺手给个介绍页，这样"马甲也带 <a href>"这条才验得到 */
-  if (m.name === '虹星') next.url = '/iceberg/';
-  const extra = aliasFor[m.name];
-  if (extra) {
-    const list = Array.isArray(next.aliases) ? next.aliases.slice() : [];
-    if (!list.includes(extra)) list.push(extra);
-    next.aliases = list;
+   ② 虹星 → 介绍页 /iceberg/ + 马甲「亚卡莱特」：验**马甲也会带上那个 <a href>**；
+   ③ pickName → 马甲「花花」：验"想链旧名就加一条马甲"；
+   ④ 「吉吉」那条 → 马甲「辰煦」：和隰辰煦撞车，验"长的赢"在真产物上也没被拆开。
+ 每一条都按"名字或马甲"定位（见上面的 findMember）。
+*/
+const plan = [
+  { key: pickName, url: target2 },
+  { key: '虹星', url: '/iceberg/' },
+  { key: '虹星', alias: '亚卡莱特' },
+  { key: pickName, alias: '花花' },
+  { key: '吉吉', alias: '辰煦' },
+];
+const applied = [];
+for (const step of plan) {
+  const hit = findMember(copy.members, step.key);
+  if (!hit) {
+    info(`（副本里找不到「${step.key}」这个成员，跳过这一处）`);
+    continue;
   }
-  return next;
-});
+  if (step.url) hit.url = step.url;
+  if (step.alias) {
+    const list = Array.isArray(hit.aliases) ? hit.aliases.slice() : [];
+    if (!list.includes(step.alias)) list.push(step.alias);
+    hit.aliases = list;
+  }
+  applied.push(`${hit.name}${step.url ? `→${step.url}` : ''}${step.alias ? `←${step.alias}` : ''}`);
+}
 fs.writeFileSync(copyData, JSON.stringify(copy, null, 2) + '\n');
-const hongId = (copy.members.find((m) => m.name === '虹星') || {}).id || '';
-const xiId = (copy.members.find((m) => m.name === pickName) || {}).id || '';
-info(`副本里把「${pickName}」的介绍页填成 ${target2}，另加马甲：虹星←亚卡莱特、${pickName}←花花、吉吉←辰煦，重新构建…`);
+const hong = findMember(copy.members, '虹星');
+const hongAlias = hong ? (hong.aliases || []).find((a) => a === '亚卡莱特') ?? (hong.aliases || [])[0] ?? '' : '';
+const xiId = (findMember(copy.members, pickName) || {}).id || '';
+info(`副本里动了这几处：${applied.join('、')}，重新构建…`);
 const built = spawn(process.execPath, [path.join(proj, 'node_modules/astro/bin/astro.mjs'), 'build'], {
   cwd: tmp, stdio: ['ignore', 'pipe', 'pipe'],
 });
@@ -1147,29 +1236,34 @@ const linkMatch = copyHtml.match(new RegExp(`<a class="mem"[^>]*href="${target2}
 check(`带上介绍页之后，那个名字变成了 <a href="${target2}">`, !!linkMatch, linkMatch ? linkMatch[0].slice(0, 130) : '没找到');
 check('名片里多了一句「介绍页 →」', copyHtml.includes('<span class="mem__go">'));
 
-/* ---- ★ 马甲也要有"链接"这个要素：正文写「亚卡莱特」，外面那层得是 <a href> ---- */
+/* ---- ★ 马甲也要有"链接"这个要素：正文写那个马甲，外面那层得是 <a href> ---- */
 const copySalonHtml = fs.readFileSync(path.join(copyDist, 'salon/index.html'), 'utf8');
-const aliasLink = copySalonHtml.match(new RegExp(`<a class="mem"[^>]*data-mem="${hongId}"[^>]*href="[^"]+"[^>]*>\\s*<span class="mem__text">亚卡莱特</span>`));
+const aliasLink = hong
+  ? copySalonHtml.match(
+      new RegExp(`<a class="mem"[^>]*data-mem="${escRe(hong.id)}"[^>]*href="[^"]+"[^>]*>\\s*<span class="mem__text">${escRe(hongAlias)}</span>`)
+    )
+  : null;
 check('★ 填了介绍页之后，**马甲**出现的地方也变成了可点的 <a href>（链接这个要素没落下）',
-  !!aliasLink && copySalonHtml.includes(`<span class="mem__label">虹星</span>`),
-  aliasLink ? aliasLink[0].replace(/\s+/g, ' ').slice(0, 150) : '在副本的 /salon/ 里没找到带 href 的「亚卡莱特」');
-if (aliasLink) {
+  !hong || (!!aliasLink && copySalonHtml.includes(`<span class="mem__label">${hong.name}</span>`)),
+  aliasLink ? aliasLink[0].replace(/\s+/g, ' ').slice(0, 150) : `在副本的 /salon/ 里没找到带 href 的「${hongAlias}」`);
+if (aliasLink && hong) {
   const i = copySalonHtml.indexOf(aliasLink[0]);
   const card = copySalonHtml.slice(i, i + 1500);
-  check('★ 而且那张名片上写的是正式名「虹星」、并带「介绍页 →」（不是拿马甲当名字）',
-    card.includes('<span class="mem__label">虹星</span>') && card.includes('<span class="mem__go">介绍页 →</span>'),
+  check(`★ 而且那张名片上写的是正式名「${hong.name}」、并带「介绍页 →」（不是拿马甲当名字）`,
+    card.includes(`<span class="mem__label">${hong.name}</span>`) && card.includes('<span class="mem__go">介绍页 →</span>'),
     card.slice(0, 120).replace(/\s+/g, ' '));
 }
-/* 旧名「花花」：不在正式名里、只作为马甲 → 这次它该被链上了（证明"想链旧名就加一条马甲"） */
+/* 旧名「花花」：不在正式名里、只作为马甲 → 它该被链上（证明"想链旧名就加一条马甲"） */
 const huaMem = new RegExp(`data-mem="${escRe(xiId)}"[^>]*data-nomem><span class="mem__text">花花</span>`);
 const huaLinked = huaMem.test(copyHtml) || huaMem.test(copySalonHtml);
 check(`★ 把旧名「花花」写成 ${pickName} 的马甲之后，正文里的「花花」就链上了（同一张名片）`,
   huaLinked && (copyHtml + copySalonHtml).includes('<span class="mem__label">' + pickName + '</span>'),
   huaLinked ? `${pickName} 的「花花」已经链上` : '加了马甲还是没链上');
-/* 长的赢：给吉吉加了马甲「辰煦」，隰辰煦三个字必须还是整段归隰辰煦 */
-check('★ 跨成员撞车：给吉吉加马甲「辰煦」之后，产物里也没有「隰 + 辰煦」这种拆开的写法',
+/* 长的赢：给「吉吉」那条加了马甲「辰煦」，隰辰煦三个字必须还是整段归隰辰煦 */
+check('★ 跨成员撞车：给「吉吉」加了马甲「辰煦」之后，产物里也没有「隰 + 辰煦」这种拆开的写法',
   !(copyHtml + copySalonHtml).includes(`隰<span class="mem__text">辰煦</span>`),
   '检查 隰<span class="mem__text">辰煦</span> 这个拼接');
+/* 长的赢（用户 2026-09-28 真的这么改了：名字 SSWTLZZ、马甲 SSW） */
 check('★ SSWTLZZ 是整段划线的（不存在「链上 SSW、剩下 TLZZ 裸着」）',
   !(copyHtml + copySalonHtml).includes('<span class="mem__text">SSW</span>TLZZ') &&
     (copyHtml + copySalonHtml).includes('<span class="mem__text">SSWTLZZ</span>'),
@@ -1253,14 +1347,27 @@ check('副本里的编辑器起来了（端口从它自己的 stdout 里读，�
 if (editorBase) {
   const cur = JSON.parse(fs.readFileSync(copyData, 'utf8'));
   const beforeUrl = cur.members.map((m) => ({ name: m.name, url: m.url || '' }));
-  /* 「羽之颂」这条专门用来试马甲的清洗：重复、首尾空格、空串、25 条超上限 */
+  /*
+    ⚠ 这一段的三个目标一律**按 id 定位**（`名字或马甲` → id），不写死名字：
+    用户 2026-09-28 把「吉吉」改名成「小石吉吉」（旧写法留作马甲），
+    写 `m.name === '吉吉'` 的代码当场就找不到人了。
+  */
+  const idOf = (m) => m.id;
+  const target = (key) => {
+    const hit = findMember(cur.members, key);
+    return hit ? hit.id : '';
+  };
+  const idHong = target('虹星');
+  const idDirty = target('光子');
+  const idJiji = target('吉吉');
+  const idMask = target('羽之颂') || (cur.members.find((m) => (m.aliases || []).length) || {}).id || '';
+  /* 马甲的清洗：首尾空格要去掉、重复只留一条、空串丢掉、最多 20 条 */
   const many = Array.from({ length: 25 }, (_, i) => `马甲${i + 1}`);
   const post = cur.members.map((m) => {
-    if (m.name === '虹星') return { ...m, url: '/iceberg/' };
-    if (m.name === '光子') return { ...m, url: 'javascript:alert(1)' }; // 脏协议，应该被挡成空
-    if (m.name === '吉吉') return { ...m, url: 'https://example.com/jiji', aliases: ['吉吉大王'] };
-    /* 马甲：重复的只留一条、首尾空格要去掉、空串要丢 */
-    if (m.name === '羽之颂') return { ...m, aliases: [' 澄净羽之颂 ', '澄净羽之颂', '', '   ', ...many] };
+    if (m.id === idHong) return { ...m, url: '/iceberg/' };
+    if (m.id === idDirty) return { ...m, url: 'javascript:alert(1)' }; // 脏协议，应该被挡成空
+    if (m.id === idJiji) return { ...m, url: 'https://example.com/jiji', aliases: ['吉吉大王'] };
+    if (m.id === idMask) return { ...m, aliases: [' 甲马甲 ', '甲马甲', '', '   ', ...many] };
     return m;
   });
   const res = await fetch(`${editorBase}/api/salon`, {
@@ -1271,23 +1378,27 @@ if (editorBase) {
   const body = await res.json().catch(() => null);
   check('POST /api/salon 返回 ok', res.status === 200 && body?.ok === true, `status=${res.status}`);
   const after = JSON.parse(fs.readFileSync(copyData, 'utf8'));
-  const urlOf = (n) => (after.members.find((m) => m.name === n) || {}).url ?? '';
-  const aliasesOf = (n) => (after.members.find((m) => m.name === n) || {}).aliases ?? [];
-  check('存盘之后 url 落在 salon.json 里（站内路径）', urlOf('虹星') === '/iceberg/', urlOf('虹星'));
-  check('http(s) 外链也留得住', urlOf('吉吉') === 'https://example.com/jiji', urlOf('吉吉'));
-  check('★ javascript: 这种脏协议被挡成空串', urlOf('光子') === '', JSON.stringify(urlOf('光子')));
-  check('aliases（额外写法）也存下来了', Array.isArray(aliasesOf('吉吉')) && aliasesOf('吉吉').includes('吉吉大王'),
-    JSON.stringify(aliasesOf('吉吉')));
+  const byId = (id) => after.members.find((m) => m.id === id) || null;
+  const urlOfId = (id) => (byId(id) || {}).url ?? '';
+  const aliasesOfId = (id) => (byId(id) || {}).aliases ?? [];
+  const label = (id) => (byId(id) || {}).name ?? id;
+  check(`存盘之后 url 落在 salon.json 里（站内路径，${label(idHong)}）`,
+    !!idHong && urlOfId(idHong) === '/iceberg/', `${label(idHong)}=${urlOfId(idHong)}`);
+  check(`http(s) 外链也留得住（${label(idJiji)}）`,
+    !!idJiji && urlOfId(idJiji) === 'https://example.com/jiji', `${label(idJiji)}=${urlOfId(idJiji)}`);
+  check('★ javascript: 这种脏协议被挡成空串', !!idDirty && urlOfId(idDirty) === '', JSON.stringify(urlOfId(idDirty)));
+  check(`aliases（额外写法）也存下来了（${label(idJiji)}）`,
+    !!idJiji && aliasesOfId(idJiji).includes('吉吉大王'), JSON.stringify(aliasesOfId(idJiji)));
   /* 马甲的清洗：空格要去、重复只留一条、空串丢掉、最多 20 条 */
-  const aliases = aliasesOf('羽之颂');
+  const aliases = aliasesOfId(idMask);
   check('★ 马甲存盘往返：首尾空格去掉了、重复的只留一条、空串丢掉了（送上去 29 条）',
-    aliases[0] === '澄净羽之颂' && aliases.filter((a) => a === '澄净羽之颂').length === 1 &&
+    !!idMask && aliases[0] === '甲马甲' && aliases.filter((a) => a === '甲马甲').length === 1 &&
       !aliases.some((a) => !String(a).trim()),
-    JSON.stringify(aliases.slice(0, 4)) + ` … 共 ${aliases.length} 条`);
+    `${label(idMask)}：` + JSON.stringify(aliases.slice(0, 4)) + ` … 共 ${aliases.length} 条`);
   check('★ 马甲最多 20 条（送上去 29 条，落盘 20 条 —— 和编辑器那一栏的上限一致）',
     aliases.length === 20, `落盘 ${aliases.length} 条`);
-  info(`存盘后马甲：${after.members.filter((m) => (m.aliases || []).length).map((m) => `${m.name}←${m.aliases.join('/')}`).join(' ')}`);
-  check('之前填过的 url 没有被这次保存冲掉（D 段那个 /about/）', urlOf(pickName) === target2, urlOf(pickName));
+  info(`存盘后马甲：${after.members.filter((m) => (m.aliases || []).length).map((m) => `${m.name}←${(m.aliases || []).join('/')}`).join(' ')}`);
+  check('之前填过的 url 没有被这次保存冲掉（D 段那个 /about/）', urlOfId(xiId) === target2, urlOfId(xiId));
   const kept = after.members.length;
   check('成员一个都没丢', kept === cur.members.length, `${cur.members.length} → ${kept}`);
   info(`存盘前 url：${beforeUrl.filter((m) => m.url).map((m) => `${m.name}=${m.url}`).join(' ') || '（都空着）'}`);
@@ -1329,14 +1440,19 @@ if (devHome) {
     devHome.includes('mem__face') && devHome.includes('mem__label') && devHome.includes('mem__zoom'));
   check('dev 下 Raw 的落日 + 「冰室之主」也在',
     devHome.includes('mem__card--sun') && devHome.includes('冰室之主'));
-  /* 马甲在 dev 这条路（用户启动器的「看效果」）上也要生效 */
-  if (aliasSpot && aliasSpot.page === 'huaya/bingshi/index.html') {
-    check(`★ dev 模式下马甲也链上（这一页上的「${aliasSpot.alias}」）`,
-      devHomeClean.includes(`<span class="mem__text">${aliasSpot.alias}</span>`) &&
-        devHomeClean.includes(`<span class="mem__label">${aliasSpot.member.name}</span>`),
-      `${aliasSpot.member.name}←${aliasSpot.alias}`);
-  } else {
-    info('这一页（/huaya/bingshi/）上没有马甲出现，跳过 dev 下的马甲那条');
+  /*
+    马甲在 dev 这条路（用户启动器的「看效果」）上也要生效。
+    ⚠ 不能拿 C 段挑出来的那个马甲来验：E 段刚把副本里那个成员的 aliases 整批换成了
+    验收用的假马甲，所以要在**副本当前的数据**里现找一个"真在这一页上出现过的马甲"。
+  */
+  {
+    const copyMembersNow = JSON.parse(fs.readFileSync(copyData, 'utf8')).members;
+    const hit = copyMembersNow
+      .flatMap((m) => (m.aliases || []).map((a) => ({ member: m, alias: a })))
+      .find(({ alias }) => devHomeClean.includes(`<span class="mem__text">${alias}</span>`));
+    check('★ dev 模式下马甲也链上（在 dev 页面上现找一个真出现的马甲，验它和正式名）',
+      !!hit && devHomeClean.includes(`<span class="mem__label">${hit.member.name}</span>`),
+      hit ? `${hit.member.name}←${hit.alias}` : '这一页上一个马甲都没出现（数据可能被前几段改过了）');
   }
   check('dev 下 HTML 是完整的（没有把 content-length 写坏 / 截断）',
     devHome.trimEnd().endsWith('</html>'), JSON.stringify(devHome.trimEnd().slice(-20)));

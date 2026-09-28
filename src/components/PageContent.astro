@@ -32,9 +32,18 @@ import NavBlock from './NavBlock.astro';
 import { withBase } from '../utils/url';
 import { enhanceHtml, variantUrl, viewUrls } from '../utils/images';
 import type { BlockItem, SubPost } from '../utils/boardPage';
-import { DEFAULT_LINE_COLOR, isLinkUrl, mapPages, type PageBlock } from '../utils/boards';
+import { DEFAULT_LINE_COLOR, flattenBoards, isLinkUrl, mapPages, type BoardNode, type PageBlock } from '../utils/boards';
 import { headingRe, makeSlugger, plainText } from '../utils/anchors';
 import { refParam, type Timeline } from '../utils/timelines';
+import site from '../site.config';
+/*
+  「助手日志」和「近期更新」两块的数据（2026-09-28 加的）。
+  ⚠ 它们**故意不放在 home-boards.json 里**：助手写日志的工具和编辑器的版块草稿
+  会互相覆盖（用户原话「更新日志里你写的内容不会同步进编辑器里 所以现在我没法操作」）。
+  分开两份文件之后，助手只写 mianyu.json、编辑器只写 recent-edits.json，谁也不碰谁。
+*/
+import mianyuLog from '../data/mianyu.json';
+import recentEdits from '../data/recent-edits.json';
 
 interface Props {
   blocks: PageBlock[];
@@ -200,6 +209,13 @@ function renderTracked(text: string, collect: boolean): string {
 */
 const textHtml = new Map<number, string>();
 const columnsHtml = new Map<number, { left: string; right: string }>();
+/**
+ * 助手日志块渲染好的内容：块下标 → 每一天（日期 + 锚点 id + 正文 HTML）。
+ * 一天的锚点 id 在这里就算好（用**这一页统一那把** slugger），
+ * 于是目录、深链接（`/huaya/memory/mianyu#2026-9-28`）、以及
+ * dist/anchors.json 里编辑器能挑的那一条，指的是同一个位置。
+ */
+const logsHtml = new Map<number, { date: string; slug: string; body: string }[]>();
 blocks.forEach((b, i) => {
   if (b.type === 'text') {
     textHtml.set(i, renderTracked(b.text, true));
@@ -208,6 +224,19 @@ blocks.forEach((b, i) => {
       left: renderTracked(b.left, true),
       right: renderTracked(b.right, true),
     });
+  } else if (b.type === 'logs') {
+    logsHtml.set(
+      i,
+      (mianyuLog.entries ?? []).map((e) => {
+        const date = String(e.date ?? '').trim();
+        const slug = uniqueSlug(date);
+        /* 日期也进目录：11 天的日志没有目录很难翻（日期本身就是 h2 一级） */
+        tocEntries.push({ depth: 2, slug, text: date });
+        /* 正文按普通 Markdown 渲染：粗体、段落、链接、悬停卡片都照旧；
+           不 collect —— 日志正文里的小标题不进目录（目录是"哪一天"） */
+        return { date, slug, body: renderTracked(String(e.text ?? ''), false) };
+      })
+    );
   }
 });
 
@@ -268,6 +297,37 @@ const videoOf = (raw: string): VideoPlan => {
 const cardDefs = (b: PageBlock) => {
   const any = b as { shape?: 'wide' | 'square' | 'tall'; size?: 'l' | 'm' | 's' };
   return { shape: any.shape ?? 'wide', size: any.size ?? 'l' } as const;
+};
+
+/* ------------------------------------------------------------------
+   「近期更新」：最近通过编辑器改动过的几个页面
+
+   数据是编辑器每次保存成功时追加的（server.mjs 的 noteEdit()），
+   这里只到"页面名 + 什么时候改的 + 点它跳过去"。
+   ⚠ 认不出来的地址直接跳过：页面被删了 / 改了名就不再显示 ——
+   点一个 404 比少一张卡难受得多（和卡片框里认不出的 ref 一个态度）。
+   ------------------------------------------------------------------ */
+const flatPages = flattenBoards(site.homeBoards as BoardNode[]);
+const normHref = (v: string) => String(v || '').replace(/\/+$/, '') || '/';
+const recentOf = (b: PageBlock) => {
+  const count = b.type === 'recent' ? Math.max(1, Math.min(12, Number(b.count) || 3)) : 3;
+  const out: { href: string; title: string; at: string; when: string }[] = [];
+  for (const e of recentEdits.edits ?? []) {
+    const href = normHref(String(e.href ?? ''));
+    if (!href) continue;
+    const hit = flatPages.find((f) => !f.external && normHref(f.url) === href);
+    /* 认不出来（页面没了）就跳过 —— 但"首页"在树里不是一个节点，单独兜一下 */
+    const title = hit ? hit.node.title : href === '/' ? '花涧堂' : '';
+    if (!title) continue;
+    const at = String(e.at ?? '');
+    const d = new Date(at);
+    const when = Number.isNaN(d.getTime())
+      ? ''
+      : `${d.getMonth() + 1}.${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+    out.push({ href, title, at, when });
+    if (out.length >= count) break;
+  }
+  return out;
 };
 
 /** 这个块是不是「摆子页面卡」的块 */
@@ -443,6 +503,64 @@ function cardsForBlock(b: PageBlock): { list: BlockItem[]; missing: string[] } {
             </figure>
           )}
 
+          {b.type === 'logs' &&
+            (() => {
+              const days = logsHtml.get(bi) ?? [];
+              if (!days.length) {
+                return (
+                  <p class="plogs__empty">
+                    还没有日志。助手每做完一件事会往 <code>src/data/mianyu.json</code> 里记一栏
+                    （<code>node tools/memory/append-log.mjs</code>）。
+                  </p>
+                );
+              }
+              return (
+                <section class="plogs" aria-label={b.text || mianyuLog.title || '眠鱼志'} data-logs="1">
+                  {b.text ? <h2 class="plogs__title">{b.text}</h2> : null}
+                  <ol class="plogs__list">
+                    {days.map((d) => (
+                      <li class="plogs__item" data-log-date={d.date}>
+                        {/* 日期本身就是锚点：时间轴的点、导航条目、别人的链接都能落到某一天 */}
+                        <h2 class="plogs__date" id={d.slug}>
+                          <a class="plogs__datelink" href={`#${d.slug}`}>
+                            {d.date}
+                          </a>
+                        </h2>
+                        <div class="plogs__body" set:html={d.body} />
+                      </li>
+                    ))}
+                  </ol>
+                </section>
+              );
+            })()}
+
+          {b.type === 'recent' &&
+            (() => {
+              const items = recentOf(b);
+              return (
+                <section class="precent" aria-label={b.text || '近期更新'} data-recent="1">
+                  <p class="precent__head">
+                    <span class="precent__title">{b.text || '近期更新'}</span>
+                    <span class="precent__hint">最近在编辑器里改过的页面</span>
+                  </p>
+                  {items.length === 0 ? (
+                    <p class="precent__empty">还没有记录。在编辑器里改点什么，这里就会冒出来。</p>
+                  ) : (
+                    <ul class="precent__list">
+                      {items.map((it) => (
+                        <li class="precent__item">
+                          <a class="precent__card" href={withBase(it.href)}>
+                            <span class="precent__name">{it.title}</span>
+                            {it.when ? <time class="precent__at">{it.when}</time> : null}
+                          </a>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </section>
+              );
+            })()}
+
           {b.type === 'posts' && (
             <section class="pposts">
               {b.text ? <h2 class="pposts__title">{b.text}</h2> : null}
@@ -465,8 +583,7 @@ function cardsForBlock(b: PageBlock): { list: BlockItem[]; missing: string[] } {
             </section>
           )}
 
-          {b.type === 'toc' &&
-            (tocGroups.length === 0 ? (
+          {b.type === 'toc' &&            (tocGroups.length === 0 ? (
               <p class="ptoc__empty">
                 这一页还没有小标题。在上面加一个「文字」块，用 <code>## 小标题</code> 写一行，
                 这里就会自动列出来。
@@ -1185,6 +1302,155 @@ function cardsForBlock(b: PageBlock): { list: BlockItem[]; missing: string[] } {
     font-size: 0.72rem;
     color: rgba(255, 226, 244, 0.55);
     white-space: nowrap;
+  }
+
+  /* ---------- 助手日志（眠鱼志，2026-09-28）----------
+     一天一栏：日期是带锚点的 h2，正文照旧按 Markdown 渲染。
+     视觉跟着「文章列表」那一套深紫底 + 粉边，别在这一页里自成一家。
+     正文是 set:html 注进来的，里面的 p / a 拿不到作用域属性，所以要 :global。 */
+  .plogs {
+    padding: 0.9rem 1.1rem;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 120, 190, 0.3);
+    background: rgba(38, 4, 52, 0.4);
+  }
+  .plogs__title {
+    margin: 0 0 0.6rem;
+    font-size: 0.98rem;
+    letter-spacing: 0.14em;
+    color: rgba(255, 236, 248, 0.85);
+  }
+  .plogs__list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .plogs__item {
+    padding: 1.05rem 0;
+    border-top: 1px dashed rgba(255, 120, 190, 0.22);
+  }
+  .plogs__item:first-child {
+    padding-top: 0.15rem;
+    border-top: 0;
+  }
+  .plogs__date {
+    margin: 0 0 0.4rem;
+    font-size: 1rem;
+    font-family: var(--font-display);
+    letter-spacing: 0.1em;
+  }
+  .plogs__datelink {
+    color: #ffd9ef;
+    text-decoration: none;
+  }
+  .plogs__datelink:hover {
+    color: #fff;
+    text-shadow: 0 0 10px rgba(255, 79, 163, 0.9);
+  }
+  .plogs__body {
+    font-size: 0.94rem;
+    line-height: 1.85;
+    color: rgba(255, 236, 248, 0.86);
+    letter-spacing: 0.02em;
+  }
+  .plogs__body :global(p) {
+    margin: 0 0 0.6em;
+  }
+  .plogs__body :global(p:last-child) {
+    margin-bottom: 0;
+  }
+  .plogs__body :global(a) {
+    color: #ff8ec4;
+  }
+  .plogs__body :global(code) {
+    font-size: 0.86em;
+    padding: 0 0.28em;
+    border-radius: 4px;
+    background: rgba(20, 0, 30, 0.5);
+  }
+  .plogs__empty {
+    margin: 0;
+    font-size: 0.9rem;
+    color: rgba(255, 226, 244, 0.6);
+  }
+
+  /* ---------- 近期更新 ----------
+     编辑器每次保存都会往 src/data/recent-edits.json 记一笔，
+     这里把最近三张列成卡：页面名 + 什么时候改的，点它跳过去。 */
+  .precent {
+    padding: 0.9rem 1.1rem;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 120, 190, 0.3);
+    background: rgba(38, 4, 52, 0.4);
+  }
+  .precent__head {
+    display: flex;
+    align-items: baseline;
+    gap: 0.6rem;
+    flex-wrap: wrap;
+    margin: 0 0 0.6rem;
+  }
+  .precent__title {
+    font-size: 0.98rem;
+    letter-spacing: 0.14em;
+    color: rgba(255, 236, 248, 0.85);
+  }
+  .precent__hint {
+    font-size: 0.74rem;
+    color: rgba(255, 226, 244, 0.5);
+  }
+  .precent__list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 0.5rem;
+  }
+  .precent__card {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.6rem;
+    padding: 0.5rem 0.7rem;
+    border-radius: 9px;
+    border: 1px solid rgba(255, 120, 190, 0.28);
+    background: rgba(20, 0, 30, 0.42);
+    color: #ffd9ef;
+    text-decoration: none;
+    transition: border-color 0.14s ease, color 0.14s ease, transform 0.14s ease;
+  }
+  .precent__card:hover,
+  .precent__card:focus-visible {
+    border-color: #ff4fa3;
+    color: #fff;
+    transform: translateY(-1px);
+    outline: none;
+  }
+  .precent__card:focus-visible {
+    box-shadow: 0 0 0 2px rgba(255, 79, 163, 0.55);
+  }
+  .precent__name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .precent__at {
+    flex: 0 0 auto;
+    font-size: 0.72rem;
+    color: rgba(255, 226, 244, 0.55);
+    white-space: nowrap;
+  }
+  .precent__empty {
+    margin: 0;
+    font-size: 0.9rem;
+    color: rgba(255, 226, 244, 0.6);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .precent__card {
+      transition: none;
+    }
   }
 
   /* ---------- 地图 ---------- */

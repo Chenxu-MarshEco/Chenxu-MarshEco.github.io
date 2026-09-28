@@ -891,14 +891,11 @@ function updateCoverPreview() {
   }
 }
 
-function readFileAsDataURL(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result || ''));
-    reader.onerror = () => reject(new Error('读取文件失败'));
-    reader.readAsDataURL(file);
-  });
-}
+/*
+  ⚠ 这里原来有个 readFileAsDataURL —— 把文件读成 base64 的 data URL 再上传。
+  2026-09-28 上传改成"原图直接当请求体"之后就没人用它了 —— 删掉，
+  免得以后有人顺手又拿它去传大图（base64 胀 1/3，还会把整张图读进内存）。
+*/
 
 /* ---------------------------------------------------------------
    上传图片
@@ -908,28 +905,65 @@ function readFileAsDataURL(file) {
    现在服务端有一条真正的图像管线（tools/images/optimize.mjs，用 sharp），
    所以浏览器这一道不但多余，还有害：canvas 的编码器比 mozjpeg 差一截，
    两遍 JPEG 等于「画质掉两回、体积还更大」。
-   现在原图直接传（localhost 上多传几 MB 无所谓），压缩统一在服务端做：
-   mozjpeg q82 + 限宽 1920 + 按 EXIF 摆正 + 去元数据，顺手生成
-   WebP/AVIF 多尺寸和模糊占位。接口会把压前/压后的字节数回给前端，
+   压缩统一在服务端做：mozjpeg q82 + 限宽 1920 + 按 EXIF 摆正 + 去元数据，
+   顺手生成 WebP/AVIF 多尺寸和模糊占位。接口会把压前/压后的字节数回给前端，
    下面提示里报的就是真实数字，不是估算。
+
+   ⚠ 2026-09-28 换了**传输方式**（用户报的：「我上传一个 9mb 的图片到编辑器里
+   却提示不能上传超过 12mb」）。以前这里先把文件读成 data URL（base64）塞进
+   JSON 再 POST，而 base64 要胀 1/3 —— 9MB 的图到了服务端已经是 12MB 的请求体，
+   正好撞在「JSON 请求体 12MB」那条上限上（另外服务端还有一条"单张 10MB"）。
+   现在**原图直接当请求体**发（`body: file`，`?name=` 带文件名）：
+   不 base64、不进 JSON，服务端边收边写临时文件、落盘前再压。
+   所以前端这边**没有任何大小限制**了，多大的图都直接发。
    --------------------------------------------------------------- */
 
 async function uploadImage(file) {
   if (!file) throw new Error('没有选择文件');
-  if (file.size > 20 * 1024 * 1024) throw new Error('图片超过 20MB，先裁一下再传');
+  /* 大图先吱一声：几 MB 的图要收 + 压一两秒，别让人以为点空了 */
+  if (file.size > 4 * 1024 * 1024) toast(`正在上传并压缩：${mb(file.size)}…`);
 
-  const dataUrl = await readFileAsDataURL(file);
-  const res = await apiPost('/api/upload', { name: file.name, dataUrl });
+  const res = await api(`/api/upload?name=${encodeURIComponent(file.name || 'image')}`, {
+    method: 'POST',
+    headers: { 'Content-Type': file.type || 'application/octet-stream' },
+    body: file,
+  });
 
   const before = Number(res.before ?? file.size);
   const after = Number(res.after ?? res.size ?? 0);
-  if (after > 0 && before > after) {
-    const fmt = (n) => (n >= 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)}MB` : `${Math.round(n / 1024)}KB`);
-    toast(`图片已压缩后上传：${fmt(before)} → ${fmt(after)}${res.note ? `（${res.note}）` : ''}`);
-  } else if (res.note) {
-    toast(`图片已上传（${res.note}）`);
-  }
+  /*
+    "压前 → 压后"记在这儿、**不自己 toast**：上传点后面都会再 toast 一句
+    （「成员头像已上传：…」），自己先 toast 会被它盖掉，用户就看不到 9.3MB → 0.9MB
+    这个数了。所以统一由下面 toastUploaded() 接在那一句后面。
+  */
+  lastUploadNote =
+    after > 0 && before > after
+      ? `${mb(before)} → ${mb(after)}${res.note ? `，${res.note}` : ''}`
+      : String(res.note || '');
   return res.path;
+}
+
+/** 字节数说成人话（上传提示里那句 9.3MB → 0.9MB 用的就是它） */
+function mb(n) {
+  return n >= 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)}MB` : `${Math.round(n / 1024)}KB`;
+}
+
+/** 最近一次上传的"压前 → 压后"（取一次就清，免得串到别的提示上） */
+let lastUploadNote = '';
+function takeUploadNote() {
+  const n = lastUploadNote;
+  lastUploadNote = '';
+  return n;
+}
+
+/**
+ * 上传成功后那句提示 —— 顺手把压缩数字接在后面。
+ * 用户传大图时最想知道的就是"到底压到多小"，而各个上传点自己 toast 的那句话
+ * 会盖掉 uploadImage 里的报告，所以上传点统一走这个函数。
+ */
+function toastUploaded(message) {
+  const note = takeUploadNote();
+  toast(note ? `${message}（${note}）` : message);
 }
 
 /* ---------------------------------------------------------------
@@ -1083,7 +1117,7 @@ async function insertImageFile(file, fallbackName) {
     const name = file.name || fallbackName || '图片';
     const alt = name.replace(/\.[^.]+$/, '');
     blockInsert(`![${alt}](${p})`);
-    toast('已插入图片');
+    toastUploaded('已插入图片');
     return true;
   } catch (err) {
     toast(`上传失败：${err.message}`, true);
@@ -1463,7 +1497,7 @@ function bindImageDropAndPaste() {
 function openImageModal() {
   els.modalUrl.value = '';
   els.modalAlt.value = '';
-  els.modalUploadHint.textContent = '支持 png / jpeg / gif / webp / svg，单张不超过 10MB。';
+  els.modalUploadHint.textContent = '支持 png / jpeg / gif / webp / svg，多大的图都行（上传时会自动压小）。';
   els.imgModal.hidden = false;
   els.modalUrl.focus();
 }
@@ -1494,6 +1528,49 @@ function doInsertImage() {
    --------------------------------------------------------------- */
 
 let boardsDraft = null;
+/**
+ * 上一次从盘上读进来（或刚保存成功）的那一份，**序列化过**。
+ *
+ * 用途只有一个：保存时比出"这次到底改了哪几页"，好往「近期更新」
+ * （src/data/recent-edits.json）里记一笔 —— 用户要的"最近改过的三个页面"
+ * 得是真改过的页面，不是"当前打开着的那一页"。
+ */
+let boardsPristine = '';
+
+/**
+ * 这次保存改了哪几个节点（返回节点 id）。
+ *
+ * 比的是每个节点**自己的字段 + 它那一页的内容**，不递归比子节点 ——
+ * 递归的话改一个孙子节点会把整条祖先链都算成"改过"，最近更新里就会冒出一堆
+ * 其实没动的父页面。
+ */
+function touchedBoardIds() {
+  let before = null;
+  try {
+    before = boardsPristine ? JSON.parse(boardsPristine) : null;
+  } catch {
+    before = null;
+  }
+  const flat = (tree) => {
+    const out = new Map();
+    const walk = (n) => {
+      if (!n || !n.id) return;
+      out.set(String(n.id), n);
+      for (const k of Array.isArray(n.children) ? n.children : []) walk(k);
+    };
+    for (const b of tree?.boards ?? []) walk(b);
+    return out;
+  };
+  const a = flat(before);
+  const b = flat(boardsDraft);
+  /* `__k` 是面板内部给节点编的键（每次重画都会变），不能进签名 */
+  const sig = (n) => (n ? JSON.stringify({ ...n, children: undefined, __k: undefined }) : '');
+  const ids = [];
+  for (const [id, node] of b) {
+    if (!a.has(id) || sig(a.get(id)) !== sig(node)) ids.push(id);
+  }
+  return ids;
+}
 
 async function openBoardsModal() {
   markWorkspaceActive('boards');
@@ -1512,6 +1589,7 @@ async function openBoardsModal() {
     const res = await fetch('/api/boards');
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     boardsDraft = await res.json();
+      boardsPristine = JSON.stringify(boardsDraft);
     renderBoardsEditor();
   } catch (err) {
     els.boardsEditor.textContent = `读取失败：${err.message}`;
@@ -1764,6 +1842,8 @@ const BLOCK_LABEL = {
   card: '单张卡',
   cardbox: '卡片框',
   nav: '导航',
+  logs: '助手日志',
+  recent: '近期更新',
 };
 const TEXT_HINT =
   '支持 Markdown：**粗体**、[链接](地址)、- 列表、![图](/img/uploads/x.png)、## 小标题、[[文字|图片地址]]（悬停出图）、[[文字|图片地址|链接地址]]（悬停出图 + 点击跳转）';
@@ -1829,6 +1909,7 @@ async function openPagesView(node = null) {
       const res = await fetch('/api/boards');
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       boardsDraft = await res.json();
+      boardsPristine = JSON.stringify(boardsDraft);
     } catch (err) {
       els.pwList.textContent = `读取失败：${err.message}`;
       return;
@@ -2274,6 +2355,7 @@ async function openSoloView(node = null) {
       const res = await fetch('/api/boards');
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       boardsDraft = await res.json();
+      boardsPristine = JSON.stringify(boardsDraft);
     } catch (err) {
       els.soloList.textContent = `读取失败：${err.message}`;
       return;
@@ -3062,7 +3144,7 @@ function mapFields(block) {
       onFiles: async ([f]) => {
         try {
           page.src = await uploadImage(f);
-          toast('地图传好了');
+          toastUploaded('地图传好了');
           markStudioDirty();
           redraw();
         } catch (err) {
@@ -3660,7 +3742,7 @@ function blockFields(block) {
         }
         if (!lines.length) return;
         insertIntoTextarea(ta, `\n${lines.join('\n')}\n`);
-        toast(`已插入 ${lines.length} 张图片`);
+        toastUploaded(`已插入 ${lines.length} 张图片`);
       },
       onUrl: (url) => {
         insertIntoTextarea(ta, `\n![](${url})\n`);
@@ -3713,7 +3795,7 @@ function blockFields(block) {
         try {
           block.src = await uploadImage(f);
           paint();
-          toast('图片传好了');
+          toastUploaded('图片传好了');
         } catch (err) {
           toast(`传图失败：${err.message}`, true);
         }
@@ -3838,6 +3920,47 @@ function blockFields(block) {
     hint.className = 'pblock-edit__hint';
     hint.textContent =
       '自动把这一页里所有「## 小标题」和「### 子标题」收集成一份带序号的目录，点一条就跳到那里。它自己不产生正文，放在开头最像目录。页面里还没有小标题时，先在上面加个文字块写 ## 标题。';
+    wrap.append(row, hint);
+    return wrap;
+  }
+
+  /*
+    助手日志 / 近期更新（2026-09-28 加的）：
+    两块的内容都不在这个页面数据里（日志在 src/data/mianyu.json、
+    "最近改过哪些页"在 src/data/recent-edits.json），所以面板上只有标题（和条数）。
+  */
+  if (block.type === 'logs') {
+    const row = document.createElement('div');
+    row.className = 'pblock-edit__row';
+    row.append(
+      boardInput(block.text ?? '', '这一块的标题（可留空，默认就叫「眠鱼志」）', (v) => {
+        block.text = v;
+      })
+    );
+    const hint = document.createElement('p');
+    hint.className = 'pblock-edit__hint';
+    hint.textContent =
+      '把「眠鱼志」那份日志（src/data/mianyu.json）按天铺在这里：一天一栏，日期自动带锚点（能深层链接到某一天）。日志由助手的工具写（node tools/memory/append-log.mjs），和这个页面数据是分开的两份文件 —— 编辑器保存版块树不会覆盖它，助手写日志也不会覆盖你的改动。';
+    wrap.append(row, hint);
+    return wrap;
+  }
+
+  if (block.type === 'recent') {
+    const row = document.createElement('div');
+    row.className = 'pblock-edit__row';
+    const title = boardInput(block.text ?? '', '这一块的标题（可留空，默认就叫「近期更新」）', (v) => {
+      block.text = v;
+    });
+    const count = boardInput(String(block.count ?? 3), '列几个（默认 3）', (v) => {
+      const n = Number(v);
+      block.count = Number.isFinite(n) && n >= 1 ? Math.min(12, Math.round(n)) : 3;
+    });
+    count.style.maxWidth = '6rem';
+    row.append(title, count);
+    const hint = document.createElement('p');
+    hint.className = 'pblock-edit__hint';
+    hint.textContent =
+      '列出最近在编辑器里**保存过**的几个页面（页面名 + 改动时间），点一张跳过去。数据来自 src/data/recent-edits.json：编辑器每次保存都会往那儿记一笔（同一页只留最新一条）。认不出来的地址会自动跳过（页面删了就不会剩一张点不开的卡）。';
     wrap.append(row, hint);
     return wrap;
   }
@@ -4583,6 +4706,14 @@ function renderPageEditor() {
     ['toc', '目录', () => ({ id: newBlockId(pageNode.id), type: 'toc', text: '' })],
     // 导航：引用分类库里的大分类（页面里只存 id，条目内容在库里）
     ['nav', '导航', () => ({ id: newBlockId(pageNode.id), type: 'nav', cats: [], text: '' })],
+    /*
+      助手日志 / 近期更新（2026-09-28 加的）：
+      两块的内容都在别的数据文件里，页面里只是"摆这一块"。
+    */
+    ['logs', '助手日志', () => ({ id: newBlockId(pageNode.id), type: 'logs', text: '' }),
+      '把「眠鱼志」那份日志（src/data/mianyu.json）按天铺在这里：一天一栏，日期自动带锚点'],
+    ['recent', '近期更新', () => ({ id: newBlockId(pageNode.id), type: 'recent', text: '', count: 3 }),
+      '列出最近在编辑器里改过的几个页面（默认 3 个），点卡片跳过去'],
     // 地图是分页的，新建时就直接建成分页形状（别再造老那种 src+markers 挂在块上的了）
     ['map', '地图', () => ({ id: newBlockId(pageNode.id), type: 'map', pages: [] })],
   ];
@@ -4651,6 +4782,10 @@ function commitPageBlocks() {
       b.type === 'posts' ||
       b.type === 'toc' ||
       b.type === 'nav' ||
+      /* 助手日志 / 近期更新：内容都在别的数据文件里，块自己"空"是正常的 ——
+         一保存就把它删掉的话，用户会以为"加了块它自己没了" */
+      b.type === 'logs' ||
+      b.type === 'recent' ||
       /* 单张卡 / 卡片框本身就是作者特意放的结构：还没挑子页面也得留着，
          不然「先加个框、再去挑卡」中间保存一次，框就没了 */
       b.type === 'card' ||
@@ -4735,7 +4870,7 @@ function boardCoverControl(node, onChange = renderBoardsEditor, opts = {}) {
       try {
         node.image = await uploadImage(f);
         onChange();
-        toast(`${label.pick}传好了，记得保存`);
+        toastUploaded(`${label.pick}传好了，记得保存`);
       } catch (err) {
         toast(`传图失败：${err.message}`, true);
       }
@@ -7175,6 +7310,7 @@ async function openNavsModal() {
       try {
         const res = await fetch('/api/boards');
         if (res.ok) boardsDraft = await res.json();
+      boardsPristine = JSON.stringify(boardsDraft);
       } catch {
         /* 忽略：没有版块树照样能编辑分类，只是不做「站内没这一页」的提示 */
       }
@@ -7955,10 +8091,22 @@ async function saveBoards({ silent = false } = {}) {  try {
     const res = await fetch('/api/boards', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(boardsDraft),
+      /*
+        `current` = 现在正在编哪一页（节点 id）。
+        服务端拿它往「近期更新」（src/data/recent-edits.json）里记一笔 ——
+        保存时才知道"用户刚动的是这一页"，事后从整棵树里猜不出来。
+      */
+      body: JSON.stringify({
+        ...boardsDraft,
+        /* 这次真的改了哪几页（见 touchedBoardIds）+ 当前打开着的那一页（兜底） */
+        touched: touchedBoardIds(),
+        current: pageNode?.id || '',
+      }),
     });
     const data = await res.json();
     if (!res.ok || !data.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    /* 存下去了 = 这份草稿就是新的"干净态"，下次保存再拿它当基准比 */
+    boardsPristine = JSON.stringify(boardsDraft);
 
     // 子版块清单变了，勾选框的缓存必须作废重拉 ——
     // 否则刚加的子版块在「所属子版块」里根本选不到。
@@ -9282,6 +9430,8 @@ async function saveMusic() {
   try {
     const data = await apiPost('/api/music', {
       music: { tracks: musicDraft.tracks, pages: musicDraft.pages },
+      /* 现在编的是哪一页的歌单 —— 服务端拿它往「近期更新」里记一笔 */
+      pageKey: musicKey,
     });
     // 存完拿服务端那份重画：写回去的是清洗过的，界面上看到的要和落盘一致
     await loadMusic();
@@ -9559,7 +9709,7 @@ function imageSlot({ label, getValue, setValue, onChanged, onValue, accept, mult
       for (const f of files) {
         const p = await uploadImage(f);
         write(p);
-        toast(`${label}已上传：${p}`);
+        toastUploaded(`${label}已上传：${p}`);
       }
     },
     onUrl: (url) => {
@@ -9659,7 +9809,7 @@ function markPanelDirty(statusEl, group = '') {
  * 只发自己那一块的话，另一块里「改了还没保存」的内容会被服务端的
  * 盘上值覆盖掉。服务端逐块清洗，所以多带不吃亏。
  */
-async function saveWidgets(btn, statusEl) {
+async function saveWidgets(btn, statusEl, panel = '') {
   const was = btn.textContent;
   btn.disabled = true;
   btn.textContent = '正在保存…';
@@ -9669,7 +9819,9 @@ async function saveWidgets(btn, statusEl) {
     const res = await fetch('/api/widgets', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(widgetsDraft),
+      /* panel = 这次动的是首页四块里的哪一块：服务端拿它往「近期更新」里记对应的页面
+         （关于我 / 首页 / 冰室精华），不传就只能算到首页头上 */
+      body: JSON.stringify({ ...widgetsDraft, panel }),
     });
     const data = await res.json();
     if (!res.ok || !data.ok) throw new Error(data.error || `HTTP ${res.status}`);
@@ -9885,7 +10037,7 @@ function renderCalendarPanel() {
       window.open(`${PREVIEW_URL}/`, '_blank', 'noopener');
     }),
     panelBtn('保存并重新构建', '写进 src/data/home-widgets.json 并重新构建站点', () =>
-      saveWidgets(els.calSave, status), true, 'cal-save'),
+      saveWidgets(els.calSave, status, 'calendar'), true, 'cal-save'),
   );
   els.calSave = $('cal-save');
 }
@@ -9970,7 +10122,7 @@ function renderAboutPanel() {
       window.open(`${PREVIEW_URL}/about-me/`, '_blank', 'noopener');
     }),
     panelBtn('保存并重新构建', '写进 src/data/home-widgets.json 并重新构建站点', () =>
-      saveWidgets(els.aboutSave, status), true, 'about-save'),
+      saveWidgets(els.aboutSave, status, 'about'), true, 'about-save'),
   );
   els.aboutSave = $('about-save');
 }
@@ -10050,7 +10202,7 @@ function renderIcebergPanel() {
       window.open(`${PREVIEW_URL}/iceberg/`, '_blank', 'noopener');
     }),
     panelBtn('保存并重新构建', '写进 src/data/home-widgets.json 并重新构建站点', () =>
-      saveWidgets(els.icebergSave, status), true, 'iceberg-save'),
+      saveWidgets(els.icebergSave, status, 'iceberg'), true, 'iceberg-save'),
   );
   els.icebergSave = $('iceberg-save');
 }
@@ -11476,7 +11628,7 @@ function openEssenceForm(host, status, existing = null) {
         for (const f of files) {
           const p = await uploadImage(f);
           draft.images.push(p);
-          toast(`精华图片已上传：${p}`);
+          toastUploaded(`精华图片已上传：${p}`);
         }
       } finally {
         pick.disabled = false;
@@ -11983,7 +12135,7 @@ function bindEvents() {
         els.cover.value = p;
         updateCoverPreview();
         onFormChanged();
-        toast(`封面已上传：${p}`);
+        toastUploaded(`封面已上传：${p}`);
       } catch (err) {
         toast(`上传失败：${err.message}`, true);
       }
@@ -12093,7 +12245,8 @@ function bindEvents() {
         const p = await uploadImage(file);
         els.modalUrl.value = p;
         if (!els.modalAlt.value) els.modalAlt.value = file.name.replace(/\.[^.]+$/, '');
-        els.modalUploadHint.textContent = `已上传：${p}`;
+        const note = takeUploadNote();
+        els.modalUploadHint.textContent = `已上传：${p}${note ? `（${note}）` : ''}`;
       } catch (err) {
         els.modalUploadHint.textContent = `上传失败：${err.message}`;
       }

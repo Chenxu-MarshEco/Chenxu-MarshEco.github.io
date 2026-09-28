@@ -18,6 +18,7 @@
 import { marked } from 'marked';
 import { enhanceHtml } from './images';
 import type { PageBlock } from './boards';
+import mianyuLog from '../data/mianyu.json';
 
 /**
  * 标题文字 -> 锚点 id。
@@ -125,6 +126,13 @@ function blockLabel(b: PageBlock, html: string | null, titles?: Map<string, stri
       return b.refs.length ? `子版块框（${b.refs.length} 张）` : '子版块框';
     case 'nav':
       return b.text ? `导航表：${cut(b.text)}` : '导航表';
+    /* 助手日志 / 近期更新（2026-09-28 加的） */
+    case 'logs': {
+      const n = (mianyuLog.entries ?? []).length;
+      return b.text ? `助手日志：${cut(b.text)}` : `助手日志（${n} 天）`;
+    }
+    case 'recent':
+      return b.text && b.text !== '近期更新' ? `近期更新：${cut(b.text)}` : '近期更新';
     default:
       return '内容块';
   }
@@ -164,6 +172,18 @@ export function blockAnchors(
     else if (b.type === 'columns') {
       takeHeadings(renderForAnchors(b.left));
       takeHeadings(renderForAnchors(b.right));
+    } else if (b.type === 'logs') {
+      /*
+        助手日志：一天一个锚点（`/huaya/memory/mianyu#2026-9-28` 这种），
+        这样时间轴的点 / 地图图钉 / 导航条目都能直接落到某一天。
+        ⚠ 日期那行的 id 是**页面渲染时用同一套 slugger 现算的**（PageContent.astro），
+        这里也必须按同样的顺序、同样的算法算一遍，否则挑出来的锚点跳不到。
+      */
+      for (const entry of mianyuLog.entries ?? []) {
+        const text = String(entry.date ?? '').trim();
+        if (!text) continue;
+        out.push({ id: slug(text), text, kind: 'log' });
+      }
     }
   }
 

@@ -19,6 +19,7 @@
 import http from 'node:http';
 import fs from 'node:fs/promises';
 import { createWriteStream } from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomBytes } from 'node:crypto';
@@ -40,10 +41,28 @@ const HOME_IMG_DIR = path.join(PROJECT_ROOT, 'public', 'img', 'home');
 /** 上传音频的落盘目录：public/audio/uploads（按需创建） */
 const AUDIO_DIR = path.join(PROJECT_ROOT, 'public', 'audio', 'uploads');
 
-/** 请求体上限 12MB（只针对 JSON；音频走独立的流式分支，不受它管） */
+/** 请求体上限 12MB（**只针对 JSON**：页面 / 板块 / 成员那些数据请求。
+    图片和音频都不走这条路 —— 它们是原始二进制、边收边写盘，见 handleImageUpload） */
 const MAX_BODY_BYTES = 12 * 1024 * 1024;
-/** 单张图片上限 10MB */
-const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+/**
+ * 图片：**没有产品意义上的大小限制**（2026-09-28 用户报的：
+ * 「我上传一个 9mb 的图片到编辑器里却提示不能上传超过 12mb」）。
+ *
+ * 以前这里有两条限制：前端 20MB、服务端 10MB，另外所有上传都走
+ * 「读成 data URL → 塞进 JSON」这条路，而**请求体上限又是 12MB**。
+ * base64 要胀 1/3，于是一张 9MB 的图到了服务端已经是 12MB 的请求体 ——
+ * 撞上的是 JSON 的上限，用户看到的就是"不能超过 12MB"。
+ *
+ * 现在：前端把**原图直接当请求体**发过来（不 base64、不进 JSON），
+ * 服务端边收边写临时文件，落盘前统一过一遍 compressUpload
+ * （限宽 1920 + mozjpeg/WebP/GIF→动图 WebP），所以多大的图都能进。
+ *
+ * 下面这个数只是个"海啸阀"：真有人拖进来半个 G 的东西，早点报错比把内存吃爆强。
+ * 正常照片 / 截图 / 扫描件离它还差两个数量级。
+ */
+const MAX_IMAGE_BYTES = 128 * 1024 * 1024;
+/** 老的那条「base64 塞 JSON」上传路的请求体上限 —— 也一起抬高了（旧标签页 / 验收脚本还在用） */
+const MAX_JSON_UPLOAD_BYTES = 192 * 1024 * 1024;
 /** 单首音频上限 40MB */
 const MAX_AUDIO_BYTES = 40 * 1024 * 1024;
 
@@ -683,10 +702,10 @@ async function readSiteInfo() {
 }
 
 // ---------------------------------------------------------------
-// 请求体读取（带 12MB 上限）
+// 请求体读取（带上限；图片/音频不走这里）
 // ---------------------------------------------------------------
 
-function readBody(req) {
+function readBody(req, limit = MAX_BODY_BYTES, label = '请求体') {
   return new Promise((resolve, reject) => {
     const chunks = [];
     let size = 0;
@@ -698,10 +717,10 @@ function readBody(req) {
         return;
       }
       size += chunk.length;
-      if (size > MAX_BODY_BYTES) {
+      if (size > limit) {
         done = true;
         chunks.length = 0;
-        reject(httpError(413, '请求体超过 12MB 上限'));
+        reject(httpError(413, `${label}超过 ${Math.round(limit / 1024 / 1024)}MB 上限`));
         return;
       }
       chunks.push(chunk);
@@ -745,35 +764,19 @@ function sanitizeUploadName(name, ext) {
   return `${stamp}-${rand}-${stem}${ext}`;
 }
 
-async function handleUpload(payload) {
-  const name = payload?.name;
-  const dataUrl = payload?.dataUrl;
-  if (typeof dataUrl !== 'string' || !dataUrl.startsWith('data:')) {
-    throw httpError(400, 'dataUrl 必须是 base64 格式的 data URL');
-  }
-  const m = /^data:([a-zA-Z0-9.+/-]+);base64,([\s\S]*)$/.exec(dataUrl);
-  if (!m) throw httpError(400, '只支持 base64 编码的 data URL');
-
-  const mime = m[1].toLowerCase();
-  if (!UPLOAD_MIME.has(mime)) {
-    throw httpError(415, `不支持的图片类型 ${mime}，只允许 png / jpeg / gif / webp / svg`);
-  }
-
-  const raw = Buffer.from(m[2].replace(/\s+/g, ''), 'base64');
-  if (!raw.length) throw httpError(400, '图片内容是空的');
-  if (raw.length > MAX_UPLOAD_BYTES) throw httpError(413, '单张图片不能超过 10MB');
-
-  const ext = UPLOAD_MIME.get(mime);
-
-  /*
-   * 落盘之前先压一遍（tools/images/optimize.mjs 里的 compressUpload）。
-   * 以前这里是把上传的字节原样写进去的 —— 手机拍的 4MB 照片进了仓库就是 4MB，
-   * 页面也就真的去下 4MB。现在：JPEG 走 mozjpeg q82、限宽 1920、按 EXIF 摆正、
-   * 去掉元数据；PNG 走最高压缩级别；GIF/SVG 原样不碰（动图和矢量图不该重编码）。
-   *
-   * 压完顺手跑一次图片管线，这张新图立刻就有 WebP/AVIF 多尺寸和模糊占位，
-   * 编辑器里马上插入引用也不会漏掉优化。压缩失败绝不让上传失败：退回原图。
-   */
+/**
+ * 压一遍 + 落盘 + 登记清单。**两条上传路共用这一份**（原始二进制 / 老的 base64 JSON）。
+ *
+ * 落盘之前先压（tools/images/optimize.mjs 的 compressUpload）：
+ *   jpg → mozjpeg q82、png → 比一比（无损 WebP / WebP q80 / 重新压的 PNG）、
+ *   webp → q80、gif → 动图 WebP。全都限宽 1920、按 EXIF 摆正、去元数据。
+ * 以前这里是把上传的字节原样写进去的 —— 手机拍的 4MB 照片进了仓库就是 4MB，
+ * 页面也就真的去下 4MB。压缩失败绝不让上传失败：退回原图。
+ *
+ * 压完顺手跑一次图片管线，这张新图立刻就有 WebP/AVIF 多尺寸和模糊占位，
+ * 编辑器里马上插入引用也不会漏掉优化。
+ */
+async function storeUploadedImage(raw, name, ext, mime) {
   let out = { buf: raw, ext, before: raw.length, after: raw.length, note: '未压缩' };
   try {
     const mod = await import('../../tools/images/optimize.mjs');
@@ -786,7 +789,6 @@ async function handleUpload(payload) {
   await fs.mkdir(UPLOAD_DIR, { recursive: true });
   await fs.writeFile(path.join(UPLOAD_DIR, filename), out.buf);
 
-  // 让这张新图立刻进清单（管线是增量的，只会编这一张）
   try {
     const mod = await import('../../tools/images/optimize.mjs');
     await mod.optimizeOne(`/img/uploads/${filename}`);
@@ -803,6 +805,126 @@ async function handleUpload(payload) {
     note: out.note,
   };
 }
+
+/**
+ * 老的那条路：`{ name, dataUrl }` 塞在 JSON 里。
+ *
+ * 2026-09-28 起前端不再走它（改成原始二进制，见 handleImageUpload），
+ * 但继续支持：旧标签页、还有 tools/checks/editor-panels-e2e.mjs 都还在用它。
+ * 单张 10MB 的限制已经拿掉了 —— 反正进来就要压，没有理由按原始体积拒收。
+ */
+async function handleUpload(payload) {
+  const name = payload?.name;
+  const dataUrl = payload?.dataUrl;
+  if (typeof dataUrl !== 'string' || !dataUrl.startsWith('data:')) {
+    throw httpError(400, 'dataUrl 必须是 base64 格式的 data URL');
+  }
+  const m = /^data:([a-zA-Z0-9.+/-]+);base64,([\s\S]*)$/.exec(dataUrl);
+  if (!m) throw httpError(400, '只支持 base64 编码的 data URL');
+
+  const mime = m[1].toLowerCase();
+  if (!UPLOAD_MIME.has(mime)) {
+    throw httpError(415, `不支持的图片类型 ${mime}，只允许 png / jpeg / gif / webp / svg`);
+  }
+
+  const raw = Buffer.from(m[2].replace(/\s+/g, ''), 'base64');
+  if (!raw.length) throw httpError(400, '图片内容是空的');
+  return await storeUploadedImage(raw, name, UPLOAD_MIME.get(mime), mime);
+}
+
+/**
+ * 把请求体当原始二进制流边收边写临时文件（图片那条路）。
+ *
+ * 为什么不像音频那样直接写进 UPLOAD_DIR：图片落盘前还要压一遍，
+ * 没压过的原图不该出现在 public/ 里（会被图片管线和构建扫到）。
+ * 所以先收进系统临时目录，压完再写正式的进去。
+ *
+ * 超限时中止、把半个文件删掉，免得临时目录里留残片。
+ */
+function receiveImage(req, abs, limit) {
+  return new Promise((resolve, reject) => {
+    let size = 0;
+    let done = false;
+    const out = createWriteStream(abs);
+
+    const fail = (err) => {
+      if (done) return;
+      done = true;
+      req.unpipe(out);
+      out.destroy();
+      fs.unlink(abs).catch(() => {
+        /* 本来就没写出来也无所谓 */
+      });
+      reject(err);
+    };
+
+    req.on('data', (chunk) => {
+      if (done) return;
+      size += chunk.length;
+      if (size > limit) {
+        // 剩下的请求体继续读掉再丢，免得客户端拿到 ECONNRESET 而不是那个 413
+        req.resume();
+        fail(httpError(413, `单张图片最多 ${Math.round(limit / 1024 / 1024)}MB（这么大的图先裁一下吧）`));
+      }
+    });
+    req.on('error', fail);
+    out.on('error', fail);
+    out.on('finish', () => {
+      if (done) return;
+      done = true;
+      if (!size) {
+        fs.unlink(abs).catch(() => {});
+        reject(httpError(400, '图片内容是空的'));
+        return;
+      }
+      resolve(size);
+    });
+    req.pipe(out);
+  });
+}
+
+/**
+ * 上传图片（**现在的主路**）：请求体就是图片本身，`?name=` 带原始文件名。
+ *
+ * 前端是 `fetch('/api/upload?name=…', { method:'POST', body: file })` ——
+ * 不 base64、不进 JSON，所以没有那条 12MB 的请求体上限；
+ * 服务端边收边写临时文件，收完读进内存压一遍再落盘。
+ */
+async function handleImageUpload(req, res, url) {
+  const rawName = url.searchParams.get('name') || 'image';
+  const base = path.basename(String(rawName));
+  const ext = path.extname(base).toLowerCase();
+  const ct = String(req.headers['content-type'] || '').split(';')[0].trim().toLowerCase();
+  /* MIME：先认扩展名（浏览器给的 file.type 有时是空的），扩展名不认再看 content-type */
+  const extToMime = new Map([...UPLOAD_MIME].map(([mime, e]) => [e, mime]));
+  const mime = extToMime.get(ext) || (UPLOAD_MIME.has(ct) ? ct : '');
+  if (!mime) {
+    // 请求体读掉再丢，免得客户端拿到 ECONNRESET 而不是这个 415
+    req.resume();
+    throw httpError(
+      415,
+      `不支持的图片类型 ${ext || ct || '（没有扩展名）'}，只允许 ${[...UPLOAD_MIME.values()].map((e) => e.slice(1)).join(' / ')}`
+    );
+  }
+
+  const declared = Number(req.headers['content-length'] || 0);
+  if (Number.isFinite(declared) && declared > MAX_IMAGE_BYTES) {
+    req.resume();
+    throw httpError(413, `单张图片最多 ${Math.round(MAX_IMAGE_BYTES / 1024 / 1024)}MB（这么大的图先裁一下吧）`);
+  }
+
+  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'dsh-upload-'));
+  const tmp = path.join(tmpDir, `recv${ext || '.bin'}`);
+  let raw;
+  try {
+    await receiveImage(req, tmp, MAX_IMAGE_BYTES);
+    raw = await fs.readFile(tmp);
+  } finally {
+    await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
+  }
+  return await storeUploadedImage(raw, base, ext, mime);
+}
+
 
 // ---------------------------------------------------------------
 // 路由
@@ -863,6 +985,15 @@ async function handleApi(req, res, url) {
     const { abs } = resolveContentFile(type, targetBase);
     await fs.mkdir(dir, { recursive: true });
     await fs.writeFile(abs, content, 'utf8');
+    /*
+      记一笔「近期更新」：这一篇文章 / 手记被改过了。
+      地址规则和站点一致：`/posts/<文件名去掉 .md>/`（见 src/pages/posts/[...slug].astro
+      用的 entry.id，就是相对集合目录的文件名）。
+    */
+    await noteEdit({
+      href: `/${type === 'posts' ? 'posts' : 'notes'}/${targetBase.replace(/\.md$/i, '')}/`,
+      title: String(frontmatter.title || targetBase),
+    });
     return ok(res, { ok: true, file: targetBase });
   }
 
@@ -875,10 +1006,26 @@ async function handleApi(req, res, url) {
     return ok(res, { ok: true });
   }
 
+  /*
+    上传图片。两条路共用同一个地址：
+      · 原始二进制（**现在前端走这条**）：请求体就是图片本身，`?name=` 带文件名，
+        边收边写临时文件、落盘前压一遍 —— 没有 12MB 那种说法，多大的图都能进；
+      · `{ name, dataUrl }` 的 JSON（老前端 / 验收脚本）：整段读进内存再解 base64，
+        上限单独放到 MAX_JSON_UPLOAD_BYTES（base64 胀 1/3，用 12MB 那条会误伤）。
+  */
   if (route === '/api/upload' && req.method === 'POST') {
-    const payload = await readBody(req);
-    const result = await handleUpload(payload);
-    return sendJson(res, 200, result);
+    const ct = String(req.headers['content-type'] || '').toLowerCase();
+    /*
+      ⚠ 只认 `application/json` 这一种是 JSON。**不能把 text/plain 也算进来** ——
+      浏览器用 fetch 发字符串时默认就是 text/plain，把不认识的东西（比如一个
+      .txt 文件）发过来时会落到这里，然后被 JSON.parse 拍成"请求体不是合法的 JSON"；
+      交给原始二进制那条路，才会得到"不支持的图片类型 xxx.txt"这句有用的 415。
+    */
+    if (ct.includes('application/json')) {
+      const payload = await readBody(req, MAX_JSON_UPLOAD_BYTES, '图片请求体');
+      return sendJson(res, 200, await handleUpload(payload));
+    }
+    return sendJson(res, 200, await handleImageUpload(req, res, url));
   }
 
   // ---- 首页大板块的子版块 ----
@@ -890,7 +1037,23 @@ async function handleApi(req, res, url) {
   }
   if (route === '/api/boards' && req.method === 'POST') {
     const payload = await readBody(req);
-    return sendJson(res, 200, await writeBoards(payload));
+    const result = await writeBoards(payload);
+    /*
+      记「近期更新」（src/data/recent-edits.json）：这一次到底改了哪几页。
+      客户端保存前会把草稿和"上次读进来的那一份"比一遍，把**真的变了的节点 id**
+      放进 `touched`；这里翻成页面地址再记。最多记 3 条（那个框就列 3 张卡）。
+      老客户端 / 比不出来的时候退回 `current`（当前打开的那一页）。
+    */
+    const touched = Array.isArray(payload?.touched) ? payload.touched.slice(0, 3) : [];
+    let noted = 0;
+    for (const id of touched) {
+      const page = await pageOfNode(id);
+      if (!page) continue;
+      await noteEdit(page);
+      noted++;
+    }
+    if (!noted) await noteEdit(await pageOfNode(payload?.current));
+    return sendJson(res, 200, result);
   }
 
   // ---- 音乐 / 歌单（src/data/music.json）----
@@ -914,6 +1077,11 @@ async function handleApi(req, res, url) {
     const validKeys = new Set((await musicPages()).map((p) => p.key));
     const clean = cleanMusic(payload.music, validKeys);
     await writeMusicFile(current.readme, clean.tracks, clean.pages);
+    /* 记「近期更新」：配歌单也是改页面内容，记在用户正在编的那一页上 */
+    if (payload.pageKey) {
+      const hit = (await musicPages()).find((p) => p.key === String(payload.pageKey));
+      if (hit && hit.href) await noteEdit({ href: hit.href, title: hit.label });
+    }
     const built = await runBuild();
     return sendJson(res, 200, {
       ok: true,
@@ -1006,6 +1174,21 @@ async function handleApi(req, res, url) {
       /* 第一次还没有这个文件，正常 */
     }
     await fs.writeFile(WIDGETS_FILE, `${JSON.stringify(data.file, null, 2)}\n`, 'utf8');
+    /*
+      记「近期更新」：首页那四块里，用户这次动的是哪一块 ——
+      客户端会带 `panel` 上来（about / calendar / iceberg / daily）。
+      它们落在三个不同的页面上：关于我 / 首页 / 冰室精华。
+    */
+    {
+      const panel = String(payload?.panel || '');
+      const page =
+        panel === 'about'
+          ? { href: '/about-me/', title: '关于我' }
+          : panel === 'daily'
+            ? { href: '/salon/', title: '冰室精华' }
+            : { href: '/', title: '花涧堂' };
+      await noteEdit(page);
+    }
     // 和导航一样：写完就重建，构建失败不算保存失败
     let built = false;
     let ms = 0;
@@ -1037,6 +1220,8 @@ async function handleApi(req, res, url) {
       /* 第一次还没有这个文件，正常 */
     }
     await fs.writeFile(ICEBERG_FILE, `${JSON.stringify(data.file, null, 2)}\n`, 'utf8');
+    /* 记「近期更新」：冰山图那一页 */
+    await noteEdit({ href: '/iceberg/', title: '冰山图' });
     let built = false;
     let ms = 0;
     let output = '';
@@ -1091,6 +1276,8 @@ async function handleApi(req, res, url) {
       /* 第一次还没有这个文件，正常 */
     }
     await fs.writeFile(SALON_FILE, `${JSON.stringify(data.file, null, 2)}\n`, 'utf8');
+    /* 记「近期更新」：冰室精华那一页（成员表 / 精华条目都在这一页上） */
+    await noteEdit({ href: '/salon/', title: '冰室精华' });
     let built = false;
     let ms = 0;
     let output = '';
@@ -1184,6 +1371,69 @@ const PREVIEW_ORIGINS = ['http://127.0.0.1:4321', 'http://localhost:4321'];
 let buildInFlight = null;
 /** 等当前这一轮跑完之后要再跑的那一轮（盘上的数据是在它开始之后才写的） */
 let buildQueued = null;
+
+/* ------------------------------------------------------------------
+   「近期更新」：编辑器每次保存都记一笔
+
+   页面（/huaya/memory/update → 花涧堂更新 那一块）上要把"最近改过的三个页面"
+   列成卡片，所以得有个地方记"谁、什么时候"。
+
+   ⚠ 为什么不用文件的修改时间（mtime）：
+   部署是 GitHub Actions 里全新 clone 出来的，**所有源文件的 mtime 都是 clone 那一刻** ——
+   按 mtime 排出来的"最近更新"在线上就是一堆随机页面。所以必须**把这件事写进仓库**，
+   也就是写到 src/data/recent-edits.json 里（它会被一起提交、一起部署）。
+
+   同一页只留最新一条（改十次不该占十个位置），最新的排最前，最多留 40 条。
+   ------------------------------------------------------------------ */
+const RECENT_FILE = path.join(PROJECT_ROOT, 'src', 'data', 'recent-edits.json');
+const RECENT_MAX = 40;
+
+/** 同一个页面连续保存时不要刷屏：这条时间戳只精确到分钟也没关系 */
+async function noteEdit(page) {
+  const href = String(page?.href || '').trim();
+  const title = String(page?.title || '').trim();
+  if (!href || !title) return;
+  /* 站外链接 / 锚点不算"页面"（导航条目那种地方会传这些） */
+  if (!href.startsWith('/')) return;
+  let data = { edits: [] };
+  try {
+    const raw = JSON.parse(await fs.readFile(RECENT_FILE, 'utf8'));
+    if (Array.isArray(raw?.edits)) data = raw;
+  } catch {
+    /* 第一次还没有这个文件，正常 */
+  }
+  const norm = (v) => String(v || '').replace(/\/+$/, '') || '/';
+  const rest = (data.edits || []).filter((e) => norm(e?.href) !== norm(href));
+  data.edits = [{ href, title, at: new Date().toISOString() }, ...rest].slice(0, RECENT_MAX);
+  data.updated = new Date().toISOString();
+  /* 说明写在文件里（和别的数据文件一个规矩）：手改也行，但一般不用管 */
+  if (!Array.isArray(data._readme)) {
+    data._readme = [
+      '「近期更新」的数据：编辑器每次保存成功就往 edits 里记一笔（页面地址 + 页面名 + 时间）。',
+      '页面 /huaya/memory/update（花涧堂更新 那一块）用它列出"最近改过的几个页面"。',
+      '⚠ 故意存进仓库、而不是用文件修改时间：线上是全新 clone 出来的，mtime 全是同一刻，排不出先后。',
+      '同一页只留最新一条，最新的排最前，最多 40 条。手改这个文件也行（改完要重新构建）。',
+    ];
+  }
+  await fs.writeFile(RECENT_FILE, `${JSON.stringify(data, null, 2)}\n`, 'utf8');
+}
+
+/**
+ * 把「节点 id → 页面地址 / 标题」查出来（给 noteEdit 用）。
+ * 地址算法和站点那边完全一致（见上面 flatBoardPages 的说明），
+ * 找不到就返回 null —— 宁可不记，也不要记一个点不开的地址。
+ */
+async function pageOfNode(nodeId) {
+  const id = String(nodeId || '').trim();
+  if (!id) return null;
+  try {
+    const data = await readBoards();
+    const hit = flatBoardPages(data?.boards ?? []).find((p) => p.id === id);
+    return hit ? { href: hit.url, title: hit.title } : null;
+  } catch {
+    return null;
+  }
+}
 
 function runBuild() {
   if (buildInFlight) {
@@ -1952,6 +2202,30 @@ function cleanBlocks(raw, ownerId) {
       const block = { id, type };
       const text = String(b.text || '').trim();
       if (text) block.text = text;
+      pushBlock(block);
+      return;
+    }
+
+    /*
+      助手日志 / 近期更新（2026-09-28 加的）：这两块的数据都在**别的文件**里
+      （mianyu.json / recent-edits.json），页面里只存"摆这一块"这件事本身。
+      所以这里收的东西很少 —— 不认这两类的话，用户在编辑器里一保存，
+      这两块就被白名单悄悄丢掉了（页面上只剩一个空位置，最难查的那种）。
+    */
+    if (type === 'logs') {
+      const block = { id, type };
+      const text = String(b.text || '').trim();
+      if (text) block.text = text;
+      pushBlock(block);
+      return;
+    }
+
+    if (type === 'recent') {
+      const block = { id, type };
+      const text = String(b.text || '').trim();
+      if (text) block.text = text;
+      const n = Number(b.count);
+      if (Number.isFinite(n) && n >= 1) block.count = Math.min(12, Math.round(n));
       pushBlock(block);
       return;
     }

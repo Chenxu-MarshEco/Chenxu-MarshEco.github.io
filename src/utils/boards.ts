@@ -112,6 +112,27 @@ export type PageBlock = (
    * `text` 是顶栏那行字，不写就叫「分类」。
    */
   | { id: string; type: 'nav'; cats: string[]; text?: string }
+  /**
+   * **助手日志**块（2026-09-28 加的）：把 `src/data/mianyu.json` 里的日志按天铺出来。
+   *
+   * 为什么日志要单独一份数据、而不是直接写在页面的文字块里（用户原话）：
+   *   「更新日志里你写的内容不会同步进编辑器里 所以现在我没法操作」
+   * —— 助手以前是直接往 `home-boards.json` 的那一页里追加文字块，而编辑器打开时
+   * 会把整棵树读成草稿，用户一保存就把助手新写的栏目覆盖了。分开之后：
+   *   · 助手只写 `mianyu.json`（`tools/memory/append-log.mjs`）；
+   *   · 编辑器保存版块树时碰不到它，两边互不覆盖。
+   * 页面上这一块只负责"把那份数据画出来"，`text` 可换成别的标题（不写就是「眠鱼志」）。
+   */
+  | { id: string; type: 'logs'; text?: string }
+  /**
+   * **近期更新**块：把 `src/data/recent-edits.json` 里"最近通过编辑器改动过的页面"
+   * 列成卡片（默认 3 张），点卡片跳那一页。
+   *
+   * 数据由编辑器每次保存成功时追加（`tools/editor/server.mjs` 的 `noteEdit()`），
+   * 所以它是"真的被编辑过"，不是按文件时间猜的。**认不出来的地址会被跳过**
+   * （页面被删了/改名了就不再显示，卡片不会点空）。
+   */
+  | { id: string; type: 'recent'; text?: string; count?: number }
 ) &
   TimeFields;
 

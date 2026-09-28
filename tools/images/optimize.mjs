@@ -65,6 +65,18 @@ const CFG = {
   webpLossless: { lossless: true, effort: 6 },
   avif: { quality: 46, effort: 4 },
   jpeg: { quality: 82, mozjpeg: true, progressive: true },
+  /**
+   * 动图（GIF / 动 WebP）上传时重编码成动图 WebP 的质量档。
+   * 2026-09-28 加的：以前 GIF 一律原样落盘，于是"传一张 9MB 的动图"就把 9MB
+   * 塞进了仓库和页面。动图 WebP 各浏览器都认，通常还能小一半以上（小了才换）。
+   */
+  gifWebp: { quality: 72, effort: 4 },
+  /**
+   * 解码像素上限（sharp 的 limitInputPixels）。默认约 2.68 亿像素 ——
+   * 手机拍的照片、扫描件离它很远，但用户现在可以传任意大的图，所以抬到 5 亿，
+   * 同时留一道闸：真超过就按"压缩失败、原样保存"处理，不会把编辑器进程吃爆。
+   */
+  limitInputPixels: 500e6,
   lqipWidth: 20,
   concurrency: 4,
 };
@@ -502,16 +514,22 @@ export async function optimizeOne(relKey) {
  * 不然仓库和 dist 里会一直躺着几 MB 的原图。
  *
  *   jpg  → 自动摆正（EXIF）→ 限宽 1920 → mozjpeg q82 → 去掉元数据
- *   png  → 限宽 1920 → PNG 最高压缩级别（保留透明与逐位颜色）
+ *   png  → 限宽 1920 → 无损 WebP / WebP q80 / PNG 最高压缩级别，谁小用谁
  *   webp → 限宽 1920 → webp q80
- *   gif / svg → 原样（动图和矢量图不该被重编码）
+ *   gif / 动图 → 限宽 1920 → **动图 WebP**（比原来小才换），见下面 2026-09-28 那段
+ *   svg  → 原样（矢量图重编码等于拍成位图，不该动）
  *
  * 返回 { buf, ext, before, after, note }。任何一步失败都退回原图，绝不让上传失败。
+ *
+ * ⚠ 2026-09-28：以前动图（GIF / 多页图）一律原样返回 —— 用户报「我上传一个 9MB 的
+ *   图片却提示不能超过 12MB」之后一起改了：上传现在**不设大小限制**，
+ *   所以"原样保留"就等于把 9MB 塞进仓库。现在动图也压：解码成所有帧 →
+ *   限宽 1920 → 编成动图 WebP，比原来的字节小才用（大就还留 GIF）。
  */
 export async function compressUpload(buf, ext, mime) {
   const e = (ext || '').toLowerCase();
-  if (e === '.gif' || e === '.svg' || mime === 'image/gif' || mime === 'image/svg+xml') {
-    return { buf, ext: e, before: buf.length, after: buf.length, note: '动图/矢量图原样保留' };
+  if (e === '.svg' || mime === 'image/svg+xml') {
+    return { buf, ext: e || '.svg', before: buf.length, after: buf.length, note: '矢量图原样保留' };
   }
   let sharp;
   try {
@@ -519,14 +537,30 @@ export async function compressUpload(buf, ext, mime) {
   } catch {
     return { buf, ext: e, before: buf.length, after: buf.length, note: '没装上 sharp，未压缩' };
   }
+  const open = (opts = {}) => sharp(buf, { failOn: 'none', limitInputPixels: CFG.limitInputPixels, ...opts });
   try {
-    const meta = await sharp(buf, { failOn: 'none' }).metadata();
-    if ((meta.pages ?? 1) > 1) {
-      return { buf, ext: e, before: buf.length, after: buf.length, note: '动图原样保留' };
+    const meta = await open().metadata();
+    const isAnimated = (meta.pages ?? 1) > 1 || e === '.gif' || mime === 'image/gif';
+    if (isAnimated) {
+      const cand = await open({ animated: true })
+        .resize({ width: CFG.maxWidth, withoutEnlargement: true })
+        .webp({ ...CFG.gifWebp })
+        .toBuffer()
+        .catch(() => null);
+      if (cand && cand.length < buf.length) {
+        return { buf: cand, ext: '.webp', before: buf.length, after: cand.length, note: `动图 → WebP（${meta.pages ?? 1} 帧）` };
+      }
+      return {
+        buf,
+        ext: e || '.gif',
+        before: buf.length,
+        after: buf.length,
+        note: cand ? '动图原样保留（转 WebP 反而更大）' : '动图原样保留（这张转不了）',
+      };
     }
     /** 每次都从原图重新起一条管线（一次次 toBuffer 之后实例状态不好复用） */
     const mk = () =>
-      sharp(buf, { failOn: 'none' })
+      open()
         .rotate()
         /*
           ⚠ 只封**宽度**，不封高度（2026-09-26 改）。
