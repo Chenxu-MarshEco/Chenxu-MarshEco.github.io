@@ -102,14 +102,67 @@
           "type": "toc"
         },
         {
+          "id": "page-mu9hfl5z-pmukxd5f745",
+          "type": "divider"
+        },
+        {
           "id": "page-mu9hfl5z-pmu9hoa069",
           "type": "text",
           "text": "## 主要建筑"
         },
         {
+          "id": "page-mu9hfl5z-pmukxdmhf46",
+          "type": "image",
+          "src": "/img/uploads/20260928-1527-69b7-f930000341e0bc7b6480a06eb203d3ef.jpg",
+          "alt": "虹星家的全貌",
+          "width": "wide"
+        },
+        {
+          "id": "page-mu9hfl5z-pmukxe65648",
+          "type": "text",
+          "text": "### 主宅\n虹星的主宅。贯彻了花娅系列以来虹星最喜爱的MC早期版本橡木风。"
+        },
+        {
+          "id": "page-mu9hfl5z-pmukxq4j050",
+          "type": "image",
+          "src": "/img/uploads/20260928-1537-7bbc-f05698f99ae5d119ecbffff2d61f8c9a.jpg",
+          "alt": "虹星的主宅",
+          "width": "half"
+        },
+        {
+          "id": "page-mu9hfl5z-pmukxqnab51",
+          "type": "image",
+          "src": "/img/uploads/20260928-1538-4f0d-f41b50ffac3b6f9b43ab7aa15f0e72d8.jpg",
+          "alt": "主宅一楼的内饰",
+          "width": "third"
+        },
+        {
+          "id": "page-mu9hfl5z-pmukxrgur52",
+          "type": "image",
+          "src": "/img/uploads/20260928-1538-f8fc-76a831882d528468c627de9b6f4485c6.jpg",
+          "alt": "主宅二楼的内饰",
+          "width": "third"
+        },
+        {
+          "id": "page-mu9hfl5z-pmukxrrwr53",
+          "type": "image",
+          "src": "/img/uploads/20260928-1539-dd2f-c1148772a652a01366f3fdac6ef64b6f.jpg",
+          "alt": "主宅三楼的床榻",
+          "width": "third"
+        },
+        {
+          "id": "page-mu9hfl5z-pmukxs95f54",
+          "type": "text",
+          "text": "### 猫咖\n虹星家一楼的猫咖，聚集了虹星繁殖的猫咪们。"
+        },
+        {
+          "id": "page-mu9hfl5z-pmukxe4ii47",
+          "type": "divider"
+        },
+        {
           "id": "page-mu9hfl5z-pmu9hojfa10",
           "type": "text",
-          "text": "## 溪流之外的轶事\n- 虹星家一楼的猫咖曾被隰辰煦质疑为何会有骷髅头。虹星的答复是用来做咖啡杯。\n- \n- 冰室在讨论决战原版冷门生物之巅时，虹星误以为骆驼是1.20之后才出现的生物，然而虹星家门口其实就拴着一只骆驼，甚至在结档时骑着骆驼一起拍了合照。"
+          "text": "## 溪流之外的轶事\n- 虹星家一楼的猫咖曾被隰辰煦质疑为何会有骷髅头。虹星的答复是用来做咖啡杯。\n- 虹星家的大部分猫都有名字，并且每只猫都经历了可怕的乱伦。\n- 冰室在讨论决战原版冷门生物之巅时，虹星误以为骆驼是1.20之后才出现的生物，然而虹星家门口其实就拴着一只骆驼，甚至在结档时骑着骆驼一起拍了合照。\n- 虹星家东边的树林里藏着一台刷线机。因为过于普通几乎没有留下影像资料。\n- 虹星家南边的两个雕像分别名为“Rest”和“Adventure”。据虹星回忆，最早他还将Adventure错误地拼写为了Advanture。"
         },
         {
           "id": "page-mu9hfl5z-pmu9i0iba11",
@@ -558,13 +611,13 @@
           "type": "image",
           "src": "/img/uploads/20260928-1330-ea53-bbde12330927b23d752ec9972f0a6041.jpg",
           "alt": "正在与悦灵互动的桑芙",
-          "width": "half"
+          "width": "third"
         },
         {
           "id": "page-mu9fd13e-pmukt6by636",
           "type": "image",
           "src": "/img/uploads/20260928-1330-4959-5cf3dae330b8dfc6470f6da04b065630.jpg",
-          "width": "half"
+          "width": "third"
         },
         {
           "id": "page-mu9fd13e-pmukt777z37",
