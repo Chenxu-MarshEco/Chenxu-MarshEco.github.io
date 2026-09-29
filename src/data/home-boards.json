@@ -1,6 +1,14 @@
 {
   "boards": [
     {
+      "id": "page-mum2qcs9",
+      "title": "吉吉家",
+      "subtitle": "",
+      "image": "/img/uploads/20260929-1046-1fe5-2023-08-02_22.41.31.webp",
+      "standalone": true,
+      "href": "/huaya/years/fenhu/jijihome"
+    },
+    {
       "id": "page-mu9w6v28",
       "title": "花娅域主",
       "subtitle": "",
@@ -92,7 +100,7 @@
       "id": "page-mu9hfl5z",
       "title": "虹星家",
       "subtitle": "",
-      "image": "",
+      "image": "/img/uploads/20260929-0931-adfd-2023-08-02_22.56.37.webp",
       "standalone": true,
       "href": "/huaya/years/fenhu/hoshihome",
       "timeline": "tl-mu94ko3q566",
@@ -156,6 +164,64 @@
           "text": "### 猫咖\n虹星家一楼的猫咖，聚集了虹星繁殖的猫咪们。"
         },
         {
+          "id": "page-mu9hfl5z-pmulz670s1",
+          "type": "image",
+          "src": "/img/uploads/20260929-0908-e8cd-3f6ef314a5266f77f30797ec60bd99bb.webp",
+          "alt": "虹星拍摄的猫咖",
+          "width": "half"
+        },
+        {
+          "id": "page-mu9hfl5z-pmulztnkn4",
+          "type": "text",
+          "text": "### 地铁站\n与虹星的主宅相连的地铁站，站台内陈列着纷湖的地图。"
+        },
+        {
+          "id": "page-mu9hfl5z-pmulztutb5",
+          "type": "image",
+          "src": "/img/uploads/20260929-0925-e3df-e95070e1440081fb3858c0471802e9ea.jpg",
+          "alt": "虹星家地铁站的进站口",
+          "width": "third"
+        },
+        {
+          "id": "page-mu9hfl5z-pmulzvlo76",
+          "type": "image",
+          "src": "/img/uploads/20260929-0925-7760-19d49ed17ccb740ab91ca5bab09f6350.jpg",
+          "width": "third"
+        },
+        {
+          "id": "page-mu9hfl5z-pmulzvwb57",
+          "type": "image",
+          "src": "/img/uploads/20260929-0925-e81e-49e26e36e9fbbe1c2aacec0feb0c8a27.jpg",
+          "alt": "站内的纷湖地图",
+          "width": "half"
+        },
+        {
+          "id": "page-mu9hfl5z-pmulzwjmq8",
+          "type": "image",
+          "src": "/img/uploads/20260929-0926-8dcc-400cb6020f081c9fbbd4bc10cca3cb29.jpg",
+          "alt": "站外经过天然裂隙的冰道，裂隙已经被虹星改造为生态箱",
+          "width": "half"
+        },
+        {
+          "id": "page-mu9hfl5z-pmulzxux39",
+          "type": "text",
+          "text": "### 铜制雕像\n虹星为了体验新版本铜的氧化而搭建的可爱的雕像。"
+        },
+        {
+          "id": "page-mu9hfl5z-pmulzyv5310",
+          "type": "image",
+          "src": "/img/uploads/20260929-0929-857d-d6f0405485dd52d2e5f8b9660dde1ed6.webp",
+          "alt": "虹星拍摄的早期铜雕像",
+          "width": "half"
+        },
+        {
+          "id": "page-mu9hfl5z-pmulzzcsw11",
+          "type": "image",
+          "src": "/img/uploads/20260929-0929-6032-75ae2e43dd0bf3d8444f39c9d147e01e.jpg",
+          "alt": "纷湖末期的铜雕像，举着火炬的小人已经明显氧化",
+          "width": "half"
+        },
+        {
           "id": "page-mu9hfl5z-pmukxe4ii47",
           "type": "divider"
         },
@@ -163,6 +229,52 @@
           "id": "page-mu9hfl5z-pmu9hojfa10",
           "type": "text",
           "text": "## 溪流之外的轶事\n- 虹星家一楼的猫咖曾被隰辰煦质疑为何会有骷髅头。虹星的答复是用来做咖啡杯。\n- 虹星家的大部分猫都有名字，并且每只猫都经历了可怕的乱伦。\n- 冰室在讨论决战原版冷门生物之巅时，虹星误以为骆驼是1.20之后才出现的生物，然而虹星家门口其实就拴着一只骆驼，甚至在结档时骑着骆驼一起拍了合照。\n- 虹星家东边的树林里藏着一台刷线机。因为过于普通几乎没有留下影像资料。\n- 虹星家南边的两个雕像分别名为“Rest”和“Adventure”。据虹星回忆，最早他还将Adventure错误地拼写为了Advanture。"
+        },
+        {
+          "id": "page-mu9hfl5z-pmum03kz412",
+          "type": "divider"
+        },
+        {
+          "id": "page-mu9hfl5z-pmum03qll14",
+          "type": "text",
+          "text": "## 画廊"
+        },
+        {
+          "id": "page-mu9hfl5z-pmum03ugi15",
+          "type": "image",
+          "src": "/img/uploads/20260929-0932-5387-2023-08-02_22.56.37.webp",
+          "alt": "伙伴们在虹星家门前合影",
+          "width": "third"
+        },
+        {
+          "id": "page-mu9hfl5z-pmum05duw17",
+          "type": "image",
+          "src": "/img/uploads/20260929-0934-6bbb-8e046e0b27c4d0a65face79685aa45ec.webp",
+          "alt": "可爱的灰云",
+          "width": "third"
+        },
+        {
+          "id": "page-mu9hfl5z-pmum1x62u20",
+          "type": "image",
+          "src": "/img/uploads/20260929-1022-a1cf-6acd5cb7857f33d6f4b087502de81daa.webp",
+          "alt": "虹星与猫出游",
+          "width": "third"
+        },
+        {
+          "id": "page-mu9hfl5z-pmum1xjrr21",
+          "type": "image",
+          "src": "/img/uploads/20260929-1023-aec6-65c3e877f758ba4db2ad719f03fa13a0.jpg",
+          "alt": "YI LU ZOU HAO",
+          "width": "third"
+        },
+        {
+          "id": "page-mu9hfl5z-pmum03zrs16",
+          "type": "divider"
+        },
+        {
+          "id": "page-mu9hfl5z-pmum22pmu22",
+          "type": "text",
+          "text": "## 导航"
         },
         {
           "id": "page-mu9hfl5z-pmu9i0iba11",
@@ -178,7 +290,7 @@
       "id": "page-mu9fd13e",
       "title": "隰辰煦家",
       "subtitle": "",
-      "image": "",
+      "image": "/img/uploads/20260929-1043-fabf-2023-08-02_22.36.08.webp",
       "standalone": true,
       "href": "/huaya/years/fenhu/xichenxuhome",
       "timeline": "tl-mu94ko3q566",
@@ -682,6 +794,41 @@
         {
           "id": "page-mu9fd13e-pmuayn49o18",
           "type": "divider"
+        },
+        {
+          "id": "page-mu9fd13e-pmum23w3j24",
+          "type": "text",
+          "text": "## 画廊"
+        },
+        {
+          "id": "page-mu9fd13e-pmum24qxj26",
+          "type": "image",
+          "src": "/img/uploads/20260929-1029-3ae8-2023-08-02_22.36.08.webp",
+          "alt": "伙伴们在大圆环合影",
+          "width": "third"
+        },
+        {
+          "id": "page-mu9fd13e-pmum2ik8828",
+          "type": "image",
+          "src": "/img/uploads/20260929-1039-20bb-2023-08-02_23.25.39_3.webp",
+          "alt": "伙伴们在龙蛋祭坛前合影",
+          "width": "third"
+        },
+        {
+          "id": "page-mu9fd13e-pmum263lj27",
+          "type": "image",
+          "src": "/img/uploads/20260929-1031-ad29-2023-08-02_22.39.28.webp",
+          "alt": "从吉吉家遥望隰辰煦家",
+          "width": "third"
+        },
+        {
+          "id": "page-mu9fd13e-pmum2409k25",
+          "type": "divider"
+        },
+        {
+          "id": "page-mu9fd13e-pmum23ovy23",
+          "type": "text",
+          "text": "## 导航"
         },
         {
           "id": "page-mu9fd13e-pmu9i2ect12",

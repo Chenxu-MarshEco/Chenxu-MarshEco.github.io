@@ -1,0 +1,320 @@
+{
+  "_readme": [
+    "页面模版：把某一页的**结构**存下来，新建页面时导入，不用一遍遍重搭。",
+    "由编辑器写入（页面工作台 → 「存成模版」/「导入模版」），也可以手改（改完要重新构建）。",
+    "",
+    "模版里存的是骨架，不含内容：块的类型与顺序、排版设置（图片宽窄 / 卡片比例大小 / 卡片框高度）、",
+    "文字块里的小标题（## 和 ###）、导航块引用哪几个分类、目录与文章块的标题。",
+    "不存：正文、图片地址与说明、链接、地图的图与图钉与划分线、卡片指向的子页面 id。",
+    "所以导入之后要自己写正文、传图片 —— 但小节和小节的顺序不用重来。"
+  ],
+  "updated": "2026-09-29T03:18:46.126Z",
+  "templates": [
+    {
+      "id": "tpl-mum37bm4-9fb1",
+      "name": "家页模板",
+      "at": "2026-09-29T03:18:46.124Z",
+      "from": {
+        "href": "/huaya/years/fenhu/xichenxuhome",
+        "title": "隰辰煦家"
+      },
+      "blocks": [
+        {
+          "type": "toc"
+        },
+        {
+          "type": "divider"
+        },
+        {
+          "type": "text",
+          "text": "## 主要建筑"
+        },
+        {
+          "type": "map",
+          "pages": [
+            {
+              "src": "",
+              "markers": [],
+              "lines": []
+            }
+          ],
+          "placeholder": true
+        },
+        {
+          "type": "text",
+          "text": "### 主宅"
+        },
+        {
+          "type": "image",
+          "width": "half",
+          "placeholder": true
+        },
+        {
+          "type": "image",
+          "width": "half",
+          "placeholder": true
+        },
+        {
+          "type": "image",
+          "width": "third",
+          "placeholder": true
+        },
+        {
+          "type": "image",
+          "width": "third",
+          "placeholder": true
+        },
+        {
+          "type": "text",
+          "text": "### 公共仓库"
+        },
+        {
+          "type": "image",
+          "width": "half",
+          "placeholder": true
+        },
+        {
+          "type": "image",
+          "width": "half",
+          "placeholder": true
+        },
+        {
+          "type": "text",
+          "text": "### 小风车"
+        },
+        {
+          "type": "image",
+          "width": "half",
+          "placeholder": true
+        },
+        {
+          "type": "image",
+          "width": "half",
+          "placeholder": true
+        },
+        {
+          "type": "text",
+          "text": "### 嗅探兽农场"
+        },
+        {
+          "type": "image",
+          "width": "half",
+          "placeholder": true
+        },
+        {
+          "type": "image",
+          "width": "half",
+          "placeholder": true
+        },
+        {
+          "type": "image",
+          "width": "third",
+          "placeholder": true
+        },
+        {
+          "type": "image",
+          "width": "third",
+          "placeholder": true
+        },
+        {
+          "type": "text",
+          "text": "### 龙蛋祭坛"
+        },
+        {
+          "type": "image",
+          "width": "half",
+          "placeholder": true
+        },
+        {
+          "type": "image",
+          "width": "third",
+          "placeholder": true
+        },
+        {
+          "type": "text",
+          "text": "### 美西螈池"
+        },
+        {
+          "type": "image",
+          "width": "half",
+          "placeholder": true
+        },
+        {
+          "type": "image",
+          "width": "half",
+          "placeholder": true
+        },
+        {
+          "type": "image",
+          "width": "third",
+          "placeholder": true
+        },
+        {
+          "type": "text",
+          "text": "### 马厩"
+        },
+        {
+          "type": "image",
+          "width": "half",
+          "placeholder": true
+        },
+        {
+          "type": "text",
+          "text": "### TNT复制机纪念馆"
+        },
+        {
+          "type": "image",
+          "width": "half",
+          "placeholder": true
+        },
+        {
+          "type": "text",
+          "text": "### 猫爬架"
+        },
+        {
+          "type": "image",
+          "width": "half",
+          "placeholder": true
+        },
+        {
+          "type": "text",
+          "text": "### 信标塔"
+        },
+        {
+          "type": "image",
+          "width": "half",
+          "placeholder": true
+        },
+        {
+          "type": "image",
+          "width": "third",
+          "placeholder": true
+        },
+        {
+          "type": "text",
+          "text": "### 海龟农场"
+        },
+        {
+          "type": "image",
+          "width": "half",
+          "placeholder": true
+        },
+        {
+          "type": "image",
+          "width": "half",
+          "placeholder": true
+        },
+        {
+          "type": "image",
+          "width": "third",
+          "placeholder": true
+        },
+        {
+          "type": "image",
+          "width": "third",
+          "placeholder": true
+        },
+        {
+          "type": "text",
+          "text": "### 轻心小屋"
+        },
+        {
+          "type": "image",
+          "width": "half",
+          "placeholder": true
+        },
+        {
+          "type": "image",
+          "width": "third",
+          "placeholder": true
+        },
+        {
+          "type": "image",
+          "width": "third",
+          "placeholder": true
+        },
+        {
+          "type": "text",
+          "text": "### 地铁站"
+        },
+        {
+          "type": "image",
+          "width": "half",
+          "placeholder": true
+        },
+        {
+          "type": "image",
+          "width": "third",
+          "placeholder": true
+        },
+        {
+          "type": "image",
+          "width": "third",
+          "placeholder": true
+        },
+        {
+          "type": "image",
+          "width": "half",
+          "placeholder": true
+        },
+        {
+          "type": "image",
+          "width": "half",
+          "placeholder": true
+        },
+        {
+          "type": "text",
+          "text": "### 结档大圆环"
+        },
+        {
+          "type": "image",
+          "width": "wide",
+          "placeholder": true
+        },
+        {
+          "type": "divider"
+        },
+        {
+          "type": "text",
+          "text": "## 溪流之外的轶事"
+        },
+        {
+          "type": "divider"
+        },
+        {
+          "type": "text",
+          "text": "## 画廊"
+        },
+        {
+          "type": "image",
+          "width": "third",
+          "placeholder": true
+        },
+        {
+          "type": "image",
+          "width": "third",
+          "placeholder": true
+        },
+        {
+          "type": "image",
+          "width": "third",
+          "placeholder": true
+        },
+        {
+          "type": "divider"
+        },
+        {
+          "type": "text",
+          "text": "## 导航"
+        },
+        {
+          "type": "nav",
+          "cats": [
+            "navcat-mu9dgbej916"
+          ],
+          "text": "导航"
+        }
+      ]
+    }
+  ]
+}

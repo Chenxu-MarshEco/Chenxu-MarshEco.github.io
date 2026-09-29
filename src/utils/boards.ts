@@ -24,6 +24,21 @@ export interface TimeFields {
 }
 
 /**
+ * 「模版导入留下的空格子」（2026-09-28 加的）。
+ *
+ * 页面模版只存结构、不存正文和图片，所以导进来的块里有一堆是空的
+ * （38 个图片格子、空地图、空链接…）。编辑器里要留着这些位置让用户往里填，
+ * 所以它们身上带 `placeholder: true` —— 编辑器和服务器看到它就不会把空块丢掉。
+ *
+ * **站点这边要把这种块整块跳过**：空图片画不出东西、空地图只剩一个框，
+ * 读者不该看见。判断规则只有一条（PageContent.astro 的 isBlankBlock）：
+ * 带记号 **而且** 内容还是空的 → 跳过；填上内容之后照常渲染。
+ */
+export interface PlaceholderField {
+  placeholder?: true;
+}
+
+/**
  * 页面内容块。
  *
  * 一个版块页除了「子版块自动铺开」，还可以自己写一段内容：
@@ -134,7 +149,8 @@ export type PageBlock = (
    */
   | { id: string; type: 'recent'; text?: string; count?: number }
 ) &
-  TimeFields;
+  TimeFields &
+  PlaceholderField;
 
 /**
  * 图钉的两种类型。

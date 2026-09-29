@@ -334,6 +334,35 @@ const recentOf = (b: PageBlock) => {
 const isCardBlock = (b: PageBlock) =>
   b.type === 'card' || b.type === 'cardbox' || b.type === 'children';
 
+/**
+ * 这个块是**空格子**吗 —— 站点上整块跳过。
+ *
+ * 两种情况：模版导入留下的空格子（带 `placeholder`），以及本来就是空的块
+ * （空地址的图片 / 视频、一个字都没有的链接）—— 它们画不出任何东西，
+ * 而且空地址还会让 <Img> 里的字符串处理直接抛错（2026-09-28 踩到过）。
+ * 填上内容之后这条就是 false，照常渲染。
+ */
+const isBlankBlock = (b: PageBlock): boolean => {
+  switch (b.type) {
+    case 'image':
+      /* 空地址的图片块：画不出东西（模版留下的空格子 / 手改数据都可能） */
+      return !String(b.src ?? '').trim();
+    case 'video':
+      return !String(b.src ?? '').trim();
+    case 'link':
+      /* 空链接（模版留下的空格子）：一个字都没有的链接不该出现在页面上 */
+      return !String(b.text ?? '').trim() || !String(b.href ?? '').trim();
+    case 'columns':
+      return (b as { placeholder?: true }).placeholder === true &&
+        !String(b.left ?? '').trim() && !String(b.right ?? '').trim();
+    case 'map':
+      return (b as { placeholder?: true }).placeholder === true &&
+        !(b.pages ?? []).some((pg) => String(pg?.src ?? '').trim());
+    default:
+      return false;
+  }
+};
+
 /* ------------------------------------------------------------------
    子页面卡的摆放（2026-09-24 重构）
 
@@ -392,9 +421,11 @@ function cardsForBlock(b: PageBlock): { list: BlockItem[]; missing: string[] } {
 <div class="page">
   {
     blocks.map((b, bi) => {
+      /* 模版导入的空格子整块跳过（见上面 isBlankBlock） */
+      if (isBlankBlock(b)) return null;
       /* 单张卡自己的设置优先：子版块上设了 cardShape/cardSize 就用它，
          没设才用「子页面」块上的默认值 */
-      const video = b.type === 'video' ? videoOf(b.src) : null;
+      const video = b.type === 'video' && String(b.src ?? '').trim() ? videoOf(b.src) : null;
       /* 地图读成「页」的数组；老数据只有一页，见 utils/boards.ts 的 mapPages */
       const pages = b.type === 'map' ? mapPages(b) : [];
       /*
@@ -403,8 +434,10 @@ function cardsForBlock(b: PageBlock): { list: BlockItem[]; missing: string[] } {
         编辑器那边会重点提示，验收脚本也靠它读数。
       */
       const cards = isCardBlock(b) ? cardsForBlock(b) : null;
-      /* 点开看大图那一档（webp + avif）：封到 1600，见 utils/images.ts 的 viewUrls */
-      const view = b.type === 'image' ? viewUrls(b.src) : null;
+      /* 点开看大图那一档（webp + avif）：封到 1600，见 utils/images.ts 的 viewUrls
+         ⚠ 空 src 的图片块（手改数据 / 模版导入）不能往 viewUrls 里送 —— 那里会
+         拿地址做字符串判断，undefined 直接抛错、整页构建失败（这一次就踩到了）。 */
+      const view = b.type === 'image' && String(b.src ?? '').trim() ? viewUrls(b.src) : null;
 
       return (
         <div
@@ -427,7 +460,7 @@ function cardsForBlock(b: PageBlock): { list: BlockItem[]; missing: string[] } {
         >
           {b.type === 'text' && <div class="ptext" set:html={textHtml.get(bi) ?? ''} />}
 
-          {b.type === 'image' && (
+          {b.type === 'image' && String(b.src ?? '').trim() !== '' && (
             <figure class:list={['pfigure', `pfigure--${b.width ?? 'wide'}`]}>
               <Img
                 src={b.src}
@@ -662,15 +695,25 @@ function cardsForBlock(b: PageBlock): { list: BlockItem[]; missing: string[] } {
               <div class="pmap__frame" data-pmap-frame>
                 {pages.map((pg, pi) => (
                   <div class="pmap__page" data-pmap-page hidden={pi !== 0}>
-                    <div class="pmap__stage" data-pmap-stage>
-                      <Img
-                        class="pmap__img"
-                        src={pg.src}
-                        alt={pg.alt ?? ''}
-                        sizes="(max-width: 760px) 100vw, 900px"
-                        loading="eager"
-                        draggable="false"
-                      />
+                    {/*
+                      还没传图的空地图页（模版导入 / 刚加的地图块）：画一个占位框。
+                      ⚠ 不能把空地址塞给 <Img> —— 那边会对地址做字符串处理，
+                      undefined 直接抛错、整页构建失败（2026-09-28 踩到的）。
+                    */}
+                    {!String(pg.src ?? '').trim() ? (
+                      <p class="pmap__empty">这一页还没放地图图</p>
+                    ) : null}
+                    <div class="pmap__stage" data-pmap-stage hidden={!String(pg.src ?? '').trim()}>
+                      {String(pg.src ?? '').trim() ? (
+                        <Img
+                          class="pmap__img"
+                          src={pg.src}
+                          alt={pg.alt ?? ''}
+                          sizes="(max-width: 760px) 100vw, 900px"
+                          loading="eager"
+                          draggable="false"
+                        />
+                      ) : null}
 
                       {/*
                         区域划分线画在一层 SVG 上。
@@ -1482,6 +1525,19 @@ function cardsForBlock(b: PageBlock): { list: BlockItem[]; missing: string[] } {
   }
   .pmap.is-dragging .pmap__frame {
     cursor: grabbing;
+  }
+
+  /* 还没传图的空地图页（模版导入 / 刚加的地图块）：占住框、居中一句话 */
+  .pmap__empty {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0;
+    font-size: 0.9rem;
+    letter-spacing: 0.06em;
+    color: rgba(255, 226, 244, 0.5);
   }
 
   .pmap__stage {

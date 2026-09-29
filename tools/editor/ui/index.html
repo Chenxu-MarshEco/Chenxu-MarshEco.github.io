@@ -495,6 +495,19 @@
       app.js 里 mountStudioHost() 把那些节点整块搬过来用，数据只有 boardsDraft 一份，
       所以在哪边改都一样，切来切去也不会出两份不一致的草稿。
     -->
+    <!-- 页面模版：列已存的骨架，挑一份导入到当前这一页（2026-09-28 加的） -->
+    <div class="modal" id="tpl-modal" hidden>
+      <div class="modal__mask" data-close="1"></div>
+      <div class="modal__panel" role="dialog" aria-modal="true" aria-label="页面模版">
+        <h3 class="modal__title" id="tpl-title">页面模版</h3>
+        <p class="hint" id="tpl-hint">模版只存结构：块的顺序与类型、小标题、排版设置 —— 正文和图片都要自己写。</p>
+        <div id="tpl-list"></div>
+        <div class="modal__actions">
+          <button type="button" class="btn btn--ghost" id="tpl-close">关闭</button>
+        </div>
+      </div>
+    </div>
+
     <div class="modal" id="solo-modal" hidden>
       <div class="modal__mask" data-close="1"></div>
       <div class="modal__panel modal__panel--full" role="dialog" aria-modal="true" aria-label="独立页面">

@@ -77,10 +77,38 @@ const find = (nodes, id) => {
   }
   return null;
 };
+/*
+  ⚠ 下面这些节点**按名字找**，不按 id 写死：用户 2026-09-28 自己把结构调过一次
+  （把「近期更新」挪到了「更新日志」自己页面上、删掉了中间那层容器、
+  把「冰室古闻考」的地址改成了 /huaya/memory/bingshi，还在里面写上了第一段）。
+  验收要盯的是"这几样东西在不在、是不是各就各位"，不是"必须摆成我当初那个样子"。
+*/
+/** 按标题在整棵树里找节点（用户随时会调结构，所以验收一律按名字找、不写死 id） */
+const byTitleIn = (nodes, title) => {
+  for (const n of nodes ?? []) {
+    if (!n) continue;
+    if (String(n.title || '').trim() === title) return n;
+    const hit = byTitleIn(n.children, title);
+    if (hit) return hit;
+  }
+  return null;
+};
+
 const UPDATE = find(boards.boards, 'huaya-r1-1');
-const MIAN = find(boards.boards, 'huaya-r1-1-1');
-const HUAJIAN = find(boards.boards, 'huaya-r1-1-2');
-const GUWEN = find(boards.boards, 'huaya-r1-1-2-1');
+/** 这一支里第一个带某种块的节点（含自己） */
+const findBlockIn = (node, type) => {
+  if (!node) return null;
+  if ((node.page ?? []).some((b) => b.type === type)) return node;
+  for (const k of node.children ?? []) {
+    const hit = findBlockIn(k, type);
+    if (hit) return hit;
+  }
+  return null;
+};
+/** 按标题找节点（整棵树） */
+const findByTitle = (title) => byTitleIn(boards.boards, title);
+const MIAN = findByTitle('眠鱼志');
+const GUWEN = findByTitle('冰室古闻考');
 
 /* ================================================================
  * ① 数据分家
@@ -93,37 +121,56 @@ check('★ 日志有自己的数据文件（src/data/mianyu.json），一天一�
 check('★ 「更新日志」那一页里已经没有任何日期栏目了（全搬走）',
   !(UPDATE?.page ?? []).some((b) => b.type === 'text' && /^20\d\d\.\d{1,2}\.\d{1,2}/.test(String(b.text ?? '').trim())),
   `那一页现在 ${(UPDATE?.page ?? []).map((b) => b.type).join(',')}`);
-/* 老日志一字不少：挑几栏里最有辨识度的句子（都是当时真量出来的数） */
+/*
+  老日志一字不少 —— 但现在它们都是**精简版**（用户 2026-09-28 要求：
+  「精简到你修改了什么就可以 不要把那些具体的代码步骤写出来」），
+  所以按"那天讲了什么"查关键词，顺便盯住"每一栏都够短、不再写代码步骤"。
+*/
 const allText = (logs.entries ?? []).map((e) => String(e.text ?? '')).join('\n');
+const mine = (logs.entries ?? []).filter((e) => /^2026\.9\.(21|22|23|24|26|28|29)$/.test(e.date));
 const mustHave = [
-  ['9.22 的验收数字', '902 个锚点'],
-  ['9.24 的时间轴改动', '2293px'],
-  ['9.26 的放大图优化', '62,436 字节'],
-  ['9.28 的马甲', '马甲'],
-  ['9.28 的上传修复', '9.32MB'],
+  ['9.21 讲了成员名片', '2026.9.21', '自动链接'],
+  ['9.22 讲了冰山图', '2026.9.22', '冰山图'],
+  ['9.23 讲了搜索', '2026.9.23', '搜索'],
+  ['9.24 讲了后台静音', '2026.9.24', '后台'],
+  ['9.26 讲了手机端', '2026.9.26', '手机端'],
+  ['9.28 讲了马甲', '2026.9.28', '马甲'],
+  ['9.29 讲了页面模版', '2026.9.29', '模版'],
 ];
-for (const [what, needle] of mustHave) {
-  check(`老日志没丢：${what}`, allText.includes(needle), needle);
+for (const [what, date, needle] of mustHave) {
+  const hit = (logs.entries ?? []).find((e) => e.date === date);
+  check(`老日志没丢：${what}`, !!hit && String(hit.text ?? '').includes(needle), `${date} 里有「${needle}」`);
 }
+info('助手那几栏的字数：' + mine.map((e) => `${e.date}=${String(e.text ?? '').length}`).join(' '));
+check('★ 助手写的日志保持精简（每一栏都 ≤ 600 字 —— 用户嫌"太长了"）',
+  mine.length >= 6 && mine.every((e) => String(e.text ?? '').length <= 600),
+  mine.map((e) => String(e.text ?? '').length).join('/'));
+check('★ 而且不再写具体的代码步骤（不出现验收脚本名 / 文件路径 / 那些量出来的数）',
+  !/tools\/checks\/|\.mjs|src\/data\/|\d{3,}[,，]?\d*\s*(字节|px|KB|MB)/.test(mine.map((e) => String(e.text ?? '')).join('\n')),
+  '六栏里没有代码步骤');
+/* 用户自己写的那五栏（9.14–9.20）保持原样、本来就短 */
+const theirs = (logs.entries ?? []).filter((e) => /^2026\.9\.(14|15|16|17|20)$/.test(e.date));
+check('用户自己写的那五栏还在、而且都很短（原样保留）',
+  theirs.length === 5 && theirs.every((e) => String(e.text ?? '').length <= 200),
+  theirs.map((e) => `${e.date}=${String(e.text ?? '').length}`).join(' '));
 
 /* ================================================================
  * ② 两个新子版块
  * ================================================================ */
-console.log('\n================ ② 更新日志下面多了两个子版块 ================');
-check('★ 更新日志下面挂着「眠鱼志」和「花涧堂更新」两个子版块',
-  !!MIAN && !!HUAJIAN && (UPDATE?.children ?? []).length >= 2,
+console.log('\n================ ② 更新日志下面多了子版块 ================');
+check('★ 更新日志下面挂着「眠鱼志」和「冰室古闻考」两个子版块',
+  !!MIAN && !!GUWEN && (UPDATE?.children ?? []).some((k) => k.title === '眠鱼志') &&
+    (UPDATE?.children ?? []).some((k) => k.title === '冰室古闻考'),
   `子版块：${(UPDATE?.children ?? []).map((k) => k.title).join(' / ')}`);
-check('★ 左边的眠鱼志就是一个页面块（type: logs），内容读 mianyu.json',
+check('★ 眠鱼志就是一个页面块（type: logs），内容读 mianyu.json',
   MIAN?.href === '/huaya/memory/mianyu' && (MIAN?.page ?? []).some((b) => b.type === 'logs'),
   `${MIAN?.href} [${(MIAN?.page ?? []).map((b) => b.type).join(',')}]`);
-check('★ 右边的花涧堂更新：上面「近期更新」，下面一张通往冰室古闻考的卡',
-  (HUAJIAN?.page ?? []).some((b) => b.type === 'recent') &&
-    (HUAJIAN?.page ?? []).some((b) => b.type === 'card' && b.ref === 'huaya-r1-1-2-1'),
-  `[${(HUAJIAN?.page ?? []).map((b) => b.type).join(',')}]`);
-check('★ 「冰室古闻考」是花涧堂更新下面的子版块，有自己的页面（用户自己写的那个）',
-  !!GUWEN && GUWEN.href === '/huaya/memory/guwenkao' &&
-    (HUAJIAN?.children ?? []).some((k) => k.id === 'huaya-r1-1-2-1'),
-  `${GUWEN?.href}`);
+check('★ 更新日志这一支里有「近期更新」块（用户自己挪过位置，所以在这一支里找）',
+  !!findBlockIn(UPDATE, 'recent'),
+  findBlockIn(UPDATE, 'recent') ? `在「${findBlockIn(UPDATE, 'recent').title}」那一页上` : '没找到');
+check('★ 「冰室古闻考」有自己的页面（用户自己写的那个，里面已经有内容了）',
+  !!GUWEN && !!GUWEN.href && (GUWEN.page ?? []).length > 0,
+  `${GUWEN?.href} [${(GUWEN?.page ?? []).map((b) => b.type).join(',')}]`);
 check('两张子版块卡是 size:m（六列各占三列 = 左右并排）',
   (UPDATE?.page ?? []).some((b) => b.type === 'children' && b.size === 'm'),
   JSON.stringify((UPDATE?.page ?? []).find((b) => b.type === 'children') ?? null));
@@ -147,14 +194,30 @@ check('正文照旧按 Markdown 渲染（粗体 / 段落是标签，不是原样
  * ④ 近期更新（真产物）
  * ================================================================ */
 console.log('\n================ ④ 近期更新卡片 ================');
-const hj = fs.readFileSync(path.join(DIST, 'huaya/memory/huajian/index.html'), 'utf8');
+/* 「近期更新」现在挂在「更新日志」自己那一页上（用户挪的），所以按块找页面 */
+const recentNode = findBlockIn(UPDATE, 'recent');
+const recentRel = (() => {
+  if (!recentNode) return null;
+  const walk = (nodes, parentUrl) => {
+    for (const n of nodes ?? []) {
+      if (!n) continue;
+      if (n === recentNode) return String(n.href || `${parentUrl}/${String(n.id).split('-').pop()}`);
+      const hit = walk(n.children, String(n.href || `${parentUrl}/${String(n.id).split('-').pop()}`));
+      if (hit) return hit;
+    }
+    return null;
+  };
+  return walk(boards.boards, '');
+})();
+info(`「近期更新」在 /${String(recentRel ?? '').replace(/^\//, '')} 上`);
+const hj = recentRel ? fs.readFileSync(path.join(DIST, recentRel.replace(/^\//, ''), 'index.html'), 'utf8') : '';
 const cards = [...hj.matchAll(/<a class="precent__card" href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/g)].map((m) => ({
   href: m[1],
   name: (m[2].replace(/<[^>]*>/g, '').replace(/[\s\S]*?(\S+?)\s*$/, '$1') || '').trim(),
   text: m[2].replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim(),
 }));
 info('卡片：' + cards.map((c) => `${c.text} → ${c.href}`).join(' | '));
-check('★ 花涧堂更新页上有「近期更新」块', /data-recent="1"/.test(hj));
+check('★ 有「近期更新」块的那一页上真的画出了卡片', !!hj && /data-recent="1"/.test(hj));
 check('★ 卡片刻数 = 数据里记的条数（默认 3 张，数据不够就有几张算几张）',
   cards.length === Math.min(3, (recent.edits ?? []).length), `${cards.length} 张`);
 check('★ 每张卡都有页面名 + 改动时间（时间来自 recent-edits.json 的 at）',
@@ -165,13 +228,11 @@ check('★ 每张卡的地址在产物里都真有那一页（点得开，不是
   cards.map((c) => c.href).join(' '));
 check('卡片上写的是页面名，不是「未知」',
   cards.every((c) => c.text.replace(/\d+\.\d+ \d+:\d+/, '').trim().length > 0));
-check('花涧堂更新页上还有一张通往冰室古闻考的卡',
-  /href="\/huaya\/memory\/guwenkao"/.test(hj) && /class="card[^"]*"/.test(hj));
-check('更新日志那一页上两张卡左右并排（同一行：y 相同、x 不同）', (() => {
+check('更新日志那一页上，两张子版块卡都在（几何留给浏览器那一段量）', (() => {
   const upd = fs.readFileSync(path.join(DIST, 'huaya/memory/update/index.html'), 'utf8');
   const m = [...upd.matchAll(/<a class="card[^"]*" href="([^"]+)"/g)].map((x) => x[1]);
-  return m.length === 2 && m.includes('/huaya/memory/mianyu') && m.includes('/huaya/memory/huajian');
-})(), '产物里先看两张卡都在（几何留给浏览器那一段量）');
+  return m.length === 2 && m.includes('/huaya/memory/mianyu') && m.includes(String(GUWEN?.href || ''));
+})(), `两张卡：眠鱼志 + ${GUWEN?.href}`);
 
 /* ================================================================
  * ⑤ 编辑器那条链路（副本里真跑）
@@ -232,18 +293,35 @@ const post = async (p, body) => {
   const tree = JSON.parse(before);
   const r = await post('/api/boards', { boards: tree.boards });
   const after = JSON.parse(fs.readFileSync(copyBoardsFile, 'utf8'));
-  const has = (id) => !!find(after.boards, id);
-  check('编辑器「打开 → 原样保存一次」之后，三个新节点一个都没丢',
-    r.status === 200 && has('huaya-r1-1-1') && has('huaya-r1-1-2') && has('huaya-r1-1-2-1'),
-    `status=${r.status}`);
+  /* 按名字找：用户随时会调结构（他 2026-09-28 就自己挪过一次） */
+  const mianAfter = byTitleIn(after.boards, '眠鱼志');
+  const guwenAfter = byTitleIn(after.boards, '冰室古闻考');
+  check('编辑器「打开 → 原样保存一次」之后，两个子版块一个都没丢',
+    r.status === 200 && !!mianAfter && !!guwenAfter,
+    `status=${r.status}；眠鱼志=${!!mianAfter}、冰室古闻考=${!!guwenAfter}`);
   const upd = find(after.boards, 'huaya-r1-1');
   check('「更新日志」那一页还是"没有日期栏目"（助手日志没被塞回来）',
     !(upd?.page ?? []).some((b) => b.type === 'text' && /^20\d\d\.\d/.test(String(b.text ?? '').trim())));
-  const keep = (id, type) => (find(after.boards, id)?.page ?? []).some((b) => b.type === type);
+  const hasBlock = (node, type) => (node?.page ?? []).some((b) => b.type === type);
+  const recentNodeAfter = (() => {
+    const walk = (n) => {
+      if (!n) return null;
+      if ((n.page ?? []).some((b) => b.type === 'recent')) return n;
+      for (const k of n.children ?? []) {
+        const hit = walk(k);
+        if (hit) return hit;
+      }
+      return null;
+    };
+    return walk(upd);
+  })();
   check('★ 两种新块过一遍编辑器的白名单也没被丢掉（助手日志 / 近期更新）',
-    keep('huaya-r1-1-1', 'logs') && keep('huaya-r1-1-2', 'recent') &&
-      (find(after.boards, 'huaya-r1-1-2')?.page ?? []).some((b) => b.type === 'card'),
-    `眠鱼志 [${(find(after.boards, 'huaya-r1-1-1')?.page ?? []).map((b) => b.type).join(',')}]、花涧堂更新 [${(find(after.boards, 'huaya-r1-1-2')?.page ?? []).map((b) => b.type).join(',')}]`);
+    hasBlock(mianAfter, 'logs') && !!recentNodeAfter,
+    `眠鱼志 [${(mianAfter?.page ?? []).map((b) => b.type).join(',')}]、近期更新在「${recentNodeAfter?.title}」`);
+  check('用户自己写的那一页（冰室古闻考）内容没被动',
+    (guwenAfter?.page ?? []).length > 0 &&
+      JSON.stringify(guwenAfter.page) === JSON.stringify(byTitleIn(boards.boards, '冰室古闻考')?.page ?? []),
+    `${(guwenAfter?.page ?? []).length} 块`);
   check('日志数据文件（mianyu.json）在这个过程中一个字节都没动',
     fs.readFileSync(copyMianyuFile, 'utf8') === fs.readFileSync(MIANYU, 'utf8'));
 }
@@ -278,13 +356,14 @@ const post = async (p, body) => {
   const ok = await new Promise((res) => built.on('close', (code) => res(code === 0)));
   check('副本重新构建成功', ok, out.split(/\r?\n/).filter((l) => /error|Error/.test(l)).slice(-2).join(' | '));
   if (ok) {
-    const html = fs.readFileSync(path.join(DST, 'dist/huaya/memory/huajian/index.html'), 'utf8');
+    const recentRel = (recentNode && recentNode.href) || '/huaya/memory/update';
+    const html = fs.readFileSync(path.join(DST, `dist${recentRel}/index.html`.replace(/\/+/g, '/')), 'utf8');
     const first = /<a class="precent__card" href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/.exec(html);
     check('★ 重建之后，第一张卡就是刚在编辑器里改的那一页（冰室）',
       !!first && first[1] === '/huaya/bingshi' && firstName(first[2]) === '冰室',
       first ? `${firstName(first[2])} → ${first[1]}` : '没找到卡片');
     const days = (fs.readFileSync(path.join(DST, 'dist/huaya/memory/mianyu/index.html'), 'utf8')).match(/data-log-date="/g) || [];
-    check('重建之后眠鱼志还是 11 天（没被谁清掉）', days.length === 11, `${days.length} 天`);
+    check('重建之后眠鱼志还是那么多天（没被谁清掉）', days.length === dates.length, `${days.length} 天`);
   }
 }
 
@@ -309,23 +388,26 @@ console.log('\n---- dev 模式：这三页也得是一样的 ----');
       devMian = await fetchP('/huaya/memory/mianyu/');
     } catch { /* 还没起来 */ }
   }
-  const devHj = devMian ? await fetchP('/huaya/memory/huajian/') : '';
-  check('dev 下眠鱼志也是 11 天（读的是 mianyu.json，不是版块树）',
-    (devMian.match(/data-log-date="/g) || []).length === 11,
+  const devHj = devMian ? await fetchP(`/${String(recentRel ?? '/huaya/memory/update').replace(/^\//, '')}/`) : '';
+  check('dev 下眠鱼志也是那么多天（读的是 mianyu.json，不是版块树）',
+    (devMian.match(/data-log-date="/g) || []).length === dates.length,
     `${(devMian.match(/data-log-date="/g) || []).length} 天`);
   check('dev 下更新日志页上两张子版块卡都在',
-    /memory\/mianyu/.test(devLog) && /memory\/huajian/.test(devLog));
+    /memory\/mianyu/.test(devLog) && devLog.includes(String(GUWEN?.href ?? '不存在的地址')));
   check('dev 下近期更新也画得出来（3 张卡）',
     (devHj.match(/class="precent__card"/g) || []).length === 3,
     `${(devHj.match(/class="precent__card"/g) || []).length} 张`);
   dev.kill();
 }
 
-/* ⑤-4 append-log 只写 mianyu.json */{
+/* ⑤-4 append-log 只写 mianyu.json */
+{
   const bodyFile = path.join(DST, '.tmp-log-body.md');
   fs.mkdirSync(path.dirname(bodyFile), { recursive: true });
   fs.writeFileSync(bodyFile, '验收写的一栏：这一栏只是测试用的。\n\n第二段。\n', 'utf8');
   const boardsBefore = fs.readFileSync(copyBoardsFile, 'utf8');
+  /* 天数按**现成**的算：日志每天都在长，写死 11/12 明天就红了 */
+  const daysBefore = (JSON.parse(fs.readFileSync(copyMianyuFile, 'utf8')).entries ?? []).length;
   const run = (args) =>
     execSync(`"${process.execPath}" "${path.join(DST, 'tools/memory/append-log.mjs')}" ${args}`, {
       cwd: DST,
@@ -338,8 +420,9 @@ console.log('\n---- dev 模式：这三页也得是一样的 ----');
     out1 = String(err.stdout ?? err.message);
   }
   const after = JSON.parse(fs.readFileSync(copyMianyuFile, 'utf8'));
-  check('★ 助手写日志：眠鱼志多了一天（2026.10.1）', out1.includes('2026.10.1') && (after.entries ?? []).length === 12,
-    `entries=${(after.entries ?? []).length}`);
+  check('★ 助手写日志：眠鱼志多了一天（2026.10.1）',
+    out1.includes('2026.10.1') && (after.entries ?? []).length === daysBefore + 1,
+    `${daysBefore} → ${(after.entries ?? []).length} 天`);
   check('★ 而且 home-boards.json 一个字节都没动（这就是"分家"的意义）',
     fs.readFileSync(copyBoardsFile, 'utf8') === boardsBefore);
   let out2 = '';
@@ -350,7 +433,8 @@ console.log('\n---- dev 模式：这三页也得是一样的 ----');
   }
   const again = JSON.parse(fs.readFileSync(copyMianyuFile, 'utf8'));
   check('同一天再写一次 = 就地覆盖（天数不变，不会堆出两栏 10.1）',
-    (again.entries ?? []).length === 12 && /就地覆盖/.test(out2), `${(again.entries ?? []).length} 天`);
+    (again.entries ?? []).length === daysBefore + 1 && /就地覆盖/.test(out2),
+    `${(again.entries ?? []).length} 天（写完两次）`);
 }
 
 /* 几何：两张子版块卡在真浏览器里是不是左右并排（窄屏才该塌成一列） */

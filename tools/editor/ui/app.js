@@ -113,6 +113,9 @@ const els = {
     从「页面」工作台整块搬过来（见那边的注释）。
   */
   soloModal: $('solo-modal'),
+  tplModal: $('tpl-modal'),
+  tplList: $('tpl-list'),
+  tplHint: $('tpl-hint'),
   soloTitle: $('solo-title'),
   soloCount: $('solo-count'),
   soloSearch: $('solo-search'),
@@ -4764,12 +4767,189 @@ function renderPageEditor() {
   }
 
   els.pageEditor.appendChild(addRow);
+
+  /*
+    模版这一行（2026-09-28 加的）：把这一页的**结构**存下来，或把存过的导进来。
+    用户的原话：「隰辰煦家、虹星家结构完全一样 … 现在我要编写第三个【吉吉家】了
+    如果再来一遍这些构筑很麻烦」—— 所以有了它。
+  */
+  const tplRow = document.createElement('div');
+  tplRow.className = 'pblock-add pblock-tpl';
+  const tplLabel = document.createElement('span');
+  tplLabel.className = 'pblock-add__label';
+  tplLabel.textContent = '模版：';
+  tplRow.appendChild(tplLabel);
+
+  const mkTplBtn = (text, title, onClick) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'btn btn--ghost';
+    b.textContent = text;
+    b.title = title;
+    b.addEventListener('click', onClick);
+    return b;
+  };
+  tplRow.append(
+    mkTplBtn('💾 存成模版', '把这一页的结构存成模版：块的顺序与类型、小标题、排版设置都会留着；正文和图片不存', () => void savePageTemplate()),
+    mkTplBtn('📥 导入模版', '把存过的某一份结构导入到这一页（加在"当前插入点"，没点过「＋」就加在最后）', () => void openTemplateModal())
+  );
+  els.pageEditor.appendChild(tplRow);
+}
+
+/**
+ * 「存成模版」：把当前这一页的结构存下来（正文 / 图片都不存）。
+ *
+ * 名字默认是「<页面名>模版」；同名就覆盖那一份 —— 存两次不该堆出两个
+ * 一模一样的「家页模板」。
+ */
+async function savePageTemplate() {
+  if (!pageNode) return;
+  /* 先把草稿写回节点：不然存下去的是盘上那份旧的（用户可能刚改完还没保存） */
+  commitPageBlocks();
+  const name = window.prompt(
+    '模版叫什么名字？（只存结构：块的顺序与类型、小标题、排版设置 —— 正文和图片不存）',
+    `${pageNode.title || '页面'}模版`
+  );
+  if (name === null) return;
+  const trimmed = String(name).trim();
+  if (!trimmed) return;
+  try {
+    const data = await apiPost('/api/templates', { action: 'save', name: trimmed, nodeId: pageNode.id });
+    toast(
+      `已存成模版「${data.template.name}」（${data.template.blocks} 块）` +
+        (data.replaced ? '，覆盖了同名的那份' : '') +
+        ' —— 新建页面时点「导入模版」'
+    );
+  } catch (err) {
+    toast(`存模版失败：${err.message}`, true);
+  }
+}
+
+function closeTemplateModal() {
+  els.tplModal.hidden = true;
+}
+
+/** 模版列表：名字 / 来源 / 块数 / 什么时候存的，每条能导入、改名、删除 */
+async function openTemplateModal() {
+  if (!pageNode) return;
+  try {
+    const data = await apiGet('/api/templates');
+    const list = data?.templates ?? [];
+    els.tplList.textContent = '';
+    if (!list.length) {
+      const p = document.createElement('p');
+      p.className = 'hint';
+      p.textContent = '还没有模版。先在有内容的页面里点「💾 存成模版」（比如拿「隰辰煦家」存一份「家页模板」）。';
+      els.tplList.appendChild(p);
+    }
+    for (const t of list) {
+      const row = document.createElement('div');
+      row.className = 'tplrow';
+      row.dataset.tplId = t.id;
+
+      const main = document.createElement('div');
+      main.className = 'tplrow__main';
+      const name = document.createElement('b');
+      name.className = 'tplrow__name';
+      name.textContent = t.name;
+      const meta = document.createElement('span');
+      meta.className = 'tplrow__meta';
+      const when = t.at
+        ? new Date(t.at).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+        : '';
+      meta.textContent =
+        `${t.blocks} 块 · ${t.kinds.join(' / ')}` +
+        (t.from?.title ? ` · 来自「${t.from.title}」` : '') +
+        (when ? ` · ${when}` : '');
+      main.append(name, meta);
+
+      const btns = document.createElement('div');
+      btns.className = 'tplrow__btns';
+      const mk = (text, cls, onClick) => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = `btn btn--ghost boardedit__mini${cls ? ` ${cls}` : ''}`;
+        b.textContent = text;
+        b.addEventListener('click', onClick);
+        return b;
+      };
+      btns.append(
+        mk('导入', '', () => void importTemplate(t.id, t.name)),
+        mk('改名', '', async () => {
+          const next = window.prompt('模版改成什么名字？', t.name);
+          if (next === null || !String(next).trim()) return;
+          try {
+            await apiPost('/api/templates', { action: 'rename', id: t.id, name: String(next).trim() });
+            await openTemplateModal();
+          } catch (err) {
+            toast(`改名失败：${err.message}`, true);
+          }
+        }),
+        mk('删除', 'boardedit__del', async () => {
+          if (!confirm(`删掉模版「${t.name}」？`)) return;
+          try {
+            await apiPost('/api/templates', { action: 'delete', id: t.id });
+            await openTemplateModal();
+          } catch (err) {
+            toast(`删除失败：${err.message}`, true);
+          }
+        })
+      );
+
+      row.append(main, btns);
+      els.tplList.appendChild(row);
+    }
+    els.tplModal.hidden = false;
+  } catch (err) {
+    toast(`读模版失败：${err.message}`, true);
+  }
+}
+
+/**
+ * 把某一份模版导入当前这一页：块的原样搬过来（换一套新 id），加在"当前插入点"。
+ * 导入的是**骨架**：文字块只有小标题、图片块只有宽窄 —— 正文和图片要自己补。
+ */
+async function importTemplate(id, name) {
+  if (!pageNode) return;
+  try {
+    const data = await apiGet(`/api/templates?id=${encodeURIComponent(id)}`);
+    const blocks = Array.isArray(data?.template?.blocks) ? data.template.blocks : [];
+    if (!blocks.length) {
+      toast('这份模版里没有块', true);
+      return;
+    }
+    const made = blocks.map((b) => {
+      const out = { ...b, id: newBlockId(pageNode.id) };
+      /* 地图页也要自己的 id（编辑器里翻页、钉图钉都靠它） */
+      if (out.type === 'map' && Array.isArray(out.pages)) {
+        out.pages = out.pages.map((pg, i) => ({ ...pg, id: `${out.id}-p${i + 1}` }));
+      }
+      return out;
+    });
+    const at = pageInsertAt();
+    if (at < 0) pageDraft.push(...made);
+    else pageDraft.splice(at, 0, ...made);
+    pageInsertAfterId = made[made.length - 1].id;
+    pageActiveBlockId = made[made.length - 1].id;
+    markStudioDirty();
+    renderPageEditor();
+    revealPageBlock(made[0].id);
+    closeTemplateModal();
+    toast(`已导入模版「${name}」（${made.length} 块）—— 正文和图片要自己补，保存后生效`);
+  } catch (err) {
+    toast(`导入失败：${err.message}`, true);
+  }
 }
 
 /** 把草稿里的块写回节点，顺手丢掉空块（没写字的文字、没选图的图片…） */
 function commitPageBlocks() {
   if (!pageNode) return;
   pageDraft = pageDraft.filter((b) => {
+    /*
+      模版导入的空格子（placeholder）空着也留着 —— 用户要的正是那些"位置"：
+      导进来、填两段、顺手保存，剩下的格子不该消失。见 server.mjs 里的说明。
+    */
+    if (b.placeholder === true) return true;
     if (b.type === 'text') return String(b.text ?? '').trim();
     if (b.type === 'image') return String(b.src ?? '').trim();
     if (b.type === 'link') return String(b.text ?? '').trim() && String(b.href ?? '').trim();
@@ -12308,6 +12488,11 @@ function bindEvents() {
       renderSoloList();
     }, 120);
   });
+  els.tplModal.addEventListener('click', (ev) => {
+    if (ev.target.dataset && ev.target.dataset.close) closeTemplateModal();
+  });
+  $('tpl-close').addEventListener('click', closeTemplateModal);
+
   els.soloModal.addEventListener('click', (ev) => {
     if (ev.target.dataset && ev.target.dataset.close) closeSoloView();
   });

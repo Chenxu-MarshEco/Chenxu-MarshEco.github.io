@@ -1300,6 +1300,96 @@ async function handleApi(req, res, url) {
     });
   }
 
+  /*
+    页面模版：列表（?id=xxx 取某一份的完整 blocks）/ 保存 / 删除 / 改名。
+      · 保存：{ action:'save', name, nodeId } —— 把那个节点那一页**脱掉内容**存成骨架；
+        同名模版就地更新（存两次不该堆出两个「家页模板」）。
+      · 删除：{ action:'delete', id } / · 改名：{ action:'rename', id, name }
+  */
+  if (route === '/api/templates' && req.method === 'GET') {
+    const data = await readTemplates();
+    const id = String(url.searchParams.get('id') || '').trim();
+    if (id) {
+      const hit = data.templates.find((t) => t.id === id);
+      if (!hit) throw httpError(404, '没有这个模版');
+      return sendJson(res, 200, { ok: true, template: hit });
+    }
+    return sendJson(res, 200, {
+      ok: true,
+      updated: data.updated,
+      templates: data.templates.map(templateBrief),
+    });
+  }
+  if (route === '/api/templates' && req.method === 'POST') {
+    const payload = await readBody(req);
+    const action = String(payload?.action || '');
+    const data = await readTemplates();
+
+    if (action === 'save') {
+      const name = String(payload?.name || '').trim().slice(0, 40);
+      if (!name) throw httpError(400, '模版得有个名字');
+      const nodeId = String(payload?.nodeId || '').trim();
+      if (!nodeId) throw httpError(400, '不知道存哪一页（nodeId 是空的）');
+      const boards = await readBoards();
+      const node = (function find(nodes) {
+        for (const n of nodes || []) {
+          if (!n) continue;
+          if (n.id === nodeId) return n;
+          const hit = find(n.children);
+          if (hit) return hit;
+        }
+        return null;
+      })(boards?.boards ?? []);
+      if (!node) throw httpError(404, `找不到版块 ${nodeId}`);
+      const blocks = stripPageToTemplate(node.page);
+      if (!blocks.length) {
+        throw httpError(400, `「${node.title}」这一页还没有内容块，没什么结构可以存`);
+      }
+      const page = await pageOfNode(nodeId);
+      const existed = data.templates.find((t) => t.name === name);
+      const record = {
+        id: existed?.id || `tpl-${Date.now().toString(36)}-${randomBytes(2).toString('hex')}`,
+        name,
+        at: new Date().toISOString(),
+        from: page ? { href: page.href, title: page.title } : { href: '', title: node.title },
+        blocks,
+      };
+      data.templates = [record, ...data.templates.filter((t) => t.name !== name)];
+      const saved = await writeTemplates(data);
+      return sendJson(res, 200, {
+        ok: true,
+        replaced: Boolean(existed),
+        template: templateBrief(record),
+        total: saved.templates.length,
+      });
+    }
+
+    if (action === 'delete') {
+      const id = String(payload?.id || '').trim();
+      const before = data.templates.length;
+      data.templates = data.templates.filter((t) => t.id !== id);
+      if (data.templates.length === before) throw httpError(404, '没有这个模版');
+      await writeTemplates(data);
+      return sendJson(res, 200, { ok: true, total: data.templates.length });
+    }
+
+    if (action === 'rename') {
+      const id = String(payload?.id || '').trim();
+      const name = String(payload?.name || '').trim().slice(0, 40);
+      if (!name) throw httpError(400, '新名字不能是空的');
+      const hit = data.templates.find((t) => t.id === id);
+      if (!hit) throw httpError(404, '没有这个模版');
+      if (data.templates.some((t) => t.id !== id && t.name === name)) {
+        throw httpError(409, `已经有一个叫「${name}」的模版了`);
+      }
+      hit.name = name;
+      await writeTemplates(data);
+      return sendJson(res, 200, { ok: true, template: templateBrief(hit) });
+    }
+
+    throw httpError(400, `不认识的 action：${action || '（空）'}（只认 save / delete / rename）`);
+  }
+
   // ---- 锚点清单（构建产物 dist/anchors.json）----
   // 页面里那些能被跳到的位置：标题（id 就是标题文字）、每个内容块（id="blk-<块id>"）。
   // 编辑器里「选页面里的位置…」那个小面板靠它，所以没有产物时返回空清单 + 一句说明，
@@ -1434,6 +1524,156 @@ async function pageOfNode(nodeId) {
     return null;
   }
 }
+
+/* ------------------------------------------------------------------
+   页面模版（2026-09-28 加的）
+
+   用户原话：
+     「可以看到在纷湖下的【隰辰煦家】和【虹星家】这两个页面 两者结构完全一样 …
+      现在我要编写第三个板块【吉吉家】了 如果再来一遍这些构筑很麻烦 所以需要一个
+      保存模版功能 可以把一个页面的结构保存下来 文字图片等内容不进行保存 并且命名
+      为 xx 模板 然后在新建的页面可以导入模版 选择 xx 模版即可导入这个页面的结构」
+
+   所以模版里存的是**骨架**：
+     · 块的类型和顺序；
+     · 排版类设置（图片宽窄、卡片比例大小、卡片框高度…）；
+     · 文字块里的小标题（## / ### —— 那些就是「主要建筑 / 画廊 / 导航」这类小节名）；
+     · 导航块引用的是哪几个分类、目录与文章块的标题。
+   不存的是**内容**：正文、图片地址、图片说明、链接、图钉、划分线、卡片指向的子页面 id。
+
+   数据放 src/data/page-templates.json（跟着仓库走，换台机器也在）。
+   ------------------------------------------------------------------ */
+const TEMPLATE_FILE = path.join(PROJECT_ROOT, 'src', 'data', 'page-templates.json');
+const TEMPLATE_MAX = 60;
+const TEMPLATE_README = [
+  '页面模版：把某一页的**结构**存下来，新建页面时导入，不用一遍遍重搭。',
+  '由编辑器写入（页面工作台 → 「存成模版」/「导入模版」），也可以手改（改完要重新构建）。',
+  '',
+  '模版里存的是骨架，不含内容：块的类型与顺序、排版设置（图片宽窄 / 卡片比例大小 / 卡片框高度）、',
+  '文字块里的小标题（## 和 ###）、导航块引用哪几个分类、目录与文章块的标题。',
+  '不存：正文、图片地址与说明、链接、地图的图与图钉与划分线、卡片指向的子页面 id。',
+  '所以导入之后要自己写正文、传图片 —— 但小节和小节的顺序不用重来。',
+];
+
+/** 一页的块 → 模版骨架（见上面那段说明里的「存什么 / 不存什么」） */
+
+/**
+ * 模版里被"掏空"的块要打个记号。
+ *
+ * 编辑器保存时会丢掉空块（没选图的图片、没写地址的链接…）—— 那对正常编辑是对的，
+ * 但模版导入的正是这些"空格子"：不打记号的话，用户导进来写两段、一保存，
+ * 剩下的格子全没了，结构等于白导。打了记号的块空着也留着，填上内容之后照常渲染。
+ */
+const withPlaceholder = (block) => ({ ...block, placeholder: true });
+
+function stripBlockForTemplate(b) {
+  if (!b || typeof b !== 'object') return null;
+  const type = String(b.type || '');
+  const str = (v) => String(v ?? '').trim();
+  switch (type) {
+    case 'text': {
+      /*
+        只留小标题行（## xxx / ### xxx）—— 用户说的「目录 / 主要建筑 / 溪流之外的
+        轶事 / 画廊 / 导航」就是这些行：它们是结构，正文才是内容。
+      */
+      const heads = String(b.text ?? '')
+        .split('\n')
+        .map((l) => l.trim())
+        .filter((l) => /^#{2,4}\s+\S/.test(l));
+      return { type, text: heads.join('\n') };
+    }
+    case 'image':
+      return withPlaceholder({ type, width: b.width ?? 'wide' });
+    case 'link':
+      return withPlaceholder({ type, text: '', href: '' });
+    case 'divider':
+      return { type };
+    case 'columns':
+      return withPlaceholder({ type, left: '', right: '' });
+    case 'video':
+      return withPlaceholder({ type, src: '', caption: '' });
+    case 'posts':
+    case 'toc':
+    case 'logs': {
+      const out = { type };
+      if (str(b.text)) out.text = str(b.text);
+      return out;
+    }
+    case 'recent': {
+      const out = { type };
+      if (str(b.text)) out.text = str(b.text);
+      const n = Number(b.count);
+      if (Number.isFinite(n) && n >= 1) out.count = Math.min(12, Math.round(n));
+      return out;
+    }
+    case 'nav': {
+      /* 引用哪几个分类是结构（分类库是站点级的），保留 */
+      const cats = [];
+      for (const c of Array.isArray(b.cats) ? b.cats : []) {
+        const s = str(c);
+        if (s && !cats.includes(s)) cats.push(s);
+      }
+      const out = { type, cats };
+      if (str(b.text)) out.text = str(b.text);
+      return out;
+    }
+    case 'map': {
+      /* 地图：几页就留几页（图、图钉、划分线都不带） */
+      const pages = Array.isArray(b.pages) && b.pages.length ? b.pages : b.src ? [{}] : [];
+      return withPlaceholder({ type, pages: pages.map(() => ({ src: '', markers: [], lines: [] })) });
+    }
+    case 'children':
+      return { type, shape: b.shape ?? 'wide', size: b.size ?? 'l' };
+    case 'card':
+      /* 卡片指向的是**原页面**的子节点 id，换一页就对不上了 → 清空，导入后自己挑 */
+      return { type, ref: '', shape: b.shape ?? 'wide', size: b.size ?? 'l' };
+    case 'cardbox': {
+      const out = { type, refs: [], shape: b.shape ?? 'wide', size: b.size ?? 'l' };
+      const max = Number(b.max);
+      if (Number.isFinite(max) && max > 0) out.max = Math.round(max);
+      return out;
+    }
+    default:
+      return null;
+  }
+}
+
+function stripPageToTemplate(blocks) {
+  return (Array.isArray(blocks) ? blocks : []).map(stripBlockForTemplate).filter(Boolean);
+}
+
+async function readTemplates() {
+  try {
+    const raw = JSON.parse(await fs.readFile(TEMPLATE_FILE, 'utf8'));
+    return {
+      _readme: Array.isArray(raw?._readme) && raw._readme.length ? raw._readme : TEMPLATE_README,
+      updated: String(raw?.updated ?? ''),
+      templates: Array.isArray(raw?.templates) ? raw.templates : [],
+    };
+  } catch {
+    return { _readme: TEMPLATE_README, updated: '', templates: [] };
+  }
+}
+
+async function writeTemplates(data) {
+  const out = {
+    _readme: data._readme?.length ? data._readme : TEMPLATE_README,
+    updated: new Date().toISOString(),
+    templates: (data.templates ?? []).slice(0, TEMPLATE_MAX),
+  };
+  await fs.writeFile(TEMPLATE_FILE, `${JSON.stringify(out, null, 2)}\n`, 'utf8');
+  return out;
+}
+
+/** 面板列表里不带 blocks（只要名字 / 来源 / 块数），导入时再单独取那一条 */
+const templateBrief = (t) => ({
+  id: t.id,
+  name: t.name,
+  at: t.at ?? '',
+  from: t.from ?? null,
+  blocks: Array.isArray(t.blocks) ? t.blocks.length : 0,
+  kinds: Array.isArray(t.blocks) ? [...new Set(t.blocks.map((b) => b.type))] : [],
+});
 
 function runBuild() {
   if (buildInFlight) {
@@ -2132,6 +2372,11 @@ function cleanBlocks(raw, ownerId) {
       if (tp) block.timePoint = tp;
       const ts = String(b.timeSpan || '').trim();
       if (ts) block.timeSpan = ts;
+      /*
+        模版导入的空格子（见 stripBlockForTemplate 上面那段说明）：
+        b.placeholder === true 时把这个记号原样带回去，编辑器和站点都认它。
+      */
+      if (b.placeholder === true) block.placeholder = true;
       out.push(block);
     };
 
@@ -2143,7 +2388,8 @@ function cleanBlocks(raw, ownerId) {
 
     if (type === 'image') {
       const src = String(b.src || '').trim();
-      if (!src) return;
+      /* 空格子（模版导入的）留着；别的空图还是丢掉 */
+      if (!src && b.placeholder !== true) return;
       const block = { id, type, src };
       const alt = String(b.alt || '').trim();
       if (alt) block.alt = alt;
@@ -2155,7 +2401,7 @@ function cleanBlocks(raw, ownerId) {
     if (type === 'link') {
       const text = String(b.text || '').trim();
       const href = String(b.href || '').trim();
-      if (!text || !href) return;
+      if ((!text || !href) && b.placeholder !== true) return;
       pushBlock({ id, type, text, href });
       return;
     }
@@ -2172,15 +2418,15 @@ function cleanBlocks(raw, ownerId) {
     if (type === 'columns') {
       const left = String(b.left ?? '');
       const right = String(b.right ?? '');
-      // 两边都空就没有存在的意义
-      if (!left.trim() && !right.trim()) return;
+      // 两边都空就没有存在的意义（模版导入的空格子除外）
+      if (!left.trim() && !right.trim() && b.placeholder !== true) return;
       pushBlock({ id, type, left, right });
       return;
     }
 
     if (type === 'video') {
       const src = String(b.src || '').trim();
-      if (!src) return;
+      if (!src && b.placeholder !== true) return;
       const block = { id, type, src };
       const caption = String(b.caption || '').trim();
       if (caption) block.caption = caption;
@@ -2345,8 +2591,20 @@ function cleanBlocks(raw, ownerId) {
         pages.push(page);
       });
 
-      // 一页都没留下（一张图都没选）就等于这个块是空的
-      if (!pages.length) return;
+      /*
+        一页都没留下 = 这个块是空的 → 丢掉；但模版导入的空地图要留着
+        （页数就是结构：用户知道这里有一张图要传）。
+      */
+      if (!pages.length && b.placeholder !== true) return;
+      if (!pages.length) {
+        pushBlock({ id, type, pages: (Array.isArray(b.pages) ? b.pages : [{}]).map((pg, pi) => ({
+          id: String(pg?.id || `${id}-p${pi + 1}`),
+          src: '',
+          markers: [],
+          lines: [],
+        })) });
+        return;
+      }
       pushBlock({ id, type, pages });
       return;
     }
