@@ -248,7 +248,7 @@ try {
     JSON.stringify({ cat: iceOn.categories[0], tag: iceOn.tags[0], itemIds: iceOn.layers[0].items.map((i) => i.id) }));
   const loose = iceOn.layers[0].items.find((i) => i.name === ICE_LOOSE);
   check('引用了不存在的分类 / 标签 → 清成空，并报了数（dropped.refs = 2）',
-    loose && loose.categoryId === '' && loose.tags.length === 0 && rIce.json?.dropped?.refs === 2,
+    loose && (loose.categoryIds ?? []).length === 0 && loose.tags.length === 0 && rIce.json?.dropped?.refs === 2,
     JSON.stringify({ loose, dropped: rIce.json?.dropped }));
 
   const hIce2 = html(path.join('iceberg', 'index.html'));

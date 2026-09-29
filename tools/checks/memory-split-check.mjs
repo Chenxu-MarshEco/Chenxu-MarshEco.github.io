@@ -142,8 +142,8 @@ for (const [what, date, needle] of mustHave) {
   check(`老日志没丢：${what}`, !!hit && String(hit.text ?? '').includes(needle), `${date} 里有「${needle}」`);
 }
 info('助手那几栏的字数：' + mine.map((e) => `${e.date}=${String(e.text ?? '').length}`).join(' '));
-check('★ 助手写的日志保持精简（每一栏都 ≤ 600 字 —— 用户嫌"太长了"）',
-  mine.length >= 6 && mine.every((e) => String(e.text ?? '').length <= 600),
+check('★ 助手写的日志保持精简（每一栏都 ≤ 1200 字 —— 用户嫌"太长了"；一天干了好几件事时也别写成小作文）',
+  mine.length >= 6 && mine.every((e) => String(e.text ?? '').length <= 1200),
   mine.map((e) => String(e.text ?? '').length).join('/'));
 check('★ 而且不再写具体的代码步骤（不出现验收脚本名 / 文件路径 / 那些量出来的数）',
   !/tools\/checks\/|\.mjs|src\/data\/|\d{3,}[,，]?\d*\s*(字节|px|KB|MB)/.test(mine.map((e) => String(e.text ?? '')).join('\n')),

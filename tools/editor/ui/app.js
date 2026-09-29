@@ -10547,18 +10547,45 @@ function iceCatRow(c, status) {
   });
   name.classList.add('wice__name');
 
+  /*
+    emoji（2026-09-29）：条目右上角那个小图标，也是顶上那排分类开关名字右边的那个。
+    就一个小输入框 —— 直接粘一个 emoji 进去，或者干脆打一个字（用户也可能想用字当图标）。
+  */
+  const emoji = boardInput(c.emoji ?? '', '🌸', (v) => {
+    c.emoji = [...String(v ?? '').trim()].slice(0, 8).join('');
+    dirty();
+  });
+  emoji.classList.add('wice__emoji');
+
+  /* 描述：鼠标移到条目那个 emoji 上时弹出来的话 */
+  const desc = document.createElement('textarea');
+  desc.className = 'input wice__catdesc';
+  desc.rows = 2;
+  desc.placeholder = '这一类的描述（鼠标移到条目右上角的 emoji 上会弹出来）';
+  desc.value = c.desc ?? '';
+  desc.addEventListener('input', () => {
+    c.desc = desc.value;
+    dirty();
+  });
+
   const del = iceMiniBtn('✕', '删掉这个分类（归在它里面的条目会变成「未分类」，条目本身不删）', true, () => {
     const i = iceCats().indexOf(c);
     if (i < 0) return;
     iceCats().splice(i, 1);
     /* 引用一起清掉：留着一个指向已删分类的 id，页面上那一条会变成默认灰，
        而在编辑器里看起来「还归在某个分类」，两边对不上 */
-    for (const l of iceLayers()) for (const it of l.items) if (it.categoryId === c.id) it.categoryId = '';
+    for (const l of iceLayers()) {
+      for (const it of l.items) {
+        if (!Array.isArray(it.categoryIds)) it.categoryIds = it.categoryId ? [it.categoryId] : [];
+        it.categoryIds = it.categoryIds.filter((x) => x !== c.id);
+        it.categoryId = it.categoryIds[0] ?? '';
+      }
+    }
     dirty();
     renderIceChartPanel();
   }, true);
 
-  row.append(eye, color, name, del);
+  row.append(eye, color, emoji, name, del, desc);
   return row;
 }
 
@@ -10653,7 +10680,9 @@ function iceItemRow(layer, it, status) {
   const row = document.createElement('div');
   row.className = 'wice__item';
   row.dataset.itemId = it.id;
-  const cat = iceCatById(it.categoryId);
+  const catIds = Array.isArray(it.categoryIds) ? it.categoryIds : it.categoryId ? [it.categoryId] : [];
+  const cats = catIds.map((id) => iceCatById(id)).filter(Boolean);
+  const cat = cats[0] ?? null;
   row.style.setProperty('--cat', cat ? cat.color : '#b9a6c9');
 
   const dot = document.createElement('span');
@@ -10666,7 +10695,10 @@ function iceItemRow(layer, it, status) {
   const via = document.createElement('span');
   via.className = 'wice__itemVia';
   const tagNames = (it.tags ?? []).map((id) => iceTagList().find((t) => t.id === id)?.name ?? '').filter(Boolean);
-  via.textContent = `${cat ? cat.name : '未分类'}${tagNames.length ? ` · ${tagNames.join('/')}` : ''}${it.href ? ' · 有链接' : ''}`;
+  via.textContent =
+    (cats.length ? cats.map((c) => `${c.emoji ? `${c.emoji}` : ''}${c.name}`).join(' + ') : '未分类') +
+    (tagNames.length ? ` · ${tagNames.join('/')}` : '') +
+    (it.href ? ' · 有链接' : '');
 
   const done = iceComplete(it);
   const badge = document.createElement('span');
@@ -10725,24 +10757,91 @@ function iceItemForm(host, layer, item, status, isNew) {
   });
   box.appendChild(panelRow('条目', nameInput));
 
-  const catSel = document.createElement('select');
-  catSel.className = 'input wice__select';
-  const none = document.createElement('option');
-  none.value = '';
-  none.textContent = '（未分类 · 页面上是灰的）';
-  catSel.appendChild(none);
+  /*
+    分类：**可以勾多个，勾选顺序就是显示顺序**（2026-09-29 加的）。
+
+    顺序为什么重要（用户原话）：「拥有多条分类时 会显示为自己拥有的第一条分类的颜色 …
+    如果关掉花娅奇闻分类的显示 那么字就会变成我所在之城的怪事的灰色」——
+    第一个是主分类，页面上的字色和右上角 emoji 的排列都按这个顺序来。
+    勾选框的勾选先后自然形成顺序，下面那排小按钮还能自己调。
+  */
+  if (!Array.isArray(item.categoryIds)) item.categoryIds = item.categoryId ? [item.categoryId] : [];
+  const catBox = document.createElement('div');
+  catBox.className = 'wess__memberGrid';
+  const orderBox = document.createElement('div');
+  orderBox.className = 'wice__catorder';
+
+  const syncCats = () => {
+    item.categoryIds = item.categoryIds.filter((id) => iceCatById(id));
+    item.categoryId = item.categoryIds[0] ?? '';
+    for (const cb of catBox.querySelectorAll('input[type=checkbox]')) {
+      cb.checked = item.categoryIds.includes(cb.dataset.catPick ?? '');
+      const i = item.categoryIds.indexOf(cb.dataset.catPick ?? '');
+      cb.parentElement.dataset.order = i < 0 ? '' : String(i + 1);
+    }
+    orderBox.textContent = '';
+    if (item.categoryIds.length > 1) {
+      const label = document.createElement('span');
+      label.className = 'wice__catorderLabel';
+      label.textContent = '顺序（第一个决定颜色）：';
+      orderBox.appendChild(label);
+    }
+    item.categoryIds.forEach((id, i) => {
+      const c = iceCatById(id);
+      if (!c) return;
+      const chip = document.createElement('span');
+      chip.className = 'wice__catorderChip';
+      chip.style.setProperty('--cat', c.color);
+      chip.textContent = `${i + 1}. ${c.emoji ? `${c.emoji} ` : ''}${c.name}`;
+      const up = iceMiniBtn('↑', '往前提一位（提到第一位 = 页面上用它的颜色和 emoji 打头）', true, () => {
+        if (i === 0) return;
+        [item.categoryIds[i - 1], item.categoryIds[i]] = [item.categoryIds[i], item.categoryIds[i - 1]];
+        dirty();
+        syncCats();
+      });
+      const down = iceMiniBtn('↓', '往后放一位', true, () => {
+        if (i >= item.categoryIds.length - 1) return;
+        [item.categoryIds[i + 1], item.categoryIds[i]] = [item.categoryIds[i], item.categoryIds[i + 1]];
+        dirty();
+        syncCats();
+      });
+      chip.append(up, down);
+      orderBox.appendChild(chip);
+    });
+  };
+
+  if (!iceCats().length) catBox.appendChild(iceHint('还没有分类 —— 先在左边「分类」那一栏建一个，再回来勾。'));
   for (const c of iceCats()) {
-    const o = document.createElement('option');
-    o.value = c.id;
-    o.textContent = `${c.name} · ${c.color}`;
-    catSel.appendChild(o);
+    const label = document.createElement('label');
+    label.className = 'wess__member';
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.checked = item.categoryIds.includes(c.id);
+    cb.dataset.catPick = c.id;
+    cb.addEventListener('change', () => {
+      if (cb.checked) {
+        if (!item.categoryIds.includes(c.id)) item.categoryIds.push(c.id);
+      } else {
+        item.categoryIds = item.categoryIds.filter((x) => x !== c.id);
+      }
+      dirty();
+      syncCats();
+    });
+    const span = document.createElement('span');
+    span.className = 'wess__memberName';
+    span.textContent = `${c.emoji ? `${c.emoji} ` : ''}${c.name}`;
+    label.append(cb, span);
+    catBox.appendChild(label);
   }
-  catSel.value = item.categoryId ?? '';
-  catSel.addEventListener('change', () => {
-    item.categoryId = catSel.value;
-    dirty();
-  });
-  box.appendChild(panelRow('分类', catSel, '决定这一条在图里的颜色。'));
+  syncCats();
+  box.appendChild(
+    panelRow('分类', (() => {
+      const wrap = document.createElement('div');
+      wrap.className = 'wice__cats';
+      wrap.append(catBox, orderBox);
+      return wrap;
+    })(), '可以勾多个：**顺序就是显示顺序** —— 第一个是主分类（页面上字用它的颜色），右上角按这个顺序排 emoji。')
+  );
 
   const tagWrap = document.createElement('div');
   tagWrap.className = 'wess__memberGrid';
@@ -10882,7 +10981,7 @@ function renderIceChartPanel() {
   catBox.appendChild(
     panelBtn('＋ 新增分类', '建一个新分类，然后到条目上选它', () => {
       const used = new Set(iceCats().map((c) => String(c.id ?? '')));
-      iceCats().push({ id: iceNewId('c', used), name: '新分类', color: '#ff5fb0', hidden: false });
+      iceCats().push({ id: iceNewId('c', used), name: '新分类', color: '#ff5fb0', emoji: '', desc: '', hidden: false });
       dirty();
       renderIceChartPanel();
     })
@@ -11004,12 +11103,14 @@ function renderIceChartPanel() {
       const kw = iceFind.trim().toLowerCase();
       const hits = cur.items.filter((it) => {
         if (!kw) return true;
-        const cat = iceCatById(it.categoryId);
+        const catNames = (Array.isArray(it.categoryIds) ? it.categoryIds : it.categoryId ? [it.categoryId] : [])
+          .map((id) => iceCatById(id)?.name ?? '')
+          .join('/');
         const tagNames = (it.tags ?? []).map((id) => iceTagList().find((t) => t.id === id)?.name ?? '');
         return (
           String(it.name ?? '').toLowerCase().includes(kw) ||
           String(it.desc ?? '').toLowerCase().includes(kw) ||
-          (cat?.name ?? '').toLowerCase().includes(kw) ||
+          catNames.toLowerCase().includes(kw) ||
           tagNames.join('/').toLowerCase().includes(kw)
         );
       });
@@ -11036,7 +11137,15 @@ function renderIceChartPanel() {
       search,
       count,
       panelBtn('＋ 新增条目', '往这一层加一条', () => {
-        iceNewItem = { id: '', name: '', categoryId: iceCats()[0]?.id ?? '', tags: [], desc: '', href: '' };
+        iceNewItem = {
+          id: '',
+          name: '',
+          categoryIds: iceCats()[0] ? [iceCats()[0].id] : [],
+          categoryId: iceCats()[0]?.id ?? '',
+          tags: [],
+          desc: '',
+          href: '',
+        };
         iceEditing = 'new';
         renderIceChartPanel();
       }, true)

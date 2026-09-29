@@ -17,6 +17,7 @@ import json
 import os
 import queue
 import shutil
+import socket
 import subprocess
 import sys
 import threading
@@ -34,6 +35,33 @@ IS_WIN = sys.platform == 'win32'
 # 早先只有启动 pnpm 那一处加了，结果每 4 秒一次的状态检查
 # 会闪一个黑窗口出来 —— 就是用户看到的"时不时弹窗然后立马关掉"。
 NO_WINDOW = subprocess.CREATE_NO_WINDOW if IS_WIN else 0
+
+# ------------------------------------------------------- 本地预览地址（很重要）
+
+# 一律用**字面量 127.0.0.1**，不要用 `localhost`。两个原因叠在一起：
+#
+#   1. Windows 上 `localhost` 先解析成 IPv6 的 ::1，而 astro dev 是显式绑在
+#      127.0.0.1（IPv4）上的（见下面 launch 里的 --host）。没有代理时浏览器
+#      收到一个"立刻被拒"就会飞快退回 IPv4，看不出问题；一旦开了代理/梯子
+#      （Clash 一类，尤其 fake-ip DNS 或 TUN 模式），那一次 ::1 尝试可能被
+#      拖住、或者 `localhost` 这个名字干脆被解析到别的地址 ——
+#      表现就是用户报的「看效果有时好有时坏、要反复开关梯子，甚至完全打不开」。
+#   2. 127.0.0.1 是字面地址，**不经过 DNS**、也不出本机回环，
+#      代理绕不绕过它都无所谓。梯子开着关着都一样。
+#
+# 编辑器（4322）那边本来就是这么做的（HOST = '127.0.0.1'），只有这一处漏了。
+PREVIEW_PORT = 4321
+PREVIEW_URL = f'http://127.0.0.1:{PREVIEW_PORT}'
+
+
+def preview_ready(port=PREVIEW_PORT, timeout=0.4):
+    """预览服务在不在 —— 直接连 127.0.0.1，不问 DNS。"""
+    try:
+        with socket.create_connection(('127.0.0.1', port), timeout=timeout):
+            return True
+    except OSError:
+        return False
+
 
 # ---------------------------------------------------------------- 配色
 
@@ -612,6 +640,11 @@ class Studio:
                     # 只把「正在看的那个进程」的输出打到日志上，
                     # 否则编辑器和预览的输出会混在一起
                     if self.active == key:
+                        # 预览那条路上，把 Astro 打印的 localhost 换成字面量 127.0.0.1：
+                        # 用户会照着日志里的地址复制粘贴，而 localhost 在开着代理时
+                        # 可能根本连不上（理由见 PREVIEW_URL）
+                        if key == 'preview' and 'localhost' in payload:
+                            payload = payload.replace('localhost', '127.0.0.1')
                         self.log_write(payload)
                 elif kind == 'progress':
                     if self.active == key:
@@ -745,7 +778,11 @@ class Studio:
             self.spawn('preview',
                        [self.resolve('pnpm'), 'dev', '--host', '127.0.0.1'],
                        '看效果')
-            self.root.after(5000, self.open_browser)
+            self.log_write(f'地址是 {PREVIEW_URL}'
+                           '　（请用这个地址，不要用 localhost —— 开着代理/梯子时\n'
+                           '   localhost 可能被解析到别的地址，那就会一直转圈打不开）\n\n')
+            # 等预览服务真的在听了再开浏览器（见 open_browser）
+            self.root.after(600, self.open_browser)
         elif key == 'publish':
             if not self.need_deps():
                 return
@@ -753,9 +790,25 @@ class Studio:
         elif key == 'setup':
             self.spawn('setup', [self.resolve('pnpm'), 'install'], '首次设置')
 
-    def open_browser(self):
+    def open_browser(self, attempt=0):
+        """等预览服务起来了再打开浏览器，而且开的是 PREVIEW_URL（字面量 127.0.0.1）。
+
+        以前是「5 秒后无脑打开」：依赖装完第一次跑要编译一阵子，浏览器常常先撞上
+        「无法访问此网站」，看起来就像"看效果坏了"。
+        """
+        if preview_ready():
+            try:
+                os.startfile(PREVIEW_URL)
+            except Exception:
+                pass
+            return
+        if attempt < 60:                    # 最多等 30 秒
+            self.root.after(500, lambda: self.open_browser(attempt + 1))
+            return
+        self.log_write(f'\n预览服务还没起来 —— 先把浏览器打开了（{PREVIEW_URL}），'
+                       '刷新一下就好；一直打不开就看上面的输出。\n')
         try:
-            os.startfile('http://localhost:4321')
+            os.startfile(PREVIEW_URL)
         except Exception:
             pass
 

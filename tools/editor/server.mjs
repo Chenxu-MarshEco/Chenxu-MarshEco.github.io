@@ -2926,17 +2926,20 @@ function cleanWidgets(payload, current) {
    冰山图（src/data/iceberg.json）
 
    四块数据（页面那边见 src/utils/iceberg.ts，两边算的是同一套规矩）：
-     categories  分类：id / name / color / hidden
+     categories  分类：id / name / color / emoji / desc / hidden
+                  emoji = 条目右上角那个小图标（也是顶上开关名字右边那个）
+                  desc  = 鼠标移到那个 emoji 上弹出来的描述
                  color 决定条目在图里的颜色；hidden = 这一类默认不显示
                  （页面上那排分类上的小眼睛随时能手动开关）
      tags        标签：id / name。先建后用；条目上勾了哪个，
                  悬停卡片顶部就显示哪个
      layers      层级（顺序 = 页面从上往下的顺序）：
                  id / title / subtitle / background / head / items
-     items       条目：id / name / categoryId / tags / desc / href
+     items       条目：id / name / categoryIds（数组，**顺序有意义**）/ tags / desc / href
 
    两条**由数据推出来**的规矩，白名单写回时一个都不多存：
-     · 条目的颜色只由 categoryId 决定（改分类颜色，所有条目一起变）
+     · 条目的颜色由**第一个没被关掉的分类**决定（改分类颜色，所有条目一起变）；
+       条目可以属于多个分类：文字用第一个可见分类的颜色、右上角按顺序排开各自的 emoji
      · 完备标识只看 desc 填没填（不存这个标记，页面和编辑器各自算）
 
    写回的取舍：
@@ -3010,6 +3013,14 @@ function cleanIceberg(payload, current) {
       id,
       name,
       color: ICE_COLOR.test(color) ? color.toLowerCase() : '#ff5fb0',
+      /*
+        emoji：条目右上角那个小图标，也是顶上开关名字右边那个。
+        按**码点**截 8 个（有的 emoji 是好几个码位拼的，比如 🏙️ 带变体选择符），
+        再长就不是"一个图标"了。
+      */
+      emoji: [...String(raw?.emoji ?? '').trim()].slice(0, 8).join(''),
+      /* desc：鼠标移到那个 emoji 上弹出来的那段话 */
+      desc: String(raw?.desc ?? '').trim().slice(0, 500),
       hidden: raw?.hidden === true,
     });
   }
@@ -3029,6 +3040,23 @@ function cleanIceberg(payload, current) {
     tagIds.add(id);
     file.tags.push({ id, name });
   }
+
+  /*
+    盘上这一份里"每条归在哪些分类"—— 用 id 查得到。
+    客户端是老版本（读不懂 categoryIds，只会把 categoryId 写成空串）时，
+    下面按这张表把它**沿用**回来，别让一次保存把分类全抹了。
+  */
+  const prevCats = new Map();
+  for (const l of Array.isArray(current?.layers) ? current.layers : []) {
+    for (const it of Array.isArray(l?.items) ? l.items : []) {
+      const pid = String(it?.id ?? '').trim();
+      if (!pid) continue;
+      const list = Array.isArray(it?.categoryIds) ? it.categoryIds : it?.categoryId ? [it.categoryId] : [];
+      prevCats.set(pid, list.map((x) => String(x ?? '').trim()).filter(Boolean));
+    }
+  }
+  /** 有多少条的分类是"客户端没说、从盘上沿用回来"的（>0 = 对面是个老客户端） */
+  let keptFromDisk = 0;
 
   /* ---- 层级 + 条目 ---- */
   const layerIds = new Set();
@@ -3051,11 +3079,37 @@ function cleanIceberg(payload, current) {
       if (!iid || itemIds.has(iid)) iid = uniqueIceId('i', itemIds);
       itemIds.add(iid);
 
-      let categoryId = String(ri?.categoryId ?? '').trim();
-      if (categoryId && !catIds.has(categoryId)) {
-        dropped.refs++;
-        categoryId = '';
+      /*
+        分类：新写法是 categoryIds（数组，**顺序有意义** —— 第一个是主分类，
+        页面上字用它第一个"没被关掉"的分类的颜色）；老写法 categoryId（单值）也认，
+        读进来当成长度 1 的数组。认不出来的 id 丢掉并记一笔（dropped.refs）。
+      */
+      let rawCats;
+      if (Array.isArray(ri?.categoryIds)) {
+        /* 新客户端把话说清楚了（空数组 = 用户就是要清空这一条的分类） */
+        rawCats = ri.categoryIds;
+      } else if (String(ri?.categoryId ?? '').trim()) {
+        /* 老写法：只给了一个 categoryId */
+        rawCats = [ri.categoryId];
+      } else {
+        /*
+          两个都没给 —— 老版本客户端读不懂新字段，会把空值写上来。
+          这种情况**沿用盘上那条的分类**，并喊一声（别静默地丢东西）。
+        */
+        rawCats = prevCats.get(iid) ?? [];
+        if (rawCats.length) keptFromDisk++;
       }
+      const categoryIds = [];
+      for (const rc of rawCats) {
+        const id = String(rc ?? '').trim();
+        if (!id) continue;
+        if (!catIds.has(id)) {
+          dropped.refs++;
+          continue;
+        }
+        if (!categoryIds.includes(id)) categoryIds.push(id);
+      }
+      const categoryId = categoryIds[0] ?? '';
       const tags = [];
       for (const t of Array.isArray(ri?.tags) ? ri.tags : []) {
         const id = String(t ?? '').trim();
@@ -3071,6 +3125,7 @@ function cleanIceberg(payload, current) {
         id: iid,
         name,
         categoryId,
+        categoryIds,
         tags,
         desc: String(ri?.desc ?? '').trim(),
         href: String(ri?.href ?? '').trim(),
@@ -3087,7 +3142,15 @@ function cleanIceberg(payload, current) {
     });
   }
 
-  return { file, dropped };
+  if (keptFromDisk > 0) {
+    console.warn(
+      `[冰山图] 有 ${keptFromDisk} 条的分类是"客户端没说、沿用盘上那份"的 —— ` +
+        '对面多半是**旧版编辑器页面**（改之前打开的标签页）。请刷新编辑器页面，' +
+        '否则它在界面上看不见分类、保存时也只会写老字段。'
+    );
+  }
+
+  return { file, dropped, keptFromDisk };
 }
 
 /* ------------------------------------------------------------------

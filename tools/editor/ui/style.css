@@ -4413,6 +4413,23 @@ body.pblock-dragging * {
   border-radius: var(--r-sm);
   background: var(--surface-2);
 }
+/* 分类这一行现在多两样（emoji 输入框 + 描述框），所以要能折行、描述占满一整行 */
+.wice__cat {
+  flex-wrap: wrap;
+}
+.wice__cat > .wice__catdesc {
+  flex: 1 1 100%;
+  min-height: 2.4rem;
+  resize: vertical;
+  font-size: 12.5px;
+}
+/* 分类图标：就一个能打一个 emoji 的小框 */
+.wice__cat > .wice__emoji {
+  flex: none;
+  width: 2.6rem;
+  text-align: center;
+  font-size: 14px;
+}
 .wice__cat > .wice__name,
 .wice__tag > .wice__name {
   flex: 1 1 auto;
@@ -4531,6 +4548,47 @@ body.pblock-dragging * {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* ---------------------------------------------------------------------------
+ * 条目的「分类」那一格（2026-09-29 起一条可以属于多个分类）
+ * ------------------------------------------------------------------------
+ *  上面：分类勾选框（复用精华面板那套 .wess__memberGrid）
+ *  下面：当前顺序（第一个决定颜色）—— 每个分类一个小胶囊，带 ↑ ↓ 调顺序
+ * ------------------------------------------------------------------------ */
+.wice__cats {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.wice__catorder {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+.wice__catorder:empty {
+  display: none;
+}
+.wice__catorderLabel {
+  color: var(--text-faint);
+}
+.wice__catorderChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 1px 3px 1px 8px;
+  border-radius: 999px;
+  color: var(--text);
+  border: 1px solid color-mix(in srgb, var(--cat, #b9a6c9) 55%, transparent);
+  background: color-mix(in srgb, var(--cat, #b9a6c9) 16%, transparent);
+}
+.wice__catorderChip .btn {
+  padding: 0 4px;
+  font-size: 11px;
+  line-height: 1.4;
 }
 .wice__badge {
   flex: none;

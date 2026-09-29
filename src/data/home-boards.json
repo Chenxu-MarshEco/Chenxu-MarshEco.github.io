@@ -6,7 +6,56 @@
       "subtitle": "",
       "image": "/img/uploads/20260929-1046-1fe5-2023-08-02_22.41.31.webp",
       "standalone": true,
-      "href": "/huaya/years/fenhu/jijihome"
+      "href": "/huaya/years/fenhu/jijihome",
+      "page": [
+        {
+          "id": "page-mum2qcs9-pmumb472o1",
+          "type": "toc"
+        },
+        {
+          "id": "page-mum2qcs9-pmumb4d2w2",
+          "type": "divider"
+        },
+        {
+          "id": "page-mum2qcs9-pmumb4rx53",
+          "type": "text",
+          "text": "## 主要建筑"
+        },
+        {
+          "id": "page-mum2qcs9-pmumb4xjs4",
+          "type": "divider"
+        },
+        {
+          "id": "page-mum2qcs9-pmumb4yht5",
+          "type": "text",
+          "text": "## 溪流之外的轶事\n- 吉吉家门口上方的投掷器组成了当时最火爆的古生物——萨卡斑甲鱼的形状。这是吉吉在与隰辰煦和虹星达成狂乱鸡尾酒进度的途中，隰辰煦看到并排的发射器有感而发所制作的。\n- 村民交易所前的大片农田基本都是由吉吉制作的。农田旁的其中一艘运输船里装满了毒马铃薯。\n- 吉吉为了全成就，在家后山搭建了通天的脚手架塔奇观。\n- 吉吉曾多次参与各个花娅位面的小黑塔构建。在搭建纷湖小黑塔时吉吉险些坠落虚空，通过末影珍珠极限自救。然而几天后在于隰辰煦一起刷小黑时因为栏杆过低还是被隰辰煦不小心一拳打进了虚空。"
+        },
+        {
+          "id": "page-mum2qcs9-pmumb58c06",
+          "type": "divider"
+        },
+        {
+          "id": "page-mum2qcs9-pmumb5b2o7",
+          "type": "text",
+          "text": "## 画廊"
+        },
+        {
+          "id": "page-mum2qcs9-pmumb5ewp8",
+          "type": "divider"
+        },
+        {
+          "id": "page-mum2qcs9-pmumb5gm09",
+          "type": "text",
+          "text": "## 导航"
+        },
+        {
+          "id": "page-mum2qcs9-pmumb5nsw10",
+          "type": "nav",
+          "cats": [
+            "navcat-mu9dgbej916"
+          ]
+        }
+      ]
     },
     {
       "id": "page-mu9w6v28",
@@ -892,7 +941,7 @@
             {
               "id": "huaya-hishitsu-pmu4wwwoq6",
               "type": "text",
-              "text": "## 冰室会员\n冰室的活跃成员们，冰室模因滋长的源动力。\n### Raw\n### 虹星\n### 小石吉吉\n### 隰辰煦\n### 桑芙\n### SSW\n### Airo\n### 沃伊德\n### 澄净羽之颂\n### WQ与ta的朋友们\n### 马斯\n### 灵空\n### 皮丝\n### 茸明\n### OWQ\n### 盾返\n### 希尔\n### 艾林森"
+              "text": "## 冰室会员\n冰室的活跃成员们，冰室模因滋长的源动力。"
             },
             {
               "id": "huaya-hishitsu-pmu54lotu1",
@@ -911,6 +960,22 @@
               "id": "huaya-hishitsu-pmu54m63e4",
               "type": "text",
               "text": "## 冰室年代记"
+            },
+            {
+              "id": "huaya-hishitsu-pmumf2rty2",
+              "type": "divider"
+            },
+            {
+              "id": "huaya-hishitsu-pmumf2ysu4",
+              "type": "text",
+              "text": "## 导航"
+            },
+            {
+              "id": "huaya-hishitsu-pmumf2tly3",
+              "type": "nav",
+              "cats": [
+                "navcat-mumdefvk536"
+              ]
             }
           ],
           "timeline": "tl-mu6e19cb793",
@@ -1470,19 +1535,283 @@
               "id": "huaya-r2-2",
               "title": "花娅地",
               "href": "/huaya/years/huayadi",
-              "image": "/img/uploads/20260917-1552-ca81-11A248BD7FEABB7D85253E0857E0D573.jpg"
+              "image": "/img/uploads/20260917-1552-ca81-11A248BD7FEABB7D85253E0857E0D573.jpg",
+              "page": [
+                {
+                  "id": "huaya-r2-2-pmumf7gac5",
+                  "type": "toc",
+                  "text": "花娅原初的记忆"
+                },
+                {
+                  "id": "huaya-r2-2-pmumf7gac6",
+                  "type": "divider"
+                },
+                {
+                  "id": "huaya-r2-2-pmumf7gac7",
+                  "type": "text",
+                  "text": "## 花娅地"
+                },
+                {
+                  "id": "huaya-r2-2-pmumf7gac8",
+                  "type": "video",
+                  "src": "",
+                  "placeholder": true
+                },
+                {
+                  "id": "huaya-r2-2-pmumf7gac9",
+                  "type": "divider"
+                },
+                {
+                  "id": "huaya-r2-2-pmumf7gac10",
+                  "type": "text",
+                  "text": "## 地图勘探"
+                },
+                {
+                  "id": "huaya-r2-2-pmumf7gac11",
+                  "type": "map",
+                  "pages": [
+                    {
+                      "id": "huaya-r2-2-pmumf7gac11-p1",
+                      "src": "",
+                      "markers": [],
+                      "lines": []
+                    }
+                  ],
+                  "placeholder": true
+                },
+                {
+                  "id": "huaya-r2-2-pmumf7gac12",
+                  "type": "divider"
+                },
+                {
+                  "id": "huaya-r2-2-pmumf7gac13",
+                  "type": "text",
+                  "text": "## 重要事件"
+                },
+                {
+                  "id": "huaya-r2-2-pmumf7gac14",
+                  "type": "divider"
+                },
+                {
+                  "id": "huaya-r2-2-pmumf7gac15",
+                  "type": "text",
+                  "text": "## 溪流之外的轶事"
+                },
+                {
+                  "id": "huaya-r2-2-pmumf7gac16",
+                  "type": "divider"
+                },
+                {
+                  "id": "huaya-r2-2-pmumf7gac17",
+                  "type": "text",
+                  "text": "## 画廊"
+                },
+                {
+                  "id": "huaya-r2-2-pmumf7gac18",
+                  "type": "divider"
+                },
+                {
+                  "id": "huaya-r2-2-pmumf7gac19",
+                  "type": "text",
+                  "text": "## 导航"
+                },
+                {
+                  "id": "huaya-r2-2-pmumf7gac20",
+                  "type": "nav",
+                  "cats": [
+                    "navcat-mu9dgbej916"
+                  ],
+                  "text": "导航"
+                }
+              ]
             },
             {
               "id": "huaya-r2-3",
               "title": "新花娅地",
               "href": "/huaya/years/newhuaya",
-              "image": "/img/uploads/20260915-1513-4e11-2024-08-25_12.49.24.jpg"
+              "image": "/img/uploads/20260915-1513-4e11-2024-08-25_12.49.24.jpg",
+              "page": [
+                {
+                  "id": "huaya-r2-3-pmumfcc7021",
+                  "type": "toc",
+                  "text": "花篠阁档案库"
+                },
+                {
+                  "id": "huaya-r2-3-pmumfcc7022",
+                  "type": "divider"
+                },
+                {
+                  "id": "huaya-r2-3-pmumfcc7023",
+                  "type": "text",
+                  "text": "## 新花娅地"
+                },
+                {
+                  "id": "huaya-r2-3-pmumfcc7024",
+                  "type": "video",
+                  "src": "",
+                  "placeholder": true
+                },
+                {
+                  "id": "huaya-r2-3-pmumfcc7025",
+                  "type": "divider"
+                },
+                {
+                  "id": "huaya-r2-3-pmumfcc7026",
+                  "type": "text",
+                  "text": "## 地图勘探"
+                },
+                {
+                  "id": "huaya-r2-3-pmumfcc7027",
+                  "type": "map",
+                  "pages": [
+                    {
+                      "id": "huaya-r2-3-pmumfcc7027-p1",
+                      "src": "",
+                      "markers": [],
+                      "lines": []
+                    }
+                  ],
+                  "placeholder": true
+                },
+                {
+                  "id": "huaya-r2-3-pmumfcc7028",
+                  "type": "divider"
+                },
+                {
+                  "id": "huaya-r2-3-pmumfcc7029",
+                  "type": "text",
+                  "text": "## 重要事件"
+                },
+                {
+                  "id": "huaya-r2-3-pmumfcc7030",
+                  "type": "divider"
+                },
+                {
+                  "id": "huaya-r2-3-pmumfcc7031",
+                  "type": "text",
+                  "text": "## 溪流之外的轶事"
+                },
+                {
+                  "id": "huaya-r2-3-pmumfcc7032",
+                  "type": "divider"
+                },
+                {
+                  "id": "huaya-r2-3-pmumfcc7033",
+                  "type": "text",
+                  "text": "## 画廊"
+                },
+                {
+                  "id": "huaya-r2-3-pmumfcc7034",
+                  "type": "divider"
+                },
+                {
+                  "id": "huaya-r2-3-pmumfcc7035",
+                  "type": "text",
+                  "text": "## 导航"
+                },
+                {
+                  "id": "huaya-r2-3-pmumfcc7036",
+                  "type": "nav",
+                  "cats": [
+                    "navcat-mu9dgbej916"
+                  ],
+                  "text": "导航"
+                }
+              ]
             },
             {
               "id": "huaya-r2-4",
               "title": "绮花娅域",
               "href": "/huaya/years/qihuaya",
-              "image": "/img/uploads/20260915-1514-e76e-2025-02-11_17.42.28.jpg"
+              "image": "/img/uploads/20260915-1514-e76e-2025-02-11_17.42.28.jpg",
+              "page": [
+                {
+                  "id": "huaya-r2-4-pmumfeup137",
+                  "type": "toc",
+                  "text": "通讯期许的回声"
+                },
+                {
+                  "id": "huaya-r2-4-pmumfeup138",
+                  "type": "divider"
+                },
+                {
+                  "id": "huaya-r2-4-pmumfeup139",
+                  "type": "text",
+                  "text": "## 绮花娅域"
+                },
+                {
+                  "id": "huaya-r2-4-pmumfeup140",
+                  "type": "video",
+                  "src": "",
+                  "placeholder": true
+                },
+                {
+                  "id": "huaya-r2-4-pmumfeup141",
+                  "type": "divider"
+                },
+                {
+                  "id": "huaya-r2-4-pmumfeup142",
+                  "type": "text",
+                  "text": "## 地图勘探"
+                },
+                {
+                  "id": "huaya-r2-4-pmumfeup143",
+                  "type": "map",
+                  "pages": [
+                    {
+                      "id": "huaya-r2-4-pmumfeup143-p1",
+                      "src": "",
+                      "markers": [],
+                      "lines": []
+                    }
+                  ],
+                  "placeholder": true
+                },
+                {
+                  "id": "huaya-r2-4-pmumfeup144",
+                  "type": "divider"
+                },
+                {
+                  "id": "huaya-r2-4-pmumfeup145",
+                  "type": "text",
+                  "text": "## 重要事件"
+                },
+                {
+                  "id": "huaya-r2-4-pmumfeup146",
+                  "type": "divider"
+                },
+                {
+                  "id": "huaya-r2-4-pmumfeup147",
+                  "type": "text",
+                  "text": "## 溪流之外的轶事"
+                },
+                {
+                  "id": "huaya-r2-4-pmumfeup148",
+                  "type": "divider"
+                },
+                {
+                  "id": "huaya-r2-4-pmumfeup149",
+                  "type": "text",
+                  "text": "## 画廊"
+                },
+                {
+                  "id": "huaya-r2-4-pmumfeup150",
+                  "type": "divider"
+                },
+                {
+                  "id": "huaya-r2-4-pmumfeup151",
+                  "type": "text",
+                  "text": "## 导航"
+                },
+                {
+                  "id": "huaya-r2-4-pmumfeup152",
+                  "type": "nav",
+                  "cats": [
+                    "navcat-mu9dgbej916"
+                  ],
+                  "text": "导航"
+                }
+              ]
             },
             {
               "id": "huaya-r2-5",
@@ -1519,6 +1848,11 @@
               "title": "遥花娅空域",
               "href": "/huaya/years/yaohua",
               "image": "/img/uploads/20260915-1519-3aab-2026-07-28_19.01.26.jpg"
+            },
+            {
+              "id": "huaya-r2-11",
+              "title": "花篠桓娅",
+              "href": "/huaya/years/huaxiao"
             }
           ]
         },

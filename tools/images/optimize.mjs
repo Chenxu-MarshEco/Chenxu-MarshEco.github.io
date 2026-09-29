@@ -69,8 +69,20 @@ const CFG = {
    * 动图（GIF / 动 WebP）上传时重编码成动图 WebP 的质量档。
    * 2026-09-28 加的：以前 GIF 一律原样落盘，于是"传一张 9MB 的动图"就把 9MB
    * 塞进了仓库和页面。动图 WebP 各浏览器都认，通常还能小一半以上（小了才换）。
+   *
+   * 2026-09-29 用户说「压一下动图 以后上传的也要压」，于是把档位调狠了一档，
+   * 并**给动图单独封宽**（见 gifMaxWidth）。实测站里那 21 张精华动图：
+   *   q72 不封宽 35.9MB → q50 封宽 800 **19.5MB**（画质指标几乎没动：
+   *   逐帧 64×64 灰度归一化差 0.035 → 0.039，肉眼看不出来）。
+   * 为什么可以放心封 800：精华列表里它们是按 ~520px 宽显示的（懒加载），
+   * 800 已经比显示尺寸大一半；真要放大看原图，还有原始文件（图包）在。
    */
-  gifWebp: { quality: 72, effort: 4 },
+  gifWebp: { quality: 50, effort: 5 },
+  /**
+   * 动图封宽：动图没有多尺寸变体（一变体就只剩第一帧、动图当场变静图），
+   * 所以落盘的那一份就是最终显示的那一份 —— 宽度得在这里就定下来。
+   */
+  gifMaxWidth: 800,
   /**
    * 解码像素上限（sharp 的 limitInputPixels）。默认约 2.68 亿像素 ——
    * 手机拍的照片、扫描件离它很远，但用户现在可以传任意大的图，所以抬到 5 亿，
@@ -542,13 +554,25 @@ export async function compressUpload(buf, ext, mime) {
     const meta = await open().metadata();
     const isAnimated = (meta.pages ?? 1) > 1 || e === '.gif' || mime === 'image/gif';
     if (isAnimated) {
+      /*
+        动图：只编**一档**（封宽 gifMaxWidth），因为动图没有多尺寸变体 ——
+        一个变体只剩第一帧，动图当场就死了（用户报过）。所以这一份就是最终显示的那一份：
+        宽度和质量都在这里定（2026-09-29 用户要求「压一下动图 以后上传的也要压」）。
+      */
       const cand = await open({ animated: true })
-        .resize({ width: CFG.maxWidth, withoutEnlargement: true })
+        .resize({ width: CFG.gifMaxWidth, withoutEnlargement: true })
         .webp({ ...CFG.gifWebp })
         .toBuffer()
         .catch(() => null);
       if (cand && cand.length < buf.length) {
-        return { buf: cand, ext: '.webp', before: buf.length, after: cand.length, note: `动图 → WebP（${meta.pages ?? 1} 帧）` };
+        const shrunk = (meta.width ?? 0) > CFG.gifMaxWidth ? `，${meta.width}→${CFG.gifMaxWidth}px` : '';
+        return {
+          buf: cand,
+          ext: '.webp',
+          before: buf.length,
+          after: cand.length,
+          note: `动图 → WebP（${meta.pages ?? 1} 帧${shrunk}）`,
+        };
       }
       return {
         buf,

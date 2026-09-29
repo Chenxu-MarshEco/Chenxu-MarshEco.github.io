@@ -21,6 +21,16 @@ export interface IcebergCategory {
   name: string;
   /** #rrggbb，条目在图里的颜色 */
   color: string;
+  /**
+   * 这一类的 emoji（2026-09-29 加的）：显示在条目文字的右上角、以及顶上那排
+   * 分类开关的名字右边。空串 = 这一类不显示图标。
+   */
+  emoji: string;
+  /**
+   * 这一类的描述（2026-09-29 加的）：鼠标移到条目上那个 emoji 时弹出来。
+   * 空串 = 不弹（只显示分类名）。
+   */
+  desc: string;
   /** true = 这一类默认不显示（页面上点小眼睛还能开回来） */
   hidden: boolean;
 }
@@ -33,8 +43,17 @@ export interface IcebergTag {
 export interface IcebergItem {
   id: string;
   name: string;
-  /** 指向 categories 里的一个 id；认不出来就是空串（用默认灰） */
-  categoryId: string;
+  /**
+   * 归在哪几个分类里（**顺序有意义**，2026-09-29 起一条可以属于多个分类）：
+   *   · 文字的颜色 = 第一个**没被关掉**的分类的颜色 —— 关掉前面的，就顺延到下一个；
+   *   · 右上角按这个顺序排开各自的 emoji；
+   *   · 所有分类都被关掉时，这一条才整条收起。
+   * 第一个就是"主分类"。
+   *
+   * 老数据里是单个 `categoryId`（一个字符串），读进来时会自动变成单元素数组，
+   * 所以这次改动不影响已经在盘上的 89 条。
+   */
+  categoryIds: string[];
   /** 指向 tags 里的若干 id */
   tags: string[];
   /** 详细描述：悬停卡片的正文。填了就有完备标识 */
@@ -233,6 +252,9 @@ export const categories: IcebergCategory[] = (Array.isArray(file.categories) ? f
     id: str(c?.id),
     name: str(c?.name),
     color: /^#[0-9a-f]{6}$/i.test(str(c?.color)) ? str(c?.color) : DEFAULT_CATEGORY_COLOR,
+    /* emoji 只留一个字符左右（有的 emoji 是几个码位拼的，所以按码点数放宽到 8） */
+    emoji: [...str(c?.emoji)].slice(0, 8).join(''),
+    desc: str(c?.desc),
     hidden: c?.hidden === true,
   }))
   .filter((c) => c.id && c.name);
@@ -249,6 +271,16 @@ export function categoryById(id: string): IcebergCategory | null {
   return categoryOf.get(str(id)) ?? null;
 }
 
+/**
+ * 一条归属的**分类列表**（顺序 = 数据里的顺序，认不出来的 id 丢掉）。
+ *
+ * 兼容老写法：`categoryId: "c01"` 当成 `categoryIds: ["c01"]`。
+ * 页面上要按"第一个**没被关掉**的分类"上色，所以这里必须保住顺序。
+ */
+export function categoriesOf(ids: string[] | undefined): IcebergCategory[] {
+  return (Array.isArray(ids) ? ids : []).map((id) => categoryOf.get(str(id))).filter(Boolean) as IcebergCategory[];
+}
+
 /** 条目背后那排 tag 名字（顺序 = 数据里的顺序） */
 export function tagNames(ids: string[] | undefined): string[] {
   return (Array.isArray(ids) ? ids : []).map((id) => tagOf.get(str(id))?.name ?? '').filter(Boolean);
@@ -262,14 +294,30 @@ export function isComplete(item: IcebergItem): boolean {
   return str(item?.desc) !== '';
 }
 
-const item = (i: IcebergItem): IcebergItem => ({
-  id: str(i?.id),
-  name: str(i?.name),
-  categoryId: categoryOf.has(str(i?.categoryId)) ? str(i?.categoryId) : '',
-  tags: (Array.isArray(i?.tags) ? i.tags : []).map(str).filter((id) => tagOf.has(id)),
-  desc: str(i?.desc),
-  href: str(i?.href),
-});
+const item = (i: IcebergItem & { categoryId?: string }): IcebergItem => {
+  /*
+    分类：新写法是 `categoryIds`（数组），老写法是 `categoryId`（一个字符串）。
+    两个都认 —— 盘上那 89 条老数据不改也能照常显示（读进来就是单元素数组）。
+    认不出来的 id 丢掉（不留空串，免得页面上多一个"未分类"）。
+  */
+  const raw = Array.isArray(i?.categoryIds) ? i.categoryIds : i?.categoryId ? [i.categoryId] : [];
+  const seen = new Set<string>();
+  const categoryIds: string[] = [];
+  for (const id of raw) {
+    const s = str(id);
+    if (!s || seen.has(s) || !categoryOf.has(s)) continue;
+    seen.add(s);
+    categoryIds.push(s);
+  }
+  return {
+    id: str(i?.id),
+    name: str(i?.name),
+    categoryIds,
+    tags: (Array.isArray(i?.tags) ? i.tags : []).map(str).filter((id) => tagOf.has(id)),
+    desc: str(i?.desc),
+    href: str(i?.href),
+  };
+};
 
 /** 层级：顺序 = 数组顺序（页面从上往下就是它）。标题空的层级也留着，只是不显示大标题 */
 export const layers: IcebergLayer[] = (Array.isArray(file.layers) ? file.layers : [])

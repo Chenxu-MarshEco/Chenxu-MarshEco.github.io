@@ -280,18 +280,46 @@ check(
   `滚动期间 rect 调用 ${scrollPerf.rects} 次 = ${(scrollPerf.rects / dom.items).toFixed(1)} 遍 ${dom.items} 条（修之前是 24 遍）`
 );
 
-/* 图片总共下了多少字节（原生大图 = 卡的另一半原因） */
+/* 图片总共下了多少字节（原生大图 = 卡的另一半原因）
+   ⚠ 2026-09-29：动图（多帧 GIF / 动图 WebP）**故意没有静态变体** ——
+   一变体就只剩第一帧，动图当场变静图（用户报过这个）。所以它们只能原样发，
+   不能算进"该走优化产物"的那笔账里，单独记一笔、单独定预算。 */
+const animatedKeys = (() => {
+  try {
+    const m = JSON.parse(fs.readFileSync(path.join(root, 'img', 'opt', 'manifest.json'), 'utf8'));
+    return Object.entries(m.items ?? {}).filter(([, v]) => v.animated).map(([k]) => k);
+  } catch {
+    return [];
+  }
+})();
 const net = await cdp.ev(`(() => {
+  const ANIM = new Set(${JSON.stringify(animatedKeys)});
   const rs = performance.getEntriesByType('resource').filter((r) => /\\/img\\/salon\\//.test(r.name));
   const opt = performance.getEntriesByType('resource').filter((r) => /\\/img\\/opt\\//.test(r.name));
   const sum = (a) => Math.round(a.reduce((n, r) => n + (r.encodedBodySize || r.transferSize || 0), 0));
-  return { salon: rs.length, salonBytes: sum(rs), optCount: opt.length, optBytes: sum(opt) };
+  const p = (u) => new URL(u, location.origin).pathname;
+  const anim = rs.filter((r) => ANIM.has(p(r.name)));
+  const still = rs.filter((r) => !ANIM.has(p(r.name)));
+  return {
+    salon: rs.length, salonBytes: sum(rs), optCount: opt.length, optBytes: sum(opt),
+    animCount: anim.length, animBytes: sum(anim), stillCount: still.length, stillBytes: sum(still),
+  };
 })()`);
-console.log(`图片请求：原始 salon 图 ${net.salon} 张 / ${(net.salonBytes / 1024 / 1024).toFixed(2)}MB · 优化产物 ${net.optCount} 张 / ${(net.optBytes / 1024 / 1024).toFixed(2)}MB`);
+console.log(
+  `图片请求：动图 ${net.animCount} 张 / ${(net.animBytes / 1024 / 1024).toFixed(2)}MB · ` +
+    `静态原图 ${net.stillCount} 张 / ${(net.stillBytes / 1024 / 1024).toFixed(2)}MB · ` +
+    `优化产物 ${net.optCount} 张 / ${(net.optBytes / 1024 / 1024).toFixed(2)}MB`
+);
 check(
-  '滚一屏不会拉下几 MB 的原生大图（应走优化产物）',
-  net.salonBytes < 2 * 1024 * 1024,
-  `原生图 ${(net.salonBytes / 1024 / 1024).toFixed(2)}MB（优化产物 ${(net.optBytes / 1024 / 1024).toFixed(2)}MB）`
+  '滚一屏不会拉下几 MB 的原生静态大图（应走优化产物）',
+  net.stillBytes < 2 * 1024 * 1024,
+  `原生静态图 ${(net.stillBytes / 1024 / 1024).toFixed(2)}MB（优化产物 ${(net.optBytes / 1024 / 1024).toFixed(2)}MB）`
+);
+/* 动图另有预算：它们是"非压不可的动画"，但一屏拉下来也不该失控 */
+check(
+  '滚一屏的动图总量有预算（动图没有静态变体，只能原样发）',
+  net.animBytes < 16 * 1024 * 1024,
+  `动图 ${net.animCount} 张 / ${(net.animBytes / 1024 / 1024).toFixed(2)}MB`
 );
 
 /* ================================================================

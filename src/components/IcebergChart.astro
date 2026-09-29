@@ -22,18 +22,18 @@
  *   --ink  在**浅底上读得清**的那个色（构建期把分类色压深到 4.5:1，见 utils/iceberg.ts）
  */
 import Img from './Img.astro';
-import { DEFAULT_CATEGORY_COLOR, chipInk, iceberg, itemInk } from '../utils/iceberg';
+import { DEFAULT_CATEGORY_COLOR, categoriesOf, chipInk, iceberg, itemInk } from '../utils/iceberg';
 import { withBase } from '../utils/url';
 
-const { layers, categories } = iceberg;
+const { layers, categories, tags } = iceberg;
 
 /** 只给「真有条目」的分类出图例：一个点了没反应的开关比没有更让人困惑 */
 const used = new Set<string>();
-for (const l of layers) for (const it of l.items) if (it.categoryId) used.add(it.categoryId);
+for (const l of layers) for (const it of l.items) for (const id of it.categoryIds) used.add(id);
 const legend = categories.filter((c) => used.has(c.id));
 /** 没有归类的条目（分类被删了 / 还没选）算一格「未分类」，颜色给中性灰紫 */
-const hasLoose = layers.some((l) => l.items.some((it) => !it.categoryId));
-if (hasLoose) legend.push({ id: '', name: '未分类', color: DEFAULT_CATEGORY_COLOR, hidden: false });
+const hasLoose = layers.some((l) => l.items.some((it) => it.categoryIds.length === 0));
+if (hasLoose) legend.push({ id: '', name: '未分类', color: DEFAULT_CATEGORY_COLOR, emoji: '', desc: '', hidden: false });
 
 const hrefOf = (href: string) => (/^https?:/i.test(href) ? href : withBase(href));
 /** 条目上给 JS 读的那些东西：标签用 0x1f 拼起来（正文里不会出现这个字符） */
@@ -54,6 +54,14 @@ const dataOf = (it: { name: string; tags: string[]; desc: string }, tagNames: st
             class:list={['ibk__cat', c.hidden && 'is-off']}
             data-cat={c.id}
             data-on={c.hidden ? '0' : '1'}
+            /* 条目那边要按"第一个没被关掉的分类"上色，色 / 墨色 / emoji / 描述都放在这儿，
+               JS 只读这一份（不在脚本里再抄一遍数据） */
+            data-color={c.color}
+            data-name={c.name}
+            data-emoji={c.emoji}
+            data-desc={c.desc}
+            data-ink={itemInk(c.color, false)}
+            data-ink-done={itemInk(c.color, true)}
             aria-pressed={c.hidden ? 'false' : 'true'}
             style={`--cat:${c.color};--ink:${chipInk(c.color)}`}
             title={`${c.name}：点一下${c.hidden ? '显示' : '隐藏'}这一类的条目`}
@@ -66,6 +74,11 @@ const dataOf = (it: { name: string; tags: string[]; desc: string }, tagNames: st
               </svg>
             </span>
             <span class="ibk__catName">{c.name}</span>
+            {c.emoji && (
+              <span class="ibk__catEmoji" aria-hidden="true">
+                {c.emoji}
+              </span>
+            )}
           </button>
         ))}
       </div>
@@ -94,27 +107,63 @@ const dataOf = (it: { name: string; tags: string[]; desc: string }, tagNames: st
             {l.items.length > 0 ? (
               <ul class="ibk__items">
                 {l.items.map((it) => {
-                  const cat = categories.find((c) => c.id === it.categoryId) ?? null;
-                  const color = it.categoryId ? (cat?.color ?? DEFAULT_CATEGORY_COLOR) : DEFAULT_CATEGORY_COLOR;
+                  /*
+                    一条可以属于多个分类（顺序有意义）。颜色取**第一个没被关掉的**分类，
+                    右边按同样顺序排开各自的 emoji；页面上点小眼睛时由脚本按同一套规则重算。
+                    初始状态（数据里 hidden 的那些）也照这个规则先算一遍 —— 免得刷新时闪一下。
+                  */
+                  const cats = categoriesOf(it.categoryIds);
+                  const shownCats = cats.filter((c) => !c.hidden);
+                  const color = shownCats[0]?.color ?? DEFAULT_CATEGORY_COLOR;
                   const tagList = it.tags
-                    .map((id) => iceberg.tags.find((t) => t.id === id)?.name ?? '')
+                    .map((id) => tags.find((t) => t.id === id)?.name ?? '')
                     .filter(Boolean);
                   const done = it.desc !== '';
                   const extra = dataOf(it, tagList);
                   /* 深底上就是分类色本身；有标识的那条按标识底再调一档，两边都 ≥4.5:1 */
                   const ink = itemInk(color, done);
                   const style = `--cat:${color};--ink:${ink}`;
+                  const emojis = cats.filter((c) => c.emoji !== '');
+                  const allOff = shownCats.length === 0 && cats.length > 0;
+                  const body = (
+                    <>
+                      {done && <span class="ibk__badge" aria-hidden="true" />}
+                      <span class="ibk__txt">{it.name}</span>
+                      {emojis.length > 0 && (
+                        <span class="ibk__emojis">
+                          {emojis.map((c) => (
+                            /* 每个 emoji 都是"这一类的一小块"：鼠标移上去弹它的描述（脚本负责） */
+                            <span
+                              class="ibk__emoji"
+                              data-cat={c.id}
+                              data-name={c.name}
+                              data-desc={c.desc}
+                              tabindex="0"
+                              role="img"
+                              aria-label={c.desc ? `${c.name}：${c.desc}` : c.name}
+                              hidden={c.hidden ? true : undefined}
+                            >
+                              {c.emoji}
+                            </span>
+                          ))}
+                        </span>
+                      )}
+                    </>
+                  );
                   return (
-                    <li class="ibk__cell" data-cat={it.categoryId || ''} data-done={done ? '1' : '0'}>
+                    <li
+                      class="ibk__cell"
+                      data-cats={it.categoryIds.join(' ')}
+                      data-done={done ? '1' : '0'}
+                      hidden={allOff ? true : undefined}
+                    >
                       {it.href ? (
                         <a class:list={['ibk__item', done && 'is-done']} href={hrefOf(it.href)} style={style} {...extra}>
-                          {done && <span class="ibk__badge" aria-hidden="true" />}
-                          <span class="ibk__txt">{it.name}</span>
+                          {body}
                         </a>
                       ) : (
                         <span class:list={['ibk__item', done && 'is-done']} tabindex="0" aria-describedby="ibk-tip" style={style} {...extra}>
-                          {done && <span class="ibk__badge" aria-hidden="true" />}
-                          <span class="ibk__txt">{it.name}</span>
+                          {body}
                         </span>
                       )}
                     </li>
@@ -141,6 +190,12 @@ const dataOf = (it: { name: string; tags: string[]; desc: string }, tagNames: st
 <div class="ibk__tip" id="ibk-tip" data-ibk-tip hidden aria-hidden="true">
   <div class="ibk__tipTags" data-tip-tags hidden />
   <p class="ibk__tipDesc" data-tip-desc />
+</div>
+
+{/* 分类描述卡片：鼠标移到条目右上角那个 emoji 上时弹它（全图共用一张，2026-09-29） */}
+<div class="ibk__cattip" id="ibk-cattip" data-ibk-cattip hidden aria-hidden="true">
+  <span class="ibk__cattipName" data-cattip-name />
+  <p class="ibk__cattipDesc" data-cattip-desc />
 </div>
 
 {/*
@@ -226,6 +281,12 @@ const dataOf = (it: { name: string; tags: string[]; desc: string }, tagNames: st
   }
   .ibk__catName {
     line-height: 1.5;
+  }
+  /* 分类名字右边那个 emoji（2026-09-29）：跟着分类色块走，稍微小一点 */
+  .ibk__catEmoji {
+    font-size: 0.92em;
+    line-height: 1;
+    margin-left: 0.05rem;
   }
   .ibk__eye {
     display: inline-flex;
@@ -362,6 +423,44 @@ const dataOf = (it: { name: string; tags: string[]; desc: string }, tagNames: st
     z-index: 1;
   }
 
+  /* ---------- 条目右上角的分类 emoji（2026-09-29）----------
+     用户要的是「emoji图标较小且有条目拥有多个分类时向右排开」：
+     一行小图标、贴在文字的右上角（align-self 顶到框顶，再往上抬一点点变成上标的感觉），
+     多个就是一条横排（nowrap），顺序 = 这一条的分类顺序。
+
+     ⚠ `position: relative; z-index: 2` 是必须的，而且是**完备条目**那个 bug 的解药：
+       完备标识（.ibk__badge）是 `position:absolute; z-index:0`，它盖住整条（还往外伸 11px），
+       而 emoji 那一行本来是非定位元素 —— 定位元素压在上面，于是鼠标指到 emoji 时
+       命中的其实是那层扫描线，分类描述就永远弹不出来（只会弹出条目自己的卡片，
+       用户 2026-09-29 报的就是这个）。给它一个更高的层级，让它和文字一样压在上面。
+       文字那边早就用了同一招（.ibk__txt 的 z-index:1）。 */
+  .ibk__emojis {
+    position: relative;
+    z-index: 2;
+    display: inline-flex;
+    align-items: flex-start;
+    flex-wrap: nowrap;
+    gap: 0.1em;
+    align-self: flex-start;
+    margin: -0.25em 0 0 0.18em;
+    font-size: 0.62em;
+    line-height: 1;
+    letter-spacing: 0;
+  }
+  .ibk__emoji {
+    cursor: help;
+    border-radius: 4px;
+    transition: transform var(--t-fast) var(--ease);
+  }
+  .ibk__emoji[hidden] {
+    display: none;
+  }
+  .ibk__emoji:hover,
+  .ibk__emoji:focus-visible {
+    transform: scale(1.25);
+    outline: none;
+  }
+
   /*
     完备标识（详细描述填了才有）：**照地图上那颗「区域图钉」的头**做的 ——
     同一套做法（一道横向格栅 + 从上到下的渐变），三处按用户要求改：
@@ -450,6 +549,35 @@ const dataOf = (it: { name: string; tags: string[]; desc: string }, tagNames: st
     margin: 0;
     font-size: 0.84rem;
     line-height: 1.75;
+    color: rgba(255, 240, 250, 0.9);
+    white-space: pre-wrap;
+  }
+
+  /* 分类描述卡片：和条目卡片一套皮，窄一点（它只有一行名字 + 一段描述） */
+  .ibk__cattip {
+    position: fixed;
+    z-index: 61;
+    max-width: min(300px, calc(100vw - 1.5rem));
+    padding: 0.55rem 0.7rem 0.6rem;
+    border: 1px solid rgba(255, 120, 190, 0.55);
+    border-radius: var(--r-md);
+    background: linear-gradient(180deg, rgb(42 8 60 / 0.97), rgb(20 3 32 / 0.98));
+    box-shadow: 0 18px 40px -18px rgb(0 0 0 / 0.9);
+    pointer-events: none;
+  }
+  .ibk__cattip[hidden] {
+    display: none;
+  }
+  .ibk__cattipName {
+    display: block;
+    margin-bottom: 0.25rem;
+    font-size: 0.84rem;
+    color: #ffd9ef;
+  }
+  .ibk__cattipDesc {
+    margin: 0;
+    font-size: 0.82rem;
+    line-height: 1.7;
     color: rgba(255, 240, 250, 0.9);
     white-space: pre-wrap;
   }
@@ -637,27 +765,137 @@ const dataOf = (it: { name: string; tags: string[]; desc: string }, tagNames: st
     const itemOf = (node: EventTarget | null): HTMLElement | null =>
       node instanceof Element ? node.closest<HTMLElement>('.ibk__item') : null;
 
-    /* ---- 小眼睛：整类收起 / 放出（初始状态来自数据里的 hidden） ---- */
-    for (const chip of root.querySelectorAll<HTMLElement>('.ibk__cat')) {
-      const cat = chip.dataset.cat ?? '';
+    /* ------------------------------------------------------------------
+       小眼睛：整类收起 / 放出 —— 但**一条可以属于多个分类**（2026-09-29 改）
+
+       规则（用户原话）：
+         · 文字用**第一个没被关掉的分类**的颜色；
+         · 右上角只留那些还开着的分类的 emoji，顺序不变；
+         · 所有分类都被关掉时，这一条才整条收起。
+       所以关掉某一类不再是"把这一类的条目全藏起来"，而是"重算每一条" ——
+       分类色 / 墨色 / emoji / 描述都从顶上那排开关上读（data-*），脚本里不抄第二份。
+       ------------------------------------------------------------------ */
+    const chipOf = new Map<string, HTMLElement>();
+    for (const chip of root.querySelectorAll<HTMLElement>('.ibk__cat')) chipOf.set(chip.dataset.cat ?? '', chip);
+    const catOn = (id: string) => {
+      const chip = chipOf.get(id);
+      return !!chip && chip.dataset.on !== '0';
+    };
+
+    /** 按"现在开着哪些分类"重算所有条目的颜色、emoji、显隐 */
+    const repaint = () => {
+      for (const cell of root.querySelectorAll<HTMLElement>('.ibk__cell')) {
+        const ids = (cell.dataset.cats || '').split(' ').filter(Boolean);
+        /* 一条分类都没有的条目算在「未分类」那一格（id 是空串） */
+        const visible = (ids.length ? ids : ['']).filter(catOn);
+        const item = cell.querySelector<HTMLElement>('.ibk__item');
+        if (!item) continue;
+        const on = visible.length > 0;
+        item.hidden = !on;
+        cell.hidden = !on;
+        if (!on) continue;
+        const chip = chipOf.get(visible[0]);
+        const color = chip?.dataset.color;
+        if (color) {
+          item.style.setProperty('--cat', color);
+          const ink = cell.dataset.done === '1' ? chip?.dataset.inkDone : chip?.dataset.ink;
+          if (ink) item.style.setProperty('--ink', ink);
+        }
+        for (const em of cell.querySelectorAll<HTMLElement>('.ibk__emoji')) {
+          em.hidden = !catOn(em.dataset.cat ?? '');
+        }
+      }
+    };
+
+    for (const chip of chipOf.values()) {
       const apply = (on: boolean) => {
         chip.dataset.on = on ? '1' : '0';
         chip.classList.toggle('is-off', !on);
         chip.setAttribute('aria-pressed', on ? 'true' : 'false');
         chip.title = `${chip.querySelector('.ibk__catName')?.textContent ?? ''}：点一下${on ? '隐藏' : '显示'}这一类的条目`;
-        for (const cell of root.querySelectorAll<HTMLElement>(`.ibk__cell[data-cat="${cat}"]`)) {
-          for (const it of cell.querySelectorAll<HTMLElement>('.ibk__item')) it.hidden = !on;
-        }
       };
       apply(chip.dataset.on !== '0');
       chip.addEventListener('click', () => {
         apply(chip.dataset.on === '0');
+        repaint();
         hide();
+        hideCatTip();
       });
     }
+    repaint();
+
+    /* ---- 条目右上角的 emoji：移上去弹那一类的描述 ---- */
+    const catTip = document.querySelector<HTMLElement>('[data-ibk-cattip]');
+    const catTipName = catTip?.querySelector<HTMLElement>('[data-cattip-name]') ?? null;
+    const catTipDesc = catTip?.querySelector<HTMLElement>('[data-cattip-desc]') ?? null;
+
+    function hideCatTip() {
+      if (catTip) catTip.hidden = true;
+    }
+    function showCatTip(em: HTMLElement) {
+      if (!catTip || !catTipName || !catTipDesc) return;
+      const name = em.dataset.name || '';
+      const desc = em.dataset.desc || '';
+      catTipName.textContent = name;
+      catTipDesc.textContent = desc;
+      catTipDesc.hidden = desc === '';
+      catTip.hidden = false;
+      /* 摆在 emoji 上方；顶不下就翻到下面，左右夹在视口里 */
+      const r = em.getBoundingClientRect();
+      const w = catTip.offsetWidth;
+      const h = catTip.offsetHeight;
+      const gap = 8;
+      let left = r.left + r.width / 2 - w / 2;
+      left = Math.max(8, Math.min(left, window.innerWidth - w - 8));
+      let top = r.top - h - gap;
+      if (top < 8) top = Math.min(window.innerHeight - h - 8, r.bottom + gap);
+      catTip.style.left = `${Math.round(left)}px`;
+      catTip.style.top = `${Math.round(top)}px`;
+    }
+    const emojiOf = (node: EventTarget | null): HTMLElement | null =>
+      node instanceof Element ? node.closest<HTMLElement>('.ibk__emoji') : null;
+
+    root.addEventListener('pointerover', (ev) => {
+      const em = emojiOf(ev.target);
+      if (!em) return;
+      /* emoji 上只弹"分类描述"那一张：条目那张卡片这会儿先收起来，免得两张叠一起 */
+      hide();
+      showCatTip(em);
+    });
+    root.addEventListener('pointerout', (ev) => {
+      const em = emojiOf(ev.target);
+      if (!em) return;
+      if (em.contains(ev.relatedTarget as Node | null)) return;
+      hideCatTip();
+    });
+    root.addEventListener('focusin', (ev) => {
+      const em = emojiOf(ev.target);
+      if (em) {
+        hide();
+        showCatTip(em);
+      }
+    });
+    root.addEventListener('focusout', (ev) => {
+      if (emojiOf(ev.target)) hideCatTip();
+    });
+    /* 点 emoji 只弹描述、不跟着条目里的链接跳走 */
+    root.addEventListener('click', (ev) => {
+      const em = emojiOf(ev.target);
+      if (!em) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      hide();
+      showCatTip(em);
+    });
 
     /* ---- 桌面：悬停出卡片；键盘：焦点出卡片 ---- */
     root.addEventListener('pointerover', (ev) => {
+      /*
+        emoji 那一行交给下面那段处理（它负责弹"分类描述"）。
+        这里直接让开：一是完备条目的扫描线曾经压住 emoji、二是两道处理别互相抢 ——
+        用户 2026-09-29 报的「完备词条上指 emoji 只看到词条描述」就是这两件事叠出来的。
+      */
+      if (ev.target instanceof Element && ev.target.closest('.ibk__emojis')) return;
       const el = itemOf(ev.target);
       if (!el || el === current) return;
       if (noHover) return;

@@ -23,6 +23,431 @@
   ],
   "categories": [
     {
+      "id": "navcat-mumdefvk536",
+      "title": "冰室",
+      "groups": [
+        {
+          "id": "g-mumdet54841",
+          "title": "冰室成员",
+          "items": [],
+          "subgroups": [
+            {
+              "id": "s-mumdn4ch691",
+              "title": "现实驻在",
+              "items": [
+                {
+                  "id": "i-mumdr9yp623",
+                  "text": "Raw",
+                  "image": "/img/uploads/20260929-1558-a032-Raw.jpg"
+                },
+                {
+                  "id": "i-mumdrfcq283",
+                  "text": "隰辰煦",
+                  "image": "/img/uploads/20260929-1559-f3c4-Crane.jpg"
+                },
+                {
+                  "id": "i-mumdrkkp754",
+                  "text": "澄净羽之颂",
+                  "image": "/img/uploads/20260929-1559-4378-YuZhiSong.jpg"
+                },
+                {
+                  "id": "i-mumdrxtd834",
+                  "text": "桑芙",
+                  "image": "/img/uploads/20260929-1559-59a3-Sunf2.jpg"
+                },
+                {
+                  "id": "i-mumdrzp5626",
+                  "text": "虹星",
+                  "image": "/img/uploads/20260929-1644-05a0-avatar.jpg"
+                },
+                {
+                  "id": "i-mumds57f667",
+                  "text": "SSWTLZZ",
+                  "image": "/img/uploads/20260929-1645-c262-2ace38273addfad17d035d38aea8103e.jpg"
+                },
+                {
+                  "id": "i-mumdsbi922",
+                  "text": "Airo",
+                  "image": "/img/uploads/20260929-1645-9cf5-f2e82b158111fede741b598c29e0858d.jpg"
+                },
+                {
+                  "id": "i-mumdsshm263",
+                  "text": "小石吉吉",
+                  "image": "/img/uploads/20260929-1600-01df-JIJI.jpg"
+                },
+                {
+                  "id": "i-mumdsdq9506",
+                  "text": "灵空天仪",
+                  "image": "/img/uploads/20260929-1600-2b43-LingKong.jpg"
+                },
+                {
+                  "id": "i-mumdt6wp858",
+                  "text": "盾返",
+                  "image": "/img/uploads/20260929-1600-6bed-5ef063fa2e6b91b479a76026f0a99f83.jpg"
+                },
+                {
+                  "id": "i-mumdtosq846",
+                  "text": "沃伊德",
+                  "image": "/img/uploads/20260929-1602-0974-ad3b2b5fa43631a982c9fc9565b0bd76.webp"
+                },
+                {
+                  "id": "i-mumdtxyx484",
+                  "text": "马斯",
+                  "image": "/img/uploads/20260929-1602-8d38-8eb1a717e41b86e2c5f1be579d31b898.jpg"
+                },
+                {
+                  "id": "i-mumdu61e71",
+                  "text": "OWQ",
+                  "image": "/img/uploads/20260929-1603-ad2f-154e98639be48e0aef98f63ada4e7189.jpg"
+                },
+                {
+                  "id": "i-mumdtdpt722",
+                  "text": "艾林森",
+                  "image": "/img/uploads/20260929-1603-507b-82742bf61167b014e7b91e7d9f76e09c.jpg"
+                },
+                {
+                  "id": "i-mumdtfre840",
+                  "text": "皮丝",
+                  "image": "/img/uploads/20260929-1604-9c6b-b_30d451fcf147e8aaf904de16d6808b1f.jpg"
+                },
+                {
+                  "id": "i-mumdtiht310",
+                  "text": "WQ",
+                  "image": "/img/uploads/20260929-1605-6827-b5c177eb67cf307047ac5b9846acb068.jpg"
+                }
+              ]
+            },
+            {
+              "id": "s-mumdn55l687",
+              "title": "模因驻在",
+              "items": [
+                {
+                  "id": "i-mumdof4x535",
+                  "text": "曼沫砾莫宁塔",
+                  "image": "/img/uploads/20260929-1605-7140-Memory.webp"
+                },
+                {
+                  "id": "i-mumdoln5724",
+                  "text": "铃忆",
+                  "image": "/img/uploads/20260929-1606-05e1-3cff202cb948b12fd549a77c4e243eac.jpg"
+                },
+                {
+                  "id": "i-mumdov1t680",
+                  "text": "平铃",
+                  "image": "/img/uploads/20260929-1607-4e90-7ca8de06fbccc0ba3031f8e280a8ed67.jpg"
+                },
+                {
+                  "id": "i-mumdphqh518",
+                  "text": "土豆（Bot）",
+                  "image": "/img/uploads/20260929-1608-00ad-e10b50bcbc009ebd9718ae56691d40fe.jpg"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "g-mumdezs8754",
+          "title": "模因生物",
+          "items": [],
+          "subgroups": [
+            {
+              "id": "s-mumdfcq0767",
+              "title": "冰室原生物种",
+              "items": [
+                {
+                  "id": "i-mumdgd0g927",
+                  "text": "健康男子",
+                  "image": "/img/uploads/20260929-1548-d943-99622c11656846af9a2cd8e8c72a4466.jpeg"
+                },
+                {
+                  "id": "i-mumdjuf4839",
+                  "text": "苹果伙伴",
+                  "image": "/img/uploads/20260929-1548-342a-5a48ee9b96971f93b2180d6ab0ff47d4.jpeg"
+                },
+                {
+                  "id": "i-mumdlpz5461",
+                  "text": "眠眠鱼",
+                  "image": "/img/uploads/20260929-1550-2e0e-sleepingfish.gif"
+                },
+                {
+                  "id": "i-mumdq1uh161",
+                  "text": "噗噗噗噗噗啦噜啦"
+                },
+                {
+                  "id": "i-mume06ky380",
+                  "text": "Raw瓜",
+                  "image": "/img/uploads/20260929-1601-fe0d-Raw_Warau.png.jpeg"
+                },
+                {
+                  "id": "i-mumeb698929",
+                  "text": "人壳"
+                }
+              ]
+            },
+            {
+              "id": "s-mumdfmyw678",
+              "title": "花娅的泊来客",
+              "items": [
+                {
+                  "id": "i-mumdpu2x105",
+                  "text": "宝宝"
+                },
+                {
+                  "id": "i-mumdpwhd81",
+                  "text": "蛞蝓伙伴"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "navcat-mumefc7o859",
+      "title": "小隰虫记",
+      "groups": [
+        {
+          "id": "g-mumefpm3431",
+          "title": "脊椎动物",
+          "items": [],
+          "subgroups": [
+            {
+              "id": "s-mumel5nw486",
+              "title": "蛇",
+              "items": [
+                {
+                  "id": "i-mumetnzx306",
+                  "text": "白化束带蛇"
+                },
+                {
+                  "id": "i-mumetrvx318",
+                  "text": "糖果玉米蛇"
+                },
+                {
+                  "id": "i-mumettvq664",
+                  "text": "白化康达猪鼻蛇"
+                }
+              ]
+            },
+            {
+              "id": "s-mumel9t0311",
+              "title": "守宫",
+              "items": [
+                {
+                  "id": "i-mumelmys111",
+                  "text": "肥尾守宫"
+                },
+                {
+                  "id": "i-mumeulc561",
+                  "text": "睫角守宫"
+                },
+                {
+                  "id": "i-mumeuor2102",
+                  "text": "无蹼壁虎"
+                }
+              ]
+            },
+            {
+              "id": "s-mumelspg531",
+              "title": "蛙",
+              "items": [
+                {
+                  "id": "i-mumem2hg139",
+                  "text": "姥爷树蛙"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "g-mumefvsz226",
+          "title": "无脊椎动物",
+          "items": [],
+          "subgroups": [
+            {
+              "id": "s-mumehi38166",
+              "title": "蚂蚁",
+              "items": [
+                {
+                  "id": "i-mumehkiz415",
+                  "text": "工匠收获蚁"
+                },
+                {
+                  "id": "i-mumehqlg340",
+                  "text": "黑金收获蚁"
+                },
+                {
+                  "id": "i-mumehues5",
+                  "text": "肯尼亚收获蚁"
+                },
+                {
+                  "id": "i-mumehzz8100",
+                  "text": "勤劳收获蚁"
+                },
+                {
+                  "id": "i-mumei5ys121",
+                  "text": "拟光腹收获蚁"
+                }
+              ]
+            },
+            {
+              "id": "s-mumeqjc4116",
+              "title": "捕鸟蛛",
+              "items": [
+                {
+                  "id": "i-mumeqn3x517",
+                  "text": "金直间"
+                },
+                {
+                  "id": "i-mumeqsd8275",
+                  "text": "红绿橙"
+                },
+                {
+                  "id": "i-mumeqvvg611",
+                  "text": "巴西火红"
+                },
+                {
+                  "id": "i-mumerzvh16",
+                  "text": "洪都拉斯卷毛"
+                }
+              ]
+            },
+            {
+              "id": "s-mumev9r124",
+              "title": "蟑螂",
+              "items": [
+                {
+                  "id": "i-mumevdlh818",
+                  "text": "马岛蟑螂"
+                },
+                {
+                  "id": "i-mumevgkd876",
+                  "text": "橙头蟑螂"
+                },
+                {
+                  "id": "i-mumevmza137",
+                  "text": "问号蟑螂"
+                },
+                {
+                  "id": "i-mumewca8777",
+                  "text": "多米诺蟑螂"
+                },
+                {
+                  "id": "i-mumewfb9273",
+                  "text": "印度蔗蠊"
+                }
+              ]
+            },
+            {
+              "id": "s-mumes839185",
+              "title": "其他蛛形纲",
+              "items": [
+                {
+                  "id": "i-mumese6t7",
+                  "text": "鞭蝎"
+                },
+                {
+                  "id": "i-mumesgv3812",
+                  "text": "八重山蝎"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "g-mumenzt8401",
+          "title": "水族",
+          "items": [],
+          "subgroups": [
+            {
+              "id": "s-mumeobn0447",
+              "title": "龟",
+              "items": [
+                {
+                  "id": "i-mumeowtx658",
+                  "text": "黄喉拟水龟"
+                }
+              ]
+            },
+            {
+              "id": "s-mumeofn8989",
+              "title": "鱼类",
+              "items": [
+                {
+                  "id": "i-mumeovxg973",
+                  "text": "斑马鱼"
+                },
+                {
+                  "id": "i-mumep8e4429",
+                  "text": "白云金丝"
+                },
+                {
+                  "id": "i-mumepb84752",
+                  "text": "花鳅"
+                },
+                {
+                  "id": "i-mumepo0l813",
+                  "text": "鼠鱼"
+                },
+                {
+                  "id": "i-mumeprrw873",
+                  "text": "孔雀鱼"
+                }
+              ]
+            },
+            {
+              "id": "s-mumeogok424",
+              "title": "无脊椎",
+              "items": [
+                {
+                  "id": "i-mumeop98370",
+                  "text": "苹果螺"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "g-mumegbmr378",
+          "title": "已故物种",
+          "items": [
+            {
+              "id": "i-mumegfpw114",
+              "text": "变色树蜥"
+            },
+            {
+              "id": "i-mumeihss271",
+              "text": "双隆骨铺道蚁"
+            },
+            {
+              "id": "i-mumejdi4102",
+              "text": "二色盾胸切叶蚁（初代）"
+            },
+            {
+              "id": "i-mumejjcc563",
+              "text": "红绿橙捕鸟蛛（初代）"
+            },
+            {
+              "id": "i-mumepw1g794",
+              "text": "极火虾"
+            },
+            {
+              "id": "i-mumeq0ac377",
+              "text": "观背青鳉"
+            },
+            {
+              "id": "i-mumeswzx336",
+              "text": "红爪雨林蝎"
+            },
+            {
+              "id": "i-mumet1qd521",
+              "text": "海南双针蝎"
+            }
+          ]
+        }
+      ]
+    },
+    {
       "id": "navcat-mu9dgbej916",
       "title": "纷湖",
       "groups": [
@@ -42,7 +467,8 @@
             },
             {
               "id": "i-mu9fqaq0754",
-              "text": "吉吉家"
+              "text": "吉吉家",
+              "href": "/huaya/years/fenhu/jijihome#blk-page-mum2qcs9-pmumb472o1"
             },
             {
               "id": "i-mu9fqdfc604",
@@ -71,6 +497,20 @@
             {
               "id": "i-mu9fr94o452",
               "text": "结档大圆环"
+            }
+          ]
+        },
+        {
+          "id": "g-mumdd3cg785",
+          "title": "模因生物",
+          "items": [
+            {
+              "id": "i-mumddglk581",
+              "text": "十五问"
+            },
+            {
+              "id": "i-mumde2qw25",
+              "text": "马铃薯"
             }
           ]
         }

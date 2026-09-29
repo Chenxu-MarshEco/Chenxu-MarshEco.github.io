@@ -187,7 +187,16 @@ const PROBE = `(() => {
   const vis = (el) => !!el && el.getClientRects().length > 0 && getComputedStyle(el).visibility !== 'hidden';
   const display = (el) => (el ? getComputedStyle(el).display : '');
   const href = card ? card.getAttribute('href') : '';
-  const name = (card?.querySelector('.daily__name') || {}).textContent || '';
+  /*
+    ⚠ 名字要取"看得见的那一份"。
+    成员名会被包成 .mem（悬停出名片），名片里**又有一份同样的名字**
+    （.mem__label，aria-hidden="true"，平时藏着）—— 直接读 .daily__name
+    的 textContent 会把两份拼起来，量出来是「隰辰煦隰辰煦」，看起来像渲染坏了。
+    先取 .mem__text（真正的正文），拿不到再退回整个 <b>。
+    （注意：这段是模板字符串里的注释，别在里面写反引号。）
+  */
+  const nameEl = card ? card.querySelector('.daily__name') : null;
+  const name = (nameEl?.querySelector('.mem__text') || nameEl || {}).textContent || '';
   const time = (card?.querySelector('.daily__time') || {}).textContent || '';
   const text = (card?.querySelector('.daily__text') || {}).textContent || '';
   const faces = card ? card.querySelectorAll('.daily__face').length : 0;

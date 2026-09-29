@@ -12,7 +12,7 @@
   "title": "冰室精华",
   "note": "由群精华导出文件整理：文字 / 完美对话 / AI 创作三类都在，一条没丢。",
   "timelineId": "tl-mu6e19cb793",
-  "updated": "2026-09-28",
+  "updated": "2026-09-29",
   "eras": [
     {
       "id": "era1",
@@ -168,7 +168,9 @@
       "name": "灵空",
       "avatar": "/img/uploads/20260920-2144-ac7e-LingKong.jpg",
       "url": "",
-      "aliases": [],
+      "aliases": [
+        "灵空天仪"
+      ],
       "title": "",
       "sun": false,
       "zoom": ""
@@ -358,7 +360,7 @@
       "time": "09:51",
       "text": "[图片]昨天的什么比操作",
       "images": [
-        "/img/salon/e0008-1.jpg"
+        "/img/salon/e0008-1.webp"
       ],
       "eraId": "era1"
     },
@@ -2348,7 +2350,7 @@
       "time": "21:20",
       "text": "无文本",
       "images": [
-        "/img/salon/e0164-1.jpg"
+        "/img/salon/e0164-1.webp"
       ],
       "eraId": "era2"
     },
@@ -2510,7 +2512,7 @@
       "time": "19:37",
       "text": "回到游戏\n进度\n统计信息\n在这里配置夸克！\n选项\n举报玩家\n模组\n断开连接",
       "images": [
-        "/img/salon/e0177-1.jpg"
+        "/img/salon/e0177-1.webp"
       ],
       "eraId": "era3"
     },
@@ -2610,7 +2612,7 @@
       "time": "22:46",
       "text": "C",
       "images": [
-        "/img/salon/e0185-1.jpg"
+        "/img/salon/e0185-1.webp"
       ],
       "eraId": "era3"
     },
@@ -3336,7 +3338,7 @@
       "time": "20:22",
       "text": "80最52平41-GPU44%P",
       "images": [
-        "/img/salon/e0242-1.jpg"
+        "/img/salon/e0242-1.webp"
       ],
       "eraId": "era3"
     },
@@ -3413,7 +3415,7 @@
       "time": "22:55",
       "text": "无文本",
       "images": [
-        "/img/salon/e0248-1.jpg"
+        "/img/salon/e0248-1.webp"
       ],
       "eraId": "era3"
     },
@@ -3598,7 +3600,7 @@
       "time": "16:14",
       "text": "无文本",
       "images": [
-        "/img/salon/e0262-1.jpg"
+        "/img/salon/e0262-1.webp"
       ],
       "eraId": "era3"
     },
@@ -3762,7 +3764,7 @@
       "time": "14:27",
       "text": "无文本",
       "images": [
-        "/img/salon/e0275-1.jpg"
+        "/img/salon/e0275-1.webp"
       ],
       "eraId": "era3"
     },
@@ -4209,7 +4211,7 @@
       "time": "18:15",
       "text": "无文本",
       "images": [
-        "/img/salon/e0310-1.jpg"
+        "/img/salon/e0310-1.webp"
       ],
       "eraId": "era3"
     },
@@ -4628,7 +4630,7 @@
       "time": "22:03",
       "text": "无文本",
       "images": [
-        "/img/salon/e0343-1.jpg"
+        "/img/salon/e0343-1.webp"
       ],
       "eraId": "era3"
     },
@@ -4716,7 +4718,7 @@
       "time": "18:51",
       "text": "无文本",
       "images": [
-        "/img/salon/e0350-1.jpg"
+        "/img/salon/e0350-1.webp"
       ],
       "eraId": "era3"
     },
@@ -5527,7 +5529,7 @@
       "time": "20:32",
       "text": "无文本",
       "images": [
-        "/img/salon/e0415-1.jpg"
+        "/img/salon/e0415-1.webp"
       ],
       "eraId": "era3"
     },
@@ -7163,7 +7165,7 @@
       "time": "22:37",
       "text": "无文本",
       "images": [
-        "/img/salon/e0545-1.jpg"
+        "/img/salon/e0545-1.webp"
       ],
       "eraId": "era5"
     },
@@ -7349,7 +7351,7 @@
       "time": "12:09",
       "text": "eper\ntaire\nHelp\nveral-Notepad\n口\nled-Paint\nSeach He\nViewmege\nQptonsHelp\neneral-Notepad\nuntited-Paint\nEdech Heo\nFle\nVlew.\nnege\nOptons\nHelp",
       "images": [
-        "/img/salon/e0560-1.jpg"
+        "/img/salon/e0560-1.webp"
       ],
       "eraId": "era5"
     },
@@ -7504,7 +7506,7 @@
       "time": "19:21",
       "text": "无文本",
       "images": [
-        "/img/salon/e0572-1.jpg"
+        "/img/salon/e0572-1.webp"
       ],
       "eraId": "era5"
     },
@@ -8012,7 +8014,7 @@
       "time": "23:50",
       "text": "继续调查，提升大师等级\n摩涅谟绪涅\n大师级169人等级355\n大师等级192猎人等级388\nSSWTLZZ\n大师等级146猎人等级323\n大海等级169猪人等级351\nSSWTLZZ\n李箱玩怪猎\nG切换玩家显示",
       "images": [
-        "/img/salon/e0611-1.jpg"
+        "/img/salon/e0611-1.webp"
       ],
       "eraId": "era5"
     },
@@ -8076,7 +8078,7 @@
       "time": "22:11",
       "text": "无文本",
       "images": [
-        "/img/salon/e0616-1.jpg"
+        "/img/salon/e0616-1.webp"
       ],
       "eraId": "era5"
     },
@@ -8192,7 +8194,7 @@
       "time": "14:27",
       "text": "无文本",
       "images": [
-        "/img/salon/e0625-1.jpg"
+        "/img/salon/e0625-1.webp"
       ],
       "eraId": "era5"
     },
@@ -8779,7 +8781,7 @@
       "time": "18:47",
       "text": "无文本",
       "images": [
-        "/img/salon/e0671-1.jpg"
+        "/img/salon/e0671-1.webp"
       ],
       "eraId": "era5"
     },
@@ -8805,7 +8807,7 @@
       "time": "22:20",
       "text": "照SSSWTLZZ\n李箱玩怪猎\nSSW\nERIA\n0",
       "images": [
-        "/img/salon/e0673-1.jpg"
+        "/img/salon/e0673-1.webp"
       ],
       "eraId": "era5"
     },
@@ -8869,7 +8871,7 @@
       "time": "19:54",
       "text": "无文本",
       "images": [
-        "/img/salon/e0678-1.jpg"
+        "/img/salon/e0678-1.webp"
       ],
       "eraId": "era5"
     },

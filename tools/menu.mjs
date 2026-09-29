@@ -233,20 +233,45 @@ async function doPreview() {
   header('看效果');
   line('   正在启动本地预览。');
   line('');
-  line(`   地址是 ${C.cyan}http://localhost:4321${C.r}`);
-  note('   浏览器大约 4 秒后自动打开，别急着关这个窗口。');
+  /*
+    ⚠ 地址一律写字面量 127.0.0.1，**不要写 localhost**（2026-09-29 改）。
+
+    两个原因叠在一起：Windows 上 `localhost` 先解析成 IPv6 的 ::1，而预览服务是
+    显式绑在 127.0.0.1（IPv4）上的；没有代理时浏览器收到"立刻被拒"会飞快退回 IPv4，
+    看不出问题 —— 但开着代理/梯子（Clash 一类，尤其 fake-ip DNS / TUN 模式）时，
+    那一次 ::1 尝试可能被拖住、或者 localhost 干脆被解析到别的地址，
+    表现就是「看效果时好时坏、要反复开关梯子、甚至完全打不开」。
+    127.0.0.1 是字面地址，不经过 DNS，也不出本机回环 —— 梯子开着关着都一样。
+    （启动器 studio.py 那边同一处也一起改了。）
+  */
+  const url = 'http://127.0.0.1:4321';
+  line(`   地址是 ${C.cyan}${url}${C.r}`);
+  note('   浏览器会在服务真的起来之后自动打开，别急着关这个窗口。');
   note('   想停止预览：回到这个窗口按 Ctrl+C。');
   line('');
 
-  // 延迟几秒再开浏览器，等开发服务器起来
-  const opener = setTimeout(() => {
-    const url = 'http://localhost:4321';
+  // 等服务真的在听了再开浏览器 —— 依赖装完第一次跑要编译一阵子，
+  // 无脑定时打开的话浏览器会先撞上「无法访问此网站」，看起来像坏了。
+  let stopped = false;
+  const opener = (async () => {
+    const http = await import('node:http');
+    for (let i = 0; i < 60 && !stopped; i++) {
+      const up = await new Promise((res) => {
+        const req = http.get(`${url}/`, (r) => { r.resume(); res(true); });
+        req.on('error', () => res(false));
+        req.setTimeout(800, () => { req.destroy(); res(false); });
+      });
+      if (up) break;
+      await new Promise((r) => setTimeout(r, 500));
+    }
+    if (stopped) return; // 预览已经停了就别再开浏览器了
     if (IS_WIN) spawn('cmd', ['/c', 'start', '', url], { detached: true, stdio: 'ignore' }).unref();
     else spawn('open', [url], { detached: true, stdio: 'ignore' }).unref();
-  }, 4000);
+  })();
+  void opener;
 
-  await run('pnpm', ['dev']);
-  clearTimeout(opener);
+  await run('pnpm', ['dev', '--host', '127.0.0.1']);
+  stopped = true;
   line('');
   ok('预览已经停止。');
   await waitKey();

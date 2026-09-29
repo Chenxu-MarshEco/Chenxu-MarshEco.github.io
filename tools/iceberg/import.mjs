@@ -159,7 +159,8 @@ export function buildData(parsed, prev, updated = localDate()) {
         return {
           id: String(before?.id || `i${String(seq).padStart(2, '0')}`),
           name: i.name,
-          categoryId: catId.get(i.cat) ?? '',
+          /* 2026-09-29 起分类是个数组（顺序有意义，第一个是主分类） */
+          categoryIds: catId.get(i.cat) ? [catId.get(i.cat)] : [],
           /* 本站的 tag（卡片顶部那排小词）源文件里没有：沿用旧值，没勾过就是空 */
           tags: Array.isArray(before?.tags) ? before.tags : [],
           desc: i.desc,
@@ -192,7 +193,7 @@ export function verify(claim, data) {
     notes: data.layers.reduce((n, l) => n + l.items.filter((i) => i.desc).length, 0),
     links: data.layers.reduce((n, l) => n + l.items.filter((i) => i.href).length, 0),
     dist: data.categories
-      .map((c) => [c.name, data.layers.reduce((n, l) => n + l.items.filter((i) => i.categoryId === c.id).length, 0)])
+      .map((c) => [c.name, data.layers.reduce((n, l) => n + l.items.filter((i) => (i.categoryIds ?? []).includes(c.id)).length, 0)])
       .sort((a, b) => b[1] - a[1]),
   };
   const claimDist = new Map(

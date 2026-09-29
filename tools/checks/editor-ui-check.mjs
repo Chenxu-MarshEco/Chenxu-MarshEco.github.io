@@ -692,11 +692,15 @@ try {
     if (!form) return { ok: false, why: '新增条目没出表单' };
     const nameInput = form.querySelector('.wice__form input.input');
     setVal(nameInput, ${JSON.stringify(NEW_ITEM)});
-    const sel = form.querySelector('select.wice__select');
-    const newOpt = [...sel.options].find((o) => o.textContent.includes(${JSON.stringify(NEW_CAT)}));
-    if (!newOpt) return { ok: false, why: '新增的分类没出现在下拉里' };
-    sel.value = newOpt.value;
-    sel.dispatchEvent(new Event('change', { bubbles: true }));
+    /*
+      分类从"单选下拉"改成"勾选 + 顺序"了（2026-09-29 起一条可以属于多个分类）：
+      这里勾上新加的那一类（它就是这一条的主分类）。
+    */
+    const catPicks = [...form.querySelectorAll('input[data-cat-pick]')];
+    const newPick = catPicks.find((p) => (p.parentElement?.textContent || '').includes(${JSON.stringify(NEW_CAT)}));
+    if (!newPick) return { ok: false, why: '新增的分类没出现在勾选框里' };
+    newPick.checked = true;
+    newPick.dispatchEvent(new Event('change', { bubbles: true }));
     const firstTag = form.querySelector('.wess__memberGrid input[type=checkbox]');
     if (firstTag) { firstTag.click(); await sleep(200); }
     const area = form.querySelector('textarea');
@@ -793,8 +797,8 @@ try {
   check('★ 冰山图：存下去的条目带着详细描述（= 页面上会有完备标识）',
     String(savedItem?.desc ?? '').trim() === NEW_DESC, JSON.stringify(savedItem?.desc ?? ''));
   check(`★ 冰山图：存下去的分类颜色就是面板里选的那个（${NEW_COLOR}），条目也真的归在它下面`,
-    savedCat?.color === NEW_COLOR && savedItem?.categoryId === savedCat?.id,
-    JSON.stringify({ color: savedCat?.color, catId: savedCat?.id, itemCat: savedItem?.categoryId }));
+    savedCat?.color === NEW_COLOR && (savedItem?.categoryIds ?? []).includes(savedCat?.id),
+    JSON.stringify({ color: savedCat?.color, catId: savedCat?.id, itemCats: savedItem?.categoryIds }));
   check('★ 冰山图：层级的顺序也存下去了（面板里换过位置 → 盘上跟着换）',
     ice1.layers[0]?.title === ice0.layers[1]?.title && ice1.layers[1]?.title === ice0.layers[0]?.title,
     ice1.layers.map((l) => l.title).join(' | '));

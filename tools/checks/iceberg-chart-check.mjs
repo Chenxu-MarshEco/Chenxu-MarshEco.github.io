@@ -67,6 +67,11 @@ const categories = (raw.categories ?? [])
 const tags = (raw.tags ?? []).map((t) => ({ id: str(t.id), name: str(t.name) })).filter((t) => t.id && t.name);
 const tagName = (id) => tags.find((t) => t.id === str(id))?.name ?? '';
 const catById = (id) => categories.find((c) => c.id === str(id)) ?? null;
+/** 一条的分类列表（2026-09-29 起是数组；老数据里的单值 categoryId 也算） */
+const catsOf = (it) => {
+  const raw = Array.isArray(it.categoryIds) ? it.categoryIds : it.categoryId ? [it.categoryId] : [];
+  return raw.map((id) => catById(id)).filter(Boolean);
+};
 const layers = (raw.layers ?? []).map((l) => ({
   id: str(l.id),
   title: str(l.title),
@@ -74,24 +79,28 @@ const layers = (raw.layers ?? []).map((l) => ({
   background: str(l.background),
   head: str(l.head),
   items: (l.items ?? [])
-    .map((it) => ({
-      id: str(it.id),
-      name: str(it.name),
-      cat: catById(it.categoryId),
-      color: catById(it.categoryId)?.color ?? DEFAULT_COLOR,
-      tags: (it.tags ?? []).map((t) => tagName(t)).filter(Boolean),
-      desc: str(it.desc),
-      href: str(it.href),
-      done: str(it.desc) !== '',
-    }))
+    .map((it) => {
+      const cats = catsOf(it);
+      return {
+        id: str(it.id),
+        name: str(it.name),
+        cats,
+        cat: cats[0] ?? null,
+        color: cats[0]?.color ?? DEFAULT_COLOR,
+        tags: (it.tags ?? []).map((t) => tagName(t)).filter(Boolean),
+        desc: str(it.desc),
+        href: str(it.href),
+        done: str(it.desc) !== '',
+      };
+    })
     .filter((it) => it.name),
 }));
 
 const totalItems = layers.reduce((n, l) => n + l.items.length, 0);
 const doneItems = layers.reduce((n, l) => n + l.items.filter((i) => i.done).length, 0);
-const looseItems = layers.reduce((n, l) => n + l.items.filter((i) => !i.cat).length, 0);
-const usedCats = categories.filter((c) => layers.some((l) => l.items.some((i) => i.cat?.id === c.id)));
-const legend = looseItems ? [...usedCats, { id: '', name: '未分类', color: DEFAULT_COLOR, hidden: false }] : usedCats;
+const looseItems = layers.reduce((n, l) => n + l.items.filter((i) => !i.cats.length).length, 0);
+const usedCats = categories.filter((c) => layers.some((l) => l.items.some((i) => i.cats.some((k) => k.id === c.id))));
+const legend = looseItems ? [...usedCats, { id: '', name: '未分类', color: DEFAULT_COLOR, emoji: '', desc: '', hidden: false }] : usedCats;
 const hiddenCats = usedCats.filter((c) => c.hidden);
 const hexToRgb = (hex) => {
   const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
@@ -272,7 +281,9 @@ const PROBE = `(() => {
         const cs = getComputedStyle(it);
         const bs = badge ? getComputedStyle(badge) : null;
         return {
-          cat: cell.dataset.cat || '',
+          /* 2026-09-29 起是 data-cats="c01 c05"（顺序 = 显示顺序，第一个是主分类） */
+          cat: (cell.dataset.cats || '').split(' ').filter(Boolean)[0] || '',
+          cats: (cell.dataset.cats || '').split(' ').filter(Boolean),
           done: cell.dataset.done === '1',
           name: (it.querySelector('.ibk__txt') || {}).textContent.trim(),
           colorVar: it.style.getPropertyValue('--cat').trim(),
@@ -746,13 +757,26 @@ const sticky = await cdp.ev(`(async () => {
   const y = Math.round(cr.top + cr.height / 2);
   const hit = document.elementFromPoint(x, y);
   const id = chip.dataset.cat;
-  const items = () => [...document.querySelectorAll('.ibk__cell[data-cat="' + id + '"] .ibk__item')];
+  const cells = () => [...document.querySelectorAll('.ibk__cell[data-cats~="' + id + '"]')];
+  const items = () => cells().map((c) => c.querySelector('.ibk__item')).filter(Boolean);
+  const catsOfCell = (c) => (c.dataset.cats || '').split(' ').filter(Boolean);
   const before = chip.dataset.on;
   chip.click();
   await new Promise((r) => setTimeout(r, 200));
   const afterOn = chip.dataset.on;
   const pressed = chip.getAttribute('aria-pressed');
-  const hiddenNow = items().length > 0 && items().every((el) => el.hidden);
+  /*
+    新规矩（2026-09-29）：关掉一类之后 ——
+      · 只属于这一类的条目：收起；
+      · 还有别的可见分类的条目：留着（只是换了颜色、少了几个 emoji）。
+  */
+  const solo = cells().filter((c) => catsOfCell(c).length === 1);
+  const multi = cells().filter((c) => catsOfCell(c).length > 1);
+  const hiddenNow =
+    afterOn === '0' &&
+    solo.length > 0 &&
+    solo.every((c) => c.querySelector('.ibk__item').hidden) &&
+    multi.every((c) => !c.querySelector('.ibk__item').hidden);
   chip.click();
   await new Promise((r) => setTimeout(r, 200));
   return {
@@ -761,6 +785,7 @@ const sticky = await cdp.ev(`(async () => {
     hitIsChip: !!(hit && hit.closest && hit.closest('.ibk__cat')),
     hitCls: hit ? String(hit.className).slice(0, 40) : '',
     name: (chip.querySelector('.ibk__catName') || {}).textContent, before, afterOn, pressed, hiddenNow,
+    solo: solo.length, multi: multi.length,
     back: chip.dataset.on, n: items().length,
   };
 })()`);
@@ -776,10 +801,10 @@ check('★ 往下滚之后它**一直贴在页头下面**（离页头下沿就�
   `静止时 top=${sticky.atTop}px；滚到 60% 时 top=${sticky.pinnedTop}px，页头下沿 ${sticky.headerBottom}px（缝 ${stickyGap}px）`);
 check('★ 吸顶状态下**点得到**（那个坐标上的元素就是分类小眼睛本身，没被卡片或那层 VHS 挡住）',
   sticky.hitIsChip === true, `elementFromPoint → ${sticky.hitCls || '（空）'}`);
-check('★ 吸顶状态下点一下真的能开关（这一类的条目整批藏起来，再点一下回来）',
+check('★ 吸顶状态下点一下真的能开关（只属于这一类的收起；还有别的分类的留着，只是换色）',
   sticky.n > 0 && sticky.afterOn !== sticky.before && sticky.pressed === (sticky.afterOn === '1' ? 'true' : 'false') &&
-    sticky.hiddenNow === (sticky.afterOn === '0') && sticky.back === sticky.before,
-  `点「${sticky.name}」（${sticky.n} 条）：${sticky.before} → ${sticky.afterOn}（aria-pressed=${sticky.pressed}，条目藏起来=${sticky.hiddenNow}）→ 回到 ${sticky.back}`);
+    (sticky.afterOn === '1' || sticky.hiddenNow) && sticky.back === sticky.before,
+  `点「${sticky.name}」（${sticky.n} 条：只属于它的 ${sticky.solo} 条 + 还有别的分类的 ${sticky.multi} 条）：${sticky.before} → ${sticky.afterOn}（aria-pressed=${sticky.pressed}，按新规矩藏起来=${sticky.hiddenNow}）→ 回到 ${sticky.back}`);
 /*
   分类色块：这一条的 --cat 必须是数据里的颜色。
   「收着」的那一类底色是透明的（只留一圈同色描边，见 .ibk__cat.is-off），
@@ -800,8 +825,11 @@ if (hiddenCats.length) {
     d.cats.filter((c) => !c.on).map((c) => c.id).sort().join(',') === hiddenCats.map((c) => c.id).sort().join(',') &&
       d.cats.filter((c) => !c.on).every((c) => c.pressed === 'false') &&
       hiddenCats.every((c) => {
-        const list = d.layers.flatMap((x) => x.items).filter((it) => it.cat === c.id);
-        return list.length > 0 && list.every((it) => it.hidden && !it.visible);
+        /* 只属于这一类的条目默认不显示；还有别的可见分类的照常显示（2026-09-29 起） */
+        const solo = d.layers.flatMap((x) => x.items).filter((it) => it.cats.length === 1 && it.cat === c.id);
+        const multi = d.layers.flatMap((x) => x.items).filter((it) => it.cats.length > 1 && it.cats.includes(c.id));
+        return solo.length > 0 && solo.every((it) => it.hidden && !it.visible) &&
+          multi.every((it) => !it.hidden && it.visible);
       }),
     `收着的：${d.cats.filter((c) => !c.on).map((c) => c.name).join('、')}`);
 } else {
@@ -812,22 +840,28 @@ if (hiddenCats.length) {
 const eyeTest = await cdp.ev(`(() => {
   const chip = document.querySelector('.ibk__cat[data-cat="${eyeCat?.id ?? ''}"]');
   if (!chip) return { ok: false, why: '找不到那颗小眼睛' };
-  const items = () => [...document.querySelectorAll('.ibk__cell[data-cat="${eyeCat?.id ?? ''}"] .ibk__item')];
-  const snap = (els) => els.map((el) => ({ hidden: el.hidden, visible: !!(el.offsetWidth || el.offsetHeight) }));
-  const before = { on: chip.dataset.on === '1', pressed: chip.getAttribute('aria-pressed'), items: snap(items()) };
+  const cells = () => [...document.querySelectorAll('.ibk__cell[data-cats~="${eyeCat?.id ?? ''}"]')];
+  const snap = () => cells().map((c) => {
+    const el = c.querySelector('.ibk__item');
+    const n = (c.dataset.cats || '').split(' ').filter(Boolean).length;
+    return { hidden: el.hidden, visible: !!(el.offsetWidth || el.offsetHeight), solo: n === 1 };
+  });
+  const before = { on: chip.dataset.on === '1', pressed: chip.getAttribute('aria-pressed'), items: snap() };
   chip.click();
-  const after = { on: chip.dataset.on === '1', pressed: chip.getAttribute('aria-pressed'), items: snap(items()) };
+  const after = { on: chip.dataset.on === '1', pressed: chip.getAttribute('aria-pressed'), items: snap() };
   chip.click();
-  const back = { on: chip.dataset.on === '1', pressed: chip.getAttribute('aria-pressed'), items: snap(items()) };
+  const back = { on: chip.dataset.on === '1', pressed: chip.getAttribute('aria-pressed'), items: snap() };
   return { ok: true, name: (chip.querySelector('.ibk__catName') || {}).textContent, count: before.items.length, before, after, back };
 })()`);
-check(`★ 点一下「${eyeTest.name}」的小眼睛：这一类的条目**整批翻面**（显示↔不显示，aria-pressed 跟着翻）`,
+check(`★ 点一下「${eyeTest.name}」的小眼睛：只属于它的条目翻面，还有别的分类的留着（aria-pressed 跟着翻）`,
   eyeTest.ok === true && eyeTest.count > 0 &&
     eyeTest.after.on !== eyeTest.before.on &&
     eyeTest.after.pressed === (eyeTest.after.on ? 'true' : 'false') &&
-    eyeTest.after.items.every((x) => x.hidden === !eyeTest.after.on && x.visible === eyeTest.after.on),
+    eyeTest.after.items.every((x) =>
+      x.solo ? x.hidden === !eyeTest.after.on && x.visible === eyeTest.after.on : x.hidden === false && x.visible === true
+    ),
   JSON.stringify({ before: eyeTest.before?.on, after: eyeTest.after?.on, n: eyeTest.count }));
-check('★ 再点一下：整批回到原样（开关来回都能用）',
+check('★ 再点一下：回到原样（开关来回都能用，多条分类的条目也不会被它弄丢）',
   eyeTest.ok === true &&
     eyeTest.back.on === eyeTest.before.on && eyeTest.back.pressed === eyeTest.before.pressed &&
     JSON.stringify(eyeTest.back.items) === JSON.stringify(eyeTest.before.items),
