@@ -8292,11 +8292,18 @@ async function saveBoards({ silent = false } = {}) {  try {
     // 否则刚加的子版块在「所属子版块」里根本选不到。
     state.allSubs = [];
     await loadSubs();
-    // 已经被删掉的子版块，从当前文章的归类里剔掉，避免存下悬空 id
+    /*
+      已经被删掉的子版块，从当前文章的归类里剔掉，避免存下悬空 id。
+      ⚠ 但**清单拉空的时候一个都别剔**（接口挂了 / 还没加载完）：那样会把整篇文章的
+      归类关系静默清空 —— 比留一个悬空 id 严重得多。这一版修「独立页面选不到」时
+      顺带加了这道闸：清单本身曾经漏掉一整类节点，说明"不在清单里"不等于"该删"。
+    */
     const valid = new Set(state.allSubs.map((s) => s.id));
-    const before = state.subs.length;
-    state.subs = state.subs.filter((s) => valid.has(s));
-    if (state.subs.length !== before) setDirty(true);
+    if (valid.size) {
+      const before = state.subs.length;
+      state.subs = state.subs.filter((s) => valid.has(s));
+      if (state.subs.length !== before) setDirty(true);
+    }
     renderSubPicker();
 
     if (!silent) {
@@ -8342,7 +8349,23 @@ async function loadSubs() {
       });
       for (const child of node.children || []) walk(child, board, depth + 1);
     };
+    /*
+      ⚠ 顶层节点**自己**也要进清单（2026-09-29 修用户报的「文章不能归类到独立页面下」）。
+
+      以前这里只 walk(board.children)，把顶层那两个东西漏掉了：
+        · **独立页面**（`standalone: true`）本身就是顶层节点、没有父级 ——
+          于是它压根不在清单里，文章怎么都勾不到它；
+        · 大板块本身也是一页（`/huaya/` 那种），同理该能挂文章。
+      它们的 meta 分别写「独立页面」/「大板块」，跟子版块（meta 是所属大板块名）区分开。
+    */
     for (const board of data.boards || []) {
+      if (!board || !board.id) continue;
+      flat.push({
+        id: board.id,
+        label: board.title || board.label || '(未命名)',
+        board: board.standalone === true ? '独立页面' : '大板块',
+        depth: 0,
+      });
       for (const child of board.children || []) walk(child, board.title, 0);
     }
     state.allSubs = flat;
@@ -8371,6 +8394,8 @@ function renderSubPicker() {
     const cb = document.createElement('input');
     cb.type = 'checkbox';
     cb.checked = state.subs.includes(sub.id);
+    /* 把 id 挂在 DOM 上：验收脚本要按 id 精确勾某一项（标签可能重名、也可能带缩进空格） */
+    cb.dataset.subId = sub.id;
     cb.addEventListener('change', () => {
       if (cb.checked) {
         if (!state.subs.includes(sub.id)) state.subs.push(sub.id);

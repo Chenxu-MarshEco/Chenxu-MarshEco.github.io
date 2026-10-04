@@ -1,6 +1,25 @@
 {
   "boards": [
     {
+      "id": "page-muu0iohn",
+      "title": "铃忆的冰室日记",
+      "subtitle": "",
+      "image": "/img/uploads/20261005-0006-a1a4-26609e853deb9690b19799cf7b23ed79.webp",
+      "standalone": true,
+      "href": "/huaya/01nikki",
+      "page": [
+        {
+          "id": "page-muu0iohn-pmuu0kckk5",
+          "type": "text",
+          "text": "01你在这里给这个页面写一句介绍吧"
+        },
+        {
+          "id": "page-muu0iohn-pmuu0kmf16",
+          "type": "divider"
+        }
+      ]
+    },
+    {
       "id": "page-mum2qcs9",
       "title": "吉吉家",
       "subtitle": "",
@@ -925,12 +944,6 @@
           "image": "/img/uploads/20260915-1928-c3f0-粉色动漫风-方图.jpg",
           "page": [
             {
-              "id": "huaya-hishitsu-pmuu09jv34",
-              "type": "children",
-              "shape": "wide",
-              "size": "l"
-            },
-            {
               "id": "huaya-hishitsu-pmu4uiqon1",
               "type": "toc",
               "text": "冰室前庭"
@@ -985,15 +998,7 @@
             }
           ],
           "timeline": "tl-mu6e19cb793",
-          "timePoint": "tl-mu6e19cb793-pmu6e1xnf0",
-          "children": [
-            {
-              "id": "huaya-hishitsu-1",
-              "title": "铃忆的冰室日记",
-              "href": "/huaya/bingshi/01",
-              "image": "/img/uploads/20261004-2359-1600-26609e853deb9690b19799cf7b23ed79.webp"
-            }
-          ]
+          "timePoint": "tl-mu6e19cb793-pmu6e1xnf0"
         },
         {
           "id": "huaya-r1",

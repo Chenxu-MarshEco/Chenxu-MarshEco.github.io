@@ -46,7 +46,25 @@ const readJson = (p) => JSON.parse(fs.readFileSync(p, 'utf8'));
 
 const BOARDS = path.join(SRC, 'src/data/home-boards.json');
 const TPL = path.join(SRC, 'src/data/page-templates.json');
-const SRC_NODE = 'page-mu9fd13e'; // 隰辰煦家
+/*
+  ⚠ 这里**不写死**是哪一份模版、哪个页面（第一版写死「家页模板 / 隰辰煦家」，
+  用户自己存了新模版、把那份删了之后就整片红）。
+  规则：挑一份"和它来源页对得上"的模版来验 —— 优先块数与类型序列跟来源页完全一致的那份
+  （= 存完之后源页面没再改过），否则挑块数最多的，只验"只留结构"那几条。
+*/
+const flatNodes = [];
+(function walkAll(nodes) {
+  for (const n of nodes ?? []) {
+    if (!n) continue;
+    flatNodes.push(n);
+    walkAll(n.children);
+  }
+})(JSON.parse(fs.readFileSync(BOARDS, 'utf8')).boards);
+const nodeByTitle = (t) => flatNodes.find((n) => String(n.title ?? '').trim() === String(t ?? '').trim()) ?? null;
+const nodeByHref = (h) => {
+  const want = String(h ?? '').replace(/\/+$/, '');
+  return flatNodes.find((n) => String(n.href ?? '').replace(/\/+$/, '') === want) ?? null;
+};
 
 for (const [label, p] of [['home-boards.json', BOARDS], ['page-templates.json', TPL]]) {
   if (!fs.existsSync(p)) {
@@ -65,25 +83,50 @@ const find = (nodes, id) => {
   return null;
 };
 const boards = readJson(BOARDS);
-const page = find(boards.boards, SRC_NODE);
 const tplData = readJson(TPL);
-const home = tplData.templates.find((t) => t.name === '家页模板') ?? tplData.templates[0];
+const pick = (() => {
+  const withSrc = (tplData.templates ?? [])
+    .map((t) => ({ tpl: t, src: nodeByHref(t?.from?.href) ?? nodeByTitle(t?.from?.title) }))
+    .filter((x) => x.src);
+  const exact = withSrc.find(
+    (x) =>
+      (x.src.page ?? []).map((b) => b.type).join(',') === (x.tpl.blocks ?? []).map((b) => b.type).join(','),
+  );
+  if (exact) return { ...exact, exact: true };
+  const best = withSrc.sort((a, b) => (b.tpl.blocks?.length ?? 0) - (a.tpl.blocks?.length ?? 0))[0];
+  return best ? { ...best, exact: false } : null;
+})();
+if (!pick) {
+  console.error('page-templates.json 里没有一份能对上来源页的模版（先在编辑器里存一份再跑）');
+  process.exit(2);
+}
+info(
+  `验这一份：「${pick.tpl.name}」（${pick.tpl.blocks?.length} 块，来源 ${pick.tpl.from?.title}` +
+    `）· 与来源页类型序列${pick.exact ? '完全一致' : '不一致（源页面之后又改过，只验"只留结构"'}`
+);
+const home = pick.tpl;
+const page = pick.src;
+const SRC_NODE = page.id;
+const srcTypes = (page.page ?? []).map((b) => b.type);
 
 /* ================================================================
  * ① 脱内容
  * ================================================================ */
 console.log('================ ① 模版里只留结构 ================');
-const srcTypes = (page.page ?? []).map((b) => b.type);
 const tplTypes = (home?.blocks ?? []).map((b) => b.type);
 info(`源页面「${page.title}」${srcTypes.length} 块：${[...new Set(srcTypes)].join('/')}`);
 info(`模版「${home?.name}」${tplTypes.length} 块：${[...new Set(tplTypes)].join('/')}`);
 
-check('★ 模版是从「隰辰煦家」存的（来源记着）',
-  home?.from?.href === '/huaya/years/fenhu/xichenxuhome' && home?.from?.title === '隰辰煦家',
+check('★ 模版记着自己的来源页，而且那一页还在树里',
+  !!home?.from?.href && !!home?.from?.title && !!page && page.title === home.from.title,
   JSON.stringify(home?.from));
-check('★ 块数和类型序列与源页面**一模一样**（结构原样搬过来）',
-  tplTypes.length === srcTypes.length && tplTypes.join(',') === srcTypes.join(','),
-  `${tplTypes.length} vs ${srcTypes.length}`);
+if (pick.exact) {
+  check('★ 块数和类型序列与源页面**一模一样**（结构原样搬过来）',
+    tplTypes.length === srcTypes.length && tplTypes.join(',') === srcTypes.join(','),
+    `${tplTypes.length} vs ${srcTypes.length}`);
+} else {
+  info(`（源页面存完模版之后又改过：现在 ${srcTypes.length} 块 / 模版 ${tplTypes.length} 块 —— 不硬比条数）`);
+}
 
 const tplText = JSON.stringify(home?.blocks ?? []);
 check('★ 图片地址一个都没带过来（/img/ 不出现）', !tplText.includes('/img/'));
@@ -104,12 +147,15 @@ const headsOf = (blocks) =>
 const srcHeads = headsOf(page.page ?? []);
 const tplHeads = headsOf(home?.blocks ?? []);
 info(`小标题：源 ${srcHeads.length} 条 → 模版 ${tplHeads.length} 条`);
-check('★ 小节名一个不少（主要建筑 / 溪流之外的轶事 / 画廊 / 导航…）',
-  srcHeads.length === tplHeads.length && srcHeads.join('|') === tplHeads.join('|'),
-  `${tplHeads.length} 条`);
-check('★ 那四句"板块名"确实在模版里',
-  ['## 主要建筑', '## 溪流之外的轶事', '## 画廊', '## 导航'].every((h) => tplHeads.includes(h)),
-  tplHeads.slice(0, 4).join(' '));
+if (pick.exact) {
+  check('★ 小节名一个不少（源页面里的小标题原样留着）',
+    srcHeads.length === tplHeads.length && srcHeads.join('|') === tplHeads.join('|'),
+    `源 ${srcHeads.length} 条 / 模版 ${tplHeads.length} 条`);
+} else {
+  check('★ 模版里的小标题一条都没丢（模版自己那几条都在，而且都是标题）',
+    tplHeads.length > 0 && tplHeads.length === (home?.blocks ?? []).filter((b) => b.type === 'text').length,
+    `${tplHeads.length} 条：${tplHeads.slice(0, 6).join(' / ')}`);
+}
 check('文字块里除了小标题没有别的东西（正文都被剪掉了）',
   (home?.blocks ?? [])
     .filter((b) => b.type === 'text')
@@ -118,13 +164,18 @@ check('文字块里除了小标题没有别的东西（正文都被剪掉了）'
 /* 排版设置得留着 */
 const widths = (blocks) => blocks.filter((b) => b.type === 'image').map((b) => b.width ?? 'wide');
 check('★ 图片块一个不少、宽窄（排版）也留着',
-  widths(home?.blocks ?? []).length === widths(page.page ?? []).length &&
-    widths(home?.blocks ?? []).join(',') === widths(page.page ?? []).join(','),
+  pick.exact
+    ? widths(home?.blocks ?? []).length === widths(page.page ?? []).length &&
+      widths(home?.blocks ?? []).join(',') === widths(page.page ?? []).join(',')
+    : widths(home?.blocks ?? []).every((w) => ['full', 'wide', 'half', 'third'].includes(w)),
   `${widths(home?.blocks ?? []).length} 张：${[...new Set(widths(home?.blocks ?? []))].join('/')}`);
-check('导航块：引用的是哪几个分类留着（分类库是站点级的）',
-  JSON.stringify((home?.blocks ?? []).find((b) => b.type === 'nav')?.cats ?? []) ===
-    JSON.stringify((page.page ?? []).find((b) => b.type === 'nav')?.cats ?? []),
-  JSON.stringify((home?.blocks ?? []).find((b) => b.type === 'nav')?.cats));
+{
+  const tplNav = (home?.blocks ?? []).find((b) => b.type === 'nav');
+  const srcNav = (page.page ?? []).find((b) => b.type === 'nav');
+  check('导航块：引用的是哪几个分类留着（分类库是站点级的）',
+    pick.exact ? JSON.stringify(tplNav?.cats ?? []) === JSON.stringify(srcNav?.cats ?? []) : Array.isArray(tplNav?.cats),
+    JSON.stringify(tplNav?.cats));
+}
 check('目录块也在（最上面那一块）', (home?.blocks ?? [])[0]?.type === 'toc');
 
 /* ================================================================
@@ -185,38 +236,48 @@ const post = async (body) => {
 
 {
   const list = await api('/api/templates');
+  const brief = (list.json?.templates ?? []).find((t) => t.id === home.id) ?? list.json?.templates?.[0] ?? null;
   check('GET /api/templates：列出模版（名字 / 来源 / 块数 / 类型）',
-    list.status === 200 && list.json?.templates?.length >= 1 &&
-      list.json.templates[0].name === '家页模板' && list.json.templates[0].blocks === srcTypes.length,
-    JSON.stringify(list.json?.templates?.[0] ?? null));
+    list.status === 200 && (list.json?.templates?.length ?? 0) >= 1 &&
+      !!brief && brief.blocks === (home.blocks ?? []).length &&
+      Array.isArray(brief.kinds) && brief.kinds.length > 0,
+    JSON.stringify(brief));
   check('列表里**不带** blocks（面板不需要那一坨）',
-    !('blocks' in (list.json?.templates?.[0] ?? {})) || typeof list.json.templates[0].blocks === 'number');
+    !!brief && (!('blocks' in brief) || typeof brief.blocks === 'number'));
 
-  const one = await api(`/api/templates?id=${encodeURIComponent(list.json.templates[0].id)}`);
+  const one = await api(`/api/templates?id=${encodeURIComponent(brief.id)}`);
   check('GET /api/templates?id=：取到某一份的完整 blocks',
     one.status === 200 && Array.isArray(one.json?.template?.blocks) &&
-      one.json.template.blocks.length === srcTypes.length,
+      one.json.template.blocks.length === brief.blocks,
     `${one.json?.template?.blocks?.length} 块`);
   check('取不到就 404', (await api('/api/templates?id=nope')).status === 404);
 }
 
 {
   /* 同名再存一次 = 就地更新 */
-  const before = readJson(copyTplFile).templates.length;
-  const again = await post({ action: 'save', name: '家页模板', nodeId: SRC_NODE });
+  /* 先自己存一份「验收模板」，再用同名存一次 —— 验的是"同名 = 就地更新"，
+     ⚠ 不能借用户现成模版的名字（他会删会改，脚本就跟着红）。 */
+  const first = await post({ action: 'save', name: '验收模板', nodeId: SRC_NODE });
+  const afterFirst = readJson(copyTplFile).templates.length;
+  const again = await post({ action: 'save', name: '验收模板', nodeId: SRC_NODE });
   const after = readJson(copyTplFile);
-  check('同名再存一次 = 更新那一份（不堆出第二个「家页模板」）',
-    again.status === 200 && again.json?.replaced === true && after.templates.length === before,
-    `replaced=${again.json?.replaced}，共 ${after.templates.length} 份`);
+  check('同名再存一次 = 更新那一份（不堆出第二个「验收模板」）',
+    first.status === 200 && !!first.json?.template?.id && afterFirst >= 1 &&
+      again.status === 200 && again.json?.replaced === true &&
+      again.json?.template?.id === first.json?.template?.id &&
+      after.templates.length === afterFirst,
+    `第一次 id=${first.json?.template?.id}、第二次 replaced=${again.json?.replaced}（同一个 id=${again.json?.template?.id === first.json?.template?.id}），` +
+      `共 ${after.templates.length} 份（第一次之后 ${afterFirst}）`);
 
   /* 拿虹星家再存一份（用户说过这两页结构一样） */
-  const other = await post({ action: 'save', name: '家页模板2', nodeId: 'page-mu9hfl5z' });
-  const otherTpl = readJson(copyTplFile).templates.find((t) => t.name === '家页模板2');
-  check('再存一份别的页面（虹星家）也没问题',
+  const otherNode = flatNodes.find((n) => n.id !== SRC_NODE && (n.page ?? []).length > 0);
+  const other = await post({ action: 'save', name: '验收模板2', nodeId: otherNode.id });
+  const otherTpl = readJson(copyTplFile).templates.find((t) => t.name === '验收模板2');
+  check(`再存一份别的页面（${otherNode.title}）也没问题`,
     other.status === 200 && !!otherTpl && otherTpl.blocks.length > 0,
     `${otherTpl?.blocks?.length} 块，来自 ${otherTpl?.from?.title}`);
   const twoHeads = ((b) => b.filter((x) => x.type === 'text').flatMap((x) => String(x.text ?? '').split('\n').map((l) => l.trim()).filter((l) => /^#{2,4}\s/.test(l))))(otherTpl?.blocks ?? []);
-  info('虹星家的小节：' + twoHeads.join(' | '));
+  info(`${otherNode.title}的小节：` + twoHeads.join(' | '));
 
   /* 错误路径 */
   const noName = await post({ action: 'save', name: '   ', nodeId: SRC_NODE });
@@ -248,8 +309,8 @@ const post = async (body) => {
   }
 
   /* 改名 / 删除 */
-  const id = readJson(copyTplFile).templates.find((t) => t.name === '家页模板2').id;
-  const clash = await post({ action: 'rename', id, name: '家页模板' });
+  const id = readJson(copyTplFile).templates.find((t) => t.name === '验收模板2').id;
+  const clash = await post({ action: 'rename', id, name: '验收模板' });
   check('改名撞上已有的名字 → 409', clash.status === 409, String(clash.json?.error));
   const renamed = await post({ action: 'rename', id, name: '小木屋模板' });
   check('改名成功', renamed.status === 200 && renamed.json?.template?.name === '小木屋模板');
@@ -285,11 +346,11 @@ console.log('\n================ ③ 拿模版建「吉吉家」 ================
   let href = '/huaya/years/fenhu/tpl-verify';
   for (let i = 2; usedUrls.has(href) && i < 50; i++) href = `/huaya/years/fenhu/tpl-verify-${i}`;
   const fenhu = find(tree.boards, 'huaya-r2-1') ?? tree.boards[0];
-  const blocks = readJson(copyTplFile).templates.find((t) => t.name === '家页模板').blocks;
+  const blocks = readJson(copyTplFile).templates.find((t) => t.name === '验收模板').blocks;
   const jiji = {
     id: 'page-tpl-verify',
     title: '模版验收页',
-    subtitle: '拿家页模板建的',
+    subtitle: '拿模版建的',
     href,
     page: blocks.map((b, i) => {
       const out = { ...b, id: `page-tpl-verify-p${i + 1}` };

@@ -39,6 +39,34 @@ export interface PlaceholderField {
 }
 
 /**
+ * 这个块**在站点上什么都不画**吗 —— 渲染端（PageContent）和锚点索引（anchors）共用这一条。
+ *
+ * 两种情况：
+ *   · 模版导入留下的空格子（带 `placeholder`，内容还空着）；
+ *   · 本来就是空的块：空地址的图片 / 视频、一个字都没有的链接。
+ * 它们画不出任何东西，而且空地址还会让 <Img> 里的字符串处理直接抛错
+ * （2026-09-28 踩过 `Cannot read properties of undefined (reading 'startsWith')`）。
+ *
+ * ⚠ 两边必须用**同一条规则**：PageContent 跳过的块，anchors.json 也不能列 ——
+ * 否则站内搜索 / 位置选择器会给出一个页面上不存在的锚点（2026-09-29 就是这么红的）。
+ */
+export const isBlankBlock = (b: PageBlock): boolean => {
+  switch (b.type) {
+    case 'image':
+    case 'video':
+      return !String(b.src ?? '').trim();
+    case 'link':
+      return !String(b.text ?? '').trim() || !String(b.href ?? '').trim();
+    case 'columns':
+      return b.placeholder === true && !String(b.left ?? '').trim() && !String(b.right ?? '').trim();
+    case 'map':
+      return b.placeholder === true && !(b.pages ?? []).some((pg) => String(pg?.src ?? '').trim());
+    default:
+      return false;
+  }
+};
+
+/**
  * 页面内容块。
  *
  * 一个版块页除了「子版块自动铺开」，还可以自己写一段内容：

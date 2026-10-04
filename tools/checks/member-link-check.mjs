@@ -985,9 +985,14 @@ check('★ Raw 的框**和别人的一样大**（没有为落日加 padding；�
     : '没量到基准卡片');
 /* ⚠ 这一条也是用户报出来的：落日那 34px 的"挂高"一度被算进了卡片位置，
    Raw 的卡片就比别人的高出一整个落日的高度。 */
-check('★ Raw 的卡片离名字的距离和别人一样（落日不能把卡片顶高）',
+/*
+  ⚠ 容差 2px → 6px（2026-09-29）：这条盯的是"落日那 34px 的挂高别算进卡片位置"，
+  而基准成员是没有「称号」那一行的 —— 用户给 Raw 加了称号之后卡片多一行、间距差 3px，
+  那是数据变了不是布局坏了。6px 照样抓得住 34px 量级的回归。
+*/
+check('★ Raw 的卡片离名字的距离和别人差不多（落日不能把卡片顶高）',
   !!rawCard && !!baseCard && rawCard.gapToName !== null &&
-    Math.abs(rawCard.gapToName - baseCard.gapToName) <= 2 && Math.abs(rawCard.gapToName) <= 14,
+    Math.abs(rawCard.gapToName - baseCard.gapToName) <= 6 && Math.abs(rawCard.gapToName) <= 14,
   rawCard && baseCard ? `Raw 间距 ${rawCard.gapToName}px、普通成员 ${baseCard.gapToName}px` : '没量到');
 
 check('★ Raw 的放大框用的是数据里填的那张图', !!rawCard && rawCard.zoomSrc === rawZoomUrl,

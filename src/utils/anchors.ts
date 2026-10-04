@@ -17,7 +17,7 @@
  */
 import { marked } from 'marked';
 import { enhanceHtml } from './images';
-import type { PageBlock } from './boards';
+import { isBlankBlock, type PageBlock } from './boards';
 import mianyuLog from '../data/mianyu.json';
 
 /**
@@ -163,6 +163,12 @@ export function blockAnchors(
   };
 
   for (const b of blocks) {
+    /*
+      空格子（模版留下的空视频 / 空地图 / 空图 / 空链接）站点上整块跳过、页面上没有这个元素，
+      所以这里也不能给它锚点 —— 否则搜索点进去会落到一个不存在的 id
+      （2026-09-29 search-random-check 就是这么发现的）。规则和渲染端共用同一个函数。
+    */
+    if (isBlankBlock(b)) continue;
     // 提醒：这里刻意**不做**悬停卡片（[[文字|图片]]）那一趟还原 ——
     // 标题里写悬停卡片是极少数情况，真写了也只是这一条的名字难看一点，
     // 锚点 id 照样对得上（slugify 会把多出来的符号去掉）。
