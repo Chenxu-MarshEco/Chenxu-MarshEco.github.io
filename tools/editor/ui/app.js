@@ -187,6 +187,21 @@ const els = {
   icebergEditor: $('iceberg-editor'),
   icebergSave: $('iceberg-save'),
 
+  /*
+    黎语堂（首页那张板块卡，home-widgets.json 的 liyutang —— 2026-10-06 加）。
+    论坛自己的数据不在这儿，见 announceModal 下面那段和 LIYUTANG_ADMIN。
+  */
+  liyutangModal: $('liyutang-modal'),
+  lytEditor: $('lyt-editor'),
+  lytSave: $('lyt-save'),
+
+  /* 曼沫砾总线（src/data/announcements.json）：公告栏的两个面板内容都在这一份里 */
+  announceModal: $('announce-modal'),
+  annEditor: $('ann-editor'),
+  annSave: $('ann-save'),
+
+  btnLiyutang: $('btn-liyutang'),
+
   /* 冰山图（src/data/iceberg.json）：分类 / 标签 / 层级 / 条目 */
   icechartModal: $('icechart-modal'),
   iceEditor: $('ice-editor'),
@@ -1948,6 +1963,16 @@ const WORKSPACES = [
   { id: 'ice-chart', label: '冰山图', hint: '冰山图（/iceberg/）：分类 / 标签 / 层级 / 条目' },
   { id: 'essences', label: '精华', hint: '冰室精华（/salon/）：可搜索 / 新增 / 改删' },
   { id: 'members', label: '成员', hint: '精华的成员表：改名 / 换头像，他所有精华跟着变' },
+  /*
+    2026-10-06 新加的两个大板块的入口：
+      announce  曼沫砾总线（本站公告栏，src/data/announcements.json）——
+                两种公告在同一个面板里写；
+      liyutang  首页「黎语堂」那张卡（home-widgets.json）——
+                **只管卡片这一张皮**，论坛自己的版块 / 评论在另一个页面
+                （右上角那颗「黎语堂管理」，见 LIYUTANG_ADMIN）。
+  */
+  { id: 'announce', label: '公告', hint: '曼沫砾总线：事项公告（有正文）/ 更新提醒（只有标题和链接）' },
+  { id: 'liyutang', label: '黎语堂', hint: '首页「黎语堂」板块卡：标题 / 副标题 / 背景图' },
 ];
 
 /** 现在开着的是哪个工作面；没有面板开着就是主界面 'docs' */
@@ -1974,6 +1999,8 @@ function closeWorkspace(id) {
   else if (id === 'ice-chart') closeIceChartModal();
   else if (id === 'essences') closeEssencesModal();
   else if (id === 'members') closeMembersModal();
+  else if (id === 'announce') closeAnnounceModal();
+  else if (id === 'liyutang') closeLiyutangModal();
 }
 
 /** 关掉除 except 以外的所有面板 */
@@ -2007,6 +2034,8 @@ async function openWorkspace(id) {
   else if (id === 'ice-chart') await openIceChartModal();
   else if (id === 'essences') await openEssencesModal();
   else if (id === 'members') await openMembersModal();
+  else if (id === 'announce') await openAnnounceModal();
+  else if (id === 'liyutang') await openLiyutangModal();
 }
 
 /** 面板里那条切换条：每个面板顶上都有一个空的 [data-ws-slot]，往里面填按钮 */
@@ -8699,6 +8728,14 @@ function renderSubPicker() {
 
 /** 预览站点地址。本地预览服务默认在 4321。 */
 const PREVIEW_URL = 'http://127.0.0.1:4321';
+/*
+  黎语堂自己的管理系统（2026-10-06）。
+  用户要求「不要将其接入原有的编辑器系统 应当在花娅陌质流里加一个新按钮跳转到黎语堂
+  相关的编辑管理上」—— 所以顶栏那颗「黎语堂管理」**不是**一个工作面，
+  它另开一个页面：tools/editor/ui/liyutang.html（只改版块和评论系统）。
+  地址取 /liyutang-admin 而不是 /liyutang：后者是**站点**上那一页，名字一样容易点错。
+*/
+const LIYUTANG_ADMIN = '/liyutang-admin';
 
 /**
  * 每种页面类型拿哪个真实页面来做预览。
@@ -10159,7 +10196,16 @@ function panelShell(host, { hint = '', group = '' } = {}) {
     会让「精华」面板也显示有改动（踩过第二次）。所以传 group 进来，
     由 markPanelDirty 自己去查那一组的标记。
   */
-  const dirty = group === 'salon' ? salonDirty : group === 'widgets' ? widgetsDirty : group === 'iceberg' ? iceDirty : false;
+  const dirty =
+    group === 'salon'
+      ? salonDirty
+      : group === 'widgets'
+        ? widgetsDirty
+        : group === 'iceberg'
+          ? iceDirty
+          : group === 'announce'
+            ? announceDirty
+            : false;
   if (dirty) markPanelDirty(status, group);
   return { body, foot: bar, status };
 }
@@ -10416,6 +10462,7 @@ async function loadWidgets() {
 function markPanelDirty(statusEl, group = '') {
   if (group === 'salon') salonDirty = true;
   else if (group === 'iceberg') iceDirty = true;
+  else if (group === 'announce') announceDirty = true;
   else widgetsDirty = true;
   if (!statusEl) return;
   statusEl.textContent = '有改动没保存';
@@ -10825,6 +10872,528 @@ function renderIcebergPanel() {
       saveWidgets(els.icebergSave, status, 'iceberg'), true, 'iceberg-save'),
   );
   els.icebergSave = $('iceberg-save');
+}
+
+/* ---------------------------------------------------------------
+   曼沫砾总线（src/data/announcements.json）—— 本站的公告栏
+
+   用户 2026-10-06：
+     「在甬城晴雨下方 涣源溪水钟上方插入新板块：曼沫砾总线 这个板块是本站的公告栏
+      可以在编辑器内填写公告 填写后最新的几条可以显示在这个板块内 而点开板块则可以
+      看到所有的历史公告 公告分为两种：事项公告和更新提醒公告。事项公告应当和文章手记
+      一样 可以编写具体的内容 在鼠标点击标题后直接进入这一页公告文章内容
+      而更新公告则是只有标题和跳转链接」
+
+   一个面板管完，因为两种公告就住在一个文件里：
+     notice  事项公告：标题 / 日期 / 正文（Markdown）/ 可选封面 —— 站点按它生成一页
+     update  更新提醒：标题 / 日期 / 跳转地址 —— 站点不生成页面，点标题直接跳过去
+
+   改动先落在 announceDraft 里（面板重画、切走再切回来都不丢），按「保存并重新构建」
+   才写盘 —— 和精华 / 冰山图 / 那几个首页面板一个规矩。
+
+   ⚠ 日期用 dateField（和日历事件、时间轴同一个控件），
+     地址规则（/zongxian/<id>/）和站点那边算的是同一套（src/utils/announce.ts）——
+     面板上「打开这一条」要是算错了，就是把人带到一个 404 上。
+   --------------------------------------------------------------- */
+
+/** src/data/announcements.json 的草稿 */
+let announceDraft = null;
+/** 这一组有没有没保存的改动 */
+let announceDirty = false;
+/** 正在写的那一条：'' = 表单没开 / 'new' = 新增到一半 / 别的 = 那条公告的 id */
+let annEditing = '';
+/** 新增到一半的那一条（还没进 items，按「取消」就当没发生过） */
+let annNewItem = null;
+
+const ANN_KIND_LABEL = { notice: '事项公告', update: '更新提醒' };
+
+/** 本地日期 -> YYYY-MM-DD（不能用 toISOString：那是 UTC，晚上会差一天） */
+function annToday() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+async function loadAnnouncements() {
+  if (announceDraft) return announceDraft;
+  const res = await fetch('/api/announcements');
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const data = await res.json();
+  announceDraft = data && typeof data === 'object' ? data : {};
+  if (!Array.isArray(announceDraft.items)) announceDraft.items = [];
+  return announceDraft;
+}
+
+/** 这一条在站内的地址。事项公告进它自己那一页；更新提醒就是它填的地址 */
+function annHref(item) {
+  if (item.kind === 'update') return String(item.href ?? '').trim();
+  return item.id ? `/zongxian/${item.id}/` : '';
+}
+
+async function saveAnnouncements(btn, statusEl) {
+  const was = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = '正在保存…';
+  statusEl.textContent = '正在保存…';
+  statusEl.classList.remove('is-dirty');
+  try {
+    const res = await fetch('/api/announcements', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(announceDraft),
+    });
+    const data = await res.json();
+    if (!res.ok || !data.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    announceDirty = false;
+    annEditing = '';
+    annNewItem = null;
+    /* 拿服务端那份重新来过：它补过 id、排过序，界面上看到的必须和落盘的一致 */
+    announceDraft = null;
+    await loadAnnouncements();
+    renderAnnouncePanel();
+    /*
+      ⚠ 重新画过之后面板里那个状态栏是**新元素**（panelShell 每次重画都造一个），
+      手里这个旧的已经不在 DOM 里 —— 还往上写字的话界面上什么都看不见
+      （状态栏永远空着，看着像"没保存成功"）。所以重新取一次。
+    */
+    const liveStatus = els.annEditor.querySelector('.wpanel__status') || statusEl;
+    const d = data.dropped ?? {};
+    const lost = [];
+    if (d.noTitle) lost.push(`${d.noTitle} 条没写标题`);
+    if (d.badDate) lost.push(`${d.badDate} 条日期不合法`);
+    if (d.items) lost.push(`${d.items} 条形不成条目`);
+    const c = data.counts ?? {};
+    if (data.built) {
+      liveStatus.textContent = `已保存并重新构建（${data.ms} ms）`;
+      toast(
+        `公告已保存并重新构建（${data.ms} ms）：共 ${c.items ?? 0} 条（事项 ${c.notice ?? 0} / 更新 ${c.update ?? 0}）` +
+          (lost.length ? `；有 ${lost.join('、')} 被丢掉` : '')
+      );
+    } else {
+      liveStatus.textContent = '已保存，但重新构建没成功';
+      toast(`已保存，但重新构建没成功：${String(data.output || '').split('\n')[0]}`, true);
+    }
+  } catch (err) {
+    statusEl.textContent = `出错了：${err.message}`;
+    statusEl.classList.add('is-dirty');
+    toast(`保存失败：${err.message}`, true);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = was;
+  }
+}
+
+async function openAnnounceModal() {
+  markWorkspaceActive('announce');
+  els.announceModal.hidden = false;
+  els.annEditor.textContent = '正在读取…';
+  try {
+    await loadAnnouncements();
+  } catch (err) {
+    els.annEditor.textContent = `读取失败：${err.message}`;
+    return;
+  }
+  renderAnnouncePanel();
+}
+
+function closeAnnounceModal() {
+  els.announceModal.hidden = true;
+}
+
+function renderAnnouncePanel() {
+  const ann = announceDraft;
+  const { body, foot, status } = panelShell(els.annEditor, {
+    hint:
+      '首页那一块只显示最新的几条（条数在下面设）。事项公告有正文，点标题进它自己那一页；' +
+      '更新提醒只有标题和一个去处，点标题直接跳过去。排序一律按日期倒序，同一天按这个清单里的先后。',
+    group: 'announce',
+  });
+
+  /* ---------------- 这一块自己的名字 ---------------- */
+  const head = panelBox('这一块', '首页那张卡和 /zongxian/ 公告栏页都用这里的名字。');
+  head.appendChild(
+    panelRow(
+      '标题',
+      boardInput(ann.title ?? '', '曼沫砾总线', (v) => {
+        ann.title = v;
+        markPanelDirty(status, 'announce');
+      }),
+      '不能留空。'
+    )
+  );
+  head.appendChild(
+    panelRow(
+      '副标题',
+      boardInput(ann.subtitle ?? '', '花涧堂的公告栏', (v) => {
+        ann.subtitle = v;
+        markPanelDirty(status, 'announce');
+      }),
+      '显示在公告栏页顶上那一段说明里。'
+    )
+  );
+  const latestInput = document.createElement('input');
+  latestInput.type = 'number';
+  latestInput.min = '1';
+  latestInput.max = '20';
+  latestInput.className = 'input input--sm';
+  latestInput.value = String(ann.latest ?? 5);
+  latestInput.addEventListener('input', () => {
+    ann.latest = Number(latestInput.value) || 5;
+    markPanelDirty(status, 'announce');
+  });
+  head.appendChild(panelRow('首页显示几条', latestInput, '1~20，默认 5。'));
+  body.appendChild(head);
+
+  /* ---------------- 公告清单 ---------------- */
+  const listBox = panelBox(`公告 · ${ann.items.length} 条`, '清单就是站点上的顺序（日期倒序）。');
+  const bar = document.createElement('div');
+  bar.className = 'wann__toolbar';
+  bar.append(
+    panelBtn(
+      '＋ 事项公告',
+      '写一条有正文的公告：点标题进它自己那一页',
+      () => {
+        annNewItem = { id: '', kind: 'notice', date: annToday(), title: '', body: '', cover: '', href: '' };
+        annEditing = 'new';
+        renderAnnouncePanel();
+      },
+      true
+    ),
+    panelBtn('＋ 更新提醒', '只有标题和一个去处的那种：点标题直接跳过去', () => {
+      annNewItem = { id: '', kind: 'update', date: annToday(), title: '', body: '', cover: '', href: '' };
+      annEditing = 'new';
+      renderAnnouncePanel();
+    })
+  );
+  listBox.appendChild(bar);
+
+  const rows = document.createElement('div');
+  rows.className = 'wann__rows';
+  /* 表单排在最上面：正在写的这一条一眼就能看见（和精华 / 冰山那套一样） */
+  if (annEditing === 'new' && annNewItem) annForm(rows, annNewItem, true, status);
+  else if (annEditing) {
+    const editing = ann.items.find((it) => it.id === annEditing);
+    if (editing) annForm(rows, editing, false, status);
+  }
+  /* 显示顺序 = 站点上的顺序（日期倒序；同一天保持清单里的先后） */
+  const shown = ann.items
+    .map((it, i) => ({ it, i }))
+    .sort((a, b) => (a.it.date === b.it.date ? a.i - b.i : a.it.date < b.it.date ? 1 : -1))
+    .map((x) => x.it);
+  if (!shown.length) {
+    listBox.appendChild(iceHint('还没有公告 —— 点上面那两颗按钮写第一条。'));
+  } else {
+    for (const it of shown) rows.appendChild(annRow(it, status));
+  }
+  listBox.appendChild(rows);
+  body.appendChild(listBox);
+
+  /* ---------------- 底栏 ---------------- */
+  const sum = document.createElement('span');
+  sum.className = 'wann__sum';
+  const notice = ann.items.filter((i) => i.kind === 'notice').length;
+  sum.textContent = `${ann.items.length} 条（事项 ${notice} / 更新 ${ann.items.length - notice}）`;
+  foot.append(
+    sum,
+    panelBtn('关闭面板', '关掉这个面板（没保存的改动留着，切回来还在）', () => openWorkspace('docs')),
+    panelBtn('打开 /zongxian/', '在新标签页打开公告栏那一页（要先构建过）', () => {
+      window.open(`${PREVIEW_URL}/zongxian/`, '_blank', 'noopener');
+    }),
+    panelBtn('保存并重新构建', '写进 src/data/announcements.json 并重新构建站点', () =>
+      saveAnnouncements(els.annSave, status), true, 'ann-save')
+  );
+  els.annSave = $('ann-save');
+}
+
+/** 清单里的一行：类型 + 标题 + 日期 + 三个操作 */
+function annRow(item, status) {
+  const row = document.createElement('div');
+  row.className = 'wann__row';
+  row.dataset.annId = item.id || '';
+  row.dataset.annKind = item.kind || 'notice';
+
+  const kind = document.createElement('span');
+  kind.className = item.kind === 'update' ? 'wann__kind wann__kind--update' : 'wann__kind';
+  kind.textContent = ANN_KIND_LABEL[item.kind] ?? ANN_KIND_LABEL.notice;
+
+  const title = document.createElement('span');
+  title.className = 'wann__title';
+  title.textContent = item.title || '（还没写标题）';
+  title.title = item.title || '';
+
+  const date = document.createElement('span');
+  date.className = 'wann__date';
+  date.textContent = item.date || '';
+
+  const ops = document.createElement('span');
+  ops.className = 'wann__ops';
+  const href = annHref(item);
+  if (href) {
+    const open = document.createElement('a');
+    open.className = 'btn btn--ghost boardedit__mini';
+    open.href = /^https?:/i.test(href) ? href : `${PREVIEW_URL}${href}`;
+    open.target = '_blank';
+    open.rel = 'noopener';
+    open.textContent = '看';
+    open.title = item.kind === 'update' ? `去 ${href}` : '看这一条公告页（要先构建过）';
+    ops.appendChild(open);
+  }
+  ops.append(
+    panelBtn('编辑', '改这一条（类型 / 标题 / 日期 / 正文或链接）', () => {
+      annEditing = item.id || 'new';
+      /* 还没 id 的（本次新加、还没保存）按「新增」处理：它本来就还在草稿里 */
+      if (!item.id) {
+        annNewItem = item;
+        annEditing = 'new';
+      }
+      renderAnnouncePanel();
+    }),
+    panelBtn('删除', '删掉这一条（会问一次；按保存才真的写盘）', () => {
+      if (!window.confirm(`删掉公告「${item.title || item.id}」？`)) return;
+      const at = announceDraft.items.indexOf(item);
+      if (at >= 0) announceDraft.items.splice(at, 1);
+      if (annEditing === item.id) annEditing = '';
+      markPanelDirty(status, 'announce');
+      renderAnnouncePanel();
+    })
+  );
+
+  row.append(kind, title, date, ops);
+  return row;
+}
+
+/** 写一条公告的表单（新增和编辑共用；类型可以在表单里直接换） */
+function annForm(host, item, isNew, status) {
+  const form = document.createElement('div');
+  form.className = 'wann__form';
+  const box = panelBox(
+    isNew ? '新增一条公告' : '改这一条',
+    item.kind === 'update'
+      ? '更新提醒：只有标题和一个去处，站点上不生成页面。'
+      : '事项公告：正文支持 Markdown，和文章正文一个写法，站点上会生成 /zongxian/<id>/ 一页。'
+  );
+
+  /* 类型：换一下整个表单跟着变（正文 <-> 跳转地址） */
+  const kindSel = document.createElement('select');
+  kindSel.className = 'input';
+  for (const [value, label] of [
+    ['notice', '事项公告（有正文）'],
+    ['update', '更新提醒（只有标题和链接）'],
+  ]) {
+    const opt = document.createElement('option');
+    opt.value = value;
+    opt.textContent = label;
+    if ((item.kind || 'notice') === value) opt.selected = true;
+    kindSel.appendChild(opt);
+  }
+  kindSel.addEventListener('change', () => {
+    item.kind = kindSel.value;
+    markPanelDirty(status, 'announce');
+    renderAnnouncePanel();
+  });
+  box.appendChild(panelRow('类型', kindSel));
+
+  box.appendChild(
+    panelRow(
+      '标题',
+      boardInput(item.title ?? '', '一句话说清这件事', (v) => {
+        item.title = v;
+        markPanelDirty(status, 'announce');
+      }),
+      '必填 —— 没有标题的这一条存不下来。'
+    )
+  );
+
+  box.appendChild(
+    panelRow(
+      '日期',
+      dateField(item.date ?? '', (iso) => {
+        item.date = iso;
+        markPanelDirty(status, 'announce');
+      }, { hideLive: true }),
+      '首页那一块和公告栏页都按这个日期倒序排。'
+    )
+  );
+
+  if (item.kind === 'update') {
+    box.appendChild(
+      panelRow(
+        '跳转地址',
+        linkField(item.href ?? '', '/salon/ 或 https://…', (v) => {
+          item.href = v;
+          markPanelDirty(status, 'announce');
+        }, { anchor: true }),
+        '点标题直接去这里（站内写 /salon/ 这种，站外写完整网址）。'
+      )
+    );
+  } else {
+    box.appendChild(
+      panelRow(
+        '正文',
+        panelArea(
+          item.body ?? '',
+          '支持 Markdown：**粗体**、- 列表、## 小标题、![图](/img/uploads/xxx.png)、[[成员名]]',
+          12,
+          (v) => {
+            item.body = v;
+            markPanelDirty(status, 'announce');
+          }
+        ),
+        '和文章正文一个写法（行内图片也认）。'
+      )
+    );
+
+    const coverInput = boardInput(item.cover ?? '', '/img/uploads/xxx.png 或 https://…', () => {});
+    const slot = imageSlot({
+      label: '公告封面图',
+      getValue: () => item.cover,
+      setValue: (v) => {
+        item.cover = v;
+      },
+      onValue: (v) => {
+        coverInput.value = v;
+      },
+      onChanged: () => markPanelDirty(status, 'announce'),
+      hint: '可空。填了会显示在公告页正文上面。',
+    });
+    coverInput.addEventListener('input', () => {
+      slot.sync(coverInput.value, true);
+      markPanelDirty(status, 'announce');
+    });
+    box.appendChild(panelRow('封面图（可选）', slot.el));
+    box.appendChild(panelRow('封面图地址', coverInput));
+  }
+
+  const bar = document.createElement('div');
+  bar.className = 'wann__formbar';
+  bar.append(
+    panelBtn(
+      isNew ? '加上这一条' : '改好了',
+      '写进草稿（整个面板还要点「保存并重新构建」才落盘）',
+      () => {
+        const title = String(item.title ?? '').trim();
+        if (!title) {
+          toast('先给这一条写个标题', true);
+          return;
+        }
+        if (isNew) {
+          announceDraft.items.push(item);
+          annNewItem = null;
+        }
+        annEditing = '';
+        markPanelDirty(status, 'announce');
+        renderAnnouncePanel();
+      },
+      true
+    ),
+    panelBtn('取消', isNew ? '不要这一条了' : '收起表单（已经改的留着，按保存才写盘）', () => {
+      if (isNew && annNewItem) {
+        const at = announceDraft.items.indexOf(annNewItem);
+        if (at >= 0) announceDraft.items.splice(at, 1);
+        annNewItem = null;
+      }
+      annEditing = '';
+      renderAnnouncePanel();
+    })
+  );
+  form.append(box, bar);
+  host.appendChild(form);
+}
+
+/* ---------------------------------------------------------------
+   黎语堂（首页那张板块卡，home-widgets.json 的 liyutang）
+
+   用户要求：「在花涧堂编辑器的页面内可以管理黎语堂这个板块卡片的标题 副标题 背景图片」。
+   所以这里只有三样东西 —— 论坛自己的版块和评论系统**不在这儿**，
+   它们在另一个页面（LIYUTANG_ADMIN，右上角那颗「黎语堂管理」）。
+   --------------------------------------------------------------- */
+
+async function openLiyutangModal() {
+  if (!(await openWidgetPanel('liyutang', els.liyutangModal, els.lytEditor))) return;
+  renderLiyutangPanel();
+}
+
+function closeLiyutangModal() {
+  els.liyutangModal.hidden = true;
+}
+
+function renderLiyutangPanel() {
+  const lyt = widgetsDraft.liyutang;
+  const { body, foot, status } = panelShell(els.lytEditor, {
+    hint:
+      '首页第一行右格那张「黎语堂」卡片。标题 / 副标题 / 背景图就是卡片上的三样东西；' +
+      '图没传就画一块粉紫占位（位置留好了，传了立刻就在）。',
+    group: 'widgets',
+  });
+
+  const box = panelBox('这张卡');
+  const imgInput = boardInput(lyt.image ?? '', '/img/uploads/xxx.png 或 https://…', () => {});
+  const slot = imageSlot({
+    label: '黎语堂背景图',
+    getValue: () => lyt.image,
+    setValue: (v) => {
+      lyt.image = v;
+    },
+    onValue: (v) => {
+      imgInput.value = v;
+    },
+    onChanged: () => markPanelDirty(status, 'widgets'),
+    hint: '建议横图：卡片是宽而扁的一条，图会按 cover 裁。',
+  });
+  imgInput.addEventListener('input', () => {
+    slot.sync(imgInput.value, true);
+    markPanelDirty(status, 'widgets');
+  });
+  box.appendChild(panelRow('背景图', slot.el));
+  box.appendChild(panelRow('背景图地址', imgInput));
+  body.appendChild(box);
+
+  const texts = panelBox('文字');
+  texts.appendChild(
+    panelRow(
+      '标题',
+      boardInput(lyt.title ?? '', '黎语堂', (v) => {
+        lyt.title = v;
+        markPanelDirty(status, 'widgets');
+      }),
+      '不能留空。/liyutang 那一页的标题也读这一个值。'
+    )
+  );
+  texts.appendChild(
+    panelRow(
+      '副标题',
+      boardInput(lyt.subtitle ?? '', '花涧堂的静态论坛', (v) => {
+        lyt.subtitle = v;
+        markPanelDirty(status, 'widgets');
+      }),
+      '卡片标题下面那行小字。'
+    )
+  );
+  body.appendChild(texts);
+
+  /*
+    论坛自己的那一半：这里只放一条**去路**，不把版块 / 评论搬进来。
+    用户明确说过「不要将其接入原有的编辑器系统」。
+  */
+  const forum = panelBox('论坛本身（版块 / 评论）', '黎语堂有自己的管理系统，不在这套编辑器面板里。');
+  const bar = document.createElement('div');
+  bar.className = 'wann__formbar';
+  bar.appendChild(
+    panelBtn('打开黎语堂管理 ›', '另开一个页面：版块、评论系统（Giscus / Waline）', () => {
+      window.open(LIYUTANG_ADMIN, '_blank', 'noopener');
+    })
+  );
+  forum.appendChild(bar);
+  body.appendChild(forum);
+
+  foot.append(
+    panelBtn('关闭面板', '关掉这个面板（没保存的改动留着，切回来还在）', () => openWorkspace('docs')),
+    panelBtn('打开 /liyutang/', '在新标签页打开站点上的黎语堂（要先构建过）', () => {
+      window.open(`${PREVIEW_URL}/liyutang/`, '_blank', 'noopener');
+    }),
+    panelBtn('保存并重新构建', '写进 src/data/home-widgets.json 并重新构建站点', () =>
+      saveWidgets(els.lytSave, status, 'liyutang'), true, 'lyt-save')
+  );
+  els.lytSave = $('lyt-save');
 }
 
 /* ---------------------------------------------------------------
@@ -13155,6 +13724,15 @@ function bindEvents() {
     if (ev.target.dataset && ev.target.dataset.close) closePagesView();
   });
 
+  /*
+    黎语堂管理（2026-10-06）：**不是** openWorkspace —— 它另开一个页面。
+    那个页面只认 src/data/liyutang.json（版块 / 评论系统），
+    和编辑器这套 type / frontmatter / 版块树完全没关系（用户明确要求别接进来）。
+  */
+  els.btnLiyutang.addEventListener('click', () => {
+    window.open(LIYUTANG_ADMIN, '_blank', 'noopener');
+  });
+
   // 音乐 / 歌单
   els.btnMusic.addEventListener('click', () => openWorkspace('music'));
   els.musicSave.addEventListener('click', saveMusic);
@@ -13216,6 +13794,8 @@ function bindEvents() {
     [els.calendarModal, closeCalendarModal],
     [els.aboutModal, closeAboutModal],
     [els.icebergModal, closeIcebergModal],
+    [els.liyutangModal, closeLiyutangModal],
+    [els.announceModal, closeAnnounceModal],
     [els.icechartModal, closeIceChartModal],
     [els.essencesModal, closeEssencesModal],
     [els.membersModal, closeMembersModal],
@@ -13307,6 +13887,8 @@ function bindEvents() {
         [els.calendarModal, closeCalendarModal],
         [els.aboutModal, closeAboutModal],
         [els.icebergModal, closeIcebergModal],
+        [els.liyutangModal, closeLiyutangModal],
+        [els.announceModal, closeAnnounceModal],
         [els.icechartModal, closeIceChartModal],
         [els.essencesModal, closeEssencesModal],
         [els.membersModal, closeMembersModal],

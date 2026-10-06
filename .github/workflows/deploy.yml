@@ -19,7 +19,42 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # =================================================================
+  # 发布门卫（2026-10-06 加）
+  #
+  # 用户的要求：「SSW的机器人每天都需要推送文章 让它推送到铃忆的冰室日记的文章
+  # 无需同意也能推送 但是删改其他页面需要同意」。
+  # GitHub 的分支保护只能按"人"放行、不能按"改了哪些文件"放行，所以批准挪到
+  # **发布这一步**：推送照旧推得上来，但没被放行的改动**不会上线**。
+  #
+  # 判定规则和放行名单都在 tools/publish/gate.mjs 头上（一个 ALLOW 数组就是规则）。
+  # 这里只是把这次推送的上下文喂给它：谁推的、什么事件、前后 SHA、改动清单要读仓库。
+  # 它退出码非 0 = 这次不构建、不发布，你会在 Actions 里看到原因（也会收到失败通知）。
+  # 拦住之后要发布：审一遍 → Actions →「部署到 GitHub Pages」→ Run workflow（选 main）。
+  #
+  # ⚠ 这个 job 不下载图片仓库的任何东西（只需要那个脚本），改动清单是问一次
+  #    GitHub 的 compare 接口拿的 —— 不给 runner 增加一次全量 clone。
+  # =================================================================
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 拉取代码
+        uses: actions/checkout@v4
+
+      - name: 判定这次推送能不能直接发布
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_ACTOR: ${{ github.actor }}
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          PUSH_BEFORE: ${{ github.event.before }}
+          PUSH_AFTER: ${{ github.sha }}
+        run: node tools/publish/gate.mjs
+
   build:
+    # 门卫放行了才构建；而且只认 main —— 在别的分支上手动跑一次只会校验工作流本身，不会发布
+    needs: gate
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - name: 拉取代码
@@ -85,6 +120,8 @@ jobs:
 
   deploy:
     needs: build
+    # 同上：只发布 main 的产物
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment:
       name: github-pages

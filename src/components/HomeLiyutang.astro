@@ -1,0 +1,155 @@
+---
+/**
+ * 首页「黎语堂」那一块（挂在「花娅陌域」下面、冰室冰山和每日精华上面）。
+ *
+ * 用户 2026-10-06 的要求：
+ *   「在花娅陌域下方 冰室冰山和每日精华上方插入新板块：黎语堂 点进去以后是一个全新的
+ *    黎语堂的首页 地址是 /liyutang …… 但是在花涧堂编辑器的页面内可以管理黎语堂这个
+ *    板块卡片的标题 副标题 背景图片」
+ *
+ * 所以这一块就是一张**大板块那样的卡**（底图 + 压暗 + 标题 + 副标题，整张可点），
+ * 位置在首页那一屏的右格（见 HomeWidgets 的 .extras__grid），
+ * 三样东西全在编辑器「黎语堂」面板里改，数据落在 src/data/home-widgets.json 的 liyutang 块。
+ *
+ * 图没传就画一块和别处一致的粉紫栅格占位 —— 位置和大小都留好了，传了立刻就在，
+ * 不会因为"还没配图"变成一张空洞的卡片。
+ */
+import widgets from '../data/home-widgets.json';
+import { bgStyle } from '../utils/images';
+import { withBase } from '../utils/url';
+
+const cfg = ((widgets as Record<string, unknown>).liyutang ?? {}) as {
+  title?: string;
+  subtitle?: string;
+  image?: string;
+  href?: string;
+};
+const title = String(cfg.title ?? '').trim() || '黎语堂';
+const subtitle = String(cfg.subtitle ?? '').trim();
+const image = String(cfg.image ?? '').trim();
+const rawHref = String(cfg.href ?? '').trim() || '/liyutang/';
+const external = /^https?:/i.test(rawHref);
+const href = external ? rawHref : withBase(rawHref);
+/** 底图走图片管线（和首页大板块同一个取法：1x 800 / 2x 1600） */
+const bg = image ? bgStyle(image, { w: 800, w2: 1600 }) : null;
+---
+
+<a
+  class="lyt"
+  id="home-liyutang"
+  data-liyutang
+  href={href}
+  title={`去「${title}」`}
+  {...external ? { target: '_blank', rel: 'noopener' } : {}}
+>
+  {bg ? <span class="lyt__bg" style={bg} /> : <span class="lyt__bg lyt__bg--none" aria-hidden="true" />}
+  <span class="lyt__veil" />
+  <span class="lyt__body">
+    <b class="lyt__title">{title}</b>
+    {subtitle && <span class="lyt__sub">{subtitle}</span>}
+  </span>
+</a>
+
+<style>
+  /*
+    和左边那张公告卡并排：行高由高的那张决定，两张都给同一个 min-height，
+    所以「冰室冰山 / 每日精华」那一行不会因为这两块而上下浮动。
+  */
+  .lyt {
+    position: relative;
+    display: flex;
+    align-items: flex-end;
+    height: 100%;
+    min-height: clamp(190px, 24vh, 286px);
+    min-width: 0;
+    overflow: hidden;
+    border-radius: 16px;
+    border: 1px solid rgba(255, 120, 190, 0.42);
+    box-shadow:
+      0 0 0 1px rgba(0, 0, 0, 0.35) inset,
+      0 14px 40px -22px rgb(0 0 0 / 0.8);
+    text-decoration: none;
+    color: inherit;
+    transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease;
+  }
+  .lyt:hover,
+  .lyt:focus-visible {
+    transform: translateY(-2px);
+    border-color: rgba(255, 160, 210, 0.7);
+    box-shadow:
+      0 0 0 1px rgba(255, 160, 210, 0.4) inset,
+      0 0 34px rgba(255, 62, 165, 0.4),
+      0 18px 46px -22px rgb(0 0 0 / 0.9);
+  }
+  .lyt:focus-visible {
+    outline: 2px solid #5ff0ff;
+    outline-offset: 3px;
+  }
+
+  .lyt__bg,
+  .lyt__veil {
+    position: absolute;
+    inset: 0;
+  }
+  .lyt__bg {
+    background-repeat: no-repeat;
+    background-size: cover;
+    background-position: center;
+    transition: transform 0.5s ease;
+  }
+  .lyt:hover .lyt__bg {
+    transform: scale(1.045);
+  }
+  /* 还没传底图：一块粉紫栅格（和站里别的占位同一个味道），不是黑洞洞一片 */
+  .lyt__bg--none {
+    background:
+      repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.09) 0 1px, transparent 1px 7px),
+      repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.09) 0 1px, transparent 1px 7px),
+      linear-gradient(150deg, rgba(80, 12, 104, 0.95), rgba(24, 3, 36, 0.95));
+  }
+  /* 从下往上压暗，保证文字在任何底图上都读得清（和首页大板块一个做法） */
+  .lyt__veil {
+    background: linear-gradient(
+      180deg,
+      rgba(20, 2, 30, 0.15) 0%,
+      rgba(20, 2, 30, 0.5) 46%,
+      rgba(12, 0, 20, 0.9) 100%
+    );
+  }
+
+  .lyt__body {
+    position: relative;
+    display: block;
+    width: 100%;
+    padding: clamp(0.85rem, 2vw, 1.3rem);
+  }
+  .lyt__title {
+    display: block;
+    font-size: clamp(1.2rem, 2.2vw, 1.7rem);
+    letter-spacing: 0.12em;
+    color: #fff;
+    text-shadow:
+      0 0 10px rgba(255, 79, 163, 0.9),
+      0 0 26px rgba(212, 0, 123, 0.7);
+  }
+  .lyt__sub {
+    display: block;
+    margin-top: 0.28rem;
+    font-size: 0.82rem;
+    letter-spacing: 0.08em;
+    color: rgba(255, 226, 244, 0.82);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .lyt,
+    .lyt__bg {
+      transition: none;
+    }
+    .lyt:hover {
+      transform: none;
+    }
+    .lyt:hover .lyt__bg {
+      transform: none;
+    }
+  }
+</style>

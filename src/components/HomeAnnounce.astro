@@ -1,0 +1,234 @@
+---
+/**
+ * 首页「曼沫砾总线」（本站公告栏）—— 挂在「甬城晴雨」下面、日历上面。
+ *
+ * 用户 2026-10-06 的要求：
+ *   「在甬城晴雨下方 涣源溪水钟上方插入新板块：曼沫砾总线 这个板块是本站的公告栏
+ *    可以在编辑器内填写公告 填写后最新的几条可以显示在这个板块内 而点开板块则可以
+ *    看到所有的历史公告 公告分为两种：事项公告和更新提醒公告。事项公告应当和文章
+ *    手记一样 可以编写具体的内容 在鼠标点击标题后直接进入这一页公告文章内容
+ *    而更新公告则是只有标题和跳转链接」
+ *
+ * 所以这一块是「最新几条 + 一个进全部历史的入口」：
+ *   · 标题（曼沫砾总线）和右上角那句「全部公告 ›」都指向 /zongxian/ 那一页；
+ *   · 每条自己是个链接 —— 事项公告进它自己的文章页，更新提醒直接跳过去；
+ *   · 两种公告在这一行上长得一样（同一套皮），区别只在左边那枚小标签，
+ *     以及更新提醒右边多一个「↗」表示它是跳出去的。
+ *
+ * 数据只有一份（src/data/announcements.json），编辑器「公告」面板写它。
+ * 排序、地址、条数上限一律在 utils/announce.ts 里算，这里只管画。
+ */
+import { announceBoard, announceExternal, announceHref, ANNOUNCE_KIND_LABEL, latestAnnounces } from '../utils/announce';
+import { withBase } from '../utils/url';
+
+const board = announceBoard();
+const items = latestAnnounces();
+const boardHref = withBase('/zongxian/');
+/** 日期在这一行上很短，只写 MM-DD（年份在公告栏那一页里看得到） */
+const shortDate = (d: string) => (d.length === 10 ? d.slice(5) : d);
+---
+
+<section class="ann" id="home-announce" data-announce aria-labelledby="ann-title">
+  <header class="ann__head">
+    <h3 class="ann__titleWrap">
+      <a class="ann__title" id="ann-title" href={boardHref}>{board.title}</a>
+    </h3>
+    <a class="ann__more" href={boardHref}>全部公告 ›</a>
+  </header>
+
+  {
+    items.length > 0 ? (
+      <ul class="ann__list">
+        {items.map((it) => {
+          const href = announceHref(it);
+          const external = announceExternal(it);
+          const kind = ANNOUNCE_KIND_LABEL[it.kind];
+          const inner = (
+            <>
+              <span class:list={['ann__kind', it.kind === 'update' && 'ann__kind--update']}>{kind}</span>
+              <span class="ann__text">{it.title}</span>
+              {external ? (
+                <span class="ann__out" aria-hidden="true">↗</span>
+              ) : (
+                <time class="ann__date" datetime={it.date}>{shortDate(it.date)}</time>
+              )}
+            </>
+          );
+          return (
+            <li class="ann__row" data-announce-id={it.id} data-announce-kind={it.kind}>
+              {href ? (
+                <a
+                  class="ann__link"
+                  href={href}
+                  title={external ? `去 ${it.href}` : it.title}
+                  {...external ? { target: '_blank', rel: 'noopener' } : {}}
+                >
+                  {inner}
+                </a>
+              ) : (
+                /* 更新提醒没填链接：照样列出来，只是点不动（页面上得说清是为什么） */
+                <span class="ann__link ann__link--dead" title="这条还没填跳转地址（编辑器「公告」面板里填）">
+                  {inner}
+                </span>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    ) : (
+      <p class="ann__empty">还没有公告 —— 编辑器的「公告」面板里写第一条。</p>
+    )
+  }
+</section>
+
+<style>
+  /*
+    这一格和右边的「黎语堂」并排（见 HomeWidgets 的 .extras__grid），
+    行高由两张卡里高的那张决定，所以这里给一个 min-height：两张卡都至少这么高，
+    公告多的时候**在卡片里滚**，不把整行顶上去。
+  */
+  .ann {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: clamp(190px, 24vh, 286px);
+    padding: 0.55rem 0.7rem 0.6rem;
+    border: 1px solid rgba(255, 120, 190, 0.4);
+    border-radius: 16px;
+    background: linear-gradient(180deg, rgba(38, 6, 54, 0.86), rgba(20, 3, 32, 0.9));
+    box-shadow: 0 14px 40px -22px rgb(0 0 0 / 0.8);
+    backdrop-filter: blur(4px);
+    min-width: 0;
+  }
+
+  .ann__head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.5rem;
+    margin-bottom: 0.35rem;
+    flex: none;
+  }
+  .ann__titleWrap {
+    margin: 0;
+    min-width: 0;
+  }
+  .ann__title {
+    font-size: 1rem;
+    letter-spacing: 0.14em;
+    color: #ffd9ef;
+    text-decoration: none;
+    border-bottom: 1px dotted rgba(255, 120, 190, 0.6);
+  }
+  .ann__title:hover,
+  .ann__title:focus-visible {
+    color: #fff;
+    border-bottom-color: #ff4fa3;
+  }
+  .ann__more {
+    flex: none;
+    font-size: 0.76rem;
+    /* ⚠ 这是深色卡：别用浅色主题那套令牌（var(--c-text-muted) 压在这儿只有 2.3:1） */
+    color: rgba(255, 226, 244, 0.6);
+    text-decoration: none;
+  }
+  .ann__more:hover,
+  .ann__more:focus-visible {
+    color: #ffb3dd;
+  }
+
+  /*
+    条目列表：多了就在卡片里滚（`min-height: 0` 是关键 —— 不写的话 flex 子项
+    的最小高度是内容高度，列表会把卡片顶破，min-height 那一行就白写了）。
+  */
+  .ann__list {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 0.22rem;
+    scrollbar-width: thin;
+  }
+  .ann__row {
+    min-width: 0;
+  }
+  .ann__link {
+    display: flex;
+    align-items: center;
+    gap: 0.42rem;
+    padding: 0.24rem 0.42rem;
+    border: 1px solid rgba(255, 120, 190, 0.22);
+    border-radius: 9px;
+    background: rgba(12, 2, 20, 0.42);
+    color: rgba(255, 236, 248, 0.92);
+    font-size: 0.84rem;
+    line-height: 1.5;
+    text-decoration: none;
+    transition: border-color 0.14s ease, background 0.14s ease, color 0.14s ease;
+  }
+  a.ann__link:hover,
+  a.ann__link:focus-visible {
+    border-color: rgba(255, 120, 190, 0.75);
+    background: rgba(24, 3, 36, 0.72);
+    color: #fff;
+  }
+  a.ann__link:focus-visible {
+    outline: 2px solid rgba(255, 120, 190, 0.75);
+    outline-offset: 2px;
+  }
+  /* 没填链接的那条：照样看得见，只是不能点 */
+  .ann__link--dead {
+    opacity: 0.75;
+    cursor: default;
+  }
+
+  .ann__kind {
+    flex: none;
+    padding: 0.05rem 0.34rem;
+    border: 1px solid rgba(255, 120, 190, 0.55);
+    border-radius: 999px;
+    background: rgba(168, 0, 88, 0.35);
+    color: #ffd9ef;
+    font-size: 0.68rem;
+    letter-spacing: 0.06em;
+    white-space: nowrap;
+  }
+  /* 更新提醒：落日橙黄那套（和日历上的特殊日子同一组颜色） */
+  .ann__kind--update {
+    border-color: rgba(255, 180, 70, 0.6);
+    background: rgba(224, 74, 8, 0.3);
+    color: #ffe9c0;
+  }
+
+  /* 标题：一行放不下就省略号（这一条是卡片里最该让位给日期的） */
+  .ann__text {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .ann__date {
+    flex: none;
+    color: rgba(255, 226, 244, 0.55);
+    font-size: 0.76rem;
+    font-variant-numeric: tabular-nums;
+  }
+  .ann__out {
+    flex: none;
+    color: #ffb3dd;
+    font-size: 0.8rem;
+    line-height: 1;
+  }
+  .ann__empty {
+    margin: 0;
+    color: rgba(255, 226, 244, 0.62);
+    font-size: 0.84rem;
+    line-height: 1.7;
+  }
+</style>

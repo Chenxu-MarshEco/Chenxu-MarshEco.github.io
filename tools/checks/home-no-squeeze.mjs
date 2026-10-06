@@ -121,6 +121,19 @@ try {
     它**本来就该变矮** —— 所以这几个 key 只卡横向，高度变化记下来、不算失败。
   */
   const heightFree = new Set(['.extras', '.cal', '.ice', '.daily']);
+  /*
+    ⚠ 2026-10-06：首页那一屏上面**新插了一行**（曼沫砾总线 + 黎语堂），
+    所以日历 / 冰山 / 每日精华整体往**下**让开一行 —— 这是用户点名要的
+    （"在甬城晴雨下方 涣源溪水钟上方插入新板块"），不是被挤压。
+    规则收窄成两条，别的一句都不放松：
+      · 三个必须让开**同样多**（相对关系一个像素都没变，下面单独判）；
+      · 横向位置、宽度照旧卡死（sizeSame 里那两项没动）。
+    `.extras` 是外面那个容器：新那一行装进它里面，所以它的顶边**往上**走、
+    高度变大，两者都是应该的（高度本来就在 heightFree 里，这里把 y 也放开）。
+  */
+  const rowShifted = new Set(['.cal', '.ice', '.daily']);
+  const containerFree = new Set(['.extras']);
+  const rowShifts = [];
   for (const k of oldKeys) {
     const a0 = oldM.rects[k];
     const b0 = nowM.rects[k];
@@ -128,10 +141,23 @@ try {
     const sizeSame = a0.x === b0.x && a0.w === b0.w && (heightFree.has(k) || k === '.home' || a0.h === b0.h);
     if (!sizeSame) moved.push(`${k} 横向/尺寸变了 ${JSON.stringify(a0)} → ${JSON.stringify(b0)}`);
     else if (shiftable.has(k)) shifts.push({ k, dy: +(b0.y - a0.y).toFixed(1) });
+    else if (rowShifted.has(k)) rowShifts.push({ k, dy: +(b0.y - a0.y).toFixed(1) });
+    else if (containerFree.has(k)) { /* 容器：顶边和高度都允许变（新那一行在里面） */ }
     else if (a0.y !== b0.y) moved.push(`${k} 纵向动了 ${a0.y} → ${b0.y}`);
   }
   check('改动前就有的元素：横向位置、宽度一个像素都没变（没有被挤压）',
     moved.length === 0, moved.length ? moved.join(' | ') : `逐项一致：${oldKeys.join(' ')}`);
+
+  /*
+    日历 / 冰山 / 每日精华的纵向位移：
+      · 基线是"还没有新那一行"的代码 → 三个一起往下让开一行（同样的数）；
+      · 基线里已经有新那一行了（这次改动提交之后 HEAD 就会带上）→ 一动不动。
+    两种都对，但**三个必须一致**：只动其中一个就是"被各自挤歪"了。
+  */
+  const rowVals = [...new Set(rowShifts.map((s) => s.dy))];
+  check('日历 / 冰山 / 每日精华：要么一起不动，要么**一起**让开同样多（新插那一行的高度）',
+    rowShifts.length >= 1 && rowVals.length === 1 && rowVals[0] >= 0,
+    `位移 ${JSON.stringify(rowShifts)}`);
 
   /*
     三张板块卡的位移：

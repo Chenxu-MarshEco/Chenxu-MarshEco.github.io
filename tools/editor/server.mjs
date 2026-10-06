@@ -123,6 +123,15 @@ const STATIC_FILES = new Map([
   ['/index.html', { file: 'index.html', type: 'text/html; charset=utf-8' }],
   ['/app.js', { file: 'app.js', type: 'text/javascript; charset=utf-8' }],
   ['/style.css', { file: 'style.css', type: 'text/css; charset=utf-8' }],
+  /*
+    黎语堂自己的管理系统（2026-10-06 加）。
+    ⚠ 地址是 /liyutang-admin，不是 /liyutang —— 后者是**站点**上那一页
+    （花涧堂编辑器服务是另一个端口，但两个名字长得一样会让人以为自己点错了）。
+  */
+  ['/liyutang-admin', { file: 'liyutang.html', type: 'text/html; charset=utf-8' }],
+  ['/liyutang-admin/', { file: 'liyutang.html', type: 'text/html; charset=utf-8' }],
+  ['/liyutang.html', { file: 'liyutang.html', type: 'text/html; charset=utf-8' }],
+  ['/liyutang.js', { file: 'liyutang.js', type: 'text/javascript; charset=utf-8' }],
 ]);
 
 /** marked 的候选位置，按顺序找第一个存在的；都没有就 404，前端自行降级 */
@@ -1487,6 +1496,139 @@ async function handleApi(req, res, url) {
       output = String(err?.message || err);
     }
     return sendJson(res, 200, { ok: true, built, ms, output, dropped: data.dropped });
+  }
+
+  // ---- 曼沫砾总线（src/data/announcements.json：公告栏的两种公告）----
+  // 「公告」面板写这一个文件。写完就重建：首页那一块和 /zongxian/ 都是这份数据画的，
+  // 不重建的话预览里还是旧的（和导航 / 音乐 / 冰山图一个道理）。
+  if (route === '/api/announcements' && req.method === 'GET') {
+    return sendJson(res, 200, await readAnnouncements());
+  }
+  if (route === '/api/announcements' && req.method === 'POST') {
+    const payload = await readBody(req);
+    const current = await readAnnouncements();
+    const data = cleanAnnouncements(payload, current);
+    try {
+      await fs.copyFile(ANNOUNCEMENTS_FILE, `${ANNOUNCEMENTS_FILE}.bak`);
+    } catch {
+      /* 第一次还没有这个文件，正常 */
+    }
+    await fs.writeFile(ANNOUNCEMENTS_FILE, `${JSON.stringify(data.file, null, 2)}\n`, 'utf8');
+    /* 记「近期更新」：公告栏那一页 */
+    await noteEdit({ href: '/zongxian/', title: data.file.title || '曼沫砾总线' });
+    let built = false;
+    let ms = 0;
+    let output = '';
+    try {
+      const r = await runBuild();
+      built = true;
+      ms = r.ms;
+      output = r.output;
+    } catch (err) {
+      output = String(err?.message || err);
+    }
+    const items = data.file.items;
+    return sendJson(res, 200, {
+      ok: true,
+      built,
+      ms,
+      output,
+      updated: data.file.updated,
+      counts: {
+        items: items.length,
+        notice: items.filter((i) => i.kind === 'notice').length,
+        update: items.filter((i) => i.kind === 'update').length,
+      },
+      dropped: data.dropped,
+    });
+  }
+
+  // ---- 黎语堂（src/data/liyutang.json：论坛的版块和评论系统）----
+  /*
+    ⚠ 这一份**不在编辑器那套面板里**（用户要求「不要接入原有的编辑器系统」）：
+    读写口是给黎语堂自己的管理页面（/liyutang-admin）用的。
+    写完**不重新构建** —— 现在 /liyutang 还是空壳页，论坛内容长出来之后
+    这里再补一次 runBuild()（那时才需要）。
+  */
+  if (route === '/api/liyutang' && req.method === 'GET') {
+    return sendJson(res, 200, await readLiyutang());
+  }
+  /*
+    ---- 评论服务连通性自检（2026-10-06 加）----
+
+    管理页上那颗「自检连通」按钮走这里。为什么不直接在浏览器里 fetch 那个地址：
+    跨源读不到状态码（CORS）—— 拿到的要么是 opaque 响应，要么直接抛错，
+    「通不通」就说不清了。所以在服务端请求，把状态码和耗时如实带回前端。
+
+    探的是 `<serverURL>/ui/register`：Waline 服务一部署起来这个页面就一定在
+    （官方文档：部署完先访问它注册第一个管理员）。200 就说明服务通了。
+    顺便在正文里找一眼 "waline" 字样 —— 只是"像不像"，找不到也不算失败
+    （那个页面是前端渲染的，抓不到字样很正常）。
+  */
+  if (route === '/api/liyutang/check' && req.method === 'POST') {
+    const payload = await readBody(req);
+    const raw = String(payload?.serverURL ?? '')
+      .trim()
+      .replace(/\/+$/, '');
+    if (!/^https?:\/\//i.test(raw)) throw httpError(400, '服务地址要以 http:// 或 https:// 开头');
+    const url = `${raw}/ui/register`;
+    const started = Date.now();
+    try {
+      const r = await fetch(url, { redirect: 'follow', signal: AbortSignal.timeout(9000) });
+      let body = '';
+      try {
+        body = (await r.text()).slice(0, 20000);
+      } catch {
+        /* 抓不到正文不影响"通不通"这件事 */
+      }
+      return sendJson(res, 200, {
+        ok: true,
+        reachable: true,
+        status: r.status,
+        ms: Date.now() - started,
+        url,
+        looksLikeWaline: /waline/i.test(body) || /waline/i.test(String(r.headers.get('server') || '')),
+      });
+    } catch (err) {
+      return sendJson(res, 200, {
+        ok: true,
+        reachable: false,
+        ms: Date.now() - started,
+        url,
+        error: String(err?.name === 'TimeoutError' ? '9 秒内没有响应（超时）' : err?.message || err),
+      });
+    }
+  }
+  if (route === '/api/liyutang' && req.method === 'POST') {
+    const payload = await readBody(req);
+    const current = await readLiyutang();
+    const data = cleanLiyutang(payload, current);
+    try {
+      await fs.copyFile(LIYUTANG_FILE, `${LIYUTANG_FILE}.bak`);
+    } catch {
+      /* 第一次还没有这个文件，正常 */
+    }
+    await fs.writeFile(LIYUTANG_FILE, `${JSON.stringify(data.file, null, 2)}\n`, 'utf8');
+    let built = false;
+    let ms = 0;
+    let output = '';
+    try {
+      const r = await runBuild();
+      built = true;
+      ms = r.ms;
+      output = r.output;
+    } catch (err) {
+      output = String(err?.message || err);
+    }
+    return sendJson(res, 200, {
+      ok: true,
+      built,
+      ms,
+      output,
+      updated: data.file.updated,
+      counts: { boards: data.file.boards.length, provider: data.file.forum.provider },
+      dropped: data.dropped,
+    });
   }
 
   // ---- 冰山图（src/data/iceberg.json：分类 / 标签 / 层级 / 条目）----
@@ -3116,11 +3258,13 @@ async function readWidgets() {
 const WIDGET_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 /**
- * 首页四块的清洗。
+ * 首页那几块的清洗。
  *
  * 逐块 merge：请求里**没带**的块（`payload.calendar === undefined`）原样保留；
  * 带了但必填项不合法（比如 about.title 空了）也退回盘上那一份 —— 标题是页面
  * 上的大字，空标题只会让人以为站点坏了。
+ *
+ * 块：about / calendar / iceberg / liyutang / daily（2026-10-06 起 liyutang 是第五块）。
  *
  * 日历事件表：键必须是 YYYY-MM-DD，title 必须有（没有 title 的那天在页面上
  * 只是个普通格子，存它没意义）。href / text 可空，空字符串照样写 ——
@@ -3194,6 +3338,23 @@ function cleanWidgets(payload, current) {
     file.iceberg = current.iceberg;
   }
 
+  /* ---- liyutang：黎语堂那张板块卡（2026-10-06 加） ----
+     用户要求「在花涧堂编辑器的页面内可以管理黎语堂这个板块卡片的标题 副标题 背景图片」。
+     论坛自己的数据不在这儿（见 LIYUTANG_FILE 那一段），这里只有卡片这一张皮。 */
+  if (has('liyutang')) {
+    const raw = payload.liyutang && typeof payload.liyutang === 'object' ? payload.liyutang : {};
+    const title = String(raw.title ?? '').trim();
+    if (!title) throw httpError(400, '「黎语堂」的标题不能为空');
+    file.liyutang = {
+      title,
+      subtitle: String(raw.subtitle ?? '').trim(),
+      image: String(raw.image ?? '').trim(),
+      href: String(raw.href ?? '').trim() || '/liyutang/',
+    };
+  } else if (current.liyutang) {
+    file.liyutang = current.liyutang;
+  }
+
   /* ---- daily：面板不改它，原样带走 ---- */
   if (has('daily') && payload.daily && typeof payload.daily === 'object') {
     file.daily = {
@@ -3204,6 +3365,221 @@ function cleanWidgets(payload, current) {
     file.daily = current.daily;
   }
 
+  return { file, dropped };
+}
+
+/* ------------------------------------------------------------------
+   曼沫砾总线（src/data/announcements.json）
+
+   本站的公告栏（2026-10-06 加）。首页那一块和 /zongxian/ 那一页都读这一份数据，
+   所以这里写坏了首页和公告栏页会一起坏 —— 必填项（标题 / 日期）不合法的条目
+   **直接丢掉并报数**，而不是写进文件让页面自己去扛。
+
+   两种公告的区别落在**字段**上，不存「类型标记以外的东西」：
+     notice  事项公告：body（Markdown 正文）+ 可选 cover，站点按它生成 /zongxian/<id>/
+     update  更新提醒：href，站点不生成页面，点标题直接跳过去
+   两种字段互斥（notice 不留 href、update 不留 body），免得出现自相矛盾的一条。
+
+   排序由服务端**盖章**（日期倒序，同一天保持面板里的先后）：文件读起来就是页面上
+   看到的顺序，人手改 JSON 时也不用自己去对齐。站点那边会用同一套规则再排一次
+   （见 src/utils/announce.ts），两边算出来必须一样。
+   ------------------------------------------------------------------ */
+const ANNOUNCEMENTS_FILE = path.join(PROJECT_ROOT, 'src', 'data', 'announcements.json');
+const ANNOUNCE_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+async function readAnnouncements() {
+  const text = await fs.readFile(ANNOUNCEMENTS_FILE, 'utf8');
+  return JSON.parse(text);
+}
+
+/** 新公告 id：`an-<YYYYMMDD>-<两位序号>`（撞了就往后找；手写的 id 不会被改写） */
+function newAnnounceId(used, date) {
+  const stamp = ANNOUNCE_DATE.test(date)
+    ? date.replace(/-/g, '')
+    : formatDateParts(new Date()).date.replace(/-/g, '');
+  for (let i = 1; i <= 99; i++) {
+    const id = `an-${stamp}-${String(i).padStart(2, '0')}`;
+    if (!used.has(id)) return id;
+  }
+  return `an-${stamp}-${randomBytes(2).toString('hex')}`;
+}
+
+function cleanAnnouncements(payload, current) {
+  if (!payload || typeof payload !== 'object') {
+    throw httpError(400, '数据格式不对，需要 { title, items }');
+  }
+  const dropped = { items: 0, noTitle: 0, badDate: 0, dupId: 0 };
+  const has = (k) => Object.prototype.hasOwnProperty.call(payload, k);
+  const file = {};
+
+  const readme = Array.isArray(payload._readme) ? payload._readme : current._readme;
+  if (Array.isArray(readme)) file._readme = readme;
+
+  file.title = String(payload.title ?? '').trim() || current.title || '曼沫砾总线';
+  file.subtitle = has('subtitle')
+    ? String(payload.subtitle ?? '').trim()
+    : String(current.subtitle ?? '').trim();
+
+  /* 首页显示几条：1~20 之间的整数，写别的就退回盘上那份（默认 5） */
+  const latest = Number(payload.latest);
+  const fallbackLatest = Number(current.latest) > 0 ? Math.min(Math.round(Number(current.latest)), 20) : 5;
+  file.latest = Number.isFinite(latest) && latest > 0 ? Math.min(Math.round(latest), 20) : fallbackLatest;
+  file.updated = formatDateParts(new Date()).date;
+
+  const used = new Set();
+  file.items = [];
+  const rawItems = Array.isArray(payload.items)
+    ? payload.items
+    : Array.isArray(current.items)
+      ? current.items
+      : [];
+  for (const raw of rawItems) {
+    if (!raw || typeof raw !== 'object') {
+      dropped.items++;
+      continue;
+    }
+    const title = String(raw.title ?? '').trim();
+    if (!title) {
+      dropped.noTitle++;
+      continue;
+    }
+    const date = String(raw.date ?? '').trim();
+    if (!ANNOUNCE_DATE.test(date)) {
+      dropped.badDate++;
+      continue;
+    }
+    let id = String(raw.id ?? '').trim();
+    if (id && used.has(id)) {
+      dropped.dupId++;
+      id = '';
+    }
+    if (!id) id = newAnnounceId(used, date);
+    used.add(id);
+
+    const kind = raw.kind === 'update' ? 'update' : 'notice';
+    if (kind === 'update') {
+      file.items.push({ id, kind, date, title, href: String(raw.href ?? '').trim() });
+    } else {
+      file.items.push({
+        id,
+        kind,
+        date,
+        title,
+        body: String(raw.body ?? ''),
+        cover: String(raw.cover ?? '').trim(),
+      });
+    }
+  }
+
+  /* 日期倒序；同一天保持面板里的先后（Array.sort 是稳定的） */
+  file.items.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+
+  return { file, dropped };
+}
+
+/* ------------------------------------------------------------------
+   黎语堂（src/data/liyutang.json）
+
+   用户 2026-10-06：「黎语堂是一个本网站的静态论坛 有很多论坛独有的功能 所以不要将其
+   接入原有的编辑器系统 应当在花娅陌质流里加一个新按钮跳转到黎语堂相关的编辑管理上」
+   —— 所以这一份数据**没有**走编辑器那套 type / frontmatter，服务端只给一个
+   干干净净的读写口（GET / POST /api/liyutang），它自己的管理页面是另一个 HTML
+   （tools/editor/ui/liyutang.html，地址 /liyutang-admin），和编辑器主体分开。
+
+   清洗只做三件事：版块必须有标题、评论系统只认那三种 provider、_readme 原样留着。
+   ------------------------------------------------------------------ */
+const LIYUTANG_FILE = path.join(PROJECT_ROOT, 'src', 'data', 'liyutang.json');
+const LIYUTANG_PROVIDERS = new Set(['giscus', 'waline', 'none']);
+
+async function readLiyutang() {
+  const text = await fs.readFile(LIYUTANG_FILE, 'utf8');
+  return JSON.parse(text);
+}
+
+/** 新版块 id：`bd-xxxx` */
+function newBoardId(used) {
+  for (let i = 0; i < 200; i++) {
+    const id = `bd-${randomBytes(3).toString('hex')}`;
+    if (!used.has(id)) return id;
+  }
+  return `bd-${Date.now().toString(36)}`;
+}
+
+function cleanLiyutang(payload, current) {
+  if (!payload || typeof payload !== 'object') {
+    throw httpError(400, '数据格式不对，需要 { forum, boards }');
+  }
+  const dropped = { boards: 0, noTitle: 0, dupId: 0 };
+  const has = (k) => Object.prototype.hasOwnProperty.call(payload, k);
+  const file = {};
+
+  const readme = Array.isArray(payload._readme) ? payload._readme : current._readme;
+  if (Array.isArray(readme)) file._readme = readme;
+
+  /*
+    ---- 评论系统 ----
+    ⚠ 认不出来的 provider 退回 **waline**（2026-10-06 起这是定下来的那条路）：
+    黎语堂要有「注册的用户」，而 Giscus 要求人人先有 GitHub 账号（用户明确不要）。
+    giscus 那几项照样原样存着 —— 万一以后人人都有 GitHub 账号，改一个字段就能切回去。
+  */
+  const src = (has('forum') ? payload.forum : current.forum) ?? {};
+  const raw = src && typeof src === 'object' ? src : {};
+  const provider = LIYUTANG_PROVIDERS.has(String(raw.provider)) ? String(raw.provider) : 'waline';
+  const rawGiscus = raw.giscus && typeof raw.giscus === 'object' ? raw.giscus : {};
+  const rawWaline = raw.waline && typeof raw.waline === 'object' ? raw.waline : {};
+  const text = (v) => String(v ?? '').trim();
+  file.forum = {
+    enabled: raw.enabled === true,
+    provider,
+    giscus: {
+      repo: text(rawGiscus.repo),
+      repoId: text(rawGiscus.repoId),
+      category: text(rawGiscus.category) || 'Announcements',
+      categoryId: text(rawGiscus.categoryId),
+      mapping: text(rawGiscus.mapping) || 'pathname',
+      strict: rawGiscus.strict === true,
+      reactionsEnabled: rawGiscus.reactionsEnabled !== false,
+      emitMetadata: rawGiscus.emitMetadata === true,
+      inputPosition: rawGiscus.inputPosition === 'bottom' ? 'bottom' : 'top',
+      lang: text(rawGiscus.lang) || 'zh-CN',
+    },
+    waline: { serverURL: text(rawWaline.serverURL) },
+  };
+
+  /* ---- 版块（和 forum 平级，不是 forum 里的东西） ---- */
+  const used = new Set();
+  file.boards = [];
+  const rawBoards = Array.isArray(payload.boards)
+    ? payload.boards
+    : Array.isArray(current.boards)
+      ? current.boards
+      : [];
+  for (const b of rawBoards) {
+    if (!b || typeof b !== 'object') {
+      dropped.boards++;
+      continue;
+    }
+    const title = String(b.title ?? '').trim();
+    if (!title) {
+      dropped.noTitle++;
+      continue;
+    }
+    let id = String(b.id ?? '').trim();
+    if (id && used.has(id)) {
+      dropped.dupId++;
+      id = '';
+    }
+    if (!id) id = newBoardId(used);
+    used.add(id);
+    file.boards.push({
+      id,
+      title,
+      desc: String(b.desc ?? '').trim(),
+      icon: String(b.icon ?? '').trim(),
+    });
+  }
+
+  file.updated = formatDateParts(new Date()).date;
   return { file, dropped };
 }
 

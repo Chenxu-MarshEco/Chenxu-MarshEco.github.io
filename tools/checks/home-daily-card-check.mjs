@@ -146,7 +146,13 @@ const HEIGHTS = `(() => {
   return {
     grid: h('.extras__grid'),
     pair: h('.extras__pair'),
-    calendar: h('.extras__grid > *:first-child'),
+    /*
+      ⚠ 日历按 **id** 找，不能用「.extras__grid 的第一个孩子」那种位置选择器
+      （2026-10-06 改）：那一屏上面新加了一行（曼沫砾总线 + 黎语堂），
+      第一个格子已经不是日历了 —— 位置一挪，"日历"量到的其实是公告卡，
+      "三张一样高"那条会假红。
+    */
+    calendar: h('#home-cal'),
     iceberg: h('.extras__pair > *:first-child'),
     daily: h('.daily'),
     card: h('.daily__card'),

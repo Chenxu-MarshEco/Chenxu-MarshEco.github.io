@@ -52,6 +52,19 @@ if (!fs.existsSync(idxFile)) {
 }
 const index = JSON.parse(fs.readFileSync(idxFile, 'utf8'));
 const items = index.items ?? [];
+
+/*
+  「整页自己一套」的目录：故意不挂站点页头 / 右上角那排控件 / 搜索框 / 悬停卡片。
+    · secret/    首页那座雕像点进去的 Spine 演示（public/ 里手写的一页，不经过 BaseLayout）
+    · liyutang/  黎语堂（2026-10-06 建）。用户原话：「先暂时套用文章和笔记的背景 其他
+                 什么都不要放 只留左上角的花涧堂logo以便回到花涧堂 别的都不要有」——
+                 所以它用的是自己的 ForumLayout，站点 chrome 一个都没有。
+                 它**暂时**也不进搜索索引（空壳页进去的话，搜到点进去一片空白、
+                 随机跳转抽到它等于跳了个寂寞）。论坛内容长出来之后，
+                 把这里和 tools/search/index.mjs 里跳过它的那一行一起删掉。
+*/
+const BARE_DIRS = new Set(['secret', 'liyutang']);
+const isBare = (p) => BARE_DIRS.has(String(p).split(/[\\/]/)[0]);
 console.log(`索引：${items.length} 条 ${JSON.stringify(index.kinds)}`);
 
 check('索引条数 > 1000，且与文件里记的 count 一致', items.length > 1000 && index.count === items.length,
@@ -67,8 +80,21 @@ check('八类都在索引里（页面/锚点/精华/文章/手记/导航/冰山/
   最后一步去重时就并进 page 那条了。地图是给板块页做入口的，消息不丢。
 */
 console.log(`地图图钉：${index.kinds?.map ?? 0} 条（那两个图钉与对应板块页重复，去重后并入 page —— 符合预期）`);
-check('★ 冰室精华 784 条每条都在（这是"每条精华单独可跳"的前提）',
-  (index.kinds?.essence ?? 0) === 784, `essence=${index.kinds?.essence}`);
+/*
+  ⚠ 条数**不写死**：用户一直在往沙龙里加精华（2026-10-06 那一轮从 784 变成 806）。
+  写死的话每导一批新精华，这支检查都会红一次，红的还不是真问题。
+  以盘上的 salon.json 为准，比的是"每一条都进了索引"。
+*/
+const salonOnDisk = (() => {
+  try {
+    return JSON.parse(fs.readFileSync(path.join('src', 'data', 'salon.json'), 'utf8'));
+  } catch {
+    return { essences: [] };
+  }
+})();
+const essenceCount = (salonOnDisk.essences ?? []).length;
+check(`★ 冰室精华 ${essenceCount} 条每条都在（这是"每条精华单独可跳"的前提）`,
+  (index.kinds?.essence ?? 0) === essenceCount, `essence=${index.kinds?.essence} / 盘上 ${essenceCount}`);
 check('索引里所有条目都有 t/ h /k，且没有重复的「地址+标题」',
   items.every((it) => it.t && it.h && it.k) &&
     new Set(items.map((it) => `${it.h}\n${it.t}`)).size === items.length);
@@ -114,20 +140,67 @@ for (const it of items) {
   if (!htmlOf(f).includes(`id="${hash}"`)) badAnchor.push(it.h);
 }
 const anchorTotal = items.filter((it) => it.h.includes('#')).length;
-check('★ 带 # 的每一条，目标页里都存在那个 id（锚点 + 精华共 ' + anchorTotal + ' 条）',
-  badAnchor.length === 0 && anchorTotal >= 800,
-  badAnchor.length ? `缺 ${badAnchor.length} 个，例如 ${badAnchor.slice(0, 3).join(' ')}` : `${anchorTotal} 条全部命中`);
+/*
+  ⚠ 带 # 的地址有两类，**不能一起判红**（2026-10-06 拆开的）：
+    · 机器算出来的：anchors.json 里的页面锚点、精华的 /salon/#<id> ——
+      这些是构建期生成的，缺一个就是代码 bug，必须全中；
+    · 人手填进去的：时间轴的「点」、导航条目、地图图钉上的地址 ——
+      页面改过名字之后，人填的 #桑芙 就可能指着不存在的锚点。
+      那是**内容**问题（该改的是那条数据），不是代码问题，所以只报 WARN，
+      并把那一页现有的锚点列出来，照着改就行。
+*/
+const userHash = new Set(
+  ['timelines.json', 'navs.json', 'home-boards.json'].flatMap((file) => {
+    const out = [];
+    const walk = (v) => {
+      if (Array.isArray(v)) return v.forEach(walk);
+      if (v && typeof v === 'object') {
+        for (const [k, val] of Object.entries(v)) {
+          if (k === 'href' && typeof val === 'string' && val.includes('#')) out.push(val);
+          else walk(val);
+        }
+      }
+    };
+    try {
+      walk(JSON.parse(fs.readFileSync(path.join('src', 'data', file), 'utf8')));
+    } catch {
+      /* 数据文件不在就算了 */
+    }
+    return out;
+  })
+);
+const badMachine = badAnchor.filter((h) => !userHash.has(h));
+const badUser = badAnchor.filter((h) => userHash.has(h));
+check('★ 机器生成的每一条 # 锚点都在目标页里（锚点 + 精华共 ' + anchorTotal + ' 条）',
+  badMachine.length === 0,
+  badMachine.length ? `缺 ${badMachine.length} 个，例如 ${badMachine.slice(0, 3).join(' ')}` : `${anchorTotal - badUser.length} 条全部命中`);
+if (badUser.length) {
+  const anchorIndex = (() => {
+    try {
+      return JSON.parse(fs.readFileSync(path.join(root, 'anchors.json'), 'utf8'));
+    } catch {
+      return { pages: [] };
+    }
+  })();
+  console.log(`WARN  有 ${badUser.length} 条**手填**的地址指着不存在的锚点（内容问题，不是代码问题）：`);
+  for (const h of badUser) {
+    const page = h.split('#')[0];
+    /* ⚠ 这里不能用后面的 norm()（它是 const，还没初始化）—— 就地比一次 */
+    const bare = (s) => String(s).replace(/\/$/, '');
+    const hit = (anchorIndex.pages ?? []).find((p) => bare(p.href) === bare(page));
+    console.log(`      ${h}`);
+    if (hit) console.log(`        ${page} 现有的锚点：${hit.anchors.map((a) => '#' + a.id).join(' ')}`);
+  }
+}
 
 /* ③ 索引要覆盖构建出来的每一个页面（随机跳转的抽签池就是靠这个"全"） */
 const builtPages = [];
 (function walk(dir) {
   for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
     const p = path.join(dir, e.name);
-    /*
-      dist/secret/ 是 public/ 里手写的一个独立页面（首页那座雕像点进去的 Spine 演示），
-      它不经过 BaseLayout、也没有站点的头尾和控件，按设计既不该进索引、也不该被随机跳到。
-    */
-    if (e.isDirectory() && path.relative(root, p).split(path.sep)[0] === 'secret') continue;
+    /* dist/secret/ 和 dist/liyutang/ 都是"整页自己一套"（见上面 BARE_DIRS）：
+       既不该进索引、也不该被随机跳到 */
+    if (e.isDirectory() && isBare(path.relative(root, p))) continue;
     if (e.isDirectory()) walk(p);
     else if (e.name === 'index.html') {
       // 根目录那一页的 rel 是空串，得拼成 '/'，不能拼成 '//'（这条自己踩过一次）
@@ -138,8 +211,8 @@ const builtPages = [];
 })(root);
 const norm = (h) => h.replace(/\/$/, '');
 const pooled = new Set(items.filter((it) => it.k === 'page' || it.k === 'post' || it.k === 'note').map((it) => norm(it.h)));
-const missing = builtPages.filter((h) => h !== '/404/' && !pooled.has(norm(h)));
-check('★ 构建出来的每个页面都在索引里（' + builtPages.length + ' 个 index.html，404 和 public/secret 除外）',
+const missing = builtPages.filter((h) => h !== '/404/' && !isBare(h.replace(/^\//, '')) && !pooled.has(norm(h)));
+check('★ 构建出来的每个页面都在索引里（' + builtPages.length + ' 个 index.html，404 和 secret / liyutang 除外）',
   missing.length === 0, missing.length ? `漏了 ${missing.slice(0, 4).join(' ')}` : `抽签池 ${pooled.size} 个整页`);
 check('★ 首页本身也在抽签池里（随机跳转能跳回首页）', pooled.has(''),
   items.some((it) => it.h === '/' && it.k === 'page') ? '索引里有 / 这条' : '索引里没有 /');
@@ -149,7 +222,7 @@ const htmlFiles = [];
 (function walk(dir) {
   for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
     const p = path.join(dir, e.name);
-    if (e.isDirectory() && path.relative(root, p).split(path.sep)[0] === 'secret') continue;
+    if (e.isDirectory() && isBare(path.relative(root, p))) continue;
     if (e.isDirectory()) walk(p);
     else if (e.name.endsWith('.html')) htmlFiles.push(p);
   }
@@ -159,7 +232,7 @@ const naked = htmlFiles.filter((f) => {
   const h = htmlOf(f);
   return !need.every((n) => h.includes(n));
 });
-check('★ 每一个页面（' + htmlFiles.length + ' 个）都有搜索框和随机跳转', naked.length === 0,
+check('★ 每一个页面（' + htmlFiles.length + ' 个，自带一套的之外）都有搜索框和随机跳转', naked.length === 0,
   naked.length ? `缺的：${naked.slice(0, 3).map((f) => path.relative(root, f)).join(' ')}` : '全都有');
 const noRuntime = htmlFiles.filter((f) => !htmlOf(f).includes('window.__SEARCH_CFG__') || !htmlOf(f).includes('HuayaSearch'));
 check('每个页面都内联了搜索运行时（配置 + 内核）', noRuntime.length === 0,

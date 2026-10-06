@@ -1,0 +1,209 @@
+---
+/**
+ * 「曼沫砾总线」公告栏的全部历史 —— /zongxian/
+ *
+ * 首页那一块只显示最新的几条，点它的标题（或右上角那句「全部公告 ›」）就到这里，
+ * 这里是**一份完整的清单**：按年月分组，新的在前，两种公告混着排。
+ *
+ * 外观直接用大板块页那个外壳（BoardLayout：深紫底 + 页头页脚 + hero 大标题），
+ * 理由和首页一样 —— 首页那张卡就是深色的，点进来不该突然变成另一个世界。
+ * 事项公告点标题进 /zongxian/<id>/ 那一页；更新提醒点标题直接跳出去。
+ *
+ * 数据只有一份（src/data/announcements.json），排序和地址在 utils/announce.ts 里算。
+ */
+import BoardLayout from '../../layouts/BoardLayout.astro';
+import {
+  ANNOUNCE_KIND_LABEL,
+  announceBoard,
+  announceDateText,
+  announceExternal,
+  announceGroups,
+  announceHref,
+  announceList,
+} from '../../utils/announce';
+
+const board = announceBoard();
+const all = announceList();
+const groups = announceGroups(all);
+const noticeCount = all.filter((a) => a.kind === 'notice').length;
+const updateCount = all.length - noticeCount;
+---
+
+<BoardLayout title={board.title} backLabel="返回首页">
+  <div class="alb" data-announce-board>
+    <p class="alb__lead">
+      {board.subtitle || '本站的公告栏'}：一共 {all.length} 条 ——
+      <b>事项公告</b> {noticeCount} 条（有正文，点标题进那一页）、
+      <b>更新提醒</b> {updateCount} 条（点标题直接跳过去）。
+    </p>
+
+    {
+      groups.length === 0 ? (
+        <p class="alb__empty">还没有公告 —— 编辑器的「公告」面板里写第一条。</p>
+      ) : (
+        groups.map((g) => (
+          <section class="alb__group" data-announce-month={g.key}>
+            <h2 class="alb__month">{g.label}</h2>
+            <ul class="alb__list">
+              {g.items.map((it) => {
+                const href = announceHref(it);
+                const external = announceExternal(it);
+                const kind = ANNOUNCE_KIND_LABEL[it.kind];
+                return (
+                  <li class="alb__row" data-announce-id={it.id} data-announce-kind={it.kind}>
+                    <time class="alb__date" datetime={it.date}>
+                      {announceDateText(it.date)}
+                    </time>
+                    <span class:list={['alb__kind', it.kind === 'update' && 'alb__kind--update']}>{kind}</span>
+                    {href ? (
+                      <a
+                        class="alb__title"
+                        href={href}
+                        {...external ? { target: '_blank', rel: 'noopener' } : {}}
+                      >
+                        {it.title}
+                        {external && <span class="alb__out" aria-hidden="true"> ↗</span>}
+                      </a>
+                    ) : (
+                      <span class="alb__title alb__title--dead" title="这条还没填跳转地址（编辑器「公告」面板里填）">
+                        {it.title}
+                      </span>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
+        ))
+      )
+    }
+  </div>
+</BoardLayout>
+
+<style>
+  .alb {
+    padding-bottom: 3rem;
+  }
+
+  .alb__lead {
+    margin: 0 0 1.4rem;
+    font-size: 0.9rem;
+    line-height: 1.9;
+    color: rgba(255, 226, 244, 0.8);
+  }
+  .alb__lead b {
+    color: #ffd9ef;
+    font-weight: 600;
+  }
+
+  .alb__group + .alb__group {
+    margin-top: 1.6rem;
+  }
+  .alb__month {
+    margin: 0 0 0.6rem;
+    font-size: 1.05rem;
+    letter-spacing: 0.14em;
+    color: #ffd9ef;
+    text-shadow: 0 0 12px rgba(255, 79, 163, 0.45);
+  }
+
+  .alb__list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+  }
+
+  /*
+    一行：日期 · 类型 · 标题。
+    日期给定宽（tabular-nums + 固定宽度），所以同一列里长短不一的日期也不会把
+    后面的类型标签推得七零八落。
+  */
+  .alb__row {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.5rem 0.75rem;
+    border: 1px solid rgba(255, 120, 190, 0.28);
+    border-radius: 12px;
+    background: rgba(24, 4, 38, 0.6);
+    transition: border-color 0.15s ease, background 0.15s ease;
+    min-width: 0;
+  }
+  .alb__row:hover {
+    border-color: rgba(255, 120, 190, 0.6);
+    background: rgba(38, 6, 54, 0.7);
+  }
+
+  .alb__date {
+    flex: none;
+    width: 9.6rem;
+    font-size: 0.8rem;
+    color: rgba(255, 226, 244, 0.6);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .alb__kind {
+    flex: none;
+    padding: 0.08rem 0.42rem;
+    border: 1px solid rgba(255, 120, 190, 0.55);
+    border-radius: 999px;
+    background: rgba(168, 0, 88, 0.32);
+    color: #ffd9ef;
+    font-size: 0.7rem;
+    letter-spacing: 0.06em;
+    white-space: nowrap;
+  }
+  .alb__kind--update {
+    border-color: rgba(255, 180, 70, 0.6);
+    background: rgba(224, 74, 8, 0.28);
+    color: #ffe9c0;
+  }
+
+  .alb__title {
+    flex: 1 1 auto;
+    min-width: 0;
+    color: #fff3fa;
+    font-size: 0.95rem;
+    line-height: 1.6;
+    text-decoration: none;
+    border-bottom: 1px dotted rgba(255, 120, 190, 0.45);
+  }
+  a.alb__title:hover,
+  a.alb__title:focus-visible {
+    color: #fff;
+    border-bottom-color: #ff4fa3;
+  }
+  .alb__title--dead {
+    color: rgba(255, 236, 248, 0.7);
+    border-bottom-color: transparent;
+    cursor: default;
+  }
+  .alb__out {
+    color: #ffb3dd;
+    font-size: 0.85em;
+  }
+
+  .alb__empty {
+    color: rgba(255, 226, 244, 0.7);
+    line-height: 1.9;
+  }
+
+  /* 窄屏：日期不再占固定那一栏，整行改成上下两段 */
+  @media (max-width: 620px) {
+    .alb__row {
+      flex-wrap: wrap;
+      gap: 0.3rem 0.5rem;
+    }
+    .alb__date {
+      width: auto;
+      order: 3;
+      flex-basis: 100%;
+    }
+    .alb__title {
+      flex-basis: 100%;
+    }
+  }
+</style>

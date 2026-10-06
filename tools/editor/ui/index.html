@@ -57,6 +57,22 @@
         <button type="button" class="btn btn--ghost" id="btn-music" title="给每个页面配一份歌单">
           音乐
         </button>
+        <!--
+          黎语堂自己的管理系统（2026-10-06 加）。
+          用户原话：「黎语堂是一个本网站的静态论坛 …… 所以不要将其接入原有的编辑器系统
+          应当在花娅陌质流里加一个新按钮跳转到黎语堂相关的编辑管理上」。
+          所以这颗按钮**不在** app.js 那排工作面里 —— 它另开一个页面
+          （/liyutang-admin，由 tools/editor/ui/liyutang.html 提供），
+          那一边只管版块和评论系统，不碰文章 / 手记 / 版块树。
+        -->
+        <button
+          type="button"
+          class="btn btn--ghost"
+          id="btn-liyutang"
+          title="黎语堂自己的管理系统（版块 / 评论系统）：另开一个页面，和花涧堂编辑器分开"
+        >
+          黎语堂管理
+        </button>
         <button type="button" class="btn btn--ghost" id="btn-preview" title="显示 / 隐藏预览">
           预览
         </button>
@@ -670,6 +686,28 @@
       <div class="modal__panel modal__panel--full" role="dialog" aria-modal="true" aria-label="冰室冰山">
         <h3 class="modal__title">首页 · 冰室冰山</h3>
         <div id="iceberg-editor"></div>
+      </div>
+    </div>
+
+    <!--
+      黎语堂（板块卡片）：home-widgets.json 的 liyutang —— 2026-10-06 加。
+      只改首页那张卡的标题 / 副标题 / 背景图；论坛自己的版块和评论系统
+      在另一个页面（/liyutang-admin，右上角那颗「黎语堂管理」）。
+    -->
+    <div class="modal" id="liyutang-modal" hidden>
+      <div class="modal__mask" data-close="1"></div>
+      <div class="modal__panel modal__panel--full" role="dialog" aria-modal="true" aria-label="黎语堂">
+        <h3 class="modal__title">首页 · 黎语堂</h3>
+        <div id="lyt-editor"></div>
+      </div>
+    </div>
+
+    <!-- 公告：src/data/announcements.json（曼沫砾总线） -->
+    <div class="modal" id="announce-modal" hidden>
+      <div class="modal__mask" data-close="1"></div>
+      <div class="modal__panel modal__panel--full" role="dialog" aria-modal="true" aria-label="公告">
+        <h3 class="modal__title">曼沫砾总线 · 公告</h3>
+        <div id="ann-editor"></div>
       </div>
     </div>
 

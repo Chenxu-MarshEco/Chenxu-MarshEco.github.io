@@ -1,6 +1,6 @@
 {
   "_readme": [
-    "首页四块新增内容的数据（编辑器里对应的面板：关于我 / 日历 / 冰室冰山 / 每日精华）。",
+    "首页那几块新增内容的数据（编辑器里对应的面板：关于我 / 日历 / 冰室冰山 / 黎语堂 / 每日精华）。",
     "",
     "about      左上角「关于我」：avatar 是那个圆形头像（编辑器里上传，存 /img/uploads/xxx），",
     "           text 是页面里那段自我介绍（可以写 Markdown 的粗体、链接），href 默认 /about-me/。",
@@ -13,6 +13,9 @@
     "                        · href   点那天的图标跳到哪（留空就只是变颜色、点不动）",
     "                        · text   可选：这一天的完整文案，写了就不套 specialText",
     "iceberg    「冰室冰山」板块：image 是那张图，text 是一句话，href 点进去的页面（留空则整块不可点）",
+    "liyutang   「黎语堂」板块卡（首页第一行右格，2026-10-06 加）：title / subtitle / image 三样",
+    "           就是卡片上的标题、副标题和背景图，href 默认 /liyutang/。",
+    "           ⚠ 论坛自己的数据（版块、评论系统）**不在这个文件里** —— 见 src/data/liyutang.json。",
     "daily      「每日精华」：title 是标题（点它进 href，默认 /salon/），",
     "           下面那条随机精华来自 src/data/salon.json（按访问者当天日期挑，同一天固定、隔天自动换）。"
   ],
@@ -114,6 +117,12 @@
     "image": "/img/uploads/20260922-1247-12b0-A39AB1F0CB7B5596327FE5CC080C9C34.jpg",
     "text": "发掘花娅最不为人知的秘密",
     "href": "/iceberg/"
+  },
+  "liyutang": {
+    "title": "黎语堂",
+    "subtitle": "花涧堂的静态论坛",
+    "image": "",
+    "href": "/liyutang/"
   },
   "daily": {
     "title": "每日精华",

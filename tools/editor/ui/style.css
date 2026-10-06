@@ -4771,3 +4771,86 @@ body.pblock-dragging * {
 .picrow__ops .btn {
   white-space: nowrap;
 }
+
+/* ============================================================
+   曼沫砾总线（公告面板，2026-10-06 加）
+   一行一条公告：类型标签 + 标题 + 日期 + 操作。
+   这一块原来是空白（面板用 wbox / wrow 那套现成的），不够用的只有「一行」
+   和「表单上那两条按钮」这两处，所以这里只补这两个。
+   ============================================================ */
+.wann__toolbar {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.wann__rows {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.wann__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  background: var(--surface);
+}
+.wann__kind {
+  flex: none;
+  font-size: 11px;
+  line-height: 1.6;
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--border-strong);
+  color: var(--text-muted);
+  background: var(--surface-2);
+  white-space: nowrap;
+}
+/* 更新提醒：用「等你处理」那个暖琥珀，和事项公告一眼分得开 */
+.wann__kind--update {
+  border-color: color-mix(in srgb, var(--warn) 40%, transparent);
+  color: var(--warn);
+  background: var(--warn-soft);
+}
+.wann__title {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wann__date {
+  flex: none;
+  font-size: 12px;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+.wann__ops {
+  flex: none;
+  display: flex;
+  gap: 4px;
+}
+.wann__form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.wann__formbar {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+/* 底栏那个「N 条（事项 x / 更新 y）」——不能借用 .wpanel__status，
+   那是状态栏的类（flex:1 拉伸，而且下面按类取状态时会先撞上它） */
+.wann__sum {
+  flex: 1 1 auto;
+  min-width: 120px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}

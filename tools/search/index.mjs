@@ -242,6 +242,13 @@ export function buildIndex(root, builtPages = [], dist = path.join(root, 'dist')
     const pathname = String(p?.pathname ?? '').replace(/^\/+/, '');
     const href = `/${pathname}`;
     if (pathname === '404/' || pathname === '404.html') continue; // 走丢页不该被搜到、更不该被随机跳到
+    /*
+      ⚠ /liyutang/ 现在是一张**空壳页**（2026-10-06 第一版：只有背景和左上角徽记，
+      用户要求「别的都不要有」，论坛的版块和帖子还没建）。空页面进索引有两个坏处：
+      搜索里点进去是一片空白、随机跳转抽到它等于跳了个寂寞。
+      所以先不收它 —— 论坛内容长出来之后，**把下面这一行删掉即可**。
+    */
+    if (pathname === 'liyutang/' || pathname === 'liyutang') continue;
     if (known.has(href.replace(/\/$/, ''))) continue;
     known.add(href.replace(/\/$/, ''));
     const file = !pathname

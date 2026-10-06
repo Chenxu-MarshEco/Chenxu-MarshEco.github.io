@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>黎语堂 · 管理</title>
+    <!--
+      黎语堂自己的管理系统（2026-10-06 建）。
+
+      用户原话：
+        「黎语堂是一个本网站的静态论坛 有很多论坛独有的功能 所以不要将其接入原有的
+         编辑器系统 应当在花娅陌质流里加一个新按钮跳转到黎语堂相关的编辑管理上
+         但是在花涧堂编辑器的页面内可以管理黎语堂这个板块卡片的标题 副标题 背景图片」
+
+      所以这一页**故意不是**花涧堂编辑器的一个面板：
+        · 它只认 src/data/liyutang.json（论坛的版块 + 评论系统），不碰文章 / 手记 / 版块树；
+        · 花涧堂编辑器那边只多一颗按钮跳过来（右上角「黎语堂管理」），外加一个
+          「黎语堂」面板管首页那张卡片的标题 / 副标题 / 背景图（写 home-widgets.json）。
+      这么分是因为论坛以后要长出自己的版块、帖子、权限、评论，塞进「文章 / 手记」
+      那套 type 里两边会互相牵扯。
+
+      样式复用编辑器的 /style.css（.btn / .input / .hint / .toast / .wbox），
+      页面自己那点布局写在下面的 <style> 里。
+    -->
+    <link rel="stylesheet" href="/style.css" />
+    <style>
+      body.lytadmin {
+        margin: 0;
+        min-height: 100vh;
+        background: var(--bg);
+        color: var(--text);
+      }
+
+      .lytadmin__top {
+        position: sticky;
+        top: 0;
+        z-index: 5;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        flex-wrap: wrap;
+        padding: 10px 16px;
+        border-bottom: 1px solid var(--border);
+        background: color-mix(in srgb, var(--bg) 88%, transparent);
+        backdrop-filter: blur(8px);
+      }
+      .lytadmin__brand {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        min-width: 0;
+        flex: 1 1 320px;
+      }
+      .lytadmin__brand strong {
+        font-size: 15px;
+        letter-spacing: 0.06em;
+      }
+      .lytadmin__brand .hint {
+        margin: 0;
+      }
+      .lytadmin__acts {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+
+      .lytadmin__main {
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+        max-width: 1000px;
+        margin: 0 auto;
+        padding: 18px 16px 60px;
+      }
+
+      .lytadmin__status {
+        margin: 0;
+        min-height: 1.4em;
+        font-size: 12.5px;
+        color: var(--text-muted);
+      }
+      .lytadmin__status.is-dirty {
+        color: var(--accent);
+      }
+
+      /* 版块：一行一块（标题 / 说明 / 图标 + 上下挪 + 删） */
+      .lt-board {
+        display: grid;
+        grid-template-columns: 2.6rem minmax(0, 1fr);
+        gap: 8px 10px;
+        align-items: start;
+        padding: 10px;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        background: var(--surface);
+      }
+      .lt-board__icon {
+        width: 100%;
+        text-align: center;
+        font-size: 18px;
+      }
+      .lt-board__fields {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        min-width: 0;
+      }
+      .lt-board__row {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        flex-wrap: wrap;
+      }
+      .lt-board__row .input {
+        flex: 1 1 200px;
+        min-width: 0;
+      }
+      .lt-board__ops {
+        display: flex;
+        gap: 4px;
+      }
+      .lt-empty {
+        padding: 10px;
+        border: 1px dashed var(--border-strong);
+        border-radius: 10px;
+        color: var(--text-muted);
+        font-size: 13px;
+      }
+
+      /* 评论系统那几个字段：label 在左、控件在右，和编辑器面板一个手感 */
+      .lt-field {
+        display: grid;
+        grid-template-columns: 8.5rem minmax(0, 1fr);
+        gap: 8px;
+        align-items: center;
+      }
+      .lt-field > label {
+        font-size: 12.5px;
+        color: var(--text-muted);
+      }
+      .lt-field .input {
+        width: 100%;
+      }
+      .lt-check {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 13px;
+      }
+      .lt-sub {
+        margin: 4px 0 0;
+        padding-top: 8px;
+        border-top: 1px dashed var(--border);
+        font-size: 12.5px;
+        color: var(--text-muted);
+        line-height: 1.8;
+      }
+      @media (max-width: 620px) {
+        .lt-field {
+          grid-template-columns: minmax(0, 1fr);
+        }
+      }
+    </style>
+  </head>
+  <body class="lytadmin">
+    <header class="lytadmin__top">
+      <div class="lytadmin__brand">
+        <strong>黎语堂 · 管理</strong>
+        <span class="hint">
+          黎语堂自己的管理系统，和花涧堂编辑器分开：这里只改版块和评论系统
+          （src/data/liyutang.json）。首页那张卡片的标题 / 副标题 / 背景图在花涧堂编辑器的
+          「黎语堂」面板里。
+        </span>
+      </div>
+      <div class="lytadmin__acts">
+        <button type="button" class="btn btn--ghost" id="lt-open-site" title="在新标签页打开站点上的黎语堂（要先构建过）">
+          打开 /liyutang/
+        </button>
+        <button type="button" class="btn btn--ghost" id="lt-open-editor" title="回到花涧堂编辑器">
+          回到花涧堂编辑器
+        </button>
+        <button type="button" class="btn btn--primary" id="lt-save" title="写进 src/data/liyutang.json 并重新构建站点">
+          保存并重新构建
+        </button>
+      </div>
+    </header>
+
+    <main class="lytadmin__main">
+      <p class="lytadmin__status" id="lt-status">正在读取…</p>
+
+      <section class="wbox" id="lt-boards-box"></section>
+      <section class="wbox" id="lt-forum-box"></section>
+    </main>
+
+    <div class="toast" id="toast" hidden></div>
+
+    <script type="module" src="/liyutang.js"></script>
+  </body>
+</html>

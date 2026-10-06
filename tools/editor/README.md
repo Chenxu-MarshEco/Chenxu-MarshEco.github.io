@@ -129,6 +129,13 @@ webp 重编 q80；gif / svg 原样不动（动图和矢量图不该重编码）�
 - 主题跟随系统，也可以在右上角手动切成 浅色 / 深色 / 自动（记在 localStorage）。
 - 完全离线：不加载任何外部字体、图片或 CDN。
 
+顶栏那颗 **「黎语堂管理」**（2026-10-06，在「音乐」旁边）**不是**一个工作面：
+它另开一个标签页去 `/liyutang-admin`（`tools/editor/ui/liyutang.html`）——
+黎语堂自己的管理系统（版块 / 评论系统）。用户原话：「黎语堂是一个本网站的静态论坛
+有很多论坛独有的功能 所以不要将其接入原有的编辑器系统 应当在花娅陌质流里加一个新按钮
+跳转到黎语堂相关的编辑管理上」。所以那一页**不共用** app.js 那套 type / frontmatter /
+版块树，只连着 `/api/liyutang` 这个读写口。
+
 ## 图片怎么进来：拖进来 / 粘进来 / 选文件
 
 **不用先存到电脑再挑文件了。** 从 QQ、微信、截图工具里截一张图，
@@ -214,17 +221,18 @@ attachImageIntake({ el, input, label: '封面图', onFiles: async ([file]) => { 
 
 ## 工作面与左上角总入口
 
-编辑器里能整块干活的地方一共十三个：**文章 / 手记、页面、独立页面、子版块、导航、
-时间轴、音乐、排版**，加上后加的五块 —— **日历、关于我、冰室冰山、精华、成员**
-（见下面「首页那几块 + 冰室精华」）。左上角那个 **「☰ 工作台」** 按钮就是总入口 ——
+编辑器里能整块干活的地方一共十五个：**文章 / 手记、页面、独立页面、子版块、导航、
+时间轴、音乐、排版**，加上后加的那几块 —— **日历、关于我、冰室冰山、精华、成员、
+公告、黎语堂**（见下面「首页那几块 + 冰室精华 + 两个新板块」）。左上角那个 **「☰ 工作台」** 按钮就是总入口 ——
 点开是一张清单，点哪一项就**直接切到那个工作面**（该开的面板打开、该铺的数据铺好），
 不用「先关掉这个再打开那个」。顶栏那几个老按钮也走同一条路：切过去之前
 会先把别的面板收起来，所以不会再出现两个面板叠着的情况。
 
-每个面板顶上还有一条 **「切换」** 小按钮（十三个工作面 + 「关闭面板」），
+每个面板顶上还有一条 **「切换」** 小按钮（十五个工作面 + 「关闭面板」），
 所以在独立页面面板里能一步跳到导航或时间轴，反过来也一样，不用先关面板。
 面板是从顶栏下面开始铺的 —— **顶栏（含总入口、保存、预览、主题）在面板开着的时候照样点得到**。
-后加的五块**没有顶栏按钮**（顶栏已经挤满了），入口就是总入口清单和这条「切换」条。
+后加的那几块**没有顶栏按钮**（顶栏已经挤满了），入口就是总入口清单和这条「切换」条
+—— 唯一的例外是「黎语堂管理」：它**不是**工作面，是另开一个页面的那颗按钮。
 
 ### 草稿保护：切走再切回来，没保存的改动还在
 
@@ -551,21 +559,25 @@ A 页的导航可能是「甲 + 乙」、B 页是「甲 + 丙」，甲里那几�
 板块 24 + 文章 6 + 手记 2，和站点自己导出的 `dist/music-pages.json` 逐条一致。
 `first` 是「进入这一页一定第一首播」；`list` 里的顺序不是播放顺序，站上是**随机轮播**。
 
-## 首页那几块 + 冰室精华（五个面板：日历 / 关于我 / 冰室冰山 / 精华 / 成员）
+## 首页那几块 + 冰室精华 + 两个新板块（七个面板：日历 / 关于我 / 冰室冰山 / 黎语堂 /
+精华 / 成员 / 公告）
 
-站点那边首页新增的那一屏（日历、冰室冰山、每日精华）+ 页头的小圆片 + 三个新页面
-（`/about-me/`、`/iceberg/`、`/salon/`）都读**两份 JSON**。这五个面板就是改那两份数据的，
+站点那边首页那一屏（现在是**两行**：曼沫砾总线 + 黎语堂 / 日历 + 冰室冰山 + 每日精华）
++ 页头的小圆片 + 那几个新页面（`/about-me/`、`/iceberg/`、`/salon/`、
+`/zongxian/`、`/liyutang/`）读**三份 JSON**。这七个面板就是改那三份数据的，
 入口只有两个：左上角 **「☰ 工作台」** 和每个面板顶上那条 **「切换」**。
 
-数据分成两组，一组一个文件、一组一份草稿：
+数据分成三组，一组一个文件、一组一份草稿：
 
 | 面板 | 改哪一份数据里的哪一块 | 页面上在哪儿看得到 |
 | --- | --- | --- |
-| 日历 | `src/data/home-widgets.json` → `calendar` | 首页的日历（在「甬城晴雨」下面） |
+| 日历 | `src/data/home-widgets.json` → `calendar` | 首页第二行的日历（在「甬城晴雨」下面） |
 | 关于我 | `home-widgets.json` → `about` | 页头左上角的小圆片 + `/about-me/` |
-| 冰室冰山 | `home-widgets.json` → `iceberg` | 首页中间那块 + `/iceberg/` |
-| 精华 | `src/data/salon.json` → `essences` | `/salon/` 的 735 条 + 首页「每日精华」 |
+| 冰室冰山 | `home-widgets.json` → `iceberg` | 首页第二行右边那块 + `/iceberg/` |
+| 黎语堂 | `home-widgets.json` → `liyutang` | 首页**第一行右格**那张板块卡 + `/liyutang/` |
+| 精华 | `src/data/salon.json` → `essences` | `/salon/` 的全部条数 + 首页「每日精华」 |
 | 成员 | `salon.json` → `members` | 上面两处显示的名字和头像 |
+| 公告 | `src/data/announcements.json` | 首页**第一行左格**「曼沫砾总线」+ `/zongxian/` |
 
 **改完一定要点「保存并重新构建」。** 数据落盘只是第一步 —— 首页、`/salon/`、
 `/about-me/`、`/iceberg/` 都是**构建期**读这两份 JSON 的（`astro build`），
@@ -599,6 +611,54 @@ A 页的导航可能是「甲 + 乙」、B 页是「甲 + 丙」，甲里那几�
 
 一张图（走图片接入口）、标题（**不能留空**）、一句话介绍（纯文本，不支持 Markdown）、
 跳转地址（留空则整块不可点，页面上会写「链接留空，去编辑器里填」）。
+
+### 「黎语堂」管理页里的评论系统：**Waline**（2026-10-06 定）
+
+先试的是 Giscus（GitHub Discussions 当数据库，最省事），但它**要求每个留言的人都有
+GitHub 账号**。用户要的是「黎语堂有自己的注册用户」而且不要 GitHub 账号，
+所以改走 **Waline**：自己部署一个服务，自带邮箱注册的账号体系 + `/ui` 管理后台
+（改 / 标记 / 删评论、给用户打专属标签）。
+
+管理页上就一个字段：**服务地址**（`forum.waline.serverURL`），旁边一颗
+**「自检连通」** —— 它调 `POST /api/liyutang/check`，由编辑器服务去请求
+`<服务地址>/ui/register`，回来写清「✓ 服务通了 HTTP 200 · 123 ms（看起来就是 Waline）」
+或者「✗ 连不上：…」。通了之后填好地址、勾上「打开评论」、保存并重建。
+地址填上之后，下面还会多出两个去路：**注册第一个账号**（官方规则：第一个注册的人
+自动是管理员，所以服务一通就去占位）和**打开评论管理后台**。
+
+部署四步写在根 README 的「黎语堂」一节（Vercel 一键部署 → Storage 里建 Neon 数据库
+并跑官方 waline.pgsql → Redeploy → Visit 拿地址）。
+
+⚠ 「共创者能改花涧堂的页面」**不走 Waline**：页面就是仓库文件，那条路仍然是 GitHub
+（协作者 + PR + 你合并）。Waline 只负责"认出他是共创者"（专属标签）。
+
+### 「黎语堂」—— `home-widgets.json` 的 `liyutang`（2026-10-06 加）
+
+**只有三样东西**：背景图（走图片接入口，建议横图；没传就画一块粉紫占位）、
+标题（**不能留空**，`/liyutang` 那一页的标题也读同一个值）、副标题。
+这就是首页第一行右格那张卡的皮，整张可点 → `/liyutang/`。
+
+⚠ **论坛自己的东西不在这个面板里**（用户要求「不要将其接入原有的编辑器系统」）：
+版块和评论系统在 `src/data/liyutang.json`，由**另一个页面**管 ——
+面板里那颗「打开黎语堂管理 ›」或者顶栏那颗「黎语堂管理」跳到 `/liyutang-admin`。
+
+### 「公告」—— `src/data/announcements.json`（2026-10-06 加）
+
+一个面板管完「曼沫砾总线」这个公告栏。顶上那块「这一块」是公告栏自己的名字
+（标题 / 副标题 / 首页显示几条，1~20）；下面的清单是公告本身，两种：
+
+| | 事项公告 | 更新提醒 |
+| --- | --- | --- |
+| 表单里有什么 | 类型 / 标题 / 日期 / **正文**（Markdown）/ 可选封面图 | 类型 / 标题 / 日期 / **跳转地址** |
+| 站点上 | `/zongxian/<id>/` 一页，和文章 / 手记同一套皮 | 不生成页面，点标题直接跳过去 |
+
+- 类型是表单里的下拉，**当场换**：换成更新提醒，正文那两行就变成「跳转地址」；
+- 日期用的是那个日期控件（和日历事件、时间轴同一个 `dateField`），新加的一条默认给今天；
+- 底栏「保存并重新构建」写回 `announcements.json` 并跑一次构建（和别的面板一个规矩）；
+- 服务端会补 id（`an-<日期>-<两位序号>`）、按日期倒序排好、把 `updated` 盖成今天，
+  认不出来的条目**丢掉并在提示里报数**（没标题 / 日期不合法 / 重复 id）。
+- ⚠ 面板里有两个「标题」（公告栏的名字 / 这一条的名字）。写自动化的时候要限定在
+  `.wann__form` 里找，不然会填到前一个上 —— 验收脚本第一版就是这么红的。
 
 ### 「精华」—— `salon.json` 的 `essences`
 
@@ -743,10 +803,16 @@ pnpm add -D marked
 | POST | `/api/music` | `{ music }`：清洗后写回 `src/data/music.json` 并构建；返回 `dropped` |
 | POST | `/api/music/upload?name=&key=` | 请求体是**原始音频字节**，边收边写盘（超 40MB 中止并删半截文件） |
 | POST | `/api/music/remove` | `{ id, deleteFile }`：从曲库和所有歌单移除，可选删文件 |
-| GET | `/api/widgets` | 首页四块数据（`src/data/home-widgets.json`，含 `_readme`） |
-| POST | `/api/widgets` | `{ about?, calendar?, iceberg?, daily? }`：**逐块 merge**（没带的块原样保留），写回并构建；返回 `dropped.events` |
+| GET | `/api/widgets` | 首页那几块数据（`src/data/home-widgets.json`，含 `_readme`） |
+| POST | `/api/widgets` | `{ about?, calendar?, iceberg?, liyutang?, daily? }`：**逐块 merge**（没带的块原样保留），写回并构建；返回 `dropped.events` |
+| GET | `/api/announcements` | 公告栏数据（`src/data/announcements.json`） |
+| POST | `/api/announcements` | 写回整份公告（补 id、按日期倒序、`updated` 盖今天）并构建；返回 `counts{items,notice,update}` 和 `dropped` |
+| GET | `/api/liyutang` | 黎语堂论坛数据（`src/data/liyutang.json`：`forum` + `boards`） |
+| POST | `/api/liyutang` | 写回（版块补 id、评论系统只认 waline/giscus/none，**认不出来退回 waline**）并构建 |
+| POST | `/api/liyutang/check` | `{ serverURL }`：**服务端**去请求 `<serverURL>/ui/register`，回来告诉你通不通、状态码、耗时（浏览器直接请求会被跨源挡掉，读不到状态码） |
 | GET | `/api/salon` | 冰室精华（`src/data/salon.json`：`title/updated/note/eras/members/essences`） |
 | POST | `/api/salon` | `{ members?, essences? }`：**逐块 merge**，写回并构建；`updated` 刷成今天；`eraId` 一律按日期重算；返回 `counts` 和 `dropped` |
+| GET | `/liyutang-admin` | 黎语堂自己的管理页（`tools/editor/ui/liyutang.html` + `liyutang.js`）。**不是**编辑器的一部分：它只连着上面那对 `/api/liyutang` |
 | GET | `/vendor/marked.js` | 转发 `node_modules/marked/lib/marked.esm.js`，没装则 404 |
 
 ## 保存时不会覆盖「别人刚改过的文章」（2026-10-05）
@@ -863,7 +929,9 @@ tools/editor/
 ├── ui/
 │   ├── index.html  # 三栏界面结构
 │   ├── app.js      # 前端逻辑（无构建步骤，浏览器直接跑 ES 模块）
-│   └── style.css   # 样式，颜色集中在 CSS 变量里
+│   ├── style.css   # 样式，颜色集中在 CSS 变量里
+│   ├── liyutang.html  # 黎语堂自己的管理页（/liyutang-admin），独立于上面那套界面
+│   └── liyutang.js    # 它的逻辑：版块 + 评论系统，只读写 /api/liyutang
 └── README.md
 ```
 

@@ -1,0 +1,206 @@
+---
+/**
+ * 一条「事项公告」的正文页 —— /zongxian/<id>/
+ *
+ * 用户要求：「事项公告应当和文章手记一样 可以编写具体的内容 在鼠标点击标题后
+ * 直接进入这一页公告文章内容」。
+ *
+ * 所以这一页就是**文章 / 手记那一套皮**：一样的 CRT 老电视背景（CrtScreen）、
+ * 一样的正文框（.crt-screen）和正文排版（.prose），只是来路那一行换成
+ * 「← 曼沫砾总线」，底下换成上一条 / 下一条公告。
+ *
+ * 正文是 Markdown，构建期用 marked 渲染、再过一遍 enhanceHtml
+ * （和 /about-me/、版块页的文字块同一条路：成员名悬停名片、图片点开看大图都跟着有）。
+ *
+ * 「更新提醒公告」**不会**走到这里：它没有正文，getStaticPaths 只吐事项公告，
+ * 所以给一个更新公告的 id 就是 404 —— 这正是想要的（它本来就不该有自己的页）。
+ */
+import { marked } from 'marked';
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import CrtScreen from '../../components/CrtScreen.astro';
+import { enhanceHtml } from '../../utils/images';
+import { withBase } from '../../utils/url';
+import {
+  announceBoard,
+  announceDateText,
+  announceHref,
+  noticeAnnounces,
+} from '../../utils/announce';
+
+export async function getStaticPaths() {
+  const items = noticeAnnounces();
+  return items.map((item, i) => ({
+    params: { id: item.id },
+    props: {
+      item,
+      /* 全部事项公告排好序之后，这一条的前后两条（列表是新的在前） */
+      prev: i > 0 ? items[i - 1] : null,
+      next: i < items.length - 1 ? items[i + 1] : null,
+    },
+  }));
+}
+
+const { item, prev, next } = Astro.props;
+const board = announceBoard();
+const boardHref = withBase('/zongxian/');
+/** 正文：空正文也要能打开（写了一半的公告不该整页崩） */
+const html = enhanceHtml(marked.parse(String(item.body ?? '').trim(), { async: false }) as string);
+const hasBody = html.replace(/<[^>]*>/g, '').trim().length > 0;
+const cover = String(item.cover ?? '').trim();
+---
+
+<BaseLayout
+  title={item.title}
+  description={`${board.title} · ${announceDateText(item.date)}`}
+  type="article"
+  narrow
+  layoutPage="post"
+  bodyClass="is-crt"
+>
+  <CrtScreen />
+  <article class="crt-screen" data-notice={item.id}>
+    <header class="post-header">
+      {/* 来路：这一条属于哪个公告栏（文章页那边是版块面包屑，这里是同一件事） */}
+      <p class="notice__trail">
+        <a class="notice__trailLink" href={boardHref}>{board.title}</a>
+        <span class="notice__trailSep" aria-hidden="true">›</span>
+        <span class="notice__trailHere">事项公告</span>
+      </p>
+      <h1 class="post-header__title" data-edit="title">{item.title}</h1>
+      <div class="post-header__meta" data-edit="meta">
+        <time datetime={item.date}>{announceDateText(item.date)}</time>
+        <span>事项公告</span>
+      </div>
+    </header>
+
+    {
+      cover && (
+        <p class="notice__cover">
+          <img src={cover} alt="" loading="eager" decoding="async" />
+        </p>
+      )
+    }
+
+    {
+      hasBody ? (
+        <div class="prose" data-edit="body" set:html={html} />
+      ) : (
+        <p class="notice__empty">这一条还没有写正文 —— 编辑器「公告」面板里写点什么吧。</p>
+      )
+    }
+
+    <nav class="notice__nav" aria-label="相邻公告">
+      {
+        prev ? (
+          <a class="notice__navLink" href={announceHref(prev)}>
+            <span class="notice__navLabel">← 更新的一条</span>
+            <span class="notice__navTitle">{prev.title}</span>
+          </a>
+        ) : (
+          <span />
+        )
+      }
+      {
+        next ? (
+          <a class="notice__navLink notice__navLink--next" href={announceHref(next)}>
+            <span class="notice__navLabel">更早的一条 →</span>
+            <span class="notice__navTitle">{next.title}</span>
+          </a>
+        ) : (
+          <span />
+        )
+      }
+    </nav>
+
+    <p class="notice__back">
+      <a href={boardHref}>看全部公告 ›</a>
+    </p>
+  </article>
+</BaseLayout>
+
+<style>
+  .notice__trail {
+    margin: 0 0 0.6rem;
+    font-size: 0.84rem;
+    letter-spacing: 0.04em;
+    color: var(--c-text-muted);
+  }
+  .notice__trailLink {
+    color: var(--c-accent);
+    text-decoration: none;
+    border-bottom: 1px dotted currentColor;
+  }
+  .notice__trailLink:hover {
+    color: var(--c-text);
+  }
+  .notice__trailSep {
+    margin: 0 0.32rem;
+    color: var(--c-text-faint);
+  }
+
+  .notice__cover {
+    margin: 0 0 1.4rem;
+  }
+  .notice__cover img {
+    display: block;
+    width: 100%;
+    border-radius: 12px;
+    border: 1px solid var(--c-border);
+  }
+
+  .notice__empty {
+    color: var(--c-text-muted);
+    line-height: 1.9;
+  }
+
+  /* 上一条 / 下一条：和外层的文章页那套一致，只是类名换成了这里的 */
+  .notice__nav {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.8rem;
+    justify-content: space-between;
+    margin-top: 2.4rem;
+    padding-top: 1.2rem;
+    border-top: 1px solid var(--c-border);
+  }
+  .notice__navLink {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    max-width: 46%;
+    text-decoration: none;
+    color: inherit;
+  }
+  .notice__navLink--next {
+    margin-left: auto;
+    text-align: right;
+  }
+  .notice__navLabel {
+    font-size: 0.76rem;
+    color: var(--c-text-faint);
+  }
+  .notice__navTitle {
+    font-size: 0.92rem;
+    color: var(--c-accent);
+    border-bottom: 1px dotted currentColor;
+  }
+  .notice__navLink:hover .notice__navTitle {
+    color: var(--c-text);
+  }
+
+  .notice__back {
+    margin-top: 1.6rem;
+    font-size: 0.86rem;
+  }
+  .notice__back a {
+    color: var(--c-accent);
+    text-decoration: none;
+    border-bottom: 1px dotted currentColor;
+  }
+
+  @media (max-width: 620px) {
+    .notice__navLink {
+      max-width: 100%;
+    }
+  }
+</style>

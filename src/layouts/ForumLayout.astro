@@ -1,0 +1,145 @@
+---
+/**
+ * 「黎语堂」自己的外壳（2026-10-06 起）。
+ *
+ * 用户对这一页的要求（第一版）：
+ *   「点进去以后是一个全新的黎语堂的首页 地址是 /liyutang 先暂时套用文章和笔记的背景
+ *    其他什么都不要放 只留左上角的花涧堂logo以便回到花涧堂 别的都不要有 之后再来详细构筑」
+ *
+ * 所以这里**故意不是** BaseLayout：
+ *   · 没有页头页脚、没有右上角那排控件、没有目录栏、没有歌单、没有时间轴、没有成员名片；
+ *   · 只有文章 / 手记那一套 CRT 背景（CrtScreen，样式全在 src/styles/crt.css）
+ *     和左上角一个回花涧堂的徽记。
+ *
+ * 为什么另起一个 Layout 而不是给 BaseLayout 加开关：黎语堂以后是一个**静态论坛**，
+ * 它自己会长出一整套壳（版块列表、帖子页、评论挂载点、自己的搜索和分页），
+ * 和花涧堂那套文章 / 版块的 chrome 不是一回事。现在把边界划清楚，
+ * 以后往里长出多少东西都不会和主站互相牵扯。
+ *
+ * ⚠ 这一页没有 .site-header，所以 tools/checks/site-smoke.mjs 里把它列进了
+ * 「整页自带一套、不查站点外框」的名单（和 /secret/ 那几页一个待遇）。
+ */
+import '../styles/fonts.css';
+import '../styles/global.css';
+import CrtScreen from '../components/CrtScreen.astro';
+import Img from '../components/Img.astro';
+import site from '../site.config';
+import { absoluteUrl, withBase } from '../utils/url';
+
+interface Props {
+  title?: string;
+  description?: string;
+  noindex?: boolean;
+}
+
+const { title, description = site.description, noindex = false } = Astro.props;
+const pageTitle = title ? `${title} · ${site.title}` : site.title;
+const canonical = absoluteUrl(Astro.url.pathname, Astro.site);
+const home = withBase('/');
+---
+
+<!doctype html>
+<html lang={site.lang}>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="generator" content={Astro.generator} />
+
+    <title>{pageTitle}</title>
+    <meta name="description" content={description} />
+    {noindex && <meta name="robots" content="noindex, nofollow" />}
+    <link rel="canonical" href={canonical} />
+    <link rel="icon" type="image/svg+xml" href={withBase('/favicon.svg')} />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content={site.title} />
+    <meta property="og:title" content={pageTitle} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={canonical} />
+    <meta property="og:locale" content="zh_CN" />
+    <meta name="theme-color" content="#120a20" />
+
+    {/* 和主站一样：固定亮色令牌 + is-crt 那套深紫配色（见 tokens.css / crt.css） */}
+    <script is:inline>
+      document.documentElement.dataset.theme = 'light';
+    </script>
+    {/* 字体分片：第一片是最高频那 300 字，任何一页都用得到 */}
+    <link
+      rel="preload"
+      as="font"
+      type="font/woff2"
+      href={withBase('/fonts/huajiantang-01.woff2')}
+      crossorigin
+    />
+  </head>
+
+  <body class="is-crt is-forum">
+    {/* 文章 / 手记那一套背景（蒸汽波落日 + 透视栅格 + CRT 三件套） */}
+    <CrtScreen />
+
+    {/*
+      左上角**唯一**的东西：花涧堂徽记，点它回首页。
+      不写「花涧堂」三个字 —— 徽记本身就是那三个字的艺术字（见首页 .brand__logo），
+      用户要的是「只留 logo」。
+    */}
+    <a class="forum__brand" href={home} title="回到花涧堂" aria-label="回到花涧堂">
+      <Img
+        class="forum__logo"
+        src="/img/home/logo.png"
+        alt=""
+        sizes="(max-width: 760px) 64px, 82px"
+        loading="eager"
+        decoding="async"
+      />
+    </a>
+
+    <main class="forum__main" id="main">
+      <slot />
+    </main>
+  </body>
+</html>
+
+<style>
+  /*
+    徽记：固定贴在左上角。这一页没有页头，所以它是**固定定位**而不是 sticky ——
+    滚动时它一直看得见（回花涧堂的路任何时候都在）。
+  */
+  .forum__brand {
+    position: fixed;
+    top: clamp(0.6rem, 2vh, 1.2rem);
+    left: clamp(0.7rem, 2vw, 1.4rem);
+    z-index: 30;
+    display: block;
+    line-height: 0;
+    border-radius: 12px;
+  }
+  .forum__brand:focus-visible {
+    outline: 2px solid #7fe9dd;
+    outline-offset: 4px;
+  }
+  .forum__logo {
+    width: clamp(58px, 7vw, 82px);
+    height: auto;
+    filter: drop-shadow(0 0 16px rgba(255, 90, 170, 0.5));
+    transition: transform 0.18s ease, filter 0.18s ease;
+  }
+  .forum__brand:hover .forum__logo,
+  .forum__brand:focus-visible .forum__logo {
+    transform: translateY(-2px);
+    filter: drop-shadow(0 0 22px rgba(255, 130, 200, 0.8));
+  }
+
+  /*
+    正文区：和主站页面同一个最大宽度和左右内边距，只是顶部留出徽记那一块，
+    免得第一版里要写的东西压在 logo 下面。
+  */
+  .forum__main {
+    position: relative;
+    z-index: 1;
+    width: 100%;
+    max-width: var(--w-page);
+    margin-inline: auto;
+    padding: calc(clamp(58px, 7vw, 82px) + 2.2rem) var(--sp-5) var(--sp-8);
+    min-height: 100vh;
+  }
+</style>

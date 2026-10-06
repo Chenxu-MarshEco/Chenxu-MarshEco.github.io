@@ -94,11 +94,13 @@ try {
 
   for (const p of pages) {
     /*
-      例外：`/secret/...` 是那种"整页自己一套"的彩蛋页（`弦宝vs傻雕像`），
-      故意不带站点页头 / 右上角控件 / 左上角「关于我」小圆片 ——
-      所以这几页只查"能打开、标题非空、不横向溢出、无报错"。
+      例外：这些页面**整页自己一套**，故意不带站点页头 / 右上角控件 / 左上角「关于我」小圆片：
+        · `/secret/...` 彩蛋页（`弦宝vs傻雕像`）；
+        · `/liyutang/` 黎语堂 —— 用户 2026-10-06 明确要求「别的都不要有，
+          只留左上角的花涧堂 logo」，所以它用的是 ForumLayout（自带徽记，没有页头）。
+      这几页只查"能打开、标题非空、不横向溢出、无报错"。
     */
-    const barePage = p.startsWith('/secret/');
+    const barePage = p.startsWith('/secret/') || p.startsWith('/liyutang/');
     cdp.errors = [];
     await cdp.send('Page.navigate', { url: `http://127.0.0.1:${PORT}${p}` });
     for (let i = 0; i < 60; i++) { await sleep(120); if ((await cdp.ev('document.readyState')) === 'complete') break; }
