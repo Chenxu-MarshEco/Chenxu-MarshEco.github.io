@@ -1,6 +1,7 @@
 ---
 import { render } from 'astro:content';
 import BaseLayout from '../../layouts/BaseLayout.astro';
+import CrtScreen from '../../components/CrtScreen.astro';
 import Img from '../../components/Img.astro';
 import PostTrail from '../../components/PostTrail.astro';
 import TableOfContents from '../../components/TableOfContents.astro';
@@ -36,11 +37,14 @@ const trails = trailsOf(site.homeBoards as BoardNode[], data.subs);
   updatedTime={data.updated}
   narrow
   layoutPage="post"
+  bodyClass="is-crt"
   preloadImage={data.cover}
   preloadImageSizes="(max-width: 760px) 100vw, 760px"
 >
+  {/* 老电视那层背景（只画背景，正文框是下面那个 .crt-screen） */}
+  <CrtScreen />
   <article class="post-layout" class:list={[hasToc && 'post-layout--with-toc']}>
-    <div>
+    <div class="crt-screen">
       <header class="post-header">
         {/* 所属版块的来路。放在标题上方 —— 分类信息是「在哪儿」，不是「讲什么」 */}
         <PostTrail trails={trails} here={data.title} />

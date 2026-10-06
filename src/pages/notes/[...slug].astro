@@ -1,6 +1,7 @@
 ---
 import { render } from 'astro:content';
 import BaseLayout from '../../layouts/BaseLayout.astro';
+import CrtScreen from '../../components/CrtScreen.astro';
 import PostTrail from '../../components/PostTrail.astro';
 import { entryUrl, getNotes, neighbors } from '../../utils/content';
 import { formatDateFull, toISODate } from '../../utils/date';
@@ -31,8 +32,11 @@ const trails = trailsOf(site.homeBoards as BoardNode[], data.subs);
   publishedTime={data.date}
   narrow
   layoutPage="post"
+  bodyClass="is-crt"
 >
-  <article>
+  {/* 和文章页同一套「老电视」皮肤：背景在动，正文框干净 */}
+  <CrtScreen />
+  <article class="crt-screen">
     <header class="post-header">
       {/* 同文章页：先说来路，再说是什么 */}
       <PostTrail trails={trails} here={data.title} />

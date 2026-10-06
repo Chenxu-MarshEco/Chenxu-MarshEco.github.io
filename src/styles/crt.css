@@ -1,0 +1,585 @@
+/* ============================================================================
+ *  crt.css —— 「老式电视机」皮肤（文章详情页 / 手记详情页，2026-10-06）
+ * ----------------------------------------------------------------------------
+ *  用户原话：
+ *    「现在对文章和手记的UI风格表现进行修改 不要用现在这种亮粉色 而是和其他的
+ *      页面类似 但是文章和手记的页面相比其他页面 凸显出一种正在观看老式电视机
+ *      的风格 正文部分的框内应当清晰好阅读 而背景部分则是模糊且有蒸汽波和老式
+ *      电视的栅格线运动且偶尔闪烁失真与雪花」
+ *
+ *  所以这里的分工是死的，改的时候别搞反：
+ *    · **正文框（.crt-screen）**：不透明到 0.93 + backdrop 模糊，字是近白偏紫，
+ *      对比度按 WCAG AA 的**加严档 7:1** 来卡（验收脚本真的量像素，不是估）；
+ *      正文上面**不盖任何东西** —— 扫描线、雪花、撕裂带全部在它后面。
+ *    · **背景（.crt 那一层）**：蒸汽波落日 + 透视栅格 + 模糊色雾，最上面压
+ *      CRT 栅格线、雪花、偶发闪烁与横向撕裂。它整层 `z-index: -1`，
+ *      只在面板四周和面板透出来的那一点点里活着。
+ *
+ *  手法沿用站里已有的两处（别另起一套）：
+ *    · 栅格线贴图 / 动 background-position 而不是 translateY —— 见 index.astro
+ *      「扫描线」那一节的结论：位移交给合成层会被双线性重采样，硬边当场糊掉。
+ *    · 雪花那张 SVG 湍流噪点 —— 与 IcebergChart.astro 里 .ibk__vhsSnow 同一张。
+ *
+ *  动效一律会被文件末尾那条 prefers-reduced-motion 规则收掉（这里有无限循环动画，
+ *  照 global.css 的说法要显式 `animation: none`，只压时长反而会变成每帧闪）。
+ * ========================================================================= */
+
+/* ---------------------------------------------------------------------------
+ *  1. 配色：把这几个令牌在 body 上改掉，页头页脚/目录/标签/正文全都跟着变
+ * ------------------------------------------------------------------------
+ *  原来的亮粉（--c-bg #e8d0dd 那一套）在这几页会被整组替换成深紫底 + 青，
+ *  所以「不要亮粉色」不是去逐个选择器压颜色，而是换掉这一组令牌。
+ *  代码块底色**故意留亮**：shiki 的配色是按浅底调的（只输出 --shiki-light），
+ *  底色一深就有好几个 token 掉到 4.5:1 以下，与其逐个改不如把底留亮。
+ * ------------------------------------------------------------------------ */
+body.is-crt {
+  --c-bg: #120a20;
+  --c-bg-raised: #1c1132;
+  --c-bg-sunken: #0d0718;
+  --c-text: #f3edff;
+  --c-text-muted: #d6c9ee;
+  --c-text-faint: #b3a5cd;
+  --c-border: #3a2b55;
+  --c-border-strong: #503c72;
+  --c-accent: #7fe9dd;
+  --c-accent-hover: #c4fff6;
+  --c-accent-soft: rgba(127, 233, 221, 0.12);
+  --c-link: #8ff0e5;
+  --c-link-hover: #dcfffb;
+  --c-selection: #3d2a63;
+  --c-code-bg: #efe9f8;
+  --c-code-text: #2b2038;
+  --c-code-border: #4a3a68;
+
+  /* 兜底底色。两个作用（同 global.css 里 is-home 那段）：
+     背景层没画出来时页面仍是深色；无障碍工具只认祖先链上的 background-color。 */
+  background-color: #120a20;
+  color: var(--c-text);
+}
+
+/* 页头页脚：跟着深色走，但光晕用青，不用原来那条亮粉 */
+body.is-crt .site-header {
+  background: color-mix(in srgb, #0c0616 72%, transparent);
+  border-bottom-color: rgba(127, 233, 221, 0.18);
+}
+body.is-crt .site-title,
+body.is-crt .site-nav__link {
+  color: #eafcff;
+  text-shadow: 0 0 10px rgba(127, 233, 221, 0.42);
+}
+body.is-crt .site-nav__link:hover {
+  color: #fff;
+}
+body.is-crt .site-nav__link[aria-current='page']::after {
+  background: #7fe9dd;
+}
+body.is-crt .site-footer {
+  background: linear-gradient(180deg, rgba(8, 3, 16, 0) 0%, rgba(8, 3, 16, 0.76) 45%);
+  border-top-color: rgba(127, 233, 221, 0.18);
+  color: rgba(226, 240, 255, 0.82);
+}
+body.is-crt .site-footer a {
+  color: #8ff0e5;
+}
+
+/* 正文和页脚站在背景层上面（那一层是 z-index:-1） */
+body.is-crt .site-main,
+body.is-crt .site-footer {
+  position: relative;
+  z-index: 1;
+}
+
+/* ---------------------------------------------------------------------------
+ *  2. 背景层：蒸汽波落日 + 透视栅格 + 色雾，外加 CRT 的三件套
+ * ------------------------------------------------------------------------ */
+.crt {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+  /* 栅格线的一个条纹周期。贴图里暗线只占 1/4，线宽 = 周期 / 4 */
+  --scan-period: 14px;
+  --scan-speed: 1.5s;
+}
+.crt > * {
+  position: absolute;
+  inset: 0;
+  display: block;
+}
+
+/* 天空：竖向渐变，压得很暗，只留一点品红透出来 */
+.crt__sky {
+  inset: -4%;
+  background: linear-gradient(
+    180deg,
+    #0d0618 0%,
+    #1a0b2e 42%,
+    #2b1046 58%,
+    #4a1252 68%,
+    #260d3a 76%,
+    #120a20 100%
+  );
+  animation: crt-sky-drift 52s ease-in-out infinite alternate;
+}
+
+/*
+  色雾：三团模糊色斑慢慢挪。
+  「背景部分是模糊的」主要靠这一层体现 —— 一片渐变压根看不出模糊，
+  把硬边的东西（栅格、落日）糊掉才是看得见的模糊。
+*/
+.crt__haze {
+  inset: -14%;
+  filter: blur(54px);
+  opacity: 0.72;
+  background:
+    radial-gradient(40% 32% at 16% 72%, rgba(255, 92, 190, 0.62), transparent 72%),
+    radial-gradient(36% 28% at 80% 64%, rgba(126, 96, 255, 0.55), transparent 74%),
+    radial-gradient(32% 26% at 52% 90%, rgba(127, 233, 221, 0.4), transparent 72%);
+  animation: crt-haze 44s ease-in-out infinite alternate;
+}
+
+/* 落日：一圈带横缝的圆盘，蒸汽波那个签名物件 */
+.crt__sun {
+  inset: auto auto 30vh 10vw;
+  width: 24vw;
+  height: 24vw;
+  max-width: 300px;
+  max-height: 300px;
+  border-radius: 50%;
+  opacity: 0.78;
+  filter: blur(1.5px);
+  background:
+    repeating-linear-gradient(0deg, transparent 0 7px, rgba(18, 10, 32, 0.9) 7px 12px),
+    linear-gradient(180deg, #ffe9a0 0%, #ff7ac0 44%, #b13bd6 100%);
+  box-shadow: 0 0 90px 26px rgba(255, 110, 199, 0.28);
+  animation: crt-sun 19s ease-in-out infinite;
+}
+
+/*
+  透视栅格：一块躺在地上的网格，朝观察者滚过来。
+  动 background-position-y（一个周期）而不是 translateZ —— 位移交给合成层会被重采样，
+  硬边糊掉；宁可让这张纯 CSS 贴图每帧重绘。
+  这一层**带模糊**，所以它看着像「远处的信号」，不会跟正文抢注意力。
+
+  ⚠ 几何别乱改：`perspective-origin` 的 y 就是灭点，地平线那条亮线要跟它对齐，
+  栅格才像贴在地上（第一版把容器套了个 overflow:hidden + 绕上边缘旋转，
+  整块栅格被旋到容器外面裁掉了 —— 量出来背景上一根线都没有）。
+*/
+.crt__floor {
+  inset: 0;
+  perspective: 320px;
+  perspective-origin: 50% 58%;
+}
+.crt__grid {
+  position: absolute;
+  left: -60%;
+  right: -60%;
+  bottom: -14vh;
+  height: 134vh;
+  transform: rotateX(74deg);
+  transform-origin: 50% 100%;
+  filter: blur(1.1px);
+  opacity: 0.8;
+  background-image:
+    repeating-linear-gradient(90deg, rgba(127, 233, 221, 0.62) 0 1px, transparent 1px 84px),
+    repeating-linear-gradient(0deg, rgba(255, 110, 199, 0.58) 0 1px, transparent 1px 62px);
+  background-size: 84px 62px;
+  animation: crt-grid-run 6.4s linear infinite;
+}
+
+/* 地平线：一条发亮的细线 + 它上下的辉光。y 与上面那个灭点对齐 */
+.crt__horizon {
+  inset: 58% 0 auto 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, rgba(127, 233, 221, 0.85), rgba(255, 122, 192, 0.8), transparent);
+  box-shadow: 0 0 30px 8px rgba(255, 122, 192, 0.32), 0 0 70px 14px rgba(127, 233, 221, 0.18);
+  opacity: 0.85;
+}
+
+/* ---------------- CRT 三件套：栅格线 / 雪花 / 撕裂失真 ---------------- */
+
+/*
+  栅格线（老电视那条条横纹）：8×32 的内联 PNG，暗线 rgba(0,0,0,.22) 每 4px 一条，
+  和首页 .vapor__scan、冰山页 body.is-iceberg::before 用的是同一张 153 字节贴图。
+  往**下**滚一个周期（16px）—— 和首页同向，读起来像屏幕自己在扫。
+*/
+.crt__scan {
+  inset: 0 0 calc(-1 * var(--scan-period)) 0;
+  background-image: url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAgAAAAgCAYAAAAv8DnQAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAAuSURBVDhP7cjBCQAwDMNAj9X9J0ufCgiygAX3UX7voJN0kk7SSTpJJ+mk1toqGXoODgG0rk4hAAAAAElFTkSuQmCC');
+  background-repeat: repeat;
+  background-size: 8px var(--scan-period);
+  image-rendering: pixelated;
+  animation: crt-scan-roll var(--scan-speed) linear infinite;
+  will-change: background-position;
+}
+
+/*
+  雪花：同一张 SVG 湍流噪点（220×220，392 字节 base64，不多发一个请求）。
+  ⚠ 必须 base64 —— 写成 `data:image/svg+xml;utf8,<svg …>` 会被构建当成 CSS 百分号（踩过）。
+  两段动画叠着：一段是 steps 的抖动（像信号噪点），一段是 13 秒一次的小爆发（「偶尔雪花」）。
+*/
+.crt__snow {
+  background-image: url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyMjAiIGhlaWdodD0iMjIwIj48ZmlsdGVyIGlkPSJuIj48ZmVUdXJidWxlbmNlIHR5cGU9ImZyYWN0YWxOb2lzZSIgYmFzZUZyZXF1ZW5jeT0iMC44NSIgbnVtT2N0YXZlcz0iMiIgc3RpdGNoVGlsZXM9InN0aXRjaCIvPjxmZUNvbG9yTWF0cml4IHR5cGU9InNhdHVyYXRlIiB2YWx1ZXM9IjAiLz48L2ZpbHRlcj48cmVjdCB3aWR0aD0iMjIwIiBoZWlnaHQ9IjIyMCIgZmlsdGVyPSJ1cmwoI24pIiBvcGFjaXR5PSIwLjYiLz48L3N2Zz4=');
+  background-size: 220px 220px;
+  mix-blend-mode: screen;
+  opacity: 0.16;
+  animation: crt-snow-jitter 0.9s steps(6, end) infinite, crt-snow-burst 13s steps(1, end) infinite;
+}
+
+/*
+  横向撕裂：三条不同高度的带子，各自左右抖 + 用 backdrop-filter 真把背后的画面糊一下。
+  平时不可见，靠 crt-tear-show 那条长周期动画偶尔露一下（「偶尔失真」）。
+  周期刻意错开（13s / 19s / 29s），三条不会同时出现，看着才像信号不稳而不是排好的节目；
+  最长的那个 29 秒一轮，所以验收脚本要连着采 30 秒才量得到三条都出现过。
+*/
+.crt__tear {
+  inset: auto 0 auto 0;
+  height: 13px;
+  opacity: 0;
+  backdrop-filter: blur(2px) saturate(1.7) hue-rotate(10deg);
+  background: linear-gradient(90deg, rgba(255, 0, 120, 0.1), rgba(0, 255, 220, 0.1));
+  mix-blend-mode: screen;
+  animation: crt-tear-shake 0.44s steps(2, end) infinite, crt-tear-show 13s steps(1, end) infinite;
+}
+.crt__tear--a {
+  top: 22%;
+}
+.crt__tear--b {
+  top: 54%;
+  height: 9px;
+  animation-duration: 0.33s, 19s;
+}
+.crt__tear--c {
+  top: 78%;
+  height: 19px;
+  animation-duration: 0.58s, 29s;
+}
+
+/* 往上滚的亮带（老电视那条 hum bar） */
+.crt__bar {
+  inset: auto 0 auto 0;
+  height: 20vh;
+  background: linear-gradient(180deg, transparent, rgba(255, 255, 255, 0.05), transparent);
+  animation: crt-bar 7.3s linear infinite;
+}
+
+/* 偶发闪烁：整屏亮度抖一下，一次约 0.2 秒，9 秒一轮 */
+.crt__flicker {
+  background: rgba(255, 255, 255, 0.06);
+  mix-blend-mode: screen;
+  opacity: 0;
+  animation: crt-flicker 9s steps(1, end) infinite;
+}
+
+/* 暗角：老显像管的四角本来就压暗 */
+.crt__glass {
+  background: radial-gradient(120% 90% at 50% 45%, transparent 42%, rgba(4, 1, 10, 0.62) 100%);
+}
+
+@keyframes crt-sky-drift {
+  from {
+    transform: translate3d(0, -1.2%, 0);
+  }
+  to {
+    transform: translate3d(0, 1.6%, 0);
+  }
+}
+@keyframes crt-haze {
+  from {
+    transform: translate3d(-1.5%, 0.5%, 0) scale(1.02);
+  }
+  to {
+    transform: translate3d(2%, -1%, 0) scale(1.06);
+  }
+}
+@keyframes crt-sun {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+  50% {
+    transform: translate3d(0.8vw, -1.4vh, 0);
+  }
+}
+@keyframes crt-grid-run {
+  from {
+    background-position-y: 0;
+  }
+  to {
+    background-position-y: 62px;
+  }
+}
+@keyframes crt-scan-roll {
+  from {
+    background-position-y: 0;
+  }
+  to {
+    background-position-y: var(--scan-period);
+  }
+}
+@keyframes crt-snow-jitter {
+  0% {
+    background-position: 0 0;
+  }
+  100% {
+    background-position: -220px 140px;
+  }
+}
+@keyframes crt-snow-burst {
+  0%,
+  88% {
+    opacity: 0.16;
+  }
+  89% {
+    opacity: 0.46;
+  }
+  90% {
+    opacity: 0.22;
+  }
+  92% {
+    opacity: 0.4;
+  }
+  94%,
+  100% {
+    opacity: 0.16;
+  }
+}
+@keyframes crt-tear-shake {
+  from {
+    transform: translate3d(-9px, 0, 0);
+  }
+  to {
+    transform: translate3d(9px, 0, 0);
+  }
+}
+@keyframes crt-tear-show {
+  0%,
+  93% {
+    opacity: 0;
+  }
+  94% {
+    opacity: 1;
+  }
+  97% {
+    opacity: 0.6;
+  }
+  98%,
+  100% {
+    opacity: 0;
+  }
+}
+@keyframes crt-bar {
+  from {
+    transform: translate3d(0, 120vh, 0);
+  }
+  to {
+    transform: translate3d(0, -28vh, 0);
+  }
+}
+@keyframes crt-flicker {
+  0%,
+  90% {
+    opacity: 0;
+  }
+  90.6% {
+    opacity: 1;
+  }
+  91% {
+    opacity: 0.15;
+  }
+  91.6% {
+    opacity: 0.8;
+  }
+  92.2%,
+  100% {
+    opacity: 0;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ *  3. 正文框：这就是那台「电视机」
+ * ------------------------------------------------------------------------
+ *  不透明度 0.93 + backdrop 模糊 —— 背景的栅格线和雪花会从它后面透出一点点，
+ *  但字下面是干净的，正文上没有任何覆盖层（扫描线/雪花/撕裂全在 z-index:-1 那层）。
+ *  ::before 是上沿那道机壳高光，::after 是玻璃反光和暗角。
+ * ------------------------------------------------------------------------ */
+.crt-screen {
+  position: relative;
+  isolation: isolate;
+  padding: clamp(1.4rem, 3.4vw, 2.9rem) clamp(1.15rem, 3.6vw, 3rem);
+  border-radius: 18px;
+  background: rgba(15, 9, 26, 0.93);
+  border: 1px solid rgba(127, 233, 221, 0.24);
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.55),
+    0 0 46px -8px rgba(127, 233, 221, 0.18),
+    0 30px 70px -30px rgba(0, 0, 0, 0.95),
+    inset 0 0 0 6px rgba(34, 21, 57, 0.9),
+    inset 0 0 0 7px rgba(127, 233, 221, 0.09),
+    inset 0 0 70px rgba(8, 3, 16, 0.7);
+  backdrop-filter: blur(9px) saturate(1.06);
+}
+/* 机壳上沿的一线反光：塑料壳那种高光 */
+.crt-screen::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 1px;
+  border-radius: 18px 18px 0 0;
+  background: linear-gradient(90deg, transparent, rgba(190, 255, 247, 0.4), transparent);
+  pointer-events: none;
+}
+/* 玻璃：一层很淡的对角反光 + 内暗角。压到 0.05 以下，量过对比度不掉档 */
+.crt-screen::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background:
+    linear-gradient(118deg, rgba(255, 255, 255, 0.045) 0%, transparent 34%),
+    radial-gradient(130% 105% at 50% 40%, transparent 58%, rgba(6, 2, 12, 0.42) 100%);
+}
+/* 不支持 backdrop-filter 时（老浏览器）把面板调得更实一点，别的照旧 */
+@supports not (backdrop-filter: blur(1px)) {
+  .crt-screen {
+    background: rgba(13, 8, 23, 0.98);
+  }
+}
+
+/* 正文细则：标题给一点点青光，链接/标签/引用换成青，配色不再是亮粉 */
+body.is-crt .crt-screen .post-header {
+  border-bottom-color: rgba(127, 233, 221, 0.22);
+}
+body.is-crt .crt-screen .post-header__title {
+  color: #f7f2ff;
+  text-shadow: 0 0 20px rgba(127, 233, 221, 0.22);
+}
+body.is-crt .crt-screen .prose {
+  color: var(--c-text);
+}
+body.is-crt .crt-screen .prose h2,
+body.is-crt .crt-screen .prose h3 {
+  color: #f6f0ff;
+}
+body.is-crt .crt-screen .prose h2 {
+  border-bottom-color: rgba(127, 233, 221, 0.2);
+}
+body.is-crt .crt-screen .prose a {
+  color: var(--c-link);
+  text-decoration: underline;
+  text-decoration-color: rgba(143, 240, 229, 0.45);
+}
+body.is-crt .crt-screen .prose a:hover {
+  color: var(--c-link-hover);
+  text-decoration-color: currentColor;
+}
+body.is-crt .crt-screen .prose blockquote {
+  border-left-color: rgba(127, 233, 221, 0.75);
+  background: rgba(127, 233, 221, 0.08);
+  color: var(--c-text-muted);
+}
+/*
+  ⚠ 代码块的颜色必须显式写死（2026-10-06 踩过）：
+  这两个令牌换成深色之后，`.prose code` 的**文字**还是继承来的（原来是深底深字，
+  现在是近白的 --c-text），而它的底是刻意留亮的 --c-code-bg ——
+  结果渲染出来是一块白板，字全看不见（截图里就是几块白条）。
+  shiki 的行内 token 走 --shiki-light，本来就只认浅底，所以这里只补文字色，不改底色。
+*/
+body.is-crt .crt-screen .prose code {
+  color: var(--c-code-text);
+}
+body.is-crt .crt-screen .prose pre {
+  color: var(--c-code-text);
+}
+body.is-crt .crt-screen .prose pre code {
+  color: inherit;
+}
+body.is-crt .crt-screen .prose table th,
+body.is-crt .crt-screen .prose table td {
+  border-color: var(--c-border);
+}
+body.is-crt .crt-screen .prose th {
+  background: rgba(127, 233, 221, 0.07);
+}
+body.is-crt .crt-screen .prose hr {
+  border-top-color: rgba(127, 233, 221, 0.18);
+}
+body.is-crt .crt-screen .prose img,
+body.is-crt .crt-screen .post-cover {
+  border-color: rgba(127, 233, 221, 0.22);
+  box-shadow: 0 12px 34px -18px rgba(0, 0, 0, 0.9);
+}
+body.is-crt .crt-screen .tag {
+  color: #cdeee9;
+  background: rgba(127, 233, 221, 0.09);
+  border-color: rgba(127, 233, 221, 0.28);
+}
+body.is-crt .crt-screen .tag:hover {
+  color: #eafffb;
+  background: rgba(127, 233, 221, 0.18);
+  border-color: rgba(127, 233, 221, 0.55);
+}
+body.is-crt .crt-screen .post-nav__link {
+  background: rgba(10, 5, 20, 0.55);
+  border-color: rgba(127, 233, 221, 0.18);
+}
+body.is-crt .crt-screen .post-nav__link:hover {
+  border-color: rgba(127, 233, 221, 0.45);
+}
+
+/* 列表页（/posts/、/notes/）也在这个皮肤里：面板里放标题 + 列表 */
+body.is-crt .crt-screen .post-list,
+body.is-crt .crt-screen .page-header {
+  margin-top: 0;
+}
+body.is-crt .crt-screen .archive-year + .archive-year {
+  margin-top: var(--sp-6);
+}
+
+/* ---------------------------------------------------------------------------
+ *  4. 动效可以关：这里全是无限循环动画，必须显式 animation: none
+ * ------------------------------------------------------------------------
+ *  global.css 那条规则把时长压到 0.01ms、迭代次数 1，但对 infinite 动画来说
+ *  等于「每帧在关键帧之间跳」，看起来更像闪。所以这里直接停掉，元素回到静止状态：
+ *  栅格线和雪花还是看得见（就是不动了），撕裂带和闪烁回到不可见。
+ * ------------------------------------------------------------------------ */
+@media (prefers-reduced-motion: reduce) {
+  .crt,
+  .crt *,
+  .crt *::before,
+  .crt *::after {
+    animation: none !important;
+  }
+  .crt__snow {
+    opacity: 0.16;
+  }
+  .crt__tear,
+  .crt__flicker {
+    opacity: 0;
+  }
+}
+
+/* 窄屏：色雾和栅格的模糊半径收一收，手机上不至于糊成一片也省点电 */
+@media (max-width: 720px) {
+  .crt__haze {
+    filter: blur(34px);
+    opacity: 0.42;
+  }
+  .crt__sun {
+    width: 42vw;
+    height: 42vw;
+    bottom: 30vh;
+  }
+  .crt__floor {
+    height: 42vh;
+  }
+  .crt__horizon {
+    bottom: 42vh;
+  }
+  .crt-screen {
+    border-radius: 14px;
+    padding: 1.25rem 1.1rem;
+  }
+}

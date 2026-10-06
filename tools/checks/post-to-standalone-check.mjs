@@ -193,7 +193,9 @@ if (base) {
     */
     const wantChecked = ${JSON.stringify(subsBefore)};
     for (let i = 0; i < 150; i++) {
-      const t = document.getElementById('title');
+      // ⚠ 标题框的 id 是 f-title（不是 title）。写成 title 的话这个等号永远不成立 ——
+      // 循环白跑满 15 秒，下面那几条断言看起来"过"了，其实根本没等到文章读完。
+      const t = document.getElementById('f-title');
       const box = document.getElementById('subs-box');
       const cbs = box ? [...box.querySelectorAll('input[data-sub-id]')] : [];
       const done = t && t.value.trim() === ${JSON.stringify(postTitle)} && cbs.length > 0 &&
@@ -209,7 +211,7 @@ if (base) {
       meta: ((el.querySelector('em') || {}).textContent || '').trim(),
       checked: !!(el.querySelector('input[data-sub-id]') || {}).checked,
     }));
-    return { ok: true, count: items.length, items, title: (document.getElementById('title') || {}).value || '' };
+    return { ok: true, count: items.length, items, title: (document.getElementById('f-title') || {}).value || '' };
   })()`);
   info('清单：' + JSON.stringify(opened).slice(0, 600));
   check('★ 「所属子版块」清单拉出来了', opened?.ok === true && opened.count > 0, JSON.stringify(opened?.why ?? opened?.count));

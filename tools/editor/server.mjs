@@ -22,7 +22,7 @@ import { createWriteStream } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { randomBytes } from 'node:crypto';
+import { randomBytes, createHash } from 'node:crypto';
 import { spawn } from 'node:child_process';
 
 // ---------------------------------------------------------------
@@ -158,6 +158,109 @@ function sendText(res, status, text, contentType = 'text/plain; charset=utf-8') 
 
 function ok(res, payload = { ok: true }) {
   sendJson(res, 200, payload);
+}
+
+/* ------------------------------------------------------------------
+   远端同步（2026-10-05）：编辑器页面上那个「拉远端」按钮
+
+   站点的内容不止一个人在改：另一位会推文章，接入的机器人也会定时往里写稿。
+   启动器那边开工前会自己同步一次，但**编辑器开着的时候**也可能是别人刚推了东西 ——
+   这时候得有一个按钮能当场拉下来，而不是让人关掉编辑器去启动器里点一圈。
+
+   为什么走子进程：`git fetch` 慢起来好几秒，而编辑器服务是单线程的，
+   同步执行会把「保存 / 预览 / 上传」全都堵住。子进程里跑的就是启动器
+   「发布上线」用的那一份实现（tools/git/sync.mjs），所以两条路的行为永远一致。
+
+   机读结果：那个脚本在 `--json` 下会多打一行 `[result] {…}`，这里把它摘出来；
+   剩下的日志原文一起回给前端，出问题时能照着念。
+   ------------------------------------------------------------------ */
+async function runGitCli(cmd, { json = false, timeout = 180000 } = {}) {
+  const script = path.join(PROJECT_ROOT, 'tools', 'git', 'sync.mjs');
+  const args = [script, cmd];
+  if (json) args.push('--json');
+
+  return await new Promise((resolve) => {
+    let child;
+    try {
+      child = spawn(process.execPath, args, {
+        cwd: PROJECT_ROOT,
+        stdio: ['ignore', 'pipe', 'pipe'],
+        windowsHide: true,
+      });
+    } catch (err) {
+      resolve({ result: null, output: `跑不起来：${err.message}`, message: '' });
+      return;
+    }
+
+    let out = '';
+    const keep = (buf) => {
+      out += buf.toString('utf8');
+      if (out.length > 8000) out = out.slice(-8000);
+    };
+    child.stdout.on('data', keep);
+    child.stderr.on('data', keep);
+
+    const timer = setTimeout(() => {
+      try { child.kill(); } catch { /* 已经没了 */ }
+    }, timeout);
+
+    child.on('error', (err) => {
+      clearTimeout(timer);
+      resolve({ result: null, output: `跑不起来：${err.message}`, message: '' });
+    });
+
+    child.on('close', () => {
+      clearTimeout(timer);
+      const lines = out.split('\n');
+      const marker = [...lines].reverse().find((l) => l.startsWith('[result] '));
+      let result = null;
+      if (marker) {
+        try { result = JSON.parse(marker.slice('[result] '.length)); } catch { result = null; }
+      }
+      // 给人看的那段：去掉机读那一行
+      const message = lines.filter((l) => !l.startsWith('[result] ')).join('\n').trim();
+      resolve({ result, output: out, message });
+    });
+  });
+}
+
+/*
+  远端探针：让右上角「拉远端 (N)」那个数字**保持新鲜**。
+
+  ⚠ 以前只在服务启动那一刻探一次（2026-10-05 的第一版）。可编辑器常常开着好几个小时，
+  机器人这期间推了新日记的话，网站上已经能看到了，编辑器却还停在旧数字上，
+  右上角那个按钮也就不亮 —— 用户看到的现象正是「网站都更新了，编辑器没反应」。
+  现在：启动探一次，之后每 5 分钟静默探一次（只更新本地的远端记录，不碰工作区）。
+
+  ⚠ 走 CLI（tools/git/sync.mjs fetch）而不是裸 spawn('git', ['fetch'])：
+  那份实现里有「代理连不上就自动改直连」的处理 —— 本机 git config 里写着
+  http.proxy=127.0.0.1:7890，Clash 一关，裸 git fetch 必然失败，角标就永远停在旧数字。
+*/
+const FETCH_EVERY_MS = 5 * 60 * 1000;
+let lastFetch = { at: 0, ok: null, behind: null };
+let fetching = false;
+
+function fetchRemoteInBackground() {
+  if (fetching) return;   // 上一次还没回来就别叠着探
+  fetching = true;
+  runGitCli('fetch', { json: true, timeout: 60000 })
+    .then((r) => {
+      lastFetch = {
+        at: Date.now(),
+        ok: r?.result?.code === 'ok',
+        behind: typeof r?.result?.behind === 'number' ? r.result.behind : null,
+      };
+    })
+    .catch(() => { lastFetch = { at: Date.now(), ok: false, behind: null }; })
+    .finally(() => { fetching = false; });
+}
+
+/** 启动时探一次，之后每 5 分钟一次；定时器 unref，不拖着进程不让退 */
+function startRemoteWatch() {
+  fetchRemoteInBackground();
+  const timer = setInterval(fetchRemoteInBackground, FETCH_EVERY_MS);
+  if (typeof timer.unref === 'function') timer.unref();
+  return timer;
 }
 
 /** RFC3339 之类的字符串可能带毫秒；统一 YYYY-MM-DD HH:mm */
@@ -648,7 +751,63 @@ async function readItem(type, file) {
   }
   const { data, body } = parseFrontmatter(raw);
   const frontmatter = normalizeFrontmatterSafe(type, data);
-  return { file: base, frontmatter, body, dir };
+  return { file: base, frontmatter, body, dir, rev: revOf(raw) };
+}
+
+/*
+  「这一份是我读到的那一份」的指纹（2026-10-05）。
+
+  站点的内容不止一个人在改：另一位会推文章，接入的机器人也会定时往里写稿。
+  编辑器以前是「读进来 → 改 → 整个文件写回去」，中间不检查磁盘上的那一份有没有
+  变过 —— 如果这期间别处改过同一个文件，你一点保存就把对方的改动整段抹掉了。
+  这就是 git 世界里「网盘式后写覆盖先写」的那类事故，只是发生在打开编辑器之前。
+
+  所以读文件时算一个内容指纹一起发给浏览器，保存时再算一次：
+  两次不一样 = 磁盘上那份被别人动过 = **拒绝这次保存**，让人先看一眼。
+  （只有带了指纹的请求才检查；老前端和验收脚本不带 rev，行为不变。）
+*/
+function revOf(text) {
+  return createHash('sha1').update(String(text ?? ''), 'utf8').digest('hex').slice(0, 16);
+}
+
+/**
+ * 保存前比一下指纹：磁盘上那份还是不是「浏览器读到的那一份」。
+ * 返回 null = 可以写；返回一个对象 = 拒绝，内容会被原样返回给前端。
+ *
+ * 三条出口：
+ *   · 请求里没带 rev（老前端 / 验收脚本 / 新建文件）→ 不检查，保持旧行为
+ *   · 带了 rev 而且 `force: true`（用户在弹窗里明确选了「就用我这份覆盖」）→ 放行
+ *   · 带了 rev 但对不上 → 409，并带上磁盘上现在那份的指纹（前端可以据此重试）
+ */
+async function checkStale(type, base, payload) {
+  const rev = typeof payload?.rev === 'string' ? payload.rev.trim() : '';
+  if (!rev) return null;
+  if (payload?.force === true) return null;
+
+  const { abs } = resolveContentFile(type, base);
+  let raw = null;
+  try {
+    raw = await fs.readFile(abs, 'utf8');
+  } catch (err) {
+    if (!err || err.code !== 'ENOENT') throw err;
+  }
+  if (raw === null) {
+    return {
+      ok: false,
+      stale: true,
+      missing: true,
+      error: `${base} 已经不在了（被别处删掉或改名了）。要用你屏幕上这一份重新建出来吗？`,
+    };
+  }
+  const nowRev = revOf(raw);
+  if (nowRev === rev) return null;
+  return {
+    ok: false,
+    stale: true,
+    rev: nowRev,
+    error: `${base} 在别处被改过了（可能是机器人或另一台电脑刚推上来的），`
+      + '为避免覆盖别人写的内容，这次保存被拒绝了',
+  };
 }
 
 /** 读文件时容错：字段缺失也不报错，交给编辑器补全 */
@@ -950,8 +1109,8 @@ async function handleApi(req, res, url) {
   if (route === '/api/item' && req.method === 'GET') {
     const type = assertType(url.searchParams.get('type') || 'posts');
     const file = url.searchParams.get('file') || '';
-    const { frontmatter, body } = await readItem(type, file);
-    return ok(res, { file: path.basename(file), frontmatter, body });
+    const { frontmatter, body, rev } = await readItem(type, file);
+    return ok(res, { file: path.basename(file), frontmatter, body, rev });
   }
 
   if (route === '/api/save' && req.method === 'POST') {
@@ -980,6 +1139,9 @@ async function handleApi(req, res, url) {
       targetBase = generated;
     } else {
       targetBase = resolveContentFile(type, rawFile).base;
+      // 「别把别人刚写的东西盖掉」的闸门，理由见 revOf() 那段注释
+      const stale = await checkStale(type, targetBase, payload);
+      if (stale) return sendJson(res, 409, stale);
     }
 
     const { abs } = resolveContentFile(type, targetBase);
@@ -994,7 +1156,8 @@ async function handleApi(req, res, url) {
       href: `/${type === 'posts' ? 'posts' : 'notes'}/${targetBase.replace(/\.md$/i, '')}/`,
       title: String(frontmatter.title || targetBase),
     });
-    return ok(res, { ok: true, file: targetBase });
+    // 把写完之后的指纹带回去：浏览器下一次保存就拿它来比对了
+    return ok(res, { ok: true, file: targetBase, rev: revOf(content) });
   }
 
   if (route === '/api/delete' && req.method === 'POST') {
@@ -1004,6 +1167,46 @@ async function handleApi(req, res, url) {
     if (!(await exists(abs))) throw httpError(404, `找不到文件 ${base}`);
     await fs.unlink(abs);
     return ok(res, { ok: true });
+  }
+
+  if (route === '/api/git/status' && req.method === 'GET') {
+    // 只读本地（不联网）：页面加载、轮询、切回来的时候都能便宜地问一次
+    const r = await runGitCli('status', { json: true, timeout: 30000 });
+    return sendJson(res, 200, {
+      ok: true,
+      ...(r.result ?? {}),
+      // 最近一次后台探远端的结果：连不上时前端要如实说「这个数字可能不是最新的」
+      lastFetch,
+      fetching,
+      _raw: r.result ? '' : r.output,
+    });
+  }
+
+  if (route === '/api/git/fetch' && req.method === 'POST') {
+    /*
+      让页面主动要求「现在去探一次远端」（切回这个标签页、或者轮询到点时用）。
+      探针本身在后台跑，这里**立刻**回话 —— 前端过一两秒再来读 status 就有新数字了。
+    */
+    fetchRemoteInBackground();
+    return sendJson(res, 200, { ok: true, checking: true, fetching, lastFetch });
+  }
+
+  if (route === '/api/git/pull' && req.method === 'POST') {
+    /*
+      编辑器里那个「拉远端」按钮（2026-10-05）。
+
+      ⚠ 这一步**必须走子进程**，不能在服务进程里 import 进来直接调：
+      `git fetch` 慢起来好几秒，同步执行会把整个编辑器服务卡住（保存、预览全得等）。
+      子进程里跑的还就是启动器发布用的那一份实现（tools/git/sync.mjs pull）。
+    */
+    const r = await runGitCli('pull', { json: true, timeout: 180000 });
+    const result = r.result ?? { code: 'error', err: r.output.slice(-500) };
+    return sendJson(res, 200, {
+      ok: result.code === 'ok',
+      ...result,
+      message: r.message,
+      output: r.output,
+    });
   }
 
   /*
@@ -4283,6 +4486,9 @@ async function main() {
   else if (openMode === 'new-note') query = '?new=notes';
 
   console.log(banner(url, query));
+
+  // 后台探远端：页面右上角那个「拉远端」角标要有数可显示，并且每 5 分钟自己刷新
+  startRemoteWatch();
 
   if (!(await exists(UI_DIR))) {
     console.warn('  [警告] 找不到 tools/editor/ui 目录，页面可能无法打开。\n');

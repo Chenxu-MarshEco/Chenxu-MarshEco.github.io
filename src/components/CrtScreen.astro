@@ -1,0 +1,35 @@
+---
+/*
+  CrtScreen —— 「老式电视机」背景层（2026-10-06，用户点名要的效果）
+
+  它只画**背景**，一个字节的正文都不碰：整层 `position: fixed; z-index: -1`，
+  正文框（各页自己那个 `.crt-screen`）站在它上面。
+  用户的要求按这个分工拆的：
+    「正文部分的框内应当清晰好阅读 而背景部分则是模糊且有蒸汽波和老式电视的
+      栅格线运动且偶尔闪烁失真与雪花」
+
+  层序（从后往前）：天空 → 色雾（模糊的就靠它）→ 落日 → 透视栅格 → 地平线 →
+  CRT 栅格线 → 雪花 → 撕裂带 ×3 → 上滚亮带 → 偶发闪烁 → 暗角。
+  样式全在 src/styles/crt.css，改动理由/手法都写在那边的注释里（含动效开关）。
+
+  aria-hidden：纯装饰，读屏和键盘都不该碰到它（也不能有 pointer 事件）。
+  这几页的 <body> 上要同时挂 `is-crt`（配色令牌、页头页脚都在那个选择器里）。
+*/
+import '../styles/crt.css';
+---
+
+<div class="crt" aria-hidden="true">
+  <div class="crt__sky"></div>
+  <div class="crt__haze"></div>
+  <div class="crt__sun"></div>
+  <div class="crt__floor"><div class="crt__grid"></div></div>
+  <div class="crt__horizon"></div>
+  <div class="crt__scan"></div>
+  <div class="crt__snow"></div>
+  <div class="crt__tear crt__tear--a"></div>
+  <div class="crt__tear crt__tear--b"></div>
+  <div class="crt__tear crt__tear--c"></div>
+  <div class="crt__bar"></div>
+  <div class="crt__flicker"></div>
+  <div class="crt__glass"></div>
+</div>

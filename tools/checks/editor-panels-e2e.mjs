@@ -46,6 +46,27 @@ const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0
 const today = ymd(new Date());
 const todayNum = new Date().getDate();
 const readJson = (p) => JSON.parse(fs.readFileSync(p, 'utf8'));
+/*
+  本月首页日历上应该有几格「特殊日子」。
+
+  ⚠ 不能写死 1（2026-10-05 改）：日期表是按 **月-日** 匹配的（见
+  HomeCalendar.astro 里那张 byMd 表，年份不参与判断），所以用户每加一个生日，
+  同月的那一格就多一个 —— 10 月本来有沃伊德（10-18）和 Raw（10-25）两条生日，
+  脚本自己又写了今天那一条，于是渲染出来是 3 格，而这里写死的 1 就红了。
+  现在按**副本里那份数据**数：本月出现过的 MM-DD 去重，再把今天这条算进去
+  （脚本自己写的事件本来就该在数据里，重复加是幂等的）。
+*/
+function monthEventDays() {
+  const w = readJson(path.join(DST, 'src', 'data', 'home-widgets.json'));
+  const mm = today.slice(5, 7);
+  const md = new Set(
+    Object.keys(w.calendar?.events ?? {})
+      .filter((k) => /^\d{4}-\d{2}-\d{2}$/.test(k) && k.slice(5, 7) === mm)
+      .map((k) => k.slice(5))
+  );
+  md.add(today.slice(5));
+  return md.size;
+}
 const MIME = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css',
   '.webp': 'image/webp', '.avif': 'image/avif', '.png': 'image/png', '.jpg': 'image/jpeg',
@@ -718,7 +739,15 @@ try {
         if (!d) continue; let h = mx===r ? 60*(((g-b)/d)%6) : mx===g ? 60*((b-r)/d+2) : 60*((r-g)/d+4);
         if (h<0) h+=360; if (h>=15 && h<=65 && mx>=150) out.push('rgb('+r+','+g+','+b+') h='+Math.round(h)); }
       return out; };
-    const ev = document.querySelector('.cal__day--event');
+    /*
+      ⚠ 下面这些 ev* 量的都是**今天那一格**，所以要按 .cal__day--today 找，
+      不能拿 .cal__day--event（本月**第一个**特殊日子）当今天 —— 哪天用户在前面
+      又加了一条生日（10-02 之类），第一个特殊日子就不是今天了，这一串会集体变红。
+      脚本自己会给今天写一条事件，所以今天这格一定同时带 --event。
+      颜色的规则没变：.cal__day--event.cal__day--today 只是多一层辉光，
+      ::before 那个落日橙黄的渐变是同一条。
+    */
+    const ev = document.querySelector('.cal__day--today');
     const today = document.querySelector('.cal__day--today');
     const plain = [...document.querySelectorAll('.cal__day')].find((d) => !d.classList.contains('cal__day--event') && !d.classList.contains('cal__day--today'));
     /* 一天的画在那两个伪元素上：::before 是"头"（渐变+圆角+格栅），::after 是朝下的尖头 */
@@ -749,9 +778,10 @@ try {
       width: innerWidth,
     };
   })()`);
-  check(`日历：当月 ${cal.gridDays} 格，其中今天 1 格、特殊日子 1 格`,
-    cal.gridDays >= 28 && cal.todayCount === 1 && cal.eventCount === 1 && cal.evIsToday === true,
-    JSON.stringify({ days: cal.gridDays, today: cal.todayCount, event: cal.eventCount }));
+  const wantEvents = monthEventDays();
+  check(`日历：当月 ${cal.gridDays} 格，其中今天 1 格、特殊日子 ${wantEvents} 格（按数据算，不写死）`,
+    cal.gridDays >= 28 && cal.todayCount === 1 && cal.eventCount === wantEvents && cal.evIsToday === true,
+    JSON.stringify({ days: cal.gridDays, today: cal.todayCount, event: cal.eventCount, want: wantEvents }));
   check(`日历：今天那格显示 ${todayNum}、aria-label 里带事件名、可点向 /salon/`,
     cal.evText === String(todayNum) && (cal.evTitle ?? '').includes('篠雨的生日') && cal.evHref === '/salon/',
     JSON.stringify({ text: cal.evText, title: cal.evTitle, href: cal.evHref }));
@@ -790,8 +820,8 @@ try {
   const box2 = await cdp.ev(`(() => ({ text: (document.querySelector('.cal__today') || {}).textContent,
     event: document.querySelectorAll('.cal__day--event').length, orange: /255,\\s*(15[0-9]|2[0-9][0-9])/.test(getComputedStyle(document.querySelector('.cal__day--event'), '::before').backgroundImage) }))()`);
   check('日历：那一格填了「自定义文案」就用它（面板上说明过的口子，不算串文案）',
-    rw2.json?.built === true && box2.text === '验收写的事件' && box2.event === 1,
-    JSON.stringify({ text: box2.text, ms: rw2.json?.ms }));
+    rw2.json?.built === true && box2.text === '验收写的事件' && box2.event === monthEventDays(),
+    JSON.stringify({ text: box2.text, event: box2.event, want: monthEventDays(), ms: rw2.json?.ms }));
 
   /* ---- 5.2 关于我 ---- */
   await cdp.goto('/about-me/');
@@ -979,6 +1009,15 @@ try {
     return { id: null, why: 'no clickable point' };
   })()`);
   check('精华页：时间轴上找得到一个当前就能点的刻度', !!pt.id, JSON.stringify(pt));
+  if (!pt.id) {
+    /*
+      找不到可点的刻度时**不要硬点下去**：x/y 是 undefined，CDP 会直接抛
+      "Invalid parameters"，那一抛会把后面几十条全带走（红的原因反而被盖住了）。
+      照着上面那条一起记红，但让脚本继续跑完。
+    */
+    check('精华页：点一个刻度 → 跳到**离它最近**的那条精华（落在视口里，不是跳去别的页）',
+      false, '上一条就红了：一个可点的刻度都没找到，这一步没法点');
+  } else {
   await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: pt.x, y: pt.y, button: 'none' });
   await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: pt.x, y: pt.y, button: 'left', buttons: 1, clickCount: 1 });
   await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: pt.x, y: pt.y, button: 'left', buttons: 0, clickCount: 1 });
@@ -998,6 +1037,7 @@ try {
       isNearest: nearest ? h === '#' + nearest.id : false, top: r && Math.round(r.top), inView: !!(r && r.top > -60 && r.top < innerHeight) }; })()`);
   check('精华页：点一个刻度 → 跳到**离它最近**的那条精华（落在视口里，不是跳去别的页）',
     /^#e\d+$/.test(jump.hash) && jump.isItem === true && jump.isNearest === true && jump.inView === true, JSON.stringify(jump));
+  }
 
   /* ---- 5.5 首页随机精华：改日期跑 24 天，看它跟不跟着成员表变 ---- */
   const probes = [];

@@ -14,6 +14,10 @@ import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import readline from 'node:readline';
+// 推流那一套（先拉后推、永不强推）只有一份实现，和图形启动器共用：
+// 见 tools/git/sync.mjs 开头那段说明。
+import { publish as safePublish, explain as explainSync, sync as syncRemote,
+         status as gitStatus } from './git/sync.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const IS_WIN = process.platform === 'win32';
@@ -135,6 +139,22 @@ function draw() {
         : row('备份', '还没连到 GitHub  （请先选 4）', C.yellow)
   );
 
+  /*
+    同步状态（2026-10-05 加）：站点的内容不止你一个人在改 —— 另一位会推文章，
+    接入的机器人也会定时往里写稿。**开工前先知道远端有没有新东西**，
+    比推的时候被拒绝再回头查要省事得多。这里只看本地记录的远端分支，不联网。
+  */
+  if (s.hasGit && s.remote) {
+    const g = gitStatus({ light: true });
+    if (g.behind > 0) {
+      console.log(row('同步', `远端有 ${g.behind} 个提交还没拉  （选 1 写文章时会自动先拉）`, C.yellow));
+    } else if (g.ahead > 0) {
+      console.log(row('同步', `本地有 ${g.ahead} 个提交还没发布`, C.yellow));
+    } else {
+      console.log(row('同步', '和远端一致', C.green));
+    }
+  }
+
   console.log('');
   console.log(`   ${C.gray}${line}${C.r}`);
   console.log('');
@@ -218,6 +238,27 @@ async function requireDeps() {
 async function doWrite() {
   if (!(await requireDeps())) return;
   header('写文章');
+
+  /*
+    开工前先拉一下（2026-10-05 加）。
+    机器人 / 另一位可能刚往仓库里推了文章；如果本地还是老的，写的时候脑子里的
+    "现在站上有什么"和实际就对不上了。这里拉一次，几秒钟的事。
+    工作区还有没发布的改动时 sync() 不会擅自合并，只会提示一句。
+  */
+  if (status().remote) {
+    const r = syncRemote({ log: (m) => line(m) });
+    if (r.code !== 'ok') {
+      line('');
+      bad(explainSync(r).split('\n')[0]);
+      note(explainSync(r).split('\n').slice(1).join('\n'));
+      line('');
+      note('（不影响写作，继续打开编辑器；发布的时候还会再拉一次。）');
+    }
+  } else {
+    line(`   ${C.gray}还没连到 GitHub，跳过同步检查。${C.r}`);
+  }
+
+  line('');
   line('   正在启动写作编辑器，浏览器会自动打开。');
   line('');
   note('写完想退出时，回到这个窗口按 Ctrl+C，就会回到菜单。');
@@ -231,6 +272,16 @@ async function doWrite() {
 async function doPreview() {
   if (!(await requireDeps())) return;
   header('看效果');
+
+  // 看效果也先拉一下：别人刚写的文章，本地预览里也该看得见（理由同 doWrite）
+  if (status().remote) {
+    const r = syncRemote({ log: (m) => line(m) });
+    if (r.code !== 'ok') {
+      line('');
+      for (const l of explainSync(r).split('\n')) line(`   ${l}`);
+    }
+    line('');
+  }
   line('   正在启动本地预览。');
   line('');
   /*
@@ -292,82 +343,34 @@ async function doPublish() {
 
   header('发布上线');
 
-  // 先确认能连上 GitHub。国内直连 github.com 需要代理，
-  // 代理没开的时候这里就会失败——比等 push 到一半报错好。
-  if (s.remote) {
-    line('   正在检查能否连上 GitHub…');
-    const probe = capture('git', ['ls-remote', '--heads', 'origin'], { timeout: 30000 });
-    if (!probe.ok) {
-      line('');
-      bad('连不上 GitHub。');
-      line('');
-      line('   最常见的原因是代理没开。请：');
-      line(`     ${C.white}1.${C.r} 打开 Clash Verge`);
-      line(`     ${C.white}2.${C.r} 确认「订阅」里已经导入了节点`);
-      line(`     ${C.white}3.${C.r} 打开「系统代理」开关`);
-      line('   然后回到菜单重新选 3。');
-      await waitKey();
-      return;
-    }
-    ok('连接正常');
-  }
+  /*
+    发布流程整个搬到 tools/git/sync.mjs 了（探连接 → 提交 → **先拉取** → 推送，
+    被拒绝就再拉一次重推）。和图形启动器共用同一份实现，这里只负责把每一步
+    的话打到屏幕上。
 
-  line('');
-  execFileSync('git', ['add', '-A'], { cwd: ROOT, stdio: 'inherit' });
-  const changed = capture('git', ['status', '--short']);
-  if (!changed.ok || !changed.out) {
-    line('');
-    note('没有任何改动，不用发布。');
-    await waitKey();
-    return;
-  }
-
-  line('   下面列出这次要提交的文件：');
-  line('');
-  for (const l of changed.out.split('\n')) {
-    const flag = l.slice(0, 2).trim();
-    const file = l.slice(3);
-    const color = flag === '??' ? C.gray : flag.includes('D') ? C.red : C.green;
-    console.log(`     ${color}${flag.padEnd(2)}${C.r} ${file}`);
-  }
-  line('');
-
+    以前这里是 add -A → commit → push，中间没有拉取：别人先推了的话必然被拒绝，
+    而报错文案说的是「代理掉了 / 没登录 GitHub」——三句里没有一句是真正的原因，
+    用户顺着提示怎么试都推不上去。
+  */
   const msg = await ask(`   这次改了什么？${C.gray}（直接回车用「更新内容」）${C.r}: `, '更新内容');
-
   line('');
-  const committed = await commit(msg);
-  if (!committed.ok) {
+  const r = safePublish({ message: msg, log: (m) => line(m) });
+  line('');
+
+  const lines = explainSync(r).split('\n');
+  if (r.code === 'ok') {
+    console.log(`   ${C.gray}${'─'.repeat(54)}${C.r}`);
+    ok(`${C.bold}${lines[0]}${C.r}`);
     line('');
-    bad('提交失败：');
-    note(committed.err.split('\n').slice(0, 4).join('\n   '));
-    await waitKey();
-    return;
+    line('   等一两分钟，刷新网址就能看到更新。');
+    note('   想确认构建结果：仓库页面的 Actions 标签。');
+    console.log(`   ${C.gray}${'─'.repeat(54)}${C.r}`);
+  } else if (r.code === 'nothing') {
+    note(lines[0]);
+  } else {
+    bad(lines[0]);
+    for (const l of lines.slice(1)) line(l);
   }
-  const first = committed.out.split('\n').find((l) => l.includes('file')) ?? '';
-  ok(`已提交  ${first.trim()}`);
-
-  line('');
-  line('   正在推送到 GitHub…');
-  const push = capture('git', ['push'], { timeout: 180000 });
-  if (!push.ok) {
-    line('');
-    bad('推送失败。常见原因：');
-    note('- 代理掉了，重开 Clash Verge 再试');
-    note('- 还没登录 GitHub，需要跑 gh auth login');
-    note('- 缺 workflow 权限，需要跑 gh auth refresh -s workflow');
-    line('');
-    note(push.err.split('\n').slice(0, 4).join('\n   '));
-    await waitKey();
-    return;
-  }
-
-  line('');
-  console.log(`   ${C.gray}${'─'.repeat(54)}${C.r}`);
-  ok(`${C.bold}推送成功！${C.r}`);
-  line('');
-  line('   等一两分钟，刷新网址就能看到更新。');
-  note('   想确认构建结果：仓库页面的 Actions 标签。');
-  console.log(`   ${C.gray}${'─'.repeat(54)}${C.r}`);
   await waitKey();
 }
 

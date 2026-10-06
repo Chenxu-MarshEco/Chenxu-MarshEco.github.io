@@ -175,6 +175,9 @@ class Studio:
         self.busy = False
         self.buttons = {}
         self.hover = None
+        # 同步（开工前先拉一下）跑完要接着启动哪个动作，见 launch / on_proc_done
+        self.pending_launch = None
+        self._behind = 0
 
         root.title('花娅陌质流')
         root.configure(bg=hexof(sky_at(0.5)))
@@ -470,6 +473,7 @@ class Studio:
 
         def work():
             remote = None
+            behind = 0
             git = shutil.which('git')
             if git:
                 try:
@@ -479,9 +483,24 @@ class Studio:
                         timeout=8, creationflags=NO_WINDOW)
                     if r.returncode == 0:
                         remote = r.stdout.strip()
+                    # 顺带数一下「远端有几个提交还没拉」（2026-10-05）。
+                    # ⚠ 只在本地算，**不联网** —— 菜单每画一次都会探一次，
+                    # 每次都 fetch 一遍太慢。数出来的是上一次 fetch 时的情况，
+                    # 用来提醒「该拉了」足够了。
+                    if remote:
+                        c = subprocess.run(
+                            [git, 'rev-list', '--left-right', '--count',
+                             '@{u}...HEAD'],
+                            cwd=str(ROOT), capture_output=True, text=True,
+                            timeout=8, creationflags=NO_WINDOW)
+                        if c.returncode == 0:
+                            parts = (c.stdout or '').split()
+                            if parts:
+                                behind = int(parts[0] or 0)
                 except Exception:
                     pass
             self._remote = remote
+            self._behind = behind
             self._probing = False
             try:
                 self.root.after(0, self._paint_status)
@@ -500,6 +519,12 @@ class Studio:
         parts = []
         parts.append((('依赖 已就绪' if deps else '依赖 未安装'), deps))
         parts.append((('备份 已连接' if remote else '备份 未连接'), bool(remote)))
+
+        # 远端有别人（或机器人）推的新东西时明说一句：
+        # 不说的话，用户会以为本地就是站上现在的样子。
+        behind = int(getattr(self, '_behind', 0) or 0)
+        if remote and behind > 0:
+            parts.append((f'远端有 {behind} 个提交还没拉', False))
 
         # 后台还在跑的进程也列出来。返回菜单不会停掉它们，
         # 不显示的话用户会以为已经关了。
@@ -625,6 +650,8 @@ class Studio:
         其实返回根本不需要先停进程：编辑器和预览留在后台继续跑就行，
         菜单底部会显示它们还在运行。要停哪个再单独停。
         """
+        # 开工前的同步还没跑完就回菜单 = 放弃这次启动（见 on_proc_done）
+        self.pending_launch = None
         self.draw_menu()
 
     def log_write(self, text):
@@ -657,6 +684,21 @@ class Studio:
 
     def on_proc_done(self, key, code):
         self.procs.pop(key, None)
+
+        # 同步跑完了：接着启动刚才想启动的那个（写文章 / 看效果）。
+        # ⚠ 同步失败（比如撞上冲突）**也照样启动** —— 冲突时 sync.mjs 已经把
+        # 仓库恢复成拉取之前的样子，谁的改动都没丢，写作不该被它挡住；
+        # 真正需要人处理的冲突会在「发布上线」那一步再拦一次并说明白。
+        if key == 'sync' and getattr(self, 'pending_launch', None):
+            nxt = self.pending_launch
+            self.pending_launch = None
+            # 用户在这期间按 Esc 回了菜单 = 不想开了，就别把他弹回日志页
+            if self.mode == 'running':
+                self.root.after(200, lambda: self.launch_now(nxt))
+            if self.active == key:
+                self.busy = False
+            return
+
         if self.active == key:
             self.busy = False
             self.canvas.itemconfigure(self.stop_btn, state='hidden')
@@ -759,6 +801,41 @@ class Studio:
         return False
 
     def launch(self, key):
+        """点菜单上的按钮。
+
+        「写文章 / 看效果」之前先跑一次同步（2026-10-05 加）：站点的内容不止
+        一个人在改 —— 另一位会推文章，接入的机器人也会定时往里写稿。开工前先
+        把远端的东西拉下来，免得「以为站上只有自己刚看过的那些」。
+        同步要联网（几秒钟），所以交给后台进程通道跑，跑完再真正启动
+        （见 on_proc_done 里的衔接）。
+        """
+        if key in ('write', 'preview') and self.can_sync():
+            self.pending_launch = key
+            node = self.resolve('node')
+            self.spawn('sync', [node, str(ROOT / 'tools' / 'git' / 'sync.mjs'), 'sync'],
+                       '同步远端内容')
+            return
+        self.launch_now(key)
+
+    def can_sync(self):
+        """能不能做同步检查：要有 git + node + 配好 origin。
+
+        ⚠ 这里自己问一次 git，而不是用状态栏那份缓存 —— 缓存是后台线程探的，
+        刚开窗口就点「写文章」时它可能还没填上，那就把同步整步跳过了。
+        只在点按钮时跑一次（几十毫秒），不影响界面。
+        """
+        git = shutil.which('git')
+        if not git or not shutil.which('node'):
+            return False
+        try:
+            r = subprocess.run([git, 'remote', 'get-url', 'origin'],
+                               cwd=str(ROOT), capture_output=True, text=True,
+                               timeout=8, creationflags=NO_WINDOW)
+            return r.returncode == 0 and bool(r.stdout.strip())
+        except Exception:
+            return False
+
+    def launch_now(self, key):
         if key == 'write':
             if not self.need_deps():
                 return
@@ -819,19 +896,34 @@ class Studio:
         self.busy = True
 
         def probe():
-            git = shutil.which('git')
+            node = self.resolve('node')
+            cli = str(ROOT / 'tools' / 'git' / 'sync.mjs')
             ok = False
             detail = ''
-            if not git:
-                detail = '没有找到 git，请先做「首次设置」。'
+            if not node:
+                detail = '没有找到 node，请先做「首次设置」。'
             else:
                 try:
-                    r = subprocess.run([git, 'ls-remote', '--heads', 'origin'],
+                    """
+                    ⚠ 这里不能自己跑 `git ls-remote`（2026-10-06 改）。
+                    仓库的 git config 里写着 http.proxy=127.0.0.1:7890，Clash 一关，
+                    裸 git 只会报「Failed to connect ... over proxy」，于是「发布上线」
+                    还没开始就卡在「连不上 GitHub」—— 可直连其实是通的。
+                    走 sync.mjs fetch：那份实现发现代理连不上会自动改直连重试一次。
+                    """
+                    r = subprocess.run([node, cli, 'fetch', '--quiet', '--json'],
                                        cwd=str(ROOT), capture_output=True,
-                                       text=True, timeout=40,
-                                       creationflags=NO_WINDOW)
-                    ok = r.returncode == 0
-                    detail = (r.stderr or '').strip()
+                                       text=True, timeout=120, encoding='utf-8',
+                                       errors='replace', creationflags=NO_WINDOW)
+                    code = ''
+                    for line in (r.stdout or '').splitlines():
+                        if line.startswith('[result] '):
+                            try:
+                                code = json.loads(line[len('[result] '):]).get('code', '')
+                            except Exception:
+                                code = ''
+                    ok = r.returncode == 0 and code == 'ok'
+                    detail = (r.stderr or '').strip() or ('' if ok else (r.stdout or '').strip())
                 except Exception as exc:
                     detail = str(exc)
             self.root.after(0, lambda: self.after_probe(ok, detail))
@@ -842,11 +934,10 @@ class Studio:
         if not ok:
             self.busy = False
             self.log_write(
-                '连不上 GitHub。\n\n'
-                '最常见的原因是代理没开：\n'
-                '  1. 打开 Clash Verge\n'
-                '  2. 确认「订阅」里已经导入了节点\n'
-                '  3. 打开「系统代理」开关\n\n'
+                '连不上 GitHub —— 代理和直连都试过了。\n\n'
+                '  1. 开着 Clash Verge 的话，看看「系统代理」开关是不是打开的、节点还能不能用；\n'
+                '  2. 代理没开也没关系：程序发现代理连不上会自动改用直连重试一次，\n'
+                '     所以报到这一句，一般是网络本身也不通了；\n\n'
                 '然后返回重试。\n')
             if detail:
                 self.log_write(f'\n（细节：{detail[:300]}）\n')
@@ -860,7 +951,8 @@ class Studio:
         self.show_running('发布上线', K)
         self.busy = True
         self.canvas.itemconfigure(self.stop_btn, state='normal')
-        git = shutil.which('git') or 'git'
+        node = self.resolve('node')
+        cli = str(ROOT / 'tools' / 'git' / 'sync.mjs')
 
         def say(text):
             self.outq.put(('out', K, text))
@@ -870,55 +962,40 @@ class Studio:
             self.outq.put(('progress', K, (frac, label)))
 
         def worker():
-            def run(args, timeout=None):
-                say(f'$ git {" ".join(args)}\n')
-                r = subprocess.run([git] + args, cwd=str(ROOT),
-                                   capture_output=True, text=True,
-                                   encoding='utf-8', errors='replace',
-                                   timeout=timeout, creationflags=NO_WINDOW)
-                if r.stdout:
-                    say(r.stdout)
-                if r.stderr:
-                    say(r.stderr)
-                return r.returncode
+            '''
+            发布的整个流程都在 tools/git/sync.mjs 里（探连接 → 提交 → **先拉取**
+            → 推送；被拒绝就再拉一次重推）。这里只是把它的输出实时打到日志区。
 
-            step(0.08, '正在检查有没有改动…')
-            run(['add', '-A'])
-            changed = subprocess.run([git, 'status', '--short'], cwd=str(ROOT),
-                                     capture_output=True, text=True,
-                                     encoding='utf-8', errors='replace',
-                                     creationflags=NO_WINDOW)
-            if not changed.stdout.strip():
-                say('\n没有任何改动，不用发布。\n')
-                step(1.0, '没有需要发布的内容')
-                self.outq.put(('done', K, 0))
-                return
+            以前这段是 Python 自己按 add -A → commit → push 跑的，中间没有拉取：
+            别人先推过的话必然被拒绝，而给出的文案是「代理掉了 / 没登录 GitHub /
+            缺 workflow 权限」——三句里没有一句是真正的原因。用户顺着提示怎么试
+            都推不上去，下一步就会去搜「Git 强制推送」，那正好是唯一会覆盖别人的红线。
 
-            step(0.3, '整理这次要提交的文件…')
-            say('\n这次要提交的文件：\n')
-            say(changed.stdout + '\n')
-
-            step(0.45, '正在提交…')
-            if run(['commit', '-m', message]) != 0:
-                say('\n提交失败，把上面的报错发给我看看。\n')
-                step(1.0, '提交失败')
-                self.outq.put(('done', K, 1))
-                return
-
-            step(0.6, '正在推送到 GitHub…（可能要等一会儿）')
-            say('\n正在推送到 GitHub…\n')
-            code = run(['push'], timeout=180)
+            两个启动器共用一份实现，也顺带保证「永不强推」只有一个地方需要守
+            （sync.mjs 里把 -f / +refspec / --mirror 都挡掉了）。
+            '''
+            step(0.1, '提交 → 先拉取 → 推送（发布会自动先拉）')
+            say('$ node tools/git/sync.mjs publish\n\n')
+            code = 1
+            try:
+                proc = subprocess.Popen(
+                    [node, cli, 'publish', '--message', message],
+                    cwd=str(ROOT), stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
+                    text=True, encoding='utf-8', errors='replace',
+                    bufsize=1, creationflags=NO_WINDOW)
+                for line in proc.stdout:
+                    say(line)
+                code = proc.wait()
+            except Exception as exc:
+                say(f'\n命令没能跑起来：{exc}\n')
 
             if code != 0:
-                step(1.0, '推送失败')
-                say('\n推送失败。常见原因：\n'
-                    '  - 代理掉了，重开 Clash Verge 再试\n'
-                    '  - 还没登录 GitHub：gh auth login\n'
-                    '  - 缺 workflow 权限：gh auth refresh -s workflow\n')
+                step(1.0, '这次没能发布')
+                say('\n这次没能发布 —— 上面最后那几行就是原因。\n')
                 self.outq.put(('done', K, code))
                 return
 
-            say('\n推送成功！\n')
             step(0.85, '推送成功，正在等 GitHub 构建…')
             self.wait_for_deploy(K, step, say)
 

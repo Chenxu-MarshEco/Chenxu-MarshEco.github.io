@@ -1,5 +1,6 @@
 ---
 import BaseLayout from '../../layouts/BaseLayout.astro';
+import CrtScreen from '../../components/CrtScreen.astro';
 import PostItem from '../../components/PostItem.astro';
 import { groupByYear, getPosts } from '../../utils/content';
 
@@ -8,28 +9,32 @@ const groups = groupByYear(posts);
 ---
 
 <BaseLayout title="文章" description="全部文章列表"
+  bodyClass="is-crt"
   layoutPage="list">
-  <header class="page-header">
-    <h1 class="page-header__title" data-edit="heading">文章</h1>
-    <p class="page-header__desc">
-      共 {posts.length} 篇。写成系列或长文的东西都放这里。
-    </p>
-  </header>
+  <CrtScreen />
+  <div class="crt-screen">
+    <header class="page-header">
+      <h1 class="page-header__title" data-edit="heading">文章</h1>
+      <p class="page-header__desc">
+        共 {posts.length} 篇。写成系列或长文的东西都放这里。
+      </p>
+    </header>
 
-  {
-    posts.length === 0 ? (
-      <p class="empty">还没有文章。</p>
-    ) : (
-      groups.map((group) => (
-        <section class="archive-year">
-          <h2 class="archive-year__label">{group.year}</h2>
-          <ul class="post-list">
-            {group.items.map((entry) => (
-              <PostItem entry={entry} />
-            ))}
-          </ul>
-        </section>
-      ))
-    )
-  }
+    {
+      posts.length === 0 ? (
+        <p class="empty">还没有文章。</p>
+      ) : (
+        groups.map((group) => (
+          <section class="archive-year">
+            <h2 class="archive-year__label">{group.year}</h2>
+            <ul class="post-list">
+              {group.items.map((entry) => (
+                <PostItem entry={entry} />
+              ))}
+            </ul>
+          </section>
+        ))
+      )
+    }
+  </div>
 </BaseLayout>

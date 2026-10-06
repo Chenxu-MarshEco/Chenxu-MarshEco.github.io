@@ -16,6 +16,7 @@ const els = {
   btnTheme: $('btn-theme'),
   themeLabel: $('theme-label'),
   btnSave: $('btn-save'),
+  btnPull: $('btn-pull'),
 
   typeTabs: $('type-tabs'),
   search: $('search'),
@@ -219,6 +220,9 @@ const state = {
   allSubs: [],
   dirty: false,
   saving: false,
+  /** 远端同步：最后一次读到的本地 git 状态（见 refreshPullBadge），没读到就是 null */
+  git: null,
+  pulling: false,
   marked: null,
   markedFailed: false,
   themeMode: 'auto',
@@ -642,7 +646,7 @@ function renderList() {
    --------------------------------------------------------------- */
 
 function startNew({ focus = true } = {}) {
-  state.current = { file: '', frontmatter: todayDraftFrontmatter(), body: '' };
+  state.current = { file: '', frontmatter: todayDraftFrontmatter(), body: '', rev: '' };
   state.tags = [];
   state.subs = [];
   fillForm(state.current.frontmatter, '');
@@ -666,7 +670,14 @@ async function openItem(file, { askRestore = true } = {}) {
     return;
   }
 
-  state.current = { file: data.file || file, frontmatter: data.frontmatter || {}, body: data.body || '' };
+  state.current = {
+    file: data.file || file,
+    frontmatter: data.frontmatter || {},
+    body: data.body || '',
+    // 读进来时磁盘上那一份的指纹：保存时原样带回，服务端拿它比对比
+    // 「这期间别处有没有改过同一个文件」（理由见 server.mjs 的 revOf）
+    rev: data.rev || '',
+  };
   fillForm(state.current.frontmatter, state.current.body);
   setDirty(false);
   renderList();
@@ -8957,6 +8968,129 @@ function closeLayoutModal() {
 }
 
 /* ---------------------------------------------------------------
+   拉远端（2026-10-05）
+
+   站点的内容不止一个人在改：另一位会推文章，接入的机器人也会定时往里写稿。
+   以前只有启动器管这件事（开工前自动同步、发布会先拉再推），**编辑器开着的时候
+   没办法当场拉** —— 只能关掉编辑器回启动器点一圈。现在右上角有个按钮：
+
+     · 角标上的数字来自「本地记录」（/api/git/status 不联网，很便宜），
+       编辑器启动时也在后台 fetch 过一次，所以它反映的是上一次看到的情况；
+     · 点一下才真去联网 fetch + 快进拉取，结果照实说（已经最新 / 拉了 N 个 /
+       你本地改过的那几份挡住了 / 你本地还有没发布的提交）；
+     · 拉取只做**快进**：不会产生合并提交，也不会在你没提交的改动上做 rebase。
+       万一远端动的正是你改过还没发布的文件，它会**一个字节都不动**地拒绝，
+       让你先去「发布上线」（那条路会先提交再拉，撞车了有完整的处理）。
+   --------------------------------------------------------------- */
+
+async function refreshPullBadge() {
+  try {
+    const st = await apiGet('/api/git/status');
+    state.git = st && typeof st === 'object' ? st : null;
+  } catch {
+    // 接口挂了（或者根本没 git）就当没有远端信息 —— 按钮照旧能点，点的时候会说清
+    state.git = null;
+  }
+  renderPullButton();
+}
+
+function renderPullButton() {
+  if (state.pulling) return;
+  const behind = Number(state.git?.behind || 0);
+  const hasRemote = Boolean(state.git?.remote);
+  /*
+    角标上的数字来自「最近一次探远端」。探失败时（代理没开、断网）不能再假装
+    它是最新的 —— 灰色提示一下，点的时候会重新探。
+  */
+  const probe = state.git?.lastFetch ?? null;
+  const stale = hasRemote && probe && probe.ok === false;
+
+  els.btnPull.textContent = behind > 0 ? `拉远端 (${behind})` : '拉远端';
+  els.btnPull.classList.toggle('is-behind', behind > 0);
+  els.btnPull.classList.toggle('is-stale', Boolean(stale));
+  els.btnPull.title = !hasRemote
+    ? '这个仓库还没连到 GitHub（没有 origin）—— 先在启动器里做一次「首次设置」'
+    : stale
+      ? '最近一次探远端没成功（代理和直连都不通），这个数字可能不是最新的。点一下会再探一次。'
+      : behind > 0
+        ? `远端有 ${behind} 个提交还没拉（另一位或者机器人推上来的）。点一下拉下来。`
+        : '把远端（另一位 / 机器人）的新内容拉到本机';
+}
+
+async function doPullRemote() {
+  if (state.pulling) return;
+  state.pulling = true;
+  els.btnPull.disabled = true;
+  els.btnPull.textContent = '拉取中…';
+  try {
+    const r = await apiPost('/api/git/pull', {});
+    const code = String(r?.code || '');
+    if (code === 'ok') {
+      if (Number(r.pulled) > 0) {
+        toast(r.direct
+          ? `已拉取 ${r.pulled} 个提交（代理没通，自动走的直连）`
+          : `已拉取 ${r.pulled} 个提交 —— 别人的新内容已经在本机了`);
+        // 拉进来的可能就是新文章 / 改过的文章，列表要跟着刷新
+        await refreshList(state.type);
+      } else {
+        toast('远端没有新东西，本地已经是最新的');
+      }
+    } else {
+      /*
+        需要读细节的几种（哪几个文件挡住了、你还有没发布的提交）走弹窗 ——
+        小提示条一闪就没了，装不下这些，也不该让人猜。
+      */
+      alert(r?.message || r?.error || '这次没能拉取，看看编辑器那个窗口的日志。');
+      if (code === 'blocked') toast('这次一个字节都没拉，你本地的改动完好', true);
+      else if (code === 'offline') toast('连不上 GitHub（代理和直连都不通）', true);
+      else toast('没能拉取，原因见刚才那个弹窗', true);
+    }
+  } catch (err) {
+    toast(`拉取失败：${err.message}`, true);
+  } finally {
+    state.pulling = false;
+    els.btnPull.disabled = false;
+    await refreshPullBadge();
+  }
+}
+
+/* ---------------------------------------------------------------
+   远端是不是有新东西 —— 自己去看，别等人来点（2026-10-06 加）
+
+   从前只有「页面加载」和「切回窗口」会读一次，而且读的是**本地记录**、不联网 ——
+   于是机器人刚推上来的日记，网站上都能看见了，编辑器这边一点动静都没有，
+   右上角那个按钮也不亮。现在：
+     · 页面在前台时每 60 秒读一次本地状态（便宜，不联网）；
+     · 每次切回这个标签页，让服务端去探一次远端（子进程里跑，不挡界面），
+       一两秒后再回头读 —— 数字一到就亮起来。
+   --------------------------------------------------------------- */
+
+const REMOTE_POLL_MS = 60 * 1000;
+let remotePollTimer = null;
+
+/** 请服务端现在探一次远端，然后回头看两次（探针一般 1~3 秒回来） */
+async function pokeRemote() {
+  try {
+    await apiPost('/api/git/fetch', {});
+  } catch {
+    return;   // 服务没起来 / 老版本接口不在：静默算了，按钮本身照旧能点
+  }
+  setTimeout(() => { void refreshPullBadge(); }, 2500);
+  setTimeout(() => { void refreshPullBadge(); }, 7000);
+}
+
+function startRemotePolling() {
+  if (remotePollTimer) return;
+  remotePollTimer = setInterval(() => {
+    if (document.visibilityState === 'visible') void refreshPullBadge();
+  }, REMOTE_POLL_MS);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') void pokeRemote();
+  });
+  window.addEventListener('focus', () => { void pokeRemote(); });
+}
+
+/* ---------------------------------------------------------------
    保存 / 删除
    --------------------------------------------------------------- */
 
@@ -8983,8 +9117,9 @@ async function save() {
 
   try {
     let res;
+    const withRev = { type: state.type, file: previousFile || '', frontmatter: fm, body, rev: state.current?.rev || '' };
     try {
-      res = await apiPost('/api/save', { type: state.type, file: previousFile || '', frontmatter: fm, body });
+      res = await apiPost('/api/save', withRev);
     } catch (err) {
       if (err.status === 409 && err.data && err.data.suggested) {
         const okGo = confirm(`${err.message}\n\n是否改用文件名「${err.data.suggested}」保存？`);
@@ -8998,6 +9133,28 @@ async function save() {
           frontmatter: fm,
           body,
         });
+      } else if (err.status === 409 && err.data && err.data.stale) {
+        /*
+          「别覆盖别人」的第二次确认（2026-10-05）。
+          服务端说磁盘上这一份在别处被改过了（机器人 / 另一台电脑 / 另一位推上来的）。
+          默认**不覆盖**：取消就把你屏幕上的内容留在编辑器里，什么都没丢。
+          真要覆盖得再点一次确定 —— 那才会把对方的改动盖掉。
+        */
+        const overwrite = confirm(
+          `${err.message}。\n\n` +
+            '· 点「确定」= 用你现在看到的这一份覆盖磁盘上的（**会把对方刚写的内容盖掉**）\n' +
+            '· 点「取消」= 先不保存（你写的还在编辑器里，什么都没丢）'
+        );
+        if (!overwrite) {
+          toast('已取消保存：磁盘上的是别人的版本，你写的内容还在编辑器里', true);
+          return;
+        }
+        const sure = confirm('真的要覆盖吗？对方的改动一旦被盖掉，只能靠发布记录找回。');
+        if (!sure) {
+          toast('已取消保存', true);
+          return;
+        }
+        res = await apiPost('/api/save', { ...withRev, force: true });
       } else {
         throw err;
       }
@@ -9006,6 +9163,7 @@ async function save() {
     state.current.file = res.file;
     state.current.frontmatter = fm;
     state.current.body = body;
+    state.current.rev = res.rev || '';
     clearDraft(state.type, previousFile);
     clearDraft(state.type, res.file);
     setDirty(false);
@@ -12524,6 +12682,9 @@ function bindEvents() {
   // 保存
   els.btnSave.addEventListener('click', save);
 
+  // 拉远端（另一位 / 机器人推上来的新内容）
+  els.btnPull.addEventListener('click', doPullRemote);
+
   // 主题 / 预览开关
   els.btnTheme.addEventListener('click', cycleTheme);
   els.btnPreview.addEventListener('click', () => {
@@ -12894,6 +13055,10 @@ async function init() {
   // 子版块清单要先拉回来，勾选框才有内容可渲染
   await loadSubs();
   renderSubPicker();
+
+  // 远端同步的角标（只读本地那份记录，不联网），之后由 startRemotePolling 自己盯着
+  await refreshPullBadge();
+  startRemotePolling();
 
   const params = new URLSearchParams(location.search);
   const startType = params.get('new');

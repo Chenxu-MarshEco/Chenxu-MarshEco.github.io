@@ -21,6 +21,9 @@
   --accent-text: #ffffff;
   --danger: #a3544c;
   --danger-soft: #f7ecea;
+  /* 「有东西等你处理但不算错」的颜色（拉远端角标用）：暖琥珀，不是红 */
+  --warn: #a4702a;
+  --warn-soft: #f7f0e2;
   --code-bg: #f1f3f2;
   --shadow: 0 1px 2px rgba(20, 30, 28, 0.06), 0 6px 20px rgba(20, 30, 28, 0.06);
   --shadow-sm: 0 1px 2px rgba(20, 30, 28, 0.08);
@@ -53,6 +56,9 @@
   --accent-text: #0f1614;
   --danger: #c87b73;
   --danger-soft: #2c2120;
+  /* 深色主题下的琥珀：亮一点才看得出来 */
+  --warn: #e0b276;
+  --warn-soft: #2e2618;
   --code-bg: #22282b;
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 24px rgba(0, 0, 0, 0.32);
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
@@ -243,6 +249,34 @@ select {
 .btn--ghost.is-on {
   color: var(--accent);
   background: var(--accent-soft);
+}
+/*
+  「拉远端」有东西可拉时给一点颜色（2026-10-05）。
+  角标数字是「本地记录里远端有几个提交还没拉」—— 只有别人推过东西才会出现，
+  所以平时这个按钮是安静的，亮起来就说明该点一下了。
+*/
+.btn--ghost.is-behind {
+  color: var(--warn);
+  background: var(--warn-soft);
+  border-color: color-mix(in srgb, var(--warn) 35%, transparent);
+}
+.btn--ghost.is-behind:hover {
+  color: var(--warn);
+  background: color-mix(in srgb, var(--warn) 18%, transparent);
+}
+/*
+  最近一次探远端没成功（代理和直连都不通）时，数字靠不住 —— 用虚线和灰字说明
+  「这是旧数字」，而不是继续拿一个可能过时的数骗人（2026-10-06）。
+*/
+.btn--ghost.is-stale {
+  color: var(--text-muted);
+  border-color: color-mix(in srgb, var(--text-muted) 35%, transparent);
+  border-style: dashed;
+}
+.btn--ghost.is-stale.is-behind {
+  color: var(--warn);
+  border-color: color-mix(in srgb, var(--warn) 35%, transparent);
+  border-style: dashed;
 }
 .btn--sm {
   padding: 4px 9px;
