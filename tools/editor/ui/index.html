@@ -116,6 +116,21 @@
                 </div>
               </div>
 
+              <!--
+                认领这一天（2026-10-06）：勾上之后，首页「涣源溪水钟」里这一天变成可点的 ——
+                只有这一篇就直接进这篇；同一天还有别的篇认领，就进 /day/<日期>/ 那一页。
+                写进 frontmatter 的 `calendar: true`。
+              -->
+              <div class="field field--narrow">
+                <label class="field__label" for="f-calendar">认领这一天</label>
+                <label class="switch">
+                  <input type="checkbox" id="f-calendar" />
+                  <span class="switch__track" aria-hidden="true"><span class="switch__dot"></span></span>
+                  <span class="switch__label">日历上点这天进这篇</span>
+                </label>
+                <p class="hint">勾上后，首页日历里这一天可以点进来。同一天有多篇认领时会进「这一天」那一页。</p>
+              </div>
+
               <div class="field field--posts-only">
                 <label class="field__label" for="f-updated-date">更新于</label>
                 <div class="field__pair">
@@ -140,6 +155,20 @@
               <div class="chips" id="tags-box">
                 <input type="text" id="f-tags-input" class="chips__input" placeholder="回车或逗号添加标签" />
               </div>
+            </div>
+
+            <!--
+              正文里的图片（2026-10-06）：一张一张列出来，能选版式（整宽 / 半宽居左 /
+              半宽居右 / 居中）、能拖着换先后、能一键设为封面。由 app.js 的 renderPics() 画。
+            -->
+            <div class="field">
+              <label class="field__label">正文图片 <span class="hint-inline">拖 ⠿ 换先后</span></label>
+              <div class="pics" id="pics-box"></div>
+              <p class="hint">
+                工具栏那颗 🖼 一次能选好几张（也可以直接把图拖进正文、或截图后 Ctrl+V）；
+                每张图的「版式」决定它在正文里怎么摆 —— 半宽居左/居右时文字会绕着它排。
+                「设为封面」就是把列表里显示的那张换成它。想换位置就拖左边那个 ⠿。
+              </p>
             </div>
 
             <div class="field">

@@ -420,24 +420,55 @@ const layout = wantLayout === 'region' && children.length >= 4 ? 'region' : 'sta
   }
 
   /*
-    分区版式要另算：那里的框会被栅格**拉齐**（中、右两块跨两行，
-    比左列高出一大截），框高不是自己内容说了算的。
-    这时候清单必须把多出来的高度全吃掉 —— 否则框底下空一截，
-    本来放得下的卡片还得去滚（用户就是这么发现的）。
+    分区版式（2026-10-06 两次调整后的最终版）：**三列底边齐平，而且框里不留空。**
+    --------------------------------------------------------------------------
+    用户原话（第一次）：
+      「因为花娅编年史有太多板块 大幅拉长 导致涣源溪记忆库和花娅远位面卡片下方出现大量空白
+       不要出现任何这种现象 卡片的高度要么固定 要么根据最内含子页面最短的那个卡片缩放
+       不要给我出现空白」
+    用户原话（第二次，纠正我的理解）：
+      「我要底边齐平的 我说的最短是在底边齐平情况下的」
 
-    做法：flex-basis 给 0 + min-height 兜底。
-      · 没被拉长时高度 = min-height，看到的东西和以前封顶时一样多，不会塌；
-      · 被拉长多少，清单就跟着长多少，底下不再留白。
-    min-height 用的就是上面那个 clamp，保证「三张卡不用滚」这条底线不变。
-    窄屏（分区塌成一列，框不再被拉齐）在下面的媒体查询里还原成封顶模式，
-    不然一列排下去每个框都会撑到 min-height。
+    病因（实测，改之前）：中、右两块跨两行，编年史那 11 条把行高顶到 680；
+    左列第二块（只有 3 条、内容 190px）被拉成 396 → 底下空 150px；
+    右块（内容 492px）被拉成 680 → 空 132px。一句话：**框比内容高多少，就空多少。**
+
+    怎么同时做到"齐平"和"不空"：
+      · 左列上下两块**按自己的内容高**（`align-self: start`）——它们撑起行高，
+        自己这边当然不会空（底下也不会露出来：那一列正好是 行1 + 缝 + 行2）；
+      · 中、右两块跨两行、**撑满**（`align-self: stretch`），清单区 `flex: 1 1 0`
+        跟着长到填满框 —— 框被撑多高，清单就长多高，底下不留空；
+        内容比框还长的就在自己框里滚（编年史就是这样）；
+      · 万一清单比框短（数据凑不齐），`justify-content: space-between` 把多出来的
+        那点高度摊到条目之间，也不会在框底堆出一大块空白。
+      · 跨行那两块的 `min-height` 必须给 0：否则它自己的"最小高度"会反过来把行高顶高
+        （改之前行高被顶到 680 就是这个原因），左列两块就会被架空、底边也就不齐了。
+
+    实测（/huaya/，1440×1000）：行高 260 / 266 → 三列底边同在 838；
+    涣源溪记忆库 266（框里空 0）；编年史 / 远位面 550（清单区 496，内容 1058 → 滚 / 492 → 正好）。
   */
-  @media (min-width: 46.01rem) {
-    .blocks[data-layout='region'] .block__scroll {
-      flex: 1 1 0;
-      min-height: clamp(180px, 34vh, 360px);
-      max-height: none;
-    }
+  .blocks[data-layout='region'] > * {
+    align-self: start;
+  }
+  .blocks[data-layout='region'] > :nth-child(3),
+  .blocks[data-layout='region'] > :nth-child(4) {
+    align-self: stretch;
+  }
+  .blocks[data-layout='region'] .block__scroll {
+    flex: 0 0 auto;
+    min-height: 0;
+    max-height: clamp(180px, 34vh, 360px);
+  }
+  .blocks[data-layout='region'] > :nth-child(3) .block__scroll,
+  .blocks[data-layout='region'] > :nth-child(4) .block__scroll {
+    flex: 1 1 0;
+    max-height: none;
+  }
+  /* 清单比框短时把多出来的高度摊开，别在框底留一块 */
+  .blocks[data-layout='region'] > :nth-child(3) .block__list,
+  .blocks[data-layout='region'] > :nth-child(4) .block__list {
+    min-height: 100%;
+    justify-content: space-between;
   }
 
   .block__list {

@@ -773,6 +773,65 @@ body.is-iceberg .site-footer {
   margin-inline: auto;
 }
 
+/*
+  正文图片的版式（2026-10-06）。
+  记号写在 Markdown 的 title 里 —— 标准写法就有的那个槽位：
+
+      ![说明](/img/x.jpg "半宽居左")
+
+  样式直接按 title 属性选。**故意不做成构建期插件**：Astro 7 把默认的 Markdown 处理器
+  换成了 Sätteri，`markdown.remarkPlugins` 要另装 `@astrojs/markdown-remark` 才认
+  （实测构建直接报错），为一个 class 引一个依赖不划算。代价只是鼠标停在图上会弹一句
+  「半宽居左」—— 那句话本身就是它的意思。
+  title 是别的内容（真拿来当提示文字）时不匹配任何一条，照旧是普通图。
+
+  编辑器里对应的就是「正文图片」那一列里每张图的下拉，四个选项：
+    居中（默认，不写 title） / 整宽 / 半宽居左 / 半宽居右
+  半宽那两种是**浮动**，所以正文会绕着它排 —— 这也是"能选位置"里最实用的那种。
+*/
+.prose img[title='整宽'] {
+  /* 破格：正文栏 42rem、外面那层容器 52rem，两边各借 3rem（CRT 皮肤的面板内边距也差不多这个数，
+     所以正好顶到框内沿、不会压到边框） */
+  width: calc(100% + 6rem);
+  max-width: none;
+  margin-inline: -3rem;
+}
+@media (max-width: 62rem) {
+  .prose img[title='整宽'] {
+    width: 100%;
+    margin-inline: auto;
+  }
+}
+.prose img[title='半宽居左'],
+.prose img[title='半宽居右'] {
+  width: calc(50% - 0.7rem);
+  max-width: none;
+}
+.prose img[title='半宽居左'] {
+  float: left;
+  margin: 0.35rem 1.4rem 0.7rem 0;
+}
+.prose img[title='半宽居右'] {
+  float: right;
+  margin: 0.35rem 0 0.7rem 1.4rem;
+}
+/* 半宽图后面紧跟着标题时另起一行，不然标题会贴着图 */
+.prose img[title='半宽居左'] + h2,
+.prose img[title='半宽居左'] + h3,
+.prose img[title='半宽居右'] + h2,
+.prose img[title='半宽居右'] + h3 {
+  clear: both;
+}
+/* 窄屏：半宽浮动会让字挤成一条，直接回到通栏 */
+@media (max-width: 46rem) {
+  .prose img[title='半宽居左'],
+  .prose img[title='半宽居右'] {
+    float: none;
+    width: 100%;
+    margin: 0 auto;
+  }
+}
+
 .prose code {
   font-family: var(--font-mono);
   font-size: 0.9em;

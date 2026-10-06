@@ -65,6 +65,12 @@ const MAX_IMAGE_BYTES = 128 * 1024 * 1024;
 const MAX_JSON_UPLOAD_BYTES = 192 * 1024 * 1024;
 /** 单首音频上限 40MB */
 const MAX_AUDIO_BYTES = 40 * 1024 * 1024;
+/**
+ * 「导入最新精华」那个文件的上限（2026-10-06 加）。
+ * 月度导出 HTML 里内嵌着 base64 图片，一个月通常几 MB；整整一年的压缩包才会大起来，
+ * 所以给到 256MB —— 同样只是"海啸阀"，边收边写盘，不吃内存。
+ */
+const MAX_ESSENCE_BYTES = 256 * 1024 * 1024;
 
 const HOST = '127.0.0.1';
 const PORT_START = 4322;
@@ -591,6 +597,14 @@ function normalizeFrontmatter(type, raw) {
   */
   fm.subs = toStringArray(src.subs);
 
+  /*
+    「认领这一天」（2026-10-06）：勾了才写 calendar: true —— 首页「涣源溪水钟」上
+    这一天的格子会变成可点的（只有这一篇就直接进这篇，多篇进 /day/<日期>/）。
+    ⚠ 跟 subs 一样是**白名单**里的一员：不在这里显式保留，编辑器保存一次就把用户
+    勾的那个勾抹掉了。两种栏目都支持，所以放在分支外面。
+  */
+  if (toBoolean(src.calendar)) fm.calendar = true;
+
   return fm;
 }
 
@@ -645,6 +659,9 @@ function serializeFrontmatter(type, fm) {
   if (fm.subs && fm.subs.length) {
     lines.push(`subs: ${yamlArray(fm.subs)}`);
   }
+
+  // 认领这一天：只有勾了才写（不写 = 没认领，schema 默认 false）
+  if (fm.calendar) lines.push('calendar: true');
 
   return lines.join('\n');
 }
@@ -821,10 +838,21 @@ function normalizeFrontmatterSafe(type, data) {
     // 改一处不够 —— 只加写入那份的话，文件里写了 subs 但读回来没有，
     // 表现就是「保存后再打开，勾选又全没了」。
     subs: toStringArray(data.subs),
+    /*
+      「认领这一天」（2026-10-06）：**同一个坑又踩了一次** ——
+      只给写入那份白名单加了 calendar，打开文章时读回来却没有，
+      表现是"文件里明明写着 calendar: true，编辑器里勾选框却是空的，
+      再保存一次就把勾抹掉了"。两处都得有。
+    */
+    calendar: toBoolean(data.calendar),
   };
+  /*
+    封面：**两种栏目都有**（写入那份早就放到分支外面了，见上面的注释）。
+    这里以前只在 posts 分支里设，于是手记打开时封面永远是空的 —— 顺手补上。
+  */
+  fm.cover = data.cover === undefined || data.cover === null ? '' : String(data.cover);
   if (type === 'posts') {
     fm.summary = data.summary === undefined || data.summary === null ? '' : String(data.summary);
-    fm.cover = data.cover === undefined || data.cover === null ? '' : String(data.cover);
     fm.pinned = toNumber(data.pinned, 0);
     const updated = normalizeDateValue(data.updated);
     fm.updated = updated || '';
@@ -1000,7 +1028,7 @@ async function handleUpload(payload) {
  *
  * 超限时中止、把半个文件删掉，免得临时目录里留残片。
  */
-function receiveImage(req, abs, limit) {
+function receiveImage(req, abs, limit, what = '单张图片') {
   return new Promise((resolve, reject) => {
     let size = 0;
     let done = false;
@@ -1023,7 +1051,7 @@ function receiveImage(req, abs, limit) {
       if (size > limit) {
         // 剩下的请求体继续读掉再丢，免得客户端拿到 ECONNRESET 而不是那个 413
         req.resume();
-        fail(httpError(413, `单张图片最多 ${Math.round(limit / 1024 / 1024)}MB（这么大的图先裁一下吧）`));
+        fail(httpError(413, `${what}最多 ${Math.round(limit / 1024 / 1024)}MB（这么大的先裁一下吧）`));
       }
     });
     req.on('error', fail);
@@ -1033,7 +1061,7 @@ function receiveImage(req, abs, limit) {
       done = true;
       if (!size) {
         fs.unlink(abs).catch(() => {});
-        reject(httpError(400, '图片内容是空的'));
+        reject(httpError(400, `${what}是空的`));
         return;
       }
       resolve(size);
@@ -1229,6 +1257,60 @@ async function handleApi(req, res, url) {
       return sendJson(res, 200, await handleUpload(payload));
     }
     return sendJson(res, 200, await handleImageUpload(req, res, url));
+  }
+
+  /*
+    ---- 导入最新精华（2026-10-06 加）----
+
+    用户原话：
+      「在编辑器的精华消息页面里新增一个接口 可以接受这一类文件 接受后把里面的内容
+       全部转化为和之前精华一样的一条条精华条目 …这个接口以后也可以定期接收新的
+       精华文件然后把他们全部转化为本站的精华格式」
+
+    收的是导出管线产出的**月度文件**：`.html` 或者整个 `.zip`（里面自动挑那份 HTML）。
+    前端 `fetch('/api/salon/import?name=…', { method:'POST', body: file })` ——
+    原文件当请求体、边收边写临时文件，不 base64、不进 JSON（和 /api/upload 同一条路）。
+
+    真正的活儿在 tools/salon/import-more.mjs：**只增不改**（去重 / 成员按名字或别名认 /
+    年代按日期落段 / 图片抽到 public/img/salon），细节见那个文件和 merge.mjs。
+    导入完顺手重新构建一次，这样编辑器里点「看 /salon/」就是新的了。
+  */
+  if (route === '/api/salon/import' && req.method === 'POST') {
+    const rawName = path.basename(String(url.searchParams.get('name') || 'essence.html'));
+    /* 文件名只用来判扩展名（.zip / .html），顺手把路径分隔符之类的剔掉 */
+    const safe = rawName.replace(/[\\/:*?"<>|]/g, '_').slice(-120) || 'essence.html';
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'dsh-salon-import-'));
+    const tmp = path.join(tmpDir, safe);
+    try {
+      await receiveImage(req, tmp, MAX_ESSENCE_BYTES, '精华导出文件');
+      const { importEssenceFile } = await import('../salon/import-more.mjs');
+      const { report } = importEssenceFile({ file: tmp, repoRoot: PROJECT_ROOT });
+      let built = false;
+      let ms = 0;
+      let output = '';
+      if (report.added > 0) {
+        await noteEdit({ href: '/salon/', title: '冰室精华' });
+        try {
+          const r = await runBuild();
+          built = true;
+          ms = r.ms;
+          output = r.output;
+        } catch (err) {
+          output = String(err?.message || err);
+        }
+      }
+      const fresh = await readSalon();
+      return sendJson(res, 200, {
+        ok: true,
+        report,
+        built,
+        ms,
+        output,
+        counts: { members: fresh.members.length, essences: fresh.essences.length },
+      });
+    } finally {
+      await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
+    }
   }
 
   // ---- 首页大板块的子版块 ----

@@ -138,6 +138,84 @@ try {
   check('板块页时间轴：没被我这轮的"常驻模式"改坏（不是 is-pinned）', board.pinned === false, JSON.stringify({ pinned: board.pinned }));
   check('板块页 JS 没报错', cdp.errors.length === 0, cdp.errors.slice(0, 3).join(' | '));
 
+  /* ================= A2. 首页卡片**不许被裁掉**（2026-10-06 的事故） =================
+     事故经过：为了压住手机上那条 nowrap 的日期提示卡把整页撑宽 34px，
+     在 `.home` 上写了 `overflow-x: clip`。可是首页板块在编辑器「排版」模式里被往右拖过
+     一点（layout.json 的 home.boards.dx＝1.3% ≈ 13.5px），而且 HomeWidgets 是**故意**
+     让下面那一屏跟着同一个偏移走的 —— 于是那 13.5px 被裁掉，用户看到的是
+     「花娅陌域和每日精华卡片的右半边没了」。
+     所以这里把两件事都钉住：
+       · `.home` 不许出现任何横向裁剪；
+       · 卡片右边缘再往右几像素，**命中测试仍然命中这张卡**（被裁掉的话那里会命中别的）；
+       · 顺带确认那条提示卡默认是 display:none（撑宽的问题在源头治好了）。 */
+  console.log('\n================ A2. 首页卡片不被裁 ================');
+  await cdp.viewport(1440, 900, false);
+  await cdp.goto('/', 2400);
+  const clip = await cdp.ev(`(async () => {
+    const home = document.querySelector('.home');
+    const de = document.documentElement;
+    /* 顺着卡片**往上**找：有没有哪一层在横向裁（卡片自己的 overflow:hidden 不算 ——
+       那是它裁自己的背景图，和它的外框没关） */
+    const clippers = (el) => {
+      const out = [];
+      for (let p = el.parentElement; p && p !== document.documentElement; p = p.parentElement) {
+        const ox = getComputedStyle(p).overflowX;
+        if (ox === 'hidden' || ox === 'clip' || ox === 'auto' || ox === 'scroll') {
+          out.push((p.tagName + '.' + (typeof p.className === 'string' ? p.className.trim().split(/\\s+/)[0] : '')).replace(/\\.$/, ''));
+        }
+      }
+      return out;
+    };
+    /*
+      探针放在"卡片里、但在 .home 右边缘之外"那一小条上（卡片比 .home 多出约 13px）。
+      没被裁的话那里命中的是卡片本身；一旦有人横向裁，那里就是 null（或者外层的容器）。
+    */
+    const probe = async (el) => {
+      if (!el) return null;
+      el.scrollIntoView({ block: 'center' });
+      await new Promise((r) => setTimeout(r, 350));
+      const b = el.getBoundingClientRect();
+      const homeRight = home.getBoundingClientRect().right;
+      const x = Math.round(Math.min(b.right - 2, homeRight + 3));
+      const y = Math.round(b.top + Math.min(40, b.height / 2));
+      const hit = document.elementFromPoint(x, y);
+      const card = el.closest('.board') || el.closest('.daily') || el;
+      return {
+        right: Math.round(b.right),
+        homeRight: Math.round(homeRight),
+        probe: { x, y },
+        hitSelf: !!(hit && (hit === card || card.contains(hit))),
+        hit: hit ? (hit.tagName.toLowerCase() + '.' + (typeof hit.className === 'string' ? hit.className.trim().split(/\\s+/)[0] : '')) : null,
+        clippers: clippers(card),
+      };
+    };
+    const board = document.querySelector('.boards .board:nth-child(2)') || document.querySelector('.boards .board');
+    const daily = document.querySelector('.dailyWrap') || document.querySelector('.daily');
+    const tip = document.querySelector('.cal__tip');
+    const boardProbe = await probe(board);
+    const dailyProbe = await probe(daily);
+    return {
+      homeOverflowX: getComputedStyle(home).overflowX,
+      pageOverflow: de.scrollWidth - de.clientWidth,
+      board: boardProbe,
+      daily: dailyProbe,
+      tipDisplay: tip ? getComputedStyle(tip).display : null,
+      homeRight: Math.round(home.getBoundingClientRect().right),
+    };
+  })()`);
+  check('★★ 首页 .home 上没有横向裁剪（这条是这次事故的根）',
+    ['visible', 'initial'].includes(clip.homeOverflowX), `overflow-x: ${clip.homeOverflowX}`);
+  check('★★ 花娅陌域卡片的右边缘**没有被裁**（右边缘外 6px 仍然命中这张卡）',
+    clip.board?.hitSelf === true && (clip.board?.clippers ?? []).length === 0,
+    JSON.stringify(clip.board));
+  check('★★ 每日精华卡片的右边缘同样没有被裁',
+    clip.daily?.hitSelf === true && (clip.daily?.clippers ?? []).length === 0,
+    JSON.stringify(clip.daily));
+  check('★ 整页没有横向滚动条（提示卡撑宽那个老毛病在源头治好了）',
+    clip.pageOverflow <= 1, `溢出 ${clip.pageOverflow}px`);
+  check('★ 日期提示卡默认不在布局里（display:none），指上去才出现',
+    clip.tipDisplay === 'none' && clip.board !== null, `display: ${clip.tipDisplay}`);
+
   /* ================= B. 手机端排版 ================= */
   console.log('\n================ B. 手机端 390×844 ================');
   await cdp.viewport(390, 844, true);
@@ -190,8 +268,15 @@ try {
       mainLeft: Math.round(main.left),
       panelW: Math.round(panel.width), bodyH: Math.round(body.height),
       sidePos: getComputedStyle(q('.salon__side')).position,
-      /* 栏在屏幕左边、正文在它右边并排（不是上下堆叠） */
-      sideBySide: Math.abs(side.top - main.top) < 100 && main.left >= side.right - 1,
+      /*
+        ⚠ 别拿 side.top 和 main.top 比谁高谁低：.salon__side 是 position: fixed
+        （钉在屏幕左边一条），它的 top 是**相对视口**的；而 .salon__main 是整页正文，
+        页面一长、检查里又滚过一遍之后，它的 top 会是 -23 万这种数 —— 两者本来就不该接近。
+        （老写法 Math.abs(side.top - main.top) < 100 就是这样：精华页越长这条越红，
+        2026-10-06 量到 mainTop = -234700，和"有没有塌"其实没关系。）
+        并排这件事只看**横向**：这条栏贴着屏幕左边，正文在它右边。
+      */
+      sideBySide: side.left <= 1 && main.left >= side.right - 1,
     };
   })()`);
   check('手机端精华页：不横向溢出', mSalon.overflow <= 1, JSON.stringify({ overflow: mSalon.overflow }));

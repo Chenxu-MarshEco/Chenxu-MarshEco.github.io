@@ -69,9 +69,16 @@ try {
   const hasNew = fs.existsSync(path.join(HEAD, 'src', 'components', 'HomeWidgets.astro'));
   /* tar 在 Windows 上遇到个别它建不出来的条目会以 1 退出但仍然把该解的都解出来了，
      所以判定看**解出来没有**，tar 的退出码只当参考一起打出来。 */
-  check(`从 git ${REF} 导出「改动前」源码（有首页、且没有这一轮的新文件）`,
-    a.status === 0 && hasIndex && !hasNew,
-    `git=${a.status} tar=${t.status} index.astro=${hasIndex} HomeWidgets.astro=${hasNew} pages ${fs.existsSync(path.join(HEAD, 'src', 'pages')) ? fs.readdirSync(path.join(HEAD, 'src', 'pages')).length : 0} 项${t.stderr ? ' tar stderr: ' + t.stderr.trim().split('\n').slice(-1)[0] : ''}`);
+  /*
+    ⚠ 这条原来要求"基线里**没有** HomeWidgets.astro"（写它的时候 HEAD 就是加那一屏之前的代码）。
+    后来 HEAD 往前走了（用户自己发布过几次，那一屏早就提交进去了），基线里自然就有了 ——
+    再这么要求等于让检查永远红着。现在改成：导出成功 + 有首页就算过，
+    并把"基线里有没有这一屏"记下来：下面那几条「新块 / 变长」的判定按它决定跑不跑。
+  */
+  const baselineHasExtras = hasNew;
+  check(`从 git ${REF} 导出「改动前」源码（有首页）`,
+    a.status === 0 && hasIndex,
+    `git=${a.status} tar=${t.status} index.astro=${hasIndex} 基线里已有这一屏=${baselineHasExtras} pages ${fs.existsSync(path.join(HEAD, 'src', 'pages')) ? fs.readdirSync(path.join(HEAD, 'src', 'pages')).length : 0} 项${t.stderr ? ' tar stderr: ' + t.stderr.trim().split('\n').slice(-1)[0] : ''}`);
 
   /* public 在 HEAD 里是被跟踪的，解出来是一份真目录；换成 junction 指向当前 public，
      让两份构建用**同一套图片产物**，量出来的差别才只来自布局改动。 */
@@ -107,41 +114,62 @@ try {
   /* 这一轮之后允许"整体下移一屏"的三项：两个大板块和它们的卡片 */
   const shiftable = new Set(['.boards', '.boards .board:nth-child(1)', '.boards .board:nth-child(2)']);
   const shifts = [];
+  /*
+    "不要挤压"的核心：**横向位置和宽度**一个像素都不许动。
+    ⚠ 高度这一条留了口子：首页那一屏里，"每日精华"原来会被最长的那条精华顶高、
+    连累日历和冰山一起变高（用户 2026-10-06 报的那个问题）。那一屏被修好之后，
+    它**本来就该变矮** —— 所以这几个 key 只卡横向，高度变化记下来、不算失败。
+  */
+  const heightFree = new Set(['.extras', '.cal', '.ice', '.daily']);
   for (const k of oldKeys) {
     const a0 = oldM.rects[k];
     const b0 = nowM.rects[k];
     if (!b0) { moved.push(`${k}（现在没了）`); continue; }
-    /*
-      尺寸和横向位置：这一轮也不许动（"不要挤压"的核心）。
-      纵向：不在这三项里的必须一动不动；在这三项里的只允许整体下移（封面把卡片顶下去了），
-      位移记下来，最后要求三者一致而且是"一屏"那么多。
-      `.home` 例外：它必须变高（多了一屏封面），但左上角和宽度同样不许动。
-    */
-    const sizeSame = a0.x === b0.x && a0.w === b0.w && (k === '.home' || a0.h === b0.h);
+    const sizeSame = a0.x === b0.x && a0.w === b0.w && (heightFree.has(k) || k === '.home' || a0.h === b0.h);
     if (!sizeSame) moved.push(`${k} 横向/尺寸变了 ${JSON.stringify(a0)} → ${JSON.stringify(b0)}`);
     else if (shiftable.has(k)) shifts.push({ k, dy: +(b0.y - a0.y).toFixed(1) });
     else if (a0.y !== b0.y) moved.push(`${k} 纵向动了 ${a0.y} → ${b0.y}`);
   }
-  check(`改动前就有的元素：横向位置、宽度、高度一个像素都没变（没有被挤压）`,
+  check('改动前就有的元素：横向位置、宽度一个像素都没变（没有被挤压）',
     moved.length === 0, moved.length ? moved.join(' | ') : `逐项一致：${oldKeys.join(' ')}`);
 
-  /* 三张板块卡的位移必须一致，而且是"被封面顶下去一屏"那么多 */
+  /*
+    三张板块卡的位移：
+      · 基线是"加封面那一屏之前"的代码 → 应该整体下移约一屏；
+      · 基线里已经有封面了（HEAD 一路往前走，早就是这种情形）→ 应该一动不动。
+    两种都算对，取决于基线。
+  */
+  const baselineHasCover = !!oldM.rects['.cover'] || !!oldM.rects['.cover__hint'];
   const shiftVals = [...new Set(shifts.map((s) => s.dy))];
-  check('大板块只是被封面**整体下移一屏**（三者位移一致，位移约等于一屏高）',
-    shifts.length === 3 && shiftVals.length === 1 && shiftVals[0] > nowM.viewport.h * 0.5,
-    `位移 ${JSON.stringify(shifts)}；视口高 ${nowM.viewport.h}px`);
+  check(baselineHasCover
+    ? '基线里已经有封面那一屏了 → 大板块这次**一动不动**（三者位移一致且为 0）'
+    : '大板块只是被封面**整体下移一屏**（三者位移一致，位移约等于一屏高）',
+  shifts.length === 3 && shiftVals.length === 1
+  && (baselineHasCover ? shiftVals[0] === 0 : shiftVals[0] > nowM.viewport.h * 0.5),
+  `位移 ${JSON.stringify(shifts)}；视口高 ${nowM.viewport.h}px；基线里有封面 ${baselineHasCover}`);
 
   const grown = nowM.rects['.home'] && oldM.rects['.home'] ? nowM.rects['.home'].h - oldM.rects['.home'].h : 0;
-  check(`.home 只长高（长了 ${grown.toFixed(1)}px：封面那一屏 + 新块占的地方）`, grown > 0, `长了 ${grown.toFixed(1)}px`);
-
   const added = nowKeys.filter((k) => !oldM.rects[k]);
-  check('新块是**新增**的（改动前那些选择器在旧构建里量不到），不是从别处挤出来的',
-    added.length >= 4 && added.some((k) => k.includes('extras')) && added.some((k) => k.includes('cal')) && added.some((k) => k.includes('ice')) && added.some((k) => k.includes('daily')),
-    `新增：${added.join(' ')}`);
-
   const grew = nowM.scroll.height - oldM.scroll.height;
-  check(`首页变长、滚轮能往下滚（页面高度 ${oldM.scroll.height} → ${nowM.scroll.height}，+${grew}px；可滚 ${oldM.scroll.canScroll} → ${nowM.scroll.canScroll}）`,
-    nowM.scroll.height > oldM.scroll.height && nowM.scroll.canScroll === true, '');
+  /*
+    这三条（新块是新增的 / .home 只长高 / 首页变长）都是为**当年那次「加了首页那一屏」**写的：
+    前提是基线里还没有这一屏。基线（默认 git HEAD）现在早就包含它了，前提不成立 ——
+    硬跑只会得到"新增 0 项、页面还变短了"这种假失败。所以基线里已有这一屏时跳过，
+    要看当年那次真实对比就显式给个老提交号：
+      node tools/checks/home-no-squeeze.mjs dist 69ed7e1
+  */
+  if (baselineHasExtras) {
+    check('（基线里已经有这一屏：三条「新块 / 只长高 / 变长」的判定只对当年那次改动有意义，跳过）',
+      true, `这次真正有意义的是上面那条「老元素的横向/尺寸一个像素都没变」`);
+    console.log(`      · 顺带记一下：.home ${grown >= 0 ? '+' : ''}${grown.toFixed(1)}px、页面高度 ${grew >= 0 ? '+' : ''}${grew}px（变短是允许的 —— 首页那一行不再被最长的那张卡顶高了）`);
+  } else {
+    check(`.home 只长高（长了 ${grown.toFixed(1)}px：封面那一屏 + 新块占的地方）`, grown > 0, `长了 ${grown.toFixed(1)}px`);
+    check('新块是**新增**的（改动前那些选择器在旧构建里量不到），不是从别处挤出来的',
+      added.length >= 4 && added.some((k) => k.includes('extras')) && added.some((k) => k.includes('cal')) && added.some((k) => k.includes('ice')) && added.some((k) => k.includes('daily')),
+      `新增：${added.join(' ')}`);
+    check(`首页变长、滚轮能往下滚（页面高度 ${oldM.scroll.height} → ${nowM.scroll.height}，+${grew}px；可滚 ${oldM.scroll.canScroll} → ${nowM.scroll.canScroll}）`,
+      nowM.scroll.height > oldM.scroll.height && nowM.scroll.canScroll === true, '');
+  }
   console.log(`\n关键数字：视口 ${oldM.viewport.w}×${oldM.viewport.h}；`.concat(
     `品牌 .site-brand ${JSON.stringify(nowM.rects['.site-brand'])}；`,
     `大板块 .boards ${JSON.stringify(nowM.rects['.boards'])}；`,

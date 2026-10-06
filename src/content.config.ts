@@ -34,6 +34,12 @@ const posts = defineCollection({
      * 那个子版块下面。可以同时归到多个子版块。
      */
     subs: z.array(z.string()).default([]),
+    /**
+     * 认领这一天：true 时首页「涣源溪水钟」上这一天的格子会变成可点的
+     * ——点一下直接进这篇文章；同一天有好几篇认领就进 /day/<日期>/ 那一页。
+     * 编辑器里就是日期旁边那个勾选框（2026-10-06 加）。
+     */
+    calendar: z.boolean().default(false),
   }),
 });
 
@@ -56,6 +62,8 @@ const notes = defineCollection({
     draft: z.boolean().default(false),
     /** 同 posts.subs：所属子版块 */
     subs: z.array(z.string()).default([]),
+    /** 同 posts.calendar：认领这一天（首页日历上那一天可点） */
+    calendar: z.boolean().default(false),
   }),
 });
 

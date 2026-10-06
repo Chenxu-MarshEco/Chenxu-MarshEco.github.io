@@ -33,6 +33,12 @@ export const GET: APIRoute = async () => {
       variantUrl 查不到就退回原图，不影响没跑过管线的场景。
     */
     image: e.images[0] ? variantUrl(e.images[0], 500) : '',
+    /*
+      2026-10-06 起首页那张卡悬停时会弹出浮层，里面要铺**全部**图片 ——
+      所以这里把整组图也吐出来（浮层用的大一档：900）。
+      只吐 `image`（头一张、500）的话，客户端换到别条精华时浮层就只有一张图。
+    */
+    images: e.images.map((src) => variantUrl(src, 900)),
   }));
   return new Response(
     JSON.stringify({ title: salonTitle, count: essences.length, members: salonMembers.length, essences }, null, 1),

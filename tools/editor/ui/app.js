@@ -37,6 +37,7 @@ const els = {
   tagsBox: $('tags-box'),
   tagsInput: $('f-tags-input'),
   subsBox: $('subs-box'),
+  picsBox: $('pics-box'),
   summary: $('f-summary'),
   cover: $('f-cover'),
   coverImg: $('cover-img'),
@@ -46,6 +47,8 @@ const els = {
   coverFile: $('cover-file'),
   pinned: $('f-pinned'),
   draft: $('f-draft'),
+  // 「认领这一天」：勾上 → 首页涣源溪水钟上那一天可点（见 utils/day-pages.ts）
+  calendar: $('f-calendar'),
 
   toolbar: $('toolbar'),
   body: $('f-body'),
@@ -748,6 +751,7 @@ function fillForm(fm, body) {
   els.summary.value = f.summary || '';
   els.cover.value = f.cover || '';
   els.draft.checked = Boolean(f.draft);
+  els.calendar.checked = Boolean(f.calendar);
   els.pinned.value = Number.isFinite(Number(f.pinned)) ? Number(f.pinned) : 0;
 
   els.body.value = typeof body === 'string' ? body : '';
@@ -759,6 +763,7 @@ function fillForm(fm, body) {
   renderSubPicker();
   updateCoverPreview();
   updateBodyCount();
+  renderPics(true);
   renderFilename();
   updateDocTitle();
 }
@@ -770,6 +775,11 @@ function collectForm() {
     tags: state.tags.slice(),
     draft: els.draft.checked,
   };
+  /*
+    认领这一天：**勾了才写** calendar: true（schema 里默认 false）。
+    不写这一行 = 没认领 —— 首页日历上那一天照旧不可点。
+  */
+  if (els.calendar.checked) fm.calendar = true;
   // 封面图文章和手记都支持（content.config.ts 里两边都有 cover 字段）
   fm.cover = els.cover.value.trim();
   if (state.type === 'posts') {
@@ -796,6 +806,240 @@ function renderFilename() {
     els.filename.textContent = '新文件（保存时按标题自动命名）';
     els.filename.classList.add('is-new');
   }
+}
+
+/* ---------------------------------------------------------------
+   正文图片：一张一张列出来（2026-10-06）
+
+   用户原话：
+     「文章和手记应当支持传入多张图片 且可以选择图片所在位置」
+
+   正文里的图就是标准 Markdown 的 `![说明](地址)`，版式写在 **title** 里：
+     `![说明](/img/x.jpg "半宽居右")`
+   页面那边按 title 属性选样式（global.css 里 `.prose img[title='半宽居右']` 那几条）——
+   正文本身还是干净的标准 Markdown，别的工具打开也不会坏。
+
+   这一块做三件事：
+     · 列出来（缩略图 + 版式下拉 + 说明输入）；
+     · 拖 ⠿ 换先后 —— **图片之间的文字原地不动**，所以把一张图往上拖一格，
+       它就换到了前一段文字后面（这也是"选位置"最实用的那种做法）；
+     · 「设为封面」把列表里那张换成它。
+   每一次改动都只动正文里那一个图片记号，别的字节一个不碰。
+   --------------------------------------------------------------- */
+
+/*
+  版式下拉的选项：**值就是写进 Markdown title 的那几个字**，
+  页面那边直接按 title 属性选（global.css 里 `.prose img[title='整宽']` 那几条）。
+  ⚠ 本来是想在构建期把 title 翻成 class 的（写了个 remark 插件），
+  但 Astro 7 默认的 Markdown 处理器换成了 Sätteri，remarkPlugins 要另装
+  `@astrojs/markdown-remark` 才认（构建直接报错）—— 为一个 class 引依赖不划算，改成纯 CSS。
+  所以这几个字符串**两边必须一模一样**，改一处就要改另一处。
+*/
+const PIC_LAYOUTS = [
+  ['', '居中（默认）'],
+  ['整宽', '整宽'],
+  ['半宽居左', '半宽居左'],
+  ['半宽居右', '半宽居右'],
+];
+
+/** 正文里所有图片记号，带它们在正文里的位置（from/to） */
+function bodyPicMarks(text) {
+  const re = /!\[([^\]]*)\]\(\s*([^)\s]+)(?:\s+"([^"]*)")?\s*\)/g;
+  const out = [];
+  let m;
+  while ((m = re.exec(text))) {
+    out.push({ from: m.index, to: m.index + m[0].length, alt: m[1], src: m[2], layout: m[3] || '', raw: m[0] });
+  }
+  return out;
+}
+
+/** 拼一个图片记号 */
+const picMark = (alt, src, layout) => `![${alt}](${src}${layout ? ` "${layout}"` : ''})`;
+
+/** 只改某一张图（版式 / 说明 / 删掉），返回值是新的记号 */
+function editPic(index, fn) {
+  const text = els.body.value;
+  const marks = bodyPicMarks(text);
+  const m = marks[index];
+  if (!m) return;
+  const next = fn(m);
+  let out = text.slice(0, m.from) + next + text.slice(m.to);
+  if (next === '') out = out.replace(/\n{3,}/g, '\n\n');   // 删掉别留一行空白
+  els.body.value = out;
+  onBodyChanged();
+  renderPics();
+}
+
+/**
+ * 按给定顺序重排正文里的图片。
+ * `order` 是"新的第 i 位放原来第几个"。
+ * 关键：图片**之间的文字不动** —— chunks 原地保留，只把记号按新顺序插回去。
+ */
+function reorderPics(order) {
+  const text = els.body.value;
+  const marks = bodyPicMarks(text);
+  if (marks.length < 2 || order.length !== marks.length) return;
+  const chunks = [];
+  let at = 0;
+  for (const m of marks) {
+    chunks.push(text.slice(at, m.from));
+    at = m.to;
+  }
+  chunks.push(text.slice(at));
+  let out = chunks[0];
+  order.forEach((srcIdx, i) => {
+    out += marks[srcIdx].raw + chunks[i + 1];
+  });
+  els.body.value = out;
+  onBodyChanged();
+}
+
+/** 画那一列图片（正文一变就重画；正在改说明的时候不打断） */
+function renderPics(force = false) {
+  const box = els.picsBox;
+  if (!box) return;
+  if (!force && document.activeElement && document.activeElement.classList
+      && document.activeElement.classList.contains('picrow__alt')) return;
+
+  const marks = bodyPicMarks(els.body.value);
+  const cover = els.cover.value.trim();
+  box.innerHTML = '';
+
+  if (!marks.length) {
+    const empty = document.createElement('p');
+    empty.className = 'hint';
+    empty.textContent = '这一篇还没有图。用工具栏那颗 🖼 一次选好几张，或者把图直接拖进正文。';
+    box.append(empty);
+    return;
+  }
+
+  marks.forEach((m, i) => {
+    const row = document.createElement('div');
+    row.className = 'picrow';
+    row.dataset.index = String(i);
+    row.dataset.src = m.src;
+    if (cover && m.src === cover) row.classList.add('is-cover');
+
+    const grip = document.createElement('span');
+    grip.className = 'picrow__grip';
+    grip.textContent = '⠿';
+    grip.title = '按住拖动换先后（图片之间的文字不动）';
+
+    const thumb = document.createElement('img');
+    thumb.className = 'picrow__thumb';
+    thumb.src = m.src;
+    thumb.alt = '';
+    thumb.loading = 'lazy';
+
+    const info = document.createElement('div');
+    info.className = 'picrow__info';
+
+    const layout = document.createElement('select');
+    layout.className = 'input input--sm picrow__layout';
+    layout.title = '这张图在正文里怎么摆';
+    for (const [val, label] of PIC_LAYOUTS) {
+      const opt = document.createElement('option');
+      opt.value = val;
+      opt.textContent = label;
+      if (val === m.layout) opt.selected = true;
+      layout.append(opt);
+    }
+    layout.addEventListener('change', () => editPic(i, (mm) => picMark(mm.alt, mm.src, layout.value)));
+
+    const alt = document.createElement('input');
+    alt.type = 'text';
+    alt.className = 'input input--sm picrow__alt';
+    alt.value = m.alt;
+    alt.placeholder = '说明（alt）';
+    alt.title = '这张图的说明文字';
+    alt.addEventListener('change', () => editPic(i, (mm) => picMark(alt.value.trim(), mm.src, mm.layout)));
+
+    info.append(layout, alt);
+
+    const ops = document.createElement('div');
+    ops.className = 'picrow__ops';
+
+    const coverBtn = document.createElement('button');
+    coverBtn.type = 'button';
+    coverBtn.className = 'btn btn--sm btn--ghost';
+    coverBtn.textContent = row.classList.contains('is-cover') ? '就是封面' : '设为封面';
+    coverBtn.title = '把列表里显示的那张换成它';
+    coverBtn.addEventListener('click', () => {
+      els.cover.value = m.src;
+      updateCoverPreview();
+      onFormChanged();
+      renderPics(true);
+      toast('已设为封面');
+    });
+
+    const delBtn = document.createElement('button');
+    delBtn.type = 'button';
+    delBtn.className = 'btn btn--sm btn--ghost';
+    delBtn.textContent = '删除';
+    delBtn.title = '把这张图从正文里删掉（文件还在，封面也不动）';
+    delBtn.addEventListener('click', () => {
+      editPic(i, () => '');
+      toast('已从正文里删掉');
+    });
+
+    ops.append(coverBtn, delBtn);
+    row.append(grip, thumb, info, ops);
+    box.append(row);
+  });
+
+  bindPicDrag(box);
+}
+
+/*
+  拖动换先后：拖的时候先把 DOM 挪给你看，松手再按 DOM 的顺序重写正文。
+
+  ⚠ pointermove / pointerup 挂在 **document** 上，不是挂在那个 ⠿ 把手上（2026-10-06 改）：
+  指针事件只发给"鼠标底下那个元素"，挂在把手上时，鼠标一挪到别的行，事件就跑到那一行去了，
+  拖了半天一点反应都没有 —— 验收脚本第一次跑就是这么红的（"先后真的换了"直接失败）。
+  监听挂在 document 上、用模块级的 dragging 记住拖的是哪一行，才跟得住整趟拖动。
+  document 上那几只是**只挂一次**的（用 box.dataset 记一下），每次重画不会越挂越多。
+*/
+let picDragRow = null;
+
+function bindPicDrag(box) {
+  for (const grip of box.querySelectorAll('.picrow__grip')) {
+    grip.addEventListener('pointerdown', (ev) => {
+      ev.preventDefault();
+      picDragRow = grip.closest('.picrow');
+      picDragRow.classList.add('is-dragging');
+    });
+  }
+  if (box.dataset.dragBound) return;
+  box.dataset.dragBound = '1';
+
+  document.addEventListener('pointermove', (ev) => {
+    if (!picDragRow || !picDragRow.isConnected) return;
+    const el = document.elementFromPoint(ev.clientX, ev.clientY);
+    const over = el && el.closest ? el.closest('.picrow') : null;
+    if (!over || over === picDragRow || over.parentElement !== box) return;
+    const rows = [...box.querySelectorAll('.picrow')];
+    if (rows.indexOf(picDragRow) < rows.indexOf(over)) over.after(picDragRow);
+    else over.before(picDragRow);
+  });
+
+  const finish = () => {
+    if (!picDragRow) return;
+    const row = picDragRow;
+    picDragRow = null;
+    row.classList.remove('is-dragging');
+    const order = [...box.querySelectorAll('.picrow')].map((r) => Number(r.dataset.index));
+    if (order.some((v, i) => v !== i)) reorderPics(order);
+    renderPics(true);
+  };
+  document.addEventListener('pointerup', finish);
+  document.addEventListener('pointercancel', finish);
+}
+
+/** 正文一改就重画那一列图（打字时别每一下都重画，等 250ms） */
+let picsTimer = 0;
+function schedulePics() {
+  window.clearTimeout(picsTimer);
+  picsTimer = window.setTimeout(() => renderPics(), 250);
 }
 
 function updateBodyCount() {
@@ -829,6 +1073,7 @@ function onFormChanged() {
 function onBodyChanged() {
   setDirty(true);
   updateBodyCount();
+  schedulePics();          // 正文里的图变了，那一列跟着刷新（2026-10-06）
   schedulePreview();
   scheduleDraftSave();
 }
@@ -1111,14 +1356,26 @@ function runToolbar(cmd) {
    传完还得点一下「插入」，三步才完事。网址方式留在「网址」按钮里。
    --------------------------------------------------------------- */
 
+/*
+  ⚠ 一次能选好几张（2026-10-06 用户要的「一次拖/选多张」）：
+  以前只取 files[0]，选十张也只进来一张。现在按顺序一张一张上传、依次插到光标处
+  （和"把多张图拖进正文"那条路的行为一致）。
+*/
 function pickLocalImage() {
   const input = document.createElement('input');
   input.type = 'file';
+  input.multiple = true;
   input.accept = 'image/png,image/jpeg,image/gif,image/webp,image/svg+xml';
   input.addEventListener('change', async () => {
-    const file = input.files && input.files[0];
-    if (!file) return;
-    await insertImageFile(file);
+    const files = Array.from(input.files || []);
+    if (!files.length) return;
+    let ok = 0;
+    for (const file of files) {
+      if (await insertImageFile(file)) ok++;
+      else break;                       // 上传失败就停在这张，别把后面的丢了还不说
+    }
+    if (files.length > 1) toast(`已插入 ${ok} 张图片`);
+    renderPics();
   });
   input.click();
 }
@@ -11780,6 +12037,12 @@ function renderEssencesPanel() {
 
   foot.append(
     panelBtn('关闭面板', '关掉这个面板（没保存的改动留着，切回来还在）', () => openWorkspace('docs')),
+    /*
+      「导入最新精华」（2026-10-06 加）：把导出管线产出的月度文件（HTML 或整个 zip）并进来。
+      只增不改 —— 已有的精华一条都不动，重复的自动跳过（去重规则见 tools/salon/merge.mjs）。
+    */
+    panelBtn('导入最新精华', '把新的群精华导出文件（月度 HTML 或整个压缩包）并进来：只增不改、重复的自动跳过', () =>
+      importEssenceFile(status)),
     panelBtn('看 /salon/', '在新标签页打开预览站点里的冰室精华页（要先构建过）', () => {
       window.open(`${PREVIEW_URL}/salon/`, '_blank', 'noopener');
     }),
@@ -11787,6 +12050,67 @@ function renderEssencesPanel() {
       saveSalon(els.essSave, status), true, 'ess-save'),
   );
   els.essSave = $('ess-save');
+}
+
+/**
+ * 「导入最新精华」：选一个文件 → 发给服务端 → 服务端解析、合并、重新构建。
+ *
+ * 服务端那边是**直接写盘**的，所以回来之后必须把 salonDraft 丢掉重读一遍
+ * （不然界面上还是导入前那一份，用户再点「保存并重新构建」就把刚导进来的东西覆盖没了）。
+ */
+function importEssenceFile(status) {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = '.html,.htm,.zip,text/html,application/zip,application/x-zip-compressed';
+  /*
+    挂进文档（隐藏）再点：① 浏览器行为完全一样；② 验收脚本能用 CDP 的
+    DOM.setFileInputFiles 真的把压缩包塞进来，走的是**和用户点按钮一模一样**那条路。
+    选完 / 取消都会删掉，不留节点。
+  */
+  input.id = 'essence-import-file';
+  input.hidden = true;
+  document.body.appendChild(input);
+  const drop = () => input.remove();
+  input.addEventListener('cancel', drop);
+  input.addEventListener('change', async () => {
+    const file = input.files && input.files[0];
+    if (!file) { drop(); return; }
+    statusPill('正在导入精华…', 'warn');
+    try {
+      const res = await fetch(`/api/salon/import?name=${encodeURIComponent(file.name)}`, {
+        method: 'POST',
+        body: file,
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data || data.ok === false) {
+        throw new Error(data?.error || data?.message || `HTTP ${res.status}`);
+      }
+      const r = data.report ?? {};
+      /* 服务端已经写盘了：把草稿丢掉，重新读一遍 */
+      salonDraft = null;
+      await loadSalon();
+      const lines = [
+        `导入 ${r.source || file.name}`,
+        `解析 ${r.parsed?.items ?? 0} 条（图片 ${r.parsed?.images ?? 0} 张）`,
+        `新增 ${r.added ?? 0} 条${r.addedIds?.length ? `（${r.addedIds[0]}…${r.addedIds[r.addedIds.length - 1]}）` : ''}`,
+        `跳过 ${r.skipped ?? 0} 条（站里已经有）`,
+      ];
+      if (r.newMembers?.length) lines.push(`新成员：${r.newMembers.join('、')}`);
+      if (r.images) lines.push(`写入图片 ${r.images} 张`);
+      lines.push(`现在共 ${r.after?.essences ?? '?'} 条精华 / ${r.after?.members ?? '?'} 位成员`);
+      if (data.built) lines.push(`已重新构建（${data.ms} ms）`);
+      for (const w of r.warnings ?? []) lines.push(`⚠ ${w}`);
+      toast(lines.join('\n'));
+      statusPill(r.added ? `导入了 ${r.added} 条精华` : '没有新条目（都是已有的）', r.added ? 'ok' : '');
+    } catch (err) {
+      toast(`导入失败：${err.message}`, true);
+      statusPill('导入失败', 'error');
+    } finally {
+      drop();
+    }
+    await openEssencesModal();
+  });
+  input.click();
 }
 
 /** 一个成员的小圆头像（列表行 / 多选清单里都用它） */

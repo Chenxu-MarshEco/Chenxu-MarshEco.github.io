@@ -2,13 +2,15 @@
 /**
  * 首页「每日精华」（右下角那一块）。
  *
- * 三件：
+ * 四件：
  *   · 标题「每日精华」本身是个链接 -> /salon/（冰室精华页）
  *   · 标题下面那条随机精华：成员头像 + 成员 + 时间 + 内容（文字或图片）
  *   · **点这一条直接跳到冰室精华页里它的位置**（用户要求：
  *     「点击每日精华就会直接跳转到精华页里这句精华的位置」）——
  *     就是 `/salon/#<那条的 id>`：精华页每条都带 `id`，那边本来就有
  *     hash 深链接（`:target` 高亮 + 让开吸顶页头的 `scroll-margin-top`）。
+ *   · **鼠标移上去弹出一张大卡片**，把这一条的全文和**全部**图片铺开；
+ *     移到图片上再放大一次（2026-10-06 加，见下）。
  *
  * "随机"是按**访问者当天**挑的（utils/daily.ts 那套哈希）：
  *   构建期先按构建那天渲染一条（不跑 JS 也看得见、搜索引擎也抓得到），
@@ -23,6 +25,34 @@
  *   · 「← 回到每日精华」—— 只在"现在这条是抽出来的"时出现，点了回到今天系统抽的那条。
  *   两个按钮都不在卡片那个 `<a>` 里面（卡片整张是链接，里面不能放按钮）。
  *   没有 JS 时整排按钮藏着（`hidden`）—— 不给一个点了没反应的按钮。
+ *
+ * ============================================================================
+ * 2026-10-06：卡片**不再被内容撑高**，全文和全部图片改到悬停浮层里
+ * ----------------------------------------------------------------------------
+ * 用户原话：
+ *   「如果首页的每日精华太长 会拉长框导致日历和冰山会跟着拉长 非常难看 修改一下：
+ *    让精华框永远保持默认的大小 鼠标移上去后 会弹出一个大卡片框显示全所有的文字和
+ *    图片内容 移到图片内容上也能放大图片（类似成员的移到头像上放大）」
+ *
+ * 病因：三张卡在同一个栅格里（`.extras__grid` / `.extras__pair`），行高 = 最高的那个。
+ * 精华这一条带图又有文字，比日历高，于是**整行**被它顶高，日历和冰山跟着被拉长。
+ *
+ * 修法分两半，缺一不可：
+ *   ① **让这一格不再贡献高度**：帧（`.daily`）里的内容整块 `position: absolute`，
+ *      于是帧的固有高度是 0，行高只由日历和冰山决定 —— 精华框从此"永远是默认大小"。
+ *      卡片内部按可用高度裁（文字限制行数、图片弹性吃掉剩下的空间），
+ *      底下压一道渐隐，让人看得出"还有"。
+ *   ② **全文 + 全部图片搬到悬停浮层**（`.daily__pop`，在帧外面、不参与布局）：
+ *      平时 `visibility: hidden`，鼠标移到这块卡片上时纯 CSS 显示出来
+ *      （`focus-within` 也显示，键盘 Tab 过来一样能看）。浮层是 `absolute`，
+ *      没有任何祖先裁它（首页那条链上没有 overflow），所以它可以盖到旁边的卡片上。
+ *      ⚠ 浮层**不能**加 `backdrop-filter`/`transform`：那会给里面的 `position: fixed`
+ *      造一个包含块，下面那个放大框就锚不到视口了。
+ *
+ * 图片放大：和成员名片那一套同一个手感 —— 鼠标移到图上，视口正中浮出一张大图
+ *   （`.dailyZoom`，JS 建在 `<body>` 上，`pointer-events: none`，所以它不会挡住鼠标，
+ *    也不会把浮层"顶掉"）。`<body>` 上没有 transform，所以 `position: fixed` 稳稳锚在视口。
+ * ============================================================================
  */
 import widgets from '../data/home-widgets.json';
 import { salonEssences, memberName, membersOf } from '../utils/salon';
@@ -39,72 +69,125 @@ const pickPeople = pick ? membersOf(pick) : [];
 const pickName = pick ? memberName(pick) : '';
 /** 图片走站点图片管线（客户端重挑时用的是 /salon.json 里同样处理过的地址） */
 const pickImage = pick?.images[0] ? variantUrl(pick.images[0], 500) : '';
+/** 浮层里那几张：给大一点的那一档（900），点开看细节够用 */
+const pickImages = (pick?.images ?? []).map((src) => variantUrl(src, 900));
 /** 这一条在精华页里的地址（点卡片跳过去就落在这儿） */
 const pickHref = pick ? `${href}#${pick.id}` : '';
 const pickLabel = pick ? `跳到冰室精华里的这一条：${pickName} ${pick.date}` : '';
 ---
 
-<section class="daily" data-daily data-mode="daily" data-built={builtOn} aria-labelledby="daily-title">
-  <header class="daily__head">
-    <h3 class="daily__titleWrap">
-      <a class="daily__title" id="daily-title" href={href}>{daily.title || '每日精华'}</a>
-    </h3>
-    <a class="daily__more" href={href}>看全部 ›</a>
-  </header>
+{/*
+  `data-daily` 挂在**外面这一层**：浮层要放在帧外面才不被帧的 `overflow: hidden` 裁掉，
+  而脚本仍然是"从 root 往下找"，所以整块一起搬到这里。
+*/}
+<div class="dailyWrap" data-daily data-mode="daily" data-built={builtOn}>
+  <section class="daily" aria-labelledby="daily-title">
+    {/* 帧里的内容整块绝对定位：帧自己不再有固有高度，行高交给日历 / 冰山 */}
+    <div class="daily__box">
+      <header class="daily__head">
+        <h3 class="daily__titleWrap">
+          <a class="daily__title" id="daily-title" href={href}>{daily.title || '每日精华'}</a>
+        </h3>
+        <a class="daily__more" href={href}>看全部 ›</a>
+      </header>
+
+      {/*
+        按钮那一排：默认 `hidden`，脚本拿到 /salon.json 之后才放出来
+        （拿不到就一直没有 —— 宁可没有，也不给一个点了没反应的按钮）。
+        「回到每日精华」只在当前这条是抽出来的时候才出现。
+      */}
+      <div class="daily__acts" data-daily-acts hidden>
+        <button
+          type="button"
+          class="daily__act"
+          data-daily-random
+          aria-controls="daily-card"
+          aria-label="随机抽一条精华"
+          title="从全部精华里随便抽一条"
+        >
+          <svg class="daily__actIcon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M20.5 12a8.5 8.5 0 1 1-2.6-6.1" />
+            <path d="M20.7 3.4v5.2h-5.2" />
+          </svg>
+          <span>随机精华</span>
+        </button>
+        <button
+          type="button"
+          class="daily__act daily__act--back"
+          data-daily-back
+          aria-controls="daily-card"
+          aria-label="回到今天的每日精华"
+          title="回到今天系统抽的那一条"
+          hidden
+        >
+          <svg class="daily__actIcon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M19.5 12h-14" />
+            <path d="m11.5 18-6-6 6-6" />
+          </svg>
+          <span>回到每日精华</span>
+        </button>
+      </div>
+
+      {/*
+        整张卡是一个链接（不是里面再套链接）：点它 = 跳到精华页里这一条。
+        `data-daily-link` 是给客户端重挑那条路用的（换了一条，href 也要跟着换）。
+      */}
+      <a
+        class="daily__card"
+        id="daily-card"
+        data-daily-card
+        data-daily-link
+        href={pick ? pickHref : undefined}
+        aria-label={pick ? pickLabel : undefined}
+      >
+        {
+          pick ? (
+            <>
+              <div class="daily__who">
+                <span class="daily__faces">
+                  {pickPeople.length ? (
+                    pickPeople.map((p) => (
+                      <span class="daily__face" title={p.name}>
+                        {p.avatar ? (
+                          <img class="daily__avatar" src={variantUrl(p.avatar, 400)} alt="" loading="lazy" decoding="async" />
+                        ) : (
+                          <span class="daily__avatar daily__avatar--none" aria-hidden="true">
+                            {p.name.slice(0, 1)}
+                          </span>
+                        )}
+                      </span>
+                    ))
+                  ) : (
+                    <span class="daily__face">
+                      <span class="daily__avatar daily__avatar--none" aria-hidden="true">
+                        群
+                      </span>
+                    </span>
+                  )}
+                </span>
+                <b class="daily__name">{pickName}</b>
+                <time class="daily__time">{pick.date}{pick.time && ` ${pick.time}`}</time>
+              </div>
+              {pick.text && <blockquote class="daily__text">{pick.text}</blockquote>}
+              {pickImage && <img class="daily__pic" src={pickImage} alt="" loading="lazy" decoding="async" />}
+            </>
+          ) : (
+            <p class="daily__text">还没有精华：去编辑器的「精华」面板里添一条。</p>
+          )
+        }
+      </a>
+    </div>
+  </section>
 
   {/*
-    按钮那一排：默认 `hidden`，脚本拿到 /salon.json 之后才放出来
-    （拿不到就一直没有 —— 宁可没有，也不给一个点了没反应的按钮）。
-    「回到每日精华」只在当前这条是抽出来的时候才出现。
+    悬停浮层：全文（不截断）+ **全部**图片。鼠标移到这块卡片上（或键盘聚焦到卡片上）才显示。
+    它和帧里的内容一样，客户端重挑时会被整段重写 —— 所以里面每个元素都用 :global()。
   */}
-  <div class="daily__acts" data-daily-acts hidden>
-    <button
-      type="button"
-      class="daily__act"
-      data-daily-random
-      aria-controls="daily-card"
-      aria-label="随机抽一条精华"
-      title="从全部精华里随便抽一条"
-    >
-      <svg class="daily__actIcon" viewBox="0 0 24 24" aria-hidden="true">
-        <path d="M20.5 12a8.5 8.5 0 1 1-2.6-6.1" />
-        <path d="M20.7 3.4v5.2h-5.2" />
-      </svg>
-      <span>随机精华</span>
-    </button>
-    <button
-      type="button"
-      class="daily__act daily__act--back"
-      data-daily-back
-      aria-controls="daily-card"
-      aria-label="回到今天的每日精华"
-      title="回到今天系统抽的那一条"
-      hidden
-    >
-      <svg class="daily__actIcon" viewBox="0 0 24 24" aria-hidden="true">
-        <path d="M19.5 12h-14" />
-        <path d="m11.5 18-6-6 6-6" />
-      </svg>
-      <span>回到每日精华</span>
-    </button>
-  </div>
-
-  {/*
-    整张卡是一个链接（不是里面再套链接）：点它 = 跳到精华页里这一条。
-    `data-daily-link` 是给客户端重挑那条路用的（换了一条，href 也要跟着换）。
-  */}
-  <a
-    class="daily__card"
-    id="daily-card"
-    data-daily-card
-    data-daily-link
-    href={pick ? pickHref : undefined}
-    aria-label={pick ? pickLabel : undefined}
-  >
+  <div class="daily__pop" data-daily-pop>
     {
       pick ? (
         <>
-          <div class="daily__who">
+          <header class="daily__popHead">
             <span class="daily__faces">
               {pickPeople.length ? (
                 pickPeople.map((p) => (
@@ -128,16 +211,21 @@ const pickLabel = pick ? `跳到冰室精华里的这一条：${pickName} ${pick
             </span>
             <b class="daily__name">{pickName}</b>
             <time class="daily__time">{pick.date}{pick.time && ` ${pick.time}`}</time>
-          </div>
-          {pick.text && <blockquote class="daily__text">{pick.text}</blockquote>}
-          {pickImage && <img class="daily__pic" src={pickImage} alt="" loading="lazy" decoding="async" />}
+          </header>
+          {pick.text && <div class="daily__popText">{pick.text}</div>}
+          {pickImages.length > 0 && (
+            <div class="daily__popPics">
+              {pickImages.map((src) => (
+                <img class="daily__popPic" data-daily-zoom src={src} alt="" loading="lazy" decoding="async" />
+              ))}
+            </div>
+          )}
+          <a class="daily__popLink" href={pickHref}>去精华页看这一条 ›</a>
         </>
-      ) : (
-        <p class="daily__text">还没有精华：去编辑器的「精华」面板里添一条。</p>
-      )
+      ) : null
     }
-  </a>
-</section>
+  </div>
+</div>
 
 <script>
   /*
@@ -147,16 +235,21 @@ const pickLabel = pick ? `跳到冰室精华里的这一条：${pickName} ${pick
     显示规则和"每日精华"完全一样：成员头像们 + 名字 + 时间 + 正文（+ 头一张图），
     整张卡还是链到 /salon/#<这一条的 id>。
 
+    2026-10-06 补：**浮层那一份也要一起重画**（`popOf` / `paint`），
+    以及"鼠标移到浮层里的图上 → 视口正中浮出大图"（见文件末尾那段，和按钮无关，
+    不需要按钮也能用，所以它写在条件外面）。
+
     ⚠ 这里只有 <script>，没有 export：Astro 会把这段打进页面。
   */
   import { dailyIndex, localDateKey } from '../utils/daily';
   import { withBase } from '../utils/url';
 
   type Person = { name: string; avatar: string };
-  type Item = { id: string; member: string; avatar: string; members?: Person[]; date: string; time: string; text: string; image: string };
+  type Item = { id: string; member: string; avatar: string; members?: Person[]; date: string; time: string; text: string; image: string; images?: string[] };
 
   const root = document.querySelector<HTMLElement>('[data-daily]');
   const card = root?.querySelector<HTMLElement>('[data-daily-card]');
+  const pop = root?.querySelector<HTMLElement>('[data-daily-pop]');
   const acts = root?.querySelector<HTMLElement>('[data-daily-acts]');
   const btnRandom = root?.querySelector<HTMLButtonElement>('[data-daily-random]');
   const btnBack = root?.querySelector<HTMLButtonElement>('[data-daily-back]');
@@ -166,15 +259,9 @@ const pickLabel = pick ? `跳到冰室精华里的这一条：${pickName} ${pick
     const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     const escAttr = (s: string) => esc(s).replace(/"/g, '&quot;');
 
-    /** 这一条渲染成卡片里那段 HTML（和构建期那一份长得一模一样） */
-    const bodyOf = (pick: Item) => {
-      /* 老 JSON 只有单个 member/avatar；新 JSON 是 members 数组 —— 两种都认 */
-      const people: Person[] = pick.members?.length
-        ? pick.members
-        : pick.member
-          ? [{ name: pick.member, avatar: pick.avatar || '' }]
-          : [];
-      const faces = people.length
+    /** 头像们那几个圆圈：卡片和浮层共用一段 */
+    const facesOf = (people: Person[]) =>
+      people.length
         ? people
             .map((p) =>
               p.avatar
@@ -183,11 +270,41 @@ const pickLabel = pick ? `跳到冰室精华里的这一条：${pickName} ${pick
             )
             .join('')
         : `<span class="daily__face"><span class="daily__avatar daily__avatar--none" aria-hidden="true">群</span></span>`;
+
+    /** 认两种形状：老 JSON 只有单个 member/avatar；新 JSON 是 members 数组 */
+    const peopleOf = (pick: Item): Person[] =>
+      pick.members?.length ? pick.members : pick.member ? [{ name: pick.member, avatar: pick.avatar || '' }] : [];
+
+    /** 这一条渲染成卡片里那段 HTML（和构建期那一份长得一模一样：文字截断、只放头一张图） */
+    const bodyOf = (pick: Item) => {
+      const people = peopleOf(pick);
       return (
-        `<div class="daily__who"><span class="daily__faces">${faces}</span><b class="daily__name">${esc(pick.member)}</b>` +
+        `<div class="daily__who"><span class="daily__faces">${facesOf(people)}</span><b class="daily__name">${esc(pick.member)}</b>` +
         `<time class="daily__time">${esc(pick.date)}${pick.time ? ' ' + esc(pick.time) : ''}</time></div>` +
         (pick.text ? `<blockquote class="daily__text">${esc(pick.text)}</blockquote>` : '') +
         (pick.image ? `<img class="daily__pic" src="${escAttr(pick.image)}" alt="" loading="lazy" decoding="async">` : '')
+      );
+    };
+
+    /**
+     * 浮层那一份：**全文**（不截断）+ **全部**图片。
+     * `images` 是 2026-10-06 起 /salon.json 也一起吐出来的字段；
+     * 万一拿到的是老 JSON（只有一张 `image`），就退回那一张，不至于空着。
+     */
+    const popOf = (pick: Item) => {
+      const people = peopleOf(pick);
+      const pics = pick.images?.length ? pick.images : pick.image ? [pick.image] : [];
+      return (
+        `<header class="daily__popHead"><span class="daily__faces">${facesOf(people)}</span>` +
+        `<b class="daily__name">${esc(pick.member)}</b>` +
+        `<time class="daily__time">${esc(pick.date)}${pick.time ? ' ' + esc(pick.time) : ''}</time></header>` +
+        (pick.text ? `<div class="daily__popText">${esc(pick.text)}</div>` : '') +
+        (pics.length
+          ? `<div class="daily__popPics">${pics
+              .map((src) => `<img class="daily__popPic" data-daily-zoom src="${escAttr(src)}" alt="" loading="lazy" decoding="async">`)
+              .join('')}</div>`
+          : '') +
+        (pick.id ? `<a class="daily__popLink" href="${withBase('/salon/')}#${escAttr(pick.id)}">去精华页看这一条 ›</a>` : '')
       );
     };
 
@@ -201,6 +318,7 @@ const pickLabel = pick ? `跳到冰室精华里的这一条：${pickName} ${pick
      */
     const paint = (pick: Item) => {
       card.innerHTML = bodyOf(pick);
+      if (pop) pop.innerHTML = popOf(pick);
       /*
         换了一条，跳转地址也要跟着换：点这张卡是跳到精华页里**这一条**的位置。
         `/salon/#<id>` —— 精华页每条都带 id，那边本来就有 hash 深链接。
@@ -269,22 +387,136 @@ const pickLabel = pick ? `跳到冰室精华里的这一条：${pickName} ${pick
         paint(pick);
       });
     });
+
+    /*
+      浮层里的图是懒加载的：鼠标没移上去之前它们不下载，移上去才现下 —— 会卡一下。
+      成员名片那次踩过同一个坑（用户报的「放大图要加载一段时间才出现」），
+      修法一样：鼠标一碰到这块卡片，就把浮层里的图提成 eager，提前开始下。
+    */
+    root.addEventListener('pointerenter', () => {
+      for (const img of pop?.querySelectorAll<HTMLImageElement>('img[loading="lazy"]') ?? []) {
+        img.loading = 'eager';
+      }
+    }, { once: true });
   }
 </script>
 
+<script>
+  /*
+    浮层的两个"手感"问题，都在这里解决：
+
+    ① **别开出屏幕**。浮层是"卡片上方 12px"（和卡片重叠 12px，鼠标从卡片挪进去不会经过
+       一段谁都不属于的空隙）。可首页这一屏在页面靠下的位置：卡片顶边离屏幕上沿常常不够
+       放下一整张浮层，那样浮层会有一半在屏幕外面 —— 上面的名字和正文开头全看不见。
+       所以这里量一次：上面放不下就翻到卡片下面，并且把 `max-height` 夹在真正可用的高度里
+       （浮层自己会滚，不会把内容丢掉）。
+
+    ② **移到图上看大图**。和成员名片一个手感。放大层建在 <body> 上：
+       `position: fixed` 才能锚住视口 —— 页面里那一串祖先里 `.extras__grid` 有 transform，
+       挂在里面的话 fixed 会退化成"相对那个祖先"，位置全乱。
+       `pointer-events: none` 是关键：它只是给你看一眼，不能接鼠标 ——
+       否则鼠标一移进去、图片的 :hover 就断了，大图会一闪一闪。
+
+    ⚠ 这一段和"随机精华 / 回到每日精华"那两个按钮**无关**：构建期渲染出来的浮层
+      （没跑按钮逻辑时）也要能摆位、能放大，所以它单独一段。
+  */
+  (() => {
+    const wrap = document.querySelector<HTMLElement>('[data-daily]');
+    const pop = wrap?.querySelector<HTMLElement>('[data-daily-pop]');
+    if (!wrap || !pop) return;
+
+    /* ---------- ① 摆位 ---------- */
+    const place = () => {
+      const frame = wrap.querySelector<HTMLElement>('.daily');
+      if (!frame) return;
+      const r = frame.getBoundingClientRect();
+      const above = r.top - 10;
+      const below = window.innerHeight - r.bottom - 10;
+      /* 上面连 200px 都放不下、而下面更宽裕 → 翻到下面 */
+      const goBelow = above < 200 && below > above;
+      pop.classList.toggle('is-below', goBelow);
+      const cap = window.innerWidth <= 760 ? 0.62 : 0.72;
+      const room = Math.max(160, Math.min(Math.round(window.innerHeight * cap), Math.round(goBelow ? below : above)));
+      pop.style.maxHeight = `${room}px`;
+    };
+    wrap.addEventListener('pointerenter', place);
+    wrap.addEventListener('focusin', place);
+    window.addEventListener('scroll', place, { passive: true });
+    window.addEventListener('resize', place);
+    place();
+
+    /* ---------- ② 图上的放大 ---------- */
+    const pics = document.querySelectorAll<HTMLImageElement>('[data-daily-zoom]');
+    if (!pics.length) return;
+
+    const layer = document.createElement('div');
+    layer.className = 'dailyZoom';
+    layer.setAttribute('aria-hidden', 'true');
+    const big = document.createElement('img');
+    big.alt = '';
+    big.decoding = 'async';
+    layer.append(big);
+    document.body.append(layer);
+
+    const show = (img: HTMLImageElement) => {
+      const src = img.currentSrc || img.src;
+      if (!src) return;
+      if (big.getAttribute('src') !== src) big.setAttribute('src', src);
+      layer.classList.add('is-on');
+    };
+    const hide = () => layer.classList.remove('is-on');
+
+    document.addEventListener('pointerover', (event) => {
+      const t = event.target as Element | null;
+      const img = t && t.closest ? (t.closest('[data-daily-zoom]') as HTMLImageElement | null) : null;
+      if (img) show(img);
+    });
+    document.addEventListener('pointerout', (event) => {
+      const t = event.target as Element | null;
+      if (t && t.closest && t.closest('[data-daily-zoom]')) hide();
+    });
+    window.addEventListener('scroll', hide, { passive: true });
+  })();
+</script>
+
 <style>
+  /*
+    ⚠ 这一层（wrapper）就是栅格里的那一格。帧里的内容是绝对定位的，
+    所以**这一格的固有高度是 0** —— 行高只由日历和冰山决定，精华再长也顶不高它俩。
+    这就是「让精华框永远保持默认的大小」（2026-10-06）。
+  */
+  .dailyWrap {
+    position: relative;
+    display: grid;
+    min-width: 0;
+    min-height: 0;
+  }
+  /* 浮层要盖到隔壁卡片上：悬停/聚焦时把这一格抬到最上面 */
+  .dailyWrap:hover,
+  .dailyWrap:focus-within {
+    z-index: 5;
+  }
+
   .daily {
-    display: flex;
-    flex-direction: column;
-    /* 和日历一样高：由 .extras__grid 那一行撑开 */
-    height: 100%;
+    position: relative;
+    min-height: 0;
     overflow: hidden;
-    padding: 0.55rem 0.7rem 0.65rem;
     border: 1px solid rgba(255, 120, 190, 0.4);
     border-radius: 16px;
     background: linear-gradient(180deg, rgba(38, 6, 54, 0.86), rgba(20, 3, 32, 0.9));
     box-shadow: 0 14px 40px -22px rgb(0 0 0 / 0.8);
     backdrop-filter: blur(4px);
+  }
+  /*
+    帧的内容：整块绝对定位。padding 原来在 .daily 上，搬到这一层
+    （放在帧上会把它自己的固有高度撑起来一点点，虽然只有 1px 上下，但没必要）。
+  */
+  .daily__box {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    padding: 0.55rem 0.7rem 0.65rem;
   }
 
   .daily__head {
@@ -293,6 +525,7 @@ const pickLabel = pick ? `跳到冰室精华里的这一条：${pickName} ${pick
     justify-content: space-between;
     gap: 0.5rem;
     margin-bottom: 0.3rem;
+    flex: none;
   }
   .daily__titleWrap {
     margin: 0;
@@ -320,13 +553,13 @@ const pickLabel = pick ? `跳到冰室精华里的这一条：${pickName} ${pick
 
   /* ---------- 两个按钮（随机精华 / 回到每日精华） ----------
      这块卡片很窄（1440 下 190px、900 下只有 150px），两个带字的按钮在窄屏上必然
-     换到第二行 —— 所以尺寸按"两行也尽量矮"来给：字号 0.7rem、上下 padding 各 0.1rem。
-     （首页那一行三张卡是"一样高"的：这一块高一点点，日历那张也会跟着变高。） */
+     换到第二行 —— 所以尺寸按"两行也尽量矮"来给：字号 0.7rem、上下 padding 各 0.1rem。 */
   .daily__acts {
     display: flex;
     flex-wrap: wrap;
     gap: 0.25rem;
     margin: 0 0 0.25rem;
+    flex: none;
   }
   .daily__acts[hidden] {
     display: none;
@@ -384,10 +617,13 @@ const pickLabel = pick ? `跳到冰室精华里的这一条：${pickName} ${pick
     会看到一条**没样式**的精华（这个坑本站踩过一次，见 HOME 日历那边）。
   */
   :global(.daily__card) {
-    display: block;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
     flex: 1;
     min-height: 0;
-    /* 卡片变扁了（和日历一样高）：内容一律在这块里裁掉，不许撑破卡片 */
+    /* 卡片只有这一格这么高：内容一律在这块里裁掉，不许撑破卡片 */
     overflow: hidden;
     padding: 0.55rem 0.7rem 0.65rem;
     border: 1px solid rgba(255, 120, 190, 0.3);
@@ -397,6 +633,20 @@ const pickLabel = pick ? `跳到冰室精华里的这一条：${pickName} ${pick
     text-decoration: none;
     color: inherit;
     transition: border-color 0.14s ease, background 0.14s ease;
+  }
+  /*
+    底下那道渐隐：这一格是定高的，长内容会被裁 —— 得让人看得出"还有"，
+    而不是以为这条精华就这么多字（全文在悬停浮层里）。
+  */
+  :global(.daily__card)::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 24px;
+    background: linear-gradient(180deg, rgba(12, 2, 20, 0), rgba(12, 2, 20, 0.88));
+    pointer-events: none;
   }
   /* 能点：指上去亮一下（和站里别的卡片一个手感） */
   :global(a.daily__card:hover),
@@ -413,6 +663,7 @@ const pickLabel = pick ? `跳到冰室精华里的这一条：${pickName} ${pick
     align-items: center;
     gap: 0.5rem;
     font-size: 0.84rem;
+    flex: none;
   }
   /* 多个成员：头像叠着排（完美对话那种一条好几个人的） */
   :global(.daily__faces) {
@@ -457,25 +708,173 @@ const pickLabel = pick ? `跳到冰室精华里的这一条：${pickName} ${pick
     font-variant-numeric: tabular-nums;
   }
   :global(.daily__text) {
-    margin: 0.45rem 0 0;
+    margin: 0;
     color: rgba(255, 236, 248, 0.9);
     font-size: 0.86rem;
     line-height: 1.7;
     white-space: pre-wrap;
     word-break: break-word;
-    /* 首页这一块不滚动，太长就截断；点「看全部」进去看完整的 */
+    /* 首页这一格高度是定死的：文字按行数裁，剩下的空间留给图片；全文看悬停浮层 */
     display: -webkit-box;
     -webkit-line-clamp: 4;
     -webkit-box-orient: vertical;
     overflow: hidden;
+    flex: 0 1 auto;
   }
+  /*
+    图片弹性吃掉剩下的高度（`flex: 1 1 60px` + `min-height: 0`）：
+    卡片高就多显示一点，矮就少一点，但**永远不许把卡片撑高**。
+  */
   :global(.daily__pic) {
     display: block;
     width: 100%;
-    max-height: 120px;
-    margin-top: 0.45rem;
+    flex: 1 1 60px;
+    min-height: 0;
+    max-height: 150px;
     border: 1px solid rgba(255, 120, 190, 0.35);
     border-radius: 10px;
     object-fit: cover;
+  }
+
+  /* ==========================================================================
+     悬停浮层：全文 + 全部图片（2026-10-06）
+     --------------------------------------------------------------------------
+     摆在这一格的**上方**、右对齐；`bottom: calc(100% - 12px)` 让它和卡片重叠 12px ——
+     这样鼠标从卡片往上挪进浮层时不会经过一段"谁都不属于"的空隙（那样浮层会一闪就没了）。
+     `absolute` 而不是 `fixed`：跟着卡片走，滚动也自然跟着（固定定位还得自己算位置）。
+     ========================================================================== */
+  .daily__pop {
+    position: absolute;
+    right: 0;
+    bottom: calc(100% - 12px);
+    z-index: 8;
+    width: min(460px, calc(100vw - 2rem));
+    max-height: min(72vh, 620px);
+    overflow: auto;
+    overscroll-behavior: contain;
+    padding: 0.8rem 0.95rem 0.9rem;
+    border: 1px solid rgba(255, 120, 190, 0.55);
+    border-radius: 14px;
+    background: rgba(20, 3, 32, 0.985);
+    box-shadow:
+      0 0 0 1px rgba(0, 0, 0, 0.45) inset,
+      0 24px 60px -22px rgb(0 0 0 / 0.95);
+    color: rgba(255, 236, 248, 0.92);
+    font-size: 0.86rem;
+    line-height: 1.7;
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transform: translateY(8px) scale(0.985);
+    transform-origin: 100% 100%;
+    transition: opacity 0.15s ease, transform 0.15s ease, visibility 0.15s;
+  }
+  /*
+    上面放不下时翻到卡片下面（`.is-below` 由脚本按实际空间加）。
+    ⚠ 这一条必须写在下面那条 `:hover` 之前：两条权重相同（0-2-0），
+    写在后面的话会把"打开时 transform: none"压掉，浮层就永远偏着。
+  */
+  .daily__pop.is-below {
+    top: calc(100% - 12px);
+    bottom: auto;
+    transform-origin: 100% 0;
+  }
+  .dailyWrap:hover .daily__pop,
+  .dailyWrap:focus-within .daily__pop {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+    transform: none;
+  }
+  :global(.daily__popHead) {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.84rem;
+    margin-bottom: 0.45rem;
+  }
+  :global(.daily__popText) {
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  :global(.daily__popPics) {
+    display: grid;
+    gap: 0.5rem;
+    margin-top: 0.6rem;
+  }
+  /* 移到图上 → 视口正中浮出大图（见下面 .dailyZoom） */
+  :global(.daily__popPic) {
+    display: block;
+    width: 100%;
+    border: 1px solid rgba(255, 120, 190, 0.35);
+    border-radius: 10px;
+    cursor: zoom-in;
+  }
+  :global(.daily__popLink) {
+    display: inline-block;
+    margin-top: 0.7rem;
+    color: #ffb3dd;
+    font-size: 0.8rem;
+    text-decoration: none;
+    border-bottom: 1px dotted rgba(255, 120, 190, 0.6);
+  }
+  :global(.daily__popLink:hover) {
+    color: #fff;
+    border-bottom-color: #ff4fa3;
+  }
+
+  /* 窄屏：卡片是整幅宽，浮层跟着左右铺满 */
+  @media (max-width: 760px) {
+    /*
+      ⚠ 窄屏必须把"内容绝对定位"这条**取消掉**（2026-10-06 踩到）：
+      手机上三张卡是**各占一行**的（单列），谁也不挨着谁 —— 本来就顶不高日历和冰山。
+      而内容一旦绝对定位，帧就没有固有高度了，它一个人一行 → 这一行高度成了 0，
+      卡片被压成 2px（random-essence-check 在手机那一段量到的就是这个：
+      「卡片 342×2」）。所以窄屏回到"按内容自然高度"。
+    */
+    .daily__box {
+      position: static;
+    }
+    .daily__pop {
+      left: 0;
+      right: 0;
+      width: auto;
+      max-height: 62vh;
+    }
+  }
+</style>
+
+<style is:global>
+  /*
+    放大预览层。放在 <body> 上（JS 建的），所以这一条得是全局样式。
+    `pointer-events: none` 是关键：它只是给你看一眼，不能接鼠标 ——
+    否则鼠标一移进去，图片的 :hover 就断了，大图立刻消失。
+  */
+  .dailyZoom {
+    position: fixed;
+    inset: 0;
+    z-index: 9995;
+    display: grid;
+    place-items: center;
+    padding: 1rem;
+    pointer-events: none;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.16s ease, visibility 0.16s;
+  }
+  .dailyZoom.is-on {
+    opacity: 1;
+    visibility: visible;
+  }
+  .dailyZoom img {
+    max-width: min(900px, 92vw);
+    max-height: min(86vh, 900px);
+    object-fit: contain;
+    border: 1px solid rgba(255, 120, 190, 0.6);
+    border-radius: 12px;
+    background: rgba(12, 2, 20, 0.98);
+    box-shadow:
+      0 0 0 1px rgba(0, 0, 0, 0.5) inset,
+      0 26px 70px -20px rgb(0 0 0 / 0.95);
   }
 </style>

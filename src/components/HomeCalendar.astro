@@ -15,6 +15,10 @@
  *      事件里的 href 留空也没关系 —— 那天照样变色，只是点不动。
  */
 import widgets from '../data/home-widgets.json';
+import site from '../site.config';
+import { flattenBoards, type BoardNode } from '../utils/boards';
+import { calendarDayLinks } from '../utils/day-pages';
+import { variantUrl } from '../utils/images';
 import { withBase } from '../utils/url';
 
 interface CalEvent {
@@ -29,6 +33,29 @@ const cal = (widgets.calendar ?? {}) as {
   events?: Record<string, CalEvent>;
 };
 const events = cal.events ?? {};
+
+/*
+  「这一天有文章」的那张表：日期 → 点它去哪 / 悬停写什么 / 有几篇。
+  ⚠ 判断规则（单篇直达、多篇进 /day/、本身还是特殊日子也进 /day/）**只在
+  utils/day-pages.ts 里写一次** —— 日历和 /day/ 那一页共用，免得两边各判一套、
+  点进去发现那一页没生成（2026-10-06）。
+*/
+const dayLinks = await calendarDayLinks();
+
+/*
+  卡片左下角那颗「铃忆的冰室日记」（用户 2026-10-06 要的，样子照页头左上角那颗
+  「花娅域主」的小圆片）。
+  目标页**按 id 从版块数据里找**，不写死地址：用户在编辑器里改了那一页的名字或地址，
+  这颗胶囊跟着变；头像就是用户发来的那张图，走站点图片管线取 400 那一档。
+*/
+const DIARY_ID = 'page-muu0iohn';
+const DIARY_AVATAR = '/img/uploads/20261006-1735-9a1f-lingyi.jpg';
+const diaryNode = flattenBoards(site.homeBoards as BoardNode[]).find((f) => f.node.id === DIARY_ID);
+const diary = {
+  title: diaryNode?.node.title || '铃忆的冰室日记',
+  href: withBase(diaryNode?.url || '/huaya/01nikki'),
+  avatar: variantUrl(DIARY_AVATAR, 400),
+};
 ---
 
 <section class="cal" id="home-cal" data-cal aria-labelledby="cal-title">
@@ -57,11 +84,18 @@ const events = cal.events ?? {};
     {cal.idleText || '今天依然是等待篠雨的一天'}
   </p>
 
+  {/* 左下角：「铃忆的冰室日记」那一页的入口（和页头左上角那颗小圆片一个样子） */}
+  <a class="cal__diary" href={diary.href} title={`去「${diary.title}」`}>
+    <img class="cal__diaryFace" src={diary.avatar} alt="" loading="lazy" decoding="async" />
+    <span class="cal__diaryText">{diary.title}</span>
+  </a>
+
   <script
     type="application/json"
     id="cal-data"
     set:html={JSON.stringify({
       events,
+      days: dayLinks,
       idleText: cal.idleText || '今天依然是等待篠雨的一天',
       specialText: cal.specialText || '今天是{title}',
       base: withBase('/'),
@@ -74,15 +108,19 @@ const events = cal.events ?? {};
      月历：格子全在浏览器里生成（"今天"和"当前月"必须按访问者的表算）
      ============================================================ */
   type CalEvent = { title?: string; href?: string; text?: string };
+  /** 那一天有文章认领：href = 点它去哪（单篇直达，多篇进 /day/<日期>/） */
+  type DayLink = { href: string; label: string; count: number };
   const root = document.querySelector<HTMLElement>('[data-cal]');
   const dataEl = document.getElementById('cal-data');
   if (root && dataEl) {
     const cfg = JSON.parse(dataEl.textContent || '{}') as {
       events: Record<string, CalEvent>;
+      days: Record<string, DayLink>;
       idleText: string;
       specialText: string;
       base: string;
     };
+    const dayLinks = cfg.days ?? {};
     const grid = root.querySelector<HTMLElement>('[data-cal-grid]');
     const monthLab = root.querySelector<HTMLElement>('[data-cal-month]');
     const todayBox = root.querySelector<HTMLElement>('[data-cal-today]');
@@ -117,6 +155,14 @@ const events = cal.events ?? {};
     /** 这一天有没有特殊日子（按 MM-DD 查） */
     const eventOn = (key: string) => byMd.get(mdOf(key)) ?? null;
 
+    /** 往 HTML 里塞文字/属性前先转义：文章标题里带引号或 & 也能安全上屏 */
+    const esc = (s: unknown) =>
+      String(s ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+
     const paint = () => {
       if (!grid) return;
       const first = new Date(year, month, 1);
@@ -130,6 +176,17 @@ const events = cal.events ?? {};
         const key = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
         const hit = eventOn(key);
         const ev = hit?.ev;
+        /*
+          这一天有没有文章认领（frontmatter 里勾了「认领这一天」的那种）。
+          ⚠ 认领按**完整日期**匹配（2026-10-04 就是 2026-10-04），不像生日那样只看月日 ——
+          不然 2024 年那篇会跑到 2026 年同一天上，点进去是另一年的事。
+
+          ⚠⚠ 用户 2026-10-06 明确说过：**认领之后不许对这一天做任何视觉上的改动** ——
+          不要圆点标记、悬停也不要显示文章标题（"移上去依然正常和其他天一样显示日期即可"），
+          唯一的提示就是鼠标移上去变成手指（那是 <a> 自带的光标）。
+          所以这里除了"把它包成链接"，一个 class、一个属性都不多加。
+        */
+        const claim: DayLink | null = dayLinks[key] ?? null;
         const isToday = key === todayKey;
         const cls = ['cal__day'];
         if (ev) cls.push('cal__day--event');
@@ -140,15 +197,24 @@ const events = cal.events ?? {};
           写法按用户要求：
             · 普通日  -> 就写这一天（2026-09-21）
             · 特殊日  -> 「{事件名} {填的那个日期}」，例如「桑芙的生日 2003-08-30」
+          认领了文章的那天**照旧只写日期**（用户要求，见上）。
           ⚠ **不要再把后端那串原样端出来**（以前是「2026-08-30 桑芙的生日（填的是 2003-08-30）」，
           又长又像 debug 输出；用户原话：「太赤裸太丑了」）。
         */
         const label = ev?.title ? (hit && hit.key !== key ? `${ev.title} ${hit.key}` : ev.title) : key;
-        const tip = `<span class="cal__tip" aria-hidden="true">${label}</span>`;
+        const tip = `<span class="cal__tip" aria-hidden="true">${esc(label)}</span>`;
+        /*
+          一个格子上只能有一个链接：**文章认领优先**（用户要的就是"点这一天进这篇"）。
+          多篇 / 那天还是特殊日子时，dayLinks[key].href 已经是 /day/<日期>/ 那一页了 ——
+          规则在 utils/day-pages.ts 里算好，这里不重新判断。
+          读屏那边仍然把文章标题报出来（aria-label，屏幕上不显示）—— 这不违反"不许改样子"。
+        */
+        const href = claim?.href || ev?.href || '';
+        const ariaLabel = claim ? `${label}（${claim.label}）` : label;
         cells.push(
-          ev?.href
-            ? `<a class="${cls.join(' ')}" href="${ev.href}" aria-label="${label}">${num}${tip}</a>`
-            : `<span class="${cls.join(' ')}" aria-label="${label}">${num}${tip}</span>`
+          href
+            ? `<a class="${cls.join(' ')}" href="${esc(href)}" aria-label="${esc(ariaLabel)}">${num}${tip}</a>`
+            : `<span class="${cls.join(' ')}" aria-label="${esc(label)}">${num}${tip}</span>`
         );
       }
       grid.innerHTML = cells.join('');
@@ -308,10 +374,22 @@ const events = cal.events ?? {};
     line-height: 1.5;
     letter-spacing: 0.02em;
     white-space: nowrap;
-    opacity: 0;
-    visibility: hidden;
+    /*
+      ⚠ 不悬停时是 **display: none**，不是 opacity/visibility（2026-10-06 改）。
+
+      为什么非改成 display：这句话是 `white-space: nowrap` 而且绝对定位，右边那几列的
+      提示卡会伸出屏幕约 34px，把**整页**撑出横向滚动条（手机上尤其明显）。
+      opacity: 0 / visibility: hidden 的元素**照样参与布局与溢出计算**，
+      所以以前它是"看不见但撑宽"。
+      以前是在首页 `.home` 上写 `overflow-x: clip` 把这点溢出裁掉 —— 结果那一裁
+      把本来只是稍微超出十几个像素的板块卡片右半边也裁没了（花娅陌域 / 每日精华，
+      用户当场发现的严重 bug）。所以改成从源头治：
+      不指上去时它根本不存在于布局里（不撑宽），指上去才出现 —— 那一下的横向溢出
+      只发生在悬停期间，不会有常驻滚动条。
+      代价是没有淡入淡出（display 不能过渡），但"整页被撑宽"比"少一个淡入"严重得多。
+    */
+    display: none;
     pointer-events: none;
-    transition: opacity 0.14s ease, visibility 0.14s ease;
   }
   /*
     ⚠ 这两条要整条写进 :global()。
@@ -321,8 +399,7 @@ const events = cal.events ?? {};
   */
   :global(.cal__day:hover .cal__tip),
   :global(.cal__day:focus-visible .cal__tip) {
-    opacity: 1;
-    visibility: visible;
+    display: block;
   }
   :global(.cal__day--event .cal__tip) {
     border-color: rgba(255, 180, 70, 0.7);
@@ -421,12 +498,24 @@ const events = cal.events ?? {};
     text-shadow: 0 1px 0 rgba(255, 255, 255, 0.45);
   }
 
+  /*
+    有文章认领的那一天（2026-10-06）：**样子一点都不改** —— 不换颜色、不加圆点、
+    悬停也还是只写日期，唯一的区别是鼠标移上去变手指（它是 <a>，浏览器自带）。
+    用户原话：「认领文章以后不要对涣源溪水钟的日历做任何修改 2026.10.4那天移上去
+    依然正常和其他天一样显示日期即可 不要显示文章标题 也不需要青色的点标记
+    只需要鼠标移上去会变成手指表明这里可以点击即可」。
+  */
+  :global(a.cal__day) {
+    cursor: pointer;
+  }
+
   /* 右下角那个小框 */
   .cal__today {
     position: absolute;
     right: 0.7rem;
     bottom: 0.65rem;
-    max-width: calc(100% - 1.4rem);
+    /* 左边留给「铃忆的冰室日记」那颗胶囊（它最多占 9.5rem + 0.7rem 边距） */
+    max-width: calc(100% - 11rem);
     margin: 0;
     padding: 0.25rem 0.6rem;
     border: 1px solid rgba(255, 120, 190, 0.45);
@@ -440,5 +529,52 @@ const events = cal.events ?? {};
   .cal__today--event {
     border-color: rgba(255, 212, 71, 0.8);
     color: #ffe9a8;
+  }
+
+  /*
+    左下角那颗「铃忆的冰室日记」（2026-10-06）。
+    样子照页头左上角那颗「花娅域主」：圆头像 + 名字 + 999px 圆角。
+    底色用这块卡的深紫（不能用 --c-bg-raised —— 那是浅色主题的值，压在这儿会糊成一块白）。
+  */
+  .cal__diary {
+    position: absolute;
+    left: 0.7rem;
+    bottom: 0.65rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.34rem;
+    max-width: 9.5rem;
+    padding: 0.15rem 0.6rem 0.15rem 0.2rem;
+    border: 1px solid rgba(255, 120, 190, 0.45);
+    border-radius: 999px;
+    background: rgba(24, 3, 36, 0.9);
+    color: #ffd9ef;
+    font-size: 0.74rem;
+    letter-spacing: 0.06em;
+    line-height: 1.5;
+    text-decoration: none;
+    white-space: nowrap;
+    overflow: hidden;
+    transition: border-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+  }
+  .cal__diary:hover,
+  .cal__diary:focus-visible {
+    color: #fff;
+    border-color: rgba(255, 120, 190, 0.9);
+    box-shadow: 0 0 14px rgba(255, 79, 163, 0.45);
+  }
+  .cal__diaryFace {
+    width: 22px;
+    height: 22px;
+    flex: none;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 1px solid rgba(255, 120, 190, 0.6);
+    background: #2a0a3a;
+  }
+  /* 名字太长就省略号（这一条栏很窄，不许把卡片撑开） */
+  .cal__diaryText {
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 </style>

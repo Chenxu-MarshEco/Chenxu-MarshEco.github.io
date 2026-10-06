@@ -1,0 +1,107 @@
+---
+/**
+ * 「这一天」—— 首页「涣源溪水钟」上点某一天会落到这一页（2026-10-06 加）。
+ *
+ * 用户原话：
+ *   「如果有多篇文章同时认领这一天 则跳转到一个类似索引的页面处
+ *    可以查看这一天对应的所有文章」
+ *
+ * 所以这一页只做一件事：把**认领了这一天**的文章 / 手记列出来。
+ * 两条边界也说清楚：
+ *   · 一篇文章认领一天时，日历上那一天**直接进那篇**，不会绕到这一页（这一页也不生成）；
+ *   · 这一天同时还是个「特殊日子」（生日那种、自带地址）时，日历还得往这一页来 ——
+ *     一天的格子上只能挂一个链接，把两样都给到只有这一页能做到（上面一张特殊日子的卡
+ *     仍然链到它原来那个地址，下面才是文章列表）。
+ *
+ * 哪些日期要生成、点日历会去哪，规则全在 utils/day-pages.ts 里写一次，
+ * 这一页只负责画 —— 免得两边各判一套、出现"点进去 404"。
+ */
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import PostItem from '../../components/PostItem.astro';
+import { claimedDays } from '../../utils/day-pages';
+import { formatDateFull } from '../../utils/date';
+import { withBase } from '../../utils/url';
+
+export async function getStaticPaths() {
+  const days = await claimedDays();
+  return [...days.values()]
+    .filter((day) => day.needsPage)
+    .map((day) => ({ params: { date: day.date }, props: { day } }));
+}
+
+const { day } = Astro.props;
+/* 日期串是 YYYY-MM-DD；用 UTC 解析，和 content.config 里 z.coerce.date 的取值口径一致 */
+const when = formatDateFull(new Date(`${day.date}T00:00:00Z`));
+const titles = day.entries.map((e) => String(e.data.title || ''));
+---
+
+<BaseLayout
+  title={`${day.date} 这一天`}
+  description={`${when} 认领了这一天：${titles.join('、')}`}
+  layoutPage="list"
+>
+  <header class="page-header">
+    <h1 class="page-header__title" data-edit="heading">{day.date} 这一天</h1>
+    <p class="page-header__desc">
+      {when} —— 这一天有 {day.entries.length} 篇。点标题进去看。
+    </p>
+  </header>
+
+  {
+    /* 这一天同时是个特殊日子（生日那种）：那天的格子被这一页接住了，
+       特殊日子自己那张卡放这儿，点它还是去它原来那个地址 */
+    day.event && (
+      <aside class="day-event">
+        <span class="day-event__label">这一天还是</span>
+        {day.event.href ? (
+          <a class="day-event__link" href={day.event.href}>{day.event.title || '特殊日子'} ›</a>
+        ) : (
+          <span class="day-event__name">{day.event.title || '特殊日子'}</span>
+        )}
+        {day.event.text && <p class="day-event__text">{day.event.text}</p>}
+      </aside>
+    )
+  }
+
+  <ul class="post-list">
+    {day.entries.map((entry) => <PostItem entry={entry} />)}
+  </ul>
+
+  <p class="day-back">
+    <a href={withBase('/')}>← 回首页看「涣源溪水钟」</a>
+  </p>
+</BaseLayout>
+
+<style>
+  .day-event {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-bottom: var(--sp-5);
+    padding: var(--sp-3) var(--sp-4);
+    border: 1px solid rgba(255, 212, 71, 0.55);
+    border-left-width: 3px;
+    border-radius: var(--r-md);
+    background: var(--c-accent-soft);
+  }
+  .day-event__label {
+    font-size: var(--fs-xs);
+    letter-spacing: var(--ls-wide);
+    color: var(--c-text-faint);
+  }
+  .day-event__link,
+  .day-event__name {
+    font-weight: var(--fw-bold);
+  }
+  .day-event__text {
+    flex-basis: 100%;
+    margin: 0;
+    font-size: var(--fs-sm);
+    color: var(--c-text-muted);
+  }
+  .day-back {
+    margin-top: var(--sp-6);
+    font-size: var(--fs-sm);
+  }
+</style>

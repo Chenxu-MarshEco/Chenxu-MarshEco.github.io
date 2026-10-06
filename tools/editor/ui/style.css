@@ -4701,3 +4701,73 @@ body.pblock-dragging * {
   }
 }
 
+/* ==========================================================================
+   正文图片列表（2026-10-06）
+   --------------------------------------------------------------------------
+   一篇文章 / 手记里所有图（就是正文里那些 ![](...)）排成一张清单：
+   左边 ⠿ 拖着换先后、中间缩略图 + 版式下拉 + 说明、右边设为封面 / 删除。
+   尺寸按"表单那一列很窄"来给。
+   ========================================================================== */
+.pics {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.picrow {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0.45rem;
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  background: var(--surface);
+}
+.picrow.is-cover {
+  border-color: var(--accent);
+}
+.picrow.is-dragging {
+  opacity: 0.6;
+  border-style: dashed;
+}
+.picrow__grip {
+  flex: none;
+  cursor: grab;
+  color: var(--text-faint);
+  font-size: 0.95rem;
+  line-height: 1;
+  padding: 0 0.15rem;
+  user-select: none;
+  touch-action: none;
+}
+.picrow__grip:active {
+  cursor: grabbing;
+}
+.picrow__thumb {
+  flex: none;
+  width: 44px;
+  height: 44px;
+  object-fit: cover;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+}
+.picrow__info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+.picrow__alt,
+.picrow__layout {
+  width: 100%;
+}
+.picrow__ops {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+.picrow__ops .btn {
+  white-space: nowrap;
+}

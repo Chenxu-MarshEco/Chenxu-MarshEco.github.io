@@ -39,6 +39,14 @@ export default defineConfig({
   },
 
   markdown: {
+    /*
+      正文图片的版式不在这里做（原来是写了个 remark 插件把 title 翻成 class，
+      结果 Astro 7 默认的 Markdown 处理器换成了 Sätteri —— `remarkPlugins` 要另装
+      `@astrojs/markdown-remark` 才认，构建直接报错。为一个 class 引一个依赖不划算，
+      改成**纯 CSS**：记号就写在 Markdown 的 title 里，样式按属性选（见 global.css）：
+        ![说明](/img/x.jpg "半宽居左")
+      多花的代价只是鼠标停在图上会弹一句「半宽居左」—— 那句话本身也就是它的意思，不算难看。
+    */
     shikiConfig: {
       // 代码高亮配色。这里必须同时给「亮色」和「暗色」两套主题。
       // 只配一套的话，在另一种主题下 token 颜色会和代码块背景撞在一起，
