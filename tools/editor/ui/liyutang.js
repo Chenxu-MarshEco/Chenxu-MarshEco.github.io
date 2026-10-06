@@ -129,9 +129,10 @@ async function load() {
   if (!draft.forum || typeof draft.forum !== 'object') draft.forum = {};
   if (!draft.forum.giscus || typeof draft.forum.giscus !== 'object') draft.forum.giscus = {};
   if (!draft.forum.waline || typeof draft.forum.waline !== 'object') draft.forum.waline = {};
+  if (!draft.forum.twikoo || typeof draft.forum.twikoo !== 'object') draft.forum.twikoo = {};
   if (typeof draft.forum.enabled !== 'boolean') draft.forum.enabled = false;
-  /* 认不出来就是 waline（2026-10-06 定的那条路，和 server.mjs 的 cleanLiyutang 一致） */
-  if (typeof draft.forum.provider !== 'string') draft.forum.provider = 'waline';
+  /* 认不出来就是 twikoo（2026-10-06 晚上定的那条路，和 server.mjs 的 cleanLiyutang 一致） */
+  if (typeof draft.forum.provider !== 'string') draft.forum.provider = 'twikoo';
   if (!Array.isArray(draft.boards)) draft.boards = [];
   return draft;
 }
@@ -290,6 +291,7 @@ function renderForum() {
   const forum = draft.forum;
   const giscus = forum.giscus;
   const waline = forum.waline;
+  const twikoo = forum.twikoo;
 
   box.append(
     el('h4', 'wbox__title', '评论系统'),
@@ -298,15 +300,17 @@ function renderForum() {
       'hint',
       '花涧堂是静态站，没有自己的后端 —— 评论交给现成的无服务器方案，' +
         '数据存在你自己那个服务里（免费额度）。' +
-        '「Waline」自带邮箱注册的账号体系和 /ui 管理后台，所以不需要 GitHub 账号；' +
-        '「Giscus」最省事但要求人人先有 GitHub 账号。' +
-        '这里填好之后，帖子页才会挂上评论框；现在 /liyutang 还是空壳页，所以先关着。'
+        '「Twikoo（腾讯云开发）」是国内直连最稳的一条：自带 HTTPS、不用备案、自带审核后台，' +
+        '群友填昵称和邮箱就能发言，但要你在管理面板点通过才显示（先审后发）—— 现在走的就是这条。' +
+        '「Waline」功能最全（邮箱注册账号 + 用户标签）但国内不挂梯子打不开；' +
+        '「Giscus」最省事但要求人人先有 GitHub 账号。'
     )
   );
 
   const provider = el('select', 'input');
   for (const [value, label] of [
-    ['waline', 'Waline（自带邮箱注册账号，推荐）'],
+    ['twikoo', 'Twikoo（腾讯云开发，国内直连，推荐）'],
+    ['waline', 'Waline（自带邮箱注册账号，但国内打不开 Vercel）'],
     ['giscus', 'Giscus（GitHub Discussions，要人人有 GitHub 账号）'],
     ['none', '先不挂'],
   ]) {
@@ -329,7 +333,92 @@ function renderForum() {
     field('用哪一套', provider)
   );
 
-  if (forum.provider === 'giscus') {
+  if (forum.provider === 'twikoo') {
+    const sub = el('div', 'lt-board__fields');
+
+    const envInput = input(twikoo.envId ?? '', 'https://…app.tcloudbase.com/twikoo', (v) => {
+      twikoo.envId = v.trim();
+      markDirty();
+    });
+    const regionInput = input(twikoo.region ?? 'ap-shanghai', 'ap-shanghai', (v) => {
+      twikoo.region = v.trim() || 'ap-shanghai';
+      markDirty();
+    });
+    sub.append(
+      field('后端地址（网址或 envId）', envInput),
+      field('环境地域（走 SDK 时才用）', regionInput)
+    );
+
+    /*
+      自检：让**编辑器服务**照着评论框的姿势走一遍 —— 先匿名登录拿 token，
+      再拿 token 调一次云函数（GET_FUNC_VERSION）。
+      通了/卡在哪一步，它会把每一步都说清楚（见 server.mjs 的 checkTwikoo）。
+    */
+    const out = el('p', 'lt-sub', '还没自检。envId 填好之后点一下右边那颗按钮。');
+    const judge = async () => {
+      const envId = String(twikoo.envId ?? '').trim();
+      if (!envId) {
+        out.textContent = '先把环境 id 填上。';
+        out.style.color = '';
+        return;
+      }
+      out.textContent = '正在照评论框的姿势试一遍（第一次冷启动可能要几秒）…';
+      out.style.color = '';
+      try {
+        const res = await fetch('/api/liyutang/check', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ provider: 'twikoo', envId, region: twikoo.region }),
+        });
+        const data = await res.json();
+        if (!res.ok || !data.ok) throw new Error(data.error || `HTTP ${res.status}`);
+        const lines = (data.steps ?? []).map(
+          (s) => `${s.ok ? '✓' : '✗'} ${s.step}${s.status ? `（HTTP ${s.status}` : '（'}${s.ms != null ? ` · ${s.ms} ms）` : '）'}${s.ok ? '' : '：' + s.detail}`
+        );
+        out.textContent =
+          (data.passed ? '✓ ' : '△ ') +
+          (data.verdict ?? '') +
+          (data.twikooVersion ? `（Twikoo ${data.twikooVersion}）` : '') +
+          '\n' +
+          lines.join('\n') +
+          (data.hint ? '\n→ ' + data.hint : '');
+        out.style.whiteSpace = 'pre-line';
+        out.style.color = data.passed ? 'var(--accent)' : 'var(--warn)';
+      } catch (err) {
+        out.textContent = `✗ 自检本身出错了：${err.message}`;
+        out.style.color = 'var(--danger)';
+      }
+    };
+
+    const bar = el('div', 'lt-board__row');
+    bar.append(button('自检连通', '让编辑器服务照评论框的姿势打一次：先看函数活没活，再看数据库通不通', judge));
+    sub.append(bar, out);
+
+    sub.append(
+      el(
+        'p',
+        'lt-sub',
+        '后端地址填**那条 HTTP 网关的网址**（云函数 / HTTP 网关 → 路由管理里那条路由，形如 ' +
+          'https://liyutang-xxxx-数字.ap-shanghai.app.tcloudbase.com/twikoo）。' +
+          '走网址这条形态时，前端**不走云开发 SDK**：既不需要匿名登录，也不受云函数调用权限的限制，' +
+          '当管理员也**不用下载私钥**。'
+      ),
+      el(
+        'p',
+        'lt-sub',
+        '数据库在那台网址背后的云函数里（外面接的 MongoDB）。自检要是报 bad auth，就是库的账号密码不对；' +
+          '报 querySrv / Server selection / 超时，就是连接串主机名或 Atlas 的 IP 白名单（要放行 0.0.0.0/0）不对；' +
+          '报 TIME_LIMIT_EXCEEDED，就是云函数的执行超时太短（调到 30 秒）。'
+      ),
+      el(
+        'p',
+        'lt-sub',
+        '当管理员：打开帖子页，点评论区右下角的**小齿轮**，设一个管理员密码；' +
+          '之后在管理面板里打开「评论审核」，就是「没我点头谁也上不了墙」。'
+      )
+    );
+    box.append(sub);
+  } else if (forum.provider === 'giscus') {
     const sub = el('div', 'lt-board__fields');
     sub.append(
       field('仓库', input(giscus.repo ?? '', '用户名/仓库名，例如 Chenxu-MarshEco/liyutang', (v) => {

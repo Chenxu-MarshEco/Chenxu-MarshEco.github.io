@@ -243,12 +243,12 @@ export function buildIndex(root, builtPages = [], dist = path.join(root, 'dist')
     const href = `/${pathname}`;
     if (pathname === '404/' || pathname === '404.html') continue; // 走丢页不该被搜到、更不该被随机跳到
     /*
-      ⚠ /liyutang/ 现在是一张**空壳页**（2026-10-06 第一版：只有背景和左上角徽记，
-      用户要求「别的都不要有」，论坛的版块和帖子还没建）。空页面进索引有两个坏处：
-      搜索里点进去是一片空白、随机跳转抽到它等于跳了个寂寞。
-      所以先不收它 —— 论坛内容长出来之后，**把下面这一行删掉即可**。
+      ⚠ /liyutang/ 整棵子树现在**都不收**（2026-10-06）：论坛刚建起来，页面上标着 noindex
+      （src/pages/liyutang/*.astro），只对"知道地址的人"开放；进搜索索引 + 随机跳转池
+      等于把它推到所有读者面前，和 noindex 自相矛盾。
+      等内容攒够了、要正式对外开放，把下面这一行和那几个页面的 noindex 一起删掉即可。
     */
-    if (pathname === 'liyutang/' || pathname === 'liyutang') continue;
+    if (pathname === 'liyutang' || pathname.startsWith('liyutang/')) continue;
     if (known.has(href.replace(/\/$/, ''))) continue;
     known.add(href.replace(/\/$/, ''));
     const file = !pathname

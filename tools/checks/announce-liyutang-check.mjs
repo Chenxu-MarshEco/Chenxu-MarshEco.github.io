@@ -18,11 +18,12 @@
  *   ① 静数据：announcements.json 的规矩（两种公告字段互斥、日期合法、id 唯一）
  *   ② 站点产物（真跑一次构建，然后真浏览器打开）：首页四张卡的位置（DOM 顺序 +
  *      左右列对齐 + 上下先后）、公告条数和去向、/zongxian/ 全部历史、事项公告正文页、
- *      更新提醒**没有**自己的页（404）、/liyutang 是空壳（只有背景 + 徽记）
+ *      更新提醒**没有**自己的页（404）、/liyutang 是论坛首页（版块卡片，壳还是那套壳）
  *   ③ 编辑器「公告」面板：真点按钮 → 真填表 → 真保存 → 真构建，
  *      然后核对落盘的 JSON 和重新构建出来的那一页
  *   ④ 编辑器「黎语堂」面板：三样东西（标题 / 副标题 / 背景图）能改能存
- *   ⑤ 黎语堂自己的管理页 /liyutang-admin：能开、能加版块、能存（和编辑器分开的那套）
+ *   ⑤ 黎语堂自己的管理页 /liyutang-admin：能开、能加版块、能存，以及**评论系统自检**
+ *      （Twikoo 那一路真去打一次腾讯云开发；Waline 那一路打一个假服务和一个死端口）
  *
  * 用法：node tools/checks/announce-liyutang-check.mjs
  *   —— 前三段会**真的构建两次**（真 dist 一次、副本里一~两次），跑一趟约两分钟。
@@ -53,6 +54,8 @@ const info = (s) => console.log(`      · ${s}`);
    ============================================================================ */
 const annFile = path.join(SRC, 'src', 'data', 'announcements.json');
 const annRawText = fs.readFileSync(annFile, 'utf8');
+const lytFile = path.join(SRC, 'src', 'data', 'liyutang.json');
+const lytRawText = fs.readFileSync(lytFile, 'utf8');
 const ann = JSON.parse(annRawText);
 const annItems = Array.isArray(ann.items) ? ann.items : [];
 const notices = annItems.filter((i) => i.kind !== 'update');
@@ -374,8 +377,8 @@ try {
     check(`更新提醒「${item.title}」没有自己的页面（404）`, r.status === 404, `HTTP ${r.status}`);
   }
 
-  /* ---------------- /liyutang：空壳 ---------------- */
-  console.log('\n=== ② /liyutang：只有背景和左上角徽记 ===');
+  /* ---------------- /liyutang：论坛首页 ---------------- */
+  console.log('\n=== ② /liyutang：论坛首页（版块卡片；壳还是文章那套） ===');
   await cdp.open(`http://127.0.0.1:${PORT}/liyutang/`, 500);
   const lyt = await cdp.ev(`(() => {
     const main = document.querySelector('main');
@@ -398,13 +401,28 @@ try {
       visibleCount: visible.length,
       visible,
       overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+      /* 论坛首页该有的东西 */
+      h1: (document.querySelector('.lyt-title') || {}).textContent || '',
+      boardLinks: [...document.querySelectorAll('.lyt-boardLink')].map((a) => ({
+        href: a.getAttribute('href'),
+        text: a.textContent.replace(/\s+/g, ' ').trim(),
+      })),
+      cardCount: document.querySelectorAll('.lyt-boardLink').length,
     };
   })()`);
   check('/liyutang 有文章 / 手记那套背景（CRT 层在）', lyt.crt);
   check('/liyutang 没有站点页头 / 页脚 / 目录栏', !lyt.hasHeader && !lyt.hasFooter && !lyt.hasDrawer);
   check('左上角只有那颗花涧堂徽记，点它回首页', lyt.brandHref === '/', `${lyt.brandHref}`);
   check('徽记贴在左上角', lyt.brandTop >= 0 && lyt.brandTop < 60 && lyt.brandLeft >= 0 && lyt.brandLeft < 60, `top ${lyt.brandTop} / left ${lyt.brandLeft}`);
-  check('页面上一个**看得见**的元素都没有（读屏用的标题不算）', lyt.visibleCount === 0, JSON.stringify(lyt.visible));
+  /* 2026-10-06 晚：它已经长成论坛首页了（之前那几条"空壳"断言换成这些） */
+  check('首页标题是「黎语堂」', /黎语堂/.test(lyt.h1), lyt.h1.trim());
+  check('列出了版块卡片（每个都能点进去）', lyt.cardCount >= 2 && lyt.boardLinks.every((b) => /^\/liyutang\/[a-z0-9-]+\/$/.test(b.href || '')), JSON.stringify(lyt.boardLinks));
+  check(
+    '每张卡片上有版块名和帖子数',
+    lyt.boardLinks.length > 0 && lyt.boardLinks.every((b) => /帖/.test(b.text) && b.text.length > 4),
+    JSON.stringify(lyt.boardLinks)
+  );
+  check('首页把「先审后发」这条规则写出来了', /审核/.test(lyt.mainText), lyt.mainText.slice(0, 80));
   check('/liyutang 没有横向溢出', lyt.overflow <= 1, `${lyt.overflow}px`);
   check('没有 console 报错', cdp.errors.length === 0, cdp.errors.slice(0, 2).join(' | '));
 
@@ -414,8 +432,8 @@ try {
   check('搜索索引里有公告栏那一页', hasUrl('/zongxian/'));
   check('搜索索引里有每一条事项公告', notices.every((i) => hasUrl(`/zongxian/${i.id}/`)));
   check(
-    '搜索索引里**暂时**没有空的 /liyutang（论坛内容长出来之后再收）',
-    !hasUrl('/liyutang/')
+    '搜索索引里**暂时**没有整棵 /liyutang 子树（和那几个页面上的 noindex 保持一致）',
+    !searchIdx.items.some((it) => String(it.h).replace(/\/$/, '').startsWith('/liyutang'))
   );
 } catch (err) {
   fail++;
@@ -717,14 +735,25 @@ try {
   }))()`);
   check('管理页打得开', admin.title.includes('黎语堂') && admin.boards && admin.forum, admin.title);
   check(
-    '评论系统三种选择都在，而且默认是 Waline（要邮箱注册，不用 GitHub 账号）',
-    admin.providers.join(',') === 'waline,giscus,none',
+    '评论系统四种选择都在，第一个就是 Twikoo（腾讯云开发 —— 国内直连那条路）',
+    admin.providers.join(',') === 'twikoo,waline,giscus,none',
     admin.providers.join(',')
   );
   check(
-    '默认这一套（Waline）要填的就是一个服务地址',
-    admin.giscusFields.includes('服务地址'),
+    '默认这一套（Twikoo）要填的是后端地址和地域',
+    admin.giscusFields.includes('后端地址（网址或 envId）') && admin.giscusFields.includes('环境地域（走 SDK 时才用）'),
     admin.giscusFields.join(' / ')
+  );
+  const prefilled = await cdp.ev(`(() => {
+    for (const row of document.querySelectorAll('#lt-forum-box .lt-field')) {
+      if (row.querySelector('label')?.textContent.trim() === '后端地址（网址或 envId）') return row.querySelector('input').value;
+    }
+    return '';
+  })()`);
+  check(
+    '后端地址已经预填成真配置里那个（网址形态）',
+    /^https?:\/\/.+\/twikoo$/.test(prefilled) || /^liyutang-[0-9a-z]+$/i.test(prefilled),
+    prefilled
   );
   check('有「＋ 新增版块」', admin.addBoard === true);
   check('读取成功', /读取完成/.test(admin.status), admin.status.trim());
@@ -769,6 +798,13 @@ try {
     if (r !== 'ok') throw new Error('填服务地址失败：' + r);
   };
 
+  /* 先切到 Waline（默认现在是 Twikoo），再验那一路的自检 */
+  await cdp.ev(`(() => {
+    const sel = document.querySelector('#lt-forum-box select');
+    sel.value = 'waline'; sel.dispatchEvent(new Event('change', { bubbles: true }));
+    return 'ok';
+  })()`);
+  await sleep(300);
   await setWalineURL(`http://127.0.0.1:${STUB_PORT}`);
   await realClick(cdp, btnByText('#lt-forum-box button', '自检连通'), '自检连通（假 Waline）');
   let chk = '';
@@ -792,7 +828,40 @@ try {
   }
   check('自检：指向一个没人听的端口时，它如实说「连不上」（不假装成功）', /连不上/.test(chk), chk.slice(-160));
 
-  /* 切到 Giscus 看看那四个值还在不在，再切回来（默认那条路才是 Waline） */
+  /*
+    ---- Twikoo 那一路的自检：真去打一次腾讯云开发 ----
+    这一段**不判"通不通"** —— 通不通取决于站长在腾讯云控制台里配到哪一步了，
+    而且它会写进验收结果里当诊断用（verdict / hint 直接打出来）。
+    这里只断言"这条链路是活的、返回结构对"：至少走完匿名登录那一步，
+    并且给出人话结论；真报权限错的时候，要把 EXCEED_AUTHORITY 那个提示带出来。
+  */
+  console.log('\n=== ⑤ 评论系统自检（Twikoo：真打一次腾讯云开发）===');
+  await cdp.ev(`(() => {
+    const sel = document.querySelector('#lt-forum-box select');
+    sel.value = 'twikoo'; sel.dispatchEvent(new Event('change', { bubbles: true }));
+    return 'ok';
+  })()`);
+  await sleep(300);
+  await realClick(cdp, btnByText('#lt-forum-box button', '自检连通'), '自检连通（Twikoo）');
+  let tchk = '';
+  for (let i = 0; i < 90; i++) {
+    await sleep(500);
+    tchk = await cdp.ev(`[...document.querySelectorAll('#lt-forum-box .lt-sub')].map((x) => x.textContent).join(' | ')`);
+    if (/函数应答|读数据库|自检本身出错/.test(tchk) && !/正在照评论框/.test(tchk)) break;
+  }
+  info('Twikoo 自检说：' + tchk.replace(/\s+/g, ' ').slice(0, 400));
+  check('Twikoo 自检跑完了，没在自检本身上出错', !/自检本身出错/.test(tchk), tchk.slice(-160));
+  check(
+    'Twikoo 自检走完了「函数应答 + 读数据库」两步并给出结论',
+    /函数应答/.test(tchk) && /读数据库/.test(tchk) && /(通了|bad auth|白名单|超时|没响应|权限)/.test(tchk),
+    tchk.slice(-260)
+  );
+  /* 自检说"通了"的时候，说明函数和数据库同时活着 —— 这是最强的那条断言 */
+  if (/通了/.test(tchk)) {
+    check('Twikoo 自检报告：函数 + 数据库都通', true, tchk.replace(/\s+/g, ' ').slice(0, 160));
+  }
+
+  /* 切到 Giscus 看看那四个值还在不在 */
   await cdp.ev(`(() => {
     const sel = document.querySelector('#lt-forum-box select');
     sel.value = 'giscus'; sel.dispatchEvent(new Event('change', { bubbles: true }));
@@ -805,19 +874,21 @@ try {
     ['仓库', '仓库 ID', 'Discussion 分类', '分类 ID'].every((k) => giscusFields.includes(k)),
     giscusFields.join(' / ')
   );
-  /* 切回 Waline，并把地址留成那个假服务：下面保存时顺带验一下这个字段真的写盘了 */
+  /* 切回 Twikoo 保存：顺带验两件事 —— 选的那一套写盘了，另一套的配置没被冲掉 */
   await cdp.ev(`(() => {
     const sel = document.querySelector('#lt-forum-box select');
-    sel.value = 'waline'; sel.dispatchEvent(new Event('change', { bubbles: true }));
+    sel.value = 'twikoo'; sel.dispatchEvent(new Event('change', { bubbles: true }));
     return 'ok';
   })()`);
   await sleep(300);
-  await setWalineURL(`http://127.0.0.1:${STUB_PORT}`);
 
   await realClick(cdp, btnByText('#lt-boards-box button', '＋ 新增版块'), '＋ 新增版块');
   await sleep(300);
+  /* ⚠ 真数据里已经有版块了（notice / chat），所以要填**最后一行**那个新加的 */
+  const boardCountBefore = JSON.parse(fs.readFileSync(path.join(DST, 'src', 'data', 'liyutang.json'), 'utf8')).boards.length;
   await cdp.ev(`(() => {
-    const el = document.querySelector('#lt-boards-box .lt-board__title');
+    const rows = document.querySelectorAll('#lt-boards-box .lt-board__title');
+    const el = rows[rows.length - 1];
     el.focus(); el.value = '验收版块'; el.dispatchEvent(new Event('input', { bubbles: true }));
     return 'ok';
   })()`);
@@ -830,14 +901,30 @@ try {
   }
   check('管理页保存成功', /已保存并重新构建/.test(astat), astat.trim());
   const copyLyt = JSON.parse(fs.readFileSync(path.join(DST, 'src', 'data', 'liyutang.json'), 'utf8'));
-  check('liyutang.json 里多了一个版块', copyLyt.boards.length === 1 && copyLyt.boards[0].title === '验收版块', JSON.stringify(copyLyt.boards));
-  check('版块自动拿到了 id', /^bd-[0-9a-f]+$/.test(copyLyt.boards[0].id || ''), copyLyt.boards[0].id);
+  const lastBoard = copyLyt.boards[copyLyt.boards.length - 1] ?? {};
   check(
-    'Waline 那个服务地址真的写盘了',
-    copyLyt.forum?.waline?.serverURL === `http://127.0.0.1:${STUB_PORT}`,
+    'liyutang.json 里多了一个版块（加之前有几条，现在就多一条）',
+    copyLyt.boards.length === boardCountBefore + 1 && lastBoard.title === '验收版块',
+    `${boardCountBefore} → ${copyLyt.boards.length}；最后一条 = ${lastBoard.title}`
+  );
+  check('新那条自带了 bd- 开头的 id', /^bd-[0-9a-f]+$/.test(lastBoard.id || ''), lastBoard.id);
+  check(
+    '原来那两个版块还在（不是被覆盖掉的）',
+    copyLyt.boards.length >= 3 && copyLyt.boards[0].title === '公告栏' && copyLyt.boards[1].title === '自由讨论区',
+    copyLyt.boards.map((b) => b.title).join(' / ')
+  );
+  check('provider 存成了 twikoo（现在默认这条路）', copyLyt.forum?.provider === 'twikoo', copyLyt.forum?.provider);
+  check(
+    '后端地址完好无损（网址不会被清洗逻辑截断，保存别的字段也不会冲掉它）',
+    /^https?:\/\/.+\/twikoo$/.test(copyLyt.forum?.twikoo?.envId || '') ||
+      /^liyutang-[0-9a-z]+$/i.test(copyLyt.forum?.twikoo?.envId || ''),
+    JSON.stringify(copyLyt.forum?.twikoo)
+  );
+  check(
+    '刚才在面板里填的 Waline 地址也留着（最后一次填的是那个死端口，说明切走不丢配置）',
+    copyLyt.forum?.waline?.serverURL === 'http://127.0.0.1:4399',
     JSON.stringify(copyLyt.forum?.waline)
   );
-  check('provider 存成了 waline（认不出来的才会退回默认）', copyLyt.forum?.provider === 'waline', copyLyt.forum?.provider);
   check('_readme 说明书没被冲掉', Array.isArray(copyLyt._readme) && copyLyt._readme.length > 5);
   check(
     '管理页**没有**碰花涧堂那边任何东西（announcements / home-widgets 时间和上面写的一致）',
@@ -847,10 +934,7 @@ try {
   /* ---------------- 真仓库一个字节都没动 ---------------- */
   console.log('\n=== 收尾：真仓库没被动过 ===');
   check('真仓库的 announcements.json 还是原样', fs.readFileSync(annFile, 'utf8') === annRawText);
-  check(
-    '真仓库的 liyutang.json 还是原样（boards 是空的）',
-    JSON.parse(fs.readFileSync(path.join(SRC, 'src', 'data', 'liyutang.json'), 'utf8')).boards.length === 0
-  );
+  check('真仓库的 liyutang.json 一个字节都没动', fs.readFileSync(lytFile, 'utf8') === lytRawText);
 } catch (err) {
   fail++;
   console.log('FAIL  编辑器那一段异常: ' + (err?.stack ?? err));

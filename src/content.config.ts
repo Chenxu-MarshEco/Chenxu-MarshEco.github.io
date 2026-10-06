@@ -67,4 +67,30 @@ const notes = defineCollection({
   }),
 });
 
-export const collections = { posts, notes };
+/**
+ * 黎语堂（/liyutang）的帖子。
+ *
+ * 和文章 / 手记的区别：**一个文件 = 一个帖子**，而它属于哪个版块由**文件所在的目录**决定：
+ *   src/content/liyutang/notice/welcome.md  ->  /liyutang/notice/welcome/
+ *                                            （版块 notice，见 src/data/liyutang.json 的 boards）
+ * 所以 frontmatter 里**不用**再写一遍版块 —— 那会是第二份真相。
+ *
+ * 群友的「回帖」不在这里：那是 Twikoo 的评论，存在腾讯云开发的数据库里。
+ * 这份 Markdown 只放站长 / 共创者写的帖子正文（静态站没法让访客生成新页面）。
+ */
+const liyutang = defineCollection({
+  loader: glob({ pattern: '**/*.md', base: './src/content/liyutang' }),
+  schema: z.object({
+    title: z.string(),
+    date: z.coerce.date(),
+    /** 发帖人（显示在帖子标题下面；不写就是站长） */
+    author: z.string().optional(),
+    /** 置顶排序，数字越大越靠前 */
+    pinned: z.number().default(0),
+    tags: z.array(z.string()).default([]),
+    draft: z.boolean().default(false),
+  }),
+});
+
+export const collections = { posts, notes, liyutang };
+

@@ -1,0 +1,76 @@
+---
+/**
+ * 版块页 —— /liyutang/<版块 id>/
+ *
+ * 上半是这一版的帖子列表（站长 / 共创者写的 Markdown），
+ * 下半是**这个版块自己的留言线**（Twikoo）—— 谁都能在这儿开话题，不用谁批准。
+ * 所以「自由讨论区」那种版块即使一个帖子都没有，也照样能用。
+ */
+import ForumLayout from '../../../layouts/ForumLayout.astro';
+import Twikoo from '../../../components/Twikoo.astro';
+import { formatDateFull, toISODate } from '../../../utils/date';
+import { withBase } from '../../../utils/url';
+import { boardById, boards, topicUrl, topicsOf } from '../../../utils/liyutang';
+
+export async function getStaticPaths() {
+  return boards().map((b) => ({ params: { board: b.id }, props: { board: b } }));
+}
+
+const { board } = Astro.props as { board: { id: string; title: string; desc: string; icon: string } };
+const topics = await topicsOf(board.id);
+/* 这个版块还在不在版块表里（有人手改数据时防一手） */
+const known = boardById(board.id) !== null;
+const home = withBase('/liyutang/');
+---
+
+<ForumLayout
+  title={board.title}
+  description={`黎语堂 · ${board.title}：${board.desc || '版块'}`}
+  noindex
+>
+  <div class="lyt-page">
+    <p class="lyt-crumb">
+      <a href={home}>← 黎语堂</a>
+    </p>
+    <h1 class="lyt-title">
+      {board.icon && <span aria-hidden="true">{board.icon} </span>}
+      {board.title}
+    </h1>
+    {board.desc && <p class="lyt-lead">{board.desc}</p>}
+    {!known && <p class="lyt-empty">这一版已经从版块表里删掉了，但页面还在（构建产物里留着）。</p>}
+
+    {
+      topics.length > 0 ? (
+        <ul class="lyt-topics">
+          {topics.map((t) => (
+            <li>
+              <a class="lyt-topicLink" href={topicUrl(t)}>
+                {t.data.pinned > 0 && <span class="lyt-topicPin">置顶</span>}
+                <span class="lyt-topicTitle">{t.data.title}</span>
+                <span class="lyt-topicMeta">
+                  {t.data.author ? `${t.data.author} · ` : ''}
+                  <time datetime={toISODate(t.data.date)}>{formatDateFull(t.data.date)}</time>
+                </span>
+              </a>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p class="lyt-empty">
+          这一版还没有帖子。下面的留言线是<b>这个版块自己的</b>，想聊什么都行。
+        </p>
+      )
+    }
+
+    {
+      /*
+        「自由讨论」：版块页底部那条留言线。
+        hint 里把规则再说一遍：不用注册、先审后发。
+      */
+    }
+    <Twikoo
+      title="自由讨论"
+      hint="不用注册，填个昵称和邮箱就能发；站长审核通过之后别人才看得见。"
+    />
+  </div>
+</ForumLayout>

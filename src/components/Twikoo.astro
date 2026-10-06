@@ -1,0 +1,128 @@
+---
+/**
+ * 黎语堂的评论区（Twikoo）。
+ *
+ * 用户 2026-10-06 定下来的这套：
+ *   · 评论 / 账号系统 = **Twikoo 2.x，部署在腾讯云开发（CloudBase）**——
+ *     Vercel 那条路（Waline）功能最好但**国内不挂梯子打不开**，群友用不了；
+ *     Giscus 又要求人人有 GitHub 账号。腾讯云开发是唯一「国内直连 + 自带 HTTPS + 能审核」的组合。
+ *   · 审核是 Twikoo 的**先审后发**：谁都能提交，但站长在管理面板点通过之后别人才看得见
+ *     —— 用户的原话「没有通过我的审核的路人账号不能随意发帖」，效果就在这里。
+ *
+ * 三个实现上的讲究（都是踩过或在坑边上看过才这么写的）：
+ *
+ * ① **前端文件放本仓库**（public/vendor/twikoo/），不引 cdn.jsdelivr.net ——
+ *    国外 CDN 在国内经常加载不出来，评论框会一直是个空盒子。
+ *    用的是 **all 版**：它自带腾讯云开发的 SDK，精简版连不上 CloudBase（官方文档点名）。
+ *
+ * ② 配置用 `<script type="application/json">` 传（和首页日历同一个做法），
+ *    不用 define:vars —— 那样每个页面都要重新内联一遍配置，而且和模块脚本的时序容易打架。
+ *
+ * ③ 脚本的先后顺序是**故意**的：`<script src>`（经典脚本，解析到就同步执行）先下来
+ *    定义好 window.twikoo；模块脚本是 defer 的，一定在后面跑，所以能直接用。
+ *    另外还是加了一层「等一下 twikoo 出现」的兜底 —— 万一以后换成异步加载也不会炸。
+ */
+import { commentsReady, forum } from '../utils/liyutang';
+import { withBase } from '../utils/url';
+
+interface Props {
+  /** 评论区上面那行小标题 */
+  title?: string;
+  /** 给一句说明（例如「自由讨论区」那一页要告诉人这里可以随便开话题） */
+  hint?: string;
+}
+
+const { title = '留言', hint = '' } = Astro.props;
+const f = forum();
+const ready = commentsReady() && f.provider === 'twikoo';
+const js = withBase('/vendor/twikoo/twikoo.all.min.js');
+const css = withBase('/vendor/twikoo/twikoo.css');
+---
+
+{
+  ready && (
+    <section class="tkc" aria-label={title} data-twikoo data-env={f.twikoo.envId}>
+      <h2 class="tkc__title">{title}</h2>
+      {hint && <p class="tkc__hint">{hint}</p>}
+      <div id="tcomment" class="tkc__box" />
+      <script
+        type="application/json"
+        id="twikoo-cfg"
+        set:html={JSON.stringify({ envId: f.twikoo.envId, region: f.twikoo.region, el: '#tcomment' })}
+      />
+      <link rel="stylesheet" href={css} />
+      <script is:inline src={js} />
+      <script>
+        /* ---------------------------------------------------------------
+           初始化 Twikoo。这一步要是失败，页面上得留下话，不能只丢一个空盒子。
+           --------------------------------------------------------------- */
+        const cfgEl = document.getElementById('twikoo-cfg');
+        const box = document.getElementById('tcomment');
+        const show = (text: string) => {
+          if (!box) return;
+          box.innerHTML = `<p style="margin:0;padding:.9rem 0;color:rgba(255,226,244,.75);font-size:.86rem;line-height:1.8">${text}</p>`;
+        };
+        if (!cfgEl || !box) {
+          /* 什么都不做：这一页本来就没打算挂评论区 */
+        } else {
+          const cfg = JSON.parse(cfgEl.textContent || '{}');
+          let tries = 0;
+          const boot = () => {
+            const t = (window as unknown as { twikoo?: { init: (o: unknown) => void } }).twikoo;
+            if (t && typeof t.init === 'function') {
+              try {
+                t.init({ envId: cfg.envId, el: cfg.el, region: cfg.region });
+              } catch (err) {
+                show('评论区初始化失败了：' + String((err as Error)?.message ?? err));
+              }
+              return;
+            }
+            if (tries++ < 50) {
+              window.setTimeout(boot, 100);
+              return;
+            }
+            show(
+              '评论区的前端脚本没加载出来（' +
+                'vendor/twikoo/twikoo.all.min.js' +
+                '）。刷新一下试试；一直这样的话告诉站长。'
+            );
+          };
+          boot();
+        }
+      </script>
+    </section>
+  )
+}
+
+<style>
+  /*
+    评论区的皮：和文章页那个正文框（.crt-screen）一个味道 —— 半透明深底 + 粉边 + 圆角，
+    因为这一页的背景是 CRT 蒸汽波，Twikoo 自带的浅色控件直接放上去会看不清。
+    ⚠ Twikoo 自己的 CSS 是全局的（它按 .twikoo / .tk-* 选），所以这里只管外面这层壳。
+  */
+  .tkc {
+    margin: clamp(1.6rem, 4vh, 2.6rem) 0 0;
+    padding: clamp(1rem, 2.4vw, 1.5rem);
+    border: 1px solid rgba(127, 233, 221, 0.22);
+    border-radius: 14px;
+    background: rgba(18, 10, 32, 0.86);
+    backdrop-filter: blur(6px);
+    color: #f3edff;
+  }
+  .tkc__title {
+    margin: 0 0 0.35rem;
+    font-size: 1.15rem;
+    letter-spacing: 0.1em;
+    color: #eafcff;
+    text-shadow: 0 0 12px rgba(127, 233, 221, 0.35);
+  }
+  .tkc__hint {
+    margin: 0 0 0.6rem;
+    font-size: 0.84rem;
+    line-height: 1.8;
+    color: rgba(214, 201, 238, 0.85);
+  }
+  .tkc__box {
+    min-height: 6rem;
+  }
+</style>

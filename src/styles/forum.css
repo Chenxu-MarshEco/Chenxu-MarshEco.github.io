@@ -1,0 +1,231 @@
+/* ============================================================================
+   黎语堂（/liyutang）自己的样式
+   ----------------------------------------------------------------------------
+   挂在这一页的壳上（src/layouts/ForumLayout.astro 里 @import），不并进 global.css：
+   论坛以后会长出自己的版块 / 帖子 / 搜索，样式独立一份，改它不会碰到主站。
+
+   配色沿用文章 / 手记那一套 CRT 令牌（深紫底 + 青），理由和当初一样：
+   这一页现在还是"套用文章和笔记的背景"（用户原话）。
+   ⚠ 不用 var(--c-text-muted) 之类的浅色主题令牌做正文色 —— body.is-crt 那组令牌
+     已经把它们换成了深色页面上的浅色，直接用就是对的。
+   ============================================================================ */
+
+.lyt-page {
+  padding-bottom: 3rem;
+}
+
+/* 面包屑：帖子页 / 版块页左上角那行「← 黎语堂」 */
+.lyt-crumb {
+  margin: 0 0 0.9rem;
+  font-size: 0.86rem;
+}
+.lyt-crumb a {
+  color: #8ff0e5;
+  text-decoration: none;
+  border-bottom: 1px dotted currentColor;
+}
+.lyt-crumb a:hover {
+  color: #dcfffb;
+}
+
+.lyt-title {
+  margin: 0 0 0.5rem;
+  font-size: clamp(1.5rem, 3.4vw, 2.1rem);
+  letter-spacing: 0.1em;
+  color: #fff;
+  text-shadow: 0 0 14px rgba(127, 233, 221, 0.35);
+}
+.lyt-lead {
+  margin: 0 0 1.6rem;
+  font-size: 0.92rem;
+  line-height: 1.9;
+  color: rgba(214, 201, 238, 0.9);
+}
+.lyt-lead b {
+  color: #eafcff;
+}
+
+/* 版块卡片（论坛首页） */
+.lyt-boards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 0.9rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.lyt-boardLink {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  height: 100%;
+  padding: 0.9rem 1rem;
+  border: 1px solid rgba(127, 233, 221, 0.24);
+  border-radius: 12px;
+  background: rgba(18, 10, 32, 0.8);
+  color: inherit;
+  text-decoration: none;
+  transition: border-color 0.16s ease, transform 0.16s ease, box-shadow 0.16s ease;
+}
+.lyt-boardLink:hover,
+.lyt-boardLink:focus-visible {
+  transform: translateY(-2px);
+  border-color: rgba(127, 233, 221, 0.6);
+  box-shadow: 0 0 26px -8px rgba(127, 233, 221, 0.5);
+}
+.lyt-boardIcon {
+  flex: none;
+  font-size: 1.5rem;
+  line-height: 1;
+}
+.lyt-boardText {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+.lyt-boardText b {
+  font-size: 1.02rem;
+  letter-spacing: 0.06em;
+  color: #eafcff;
+}
+.lyt-boardText span {
+  font-size: 0.82rem;
+  line-height: 1.7;
+  color: rgba(214, 201, 238, 0.75);
+}
+.lyt-boardCount {
+  flex: none;
+  font-size: 0.75rem;
+  color: rgba(214, 201, 238, 0.6);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 帖子列表 */
+.lyt-topics {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.lyt-topicLink {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  padding: 0.7rem 0.9rem;
+  border: 1px solid rgba(127, 233, 221, 0.18);
+  border-radius: 10px;
+  background: rgba(18, 10, 32, 0.66);
+  color: #f3edff;
+  text-decoration: none;
+  transition: border-color 0.16s ease, background 0.16s ease;
+}
+.lyt-topicLink:hover,
+.lyt-topicLink:focus-visible {
+  border-color: rgba(127, 233, 221, 0.55);
+  background: rgba(24, 14, 42, 0.85);
+}
+.lyt-topicPin {
+  flex: none;
+  font-size: 0.72rem;
+  padding: 0.05rem 0.4rem;
+  border: 1px solid rgba(255, 180, 70, 0.6);
+  border-radius: 999px;
+  background: rgba(224, 74, 8, 0.25);
+  color: #ffe9c0;
+}
+.lyt-topicTitle {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 0.98rem;
+}
+.lyt-topicMeta {
+  flex: none;
+  font-size: 0.76rem;
+  color: rgba(214, 201, 238, 0.6);
+  font-variant-numeric: tabular-nums;
+}
+.lyt-empty {
+  margin: 0;
+  padding: 0.9rem 1rem;
+  border: 1px dashed rgba(127, 233, 221, 0.28);
+  border-radius: 10px;
+  color: rgba(214, 201, 238, 0.75);
+  font-size: 0.88rem;
+  line-height: 1.8;
+}
+
+/* 帖子正文外面那层卡片（和评论区一个味道，深色底上读起来才干净） */
+.lyt-card {
+  padding: clamp(1rem, 2.4vw, 1.6rem);
+  border: 1px solid rgba(127, 233, 221, 0.22);
+  border-radius: 14px;
+  background: rgba(18, 10, 32, 0.86);
+  backdrop-filter: blur(6px);
+}
+.lyt-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.9rem;
+  margin: 0 0 1.1rem;
+  font-size: 0.8rem;
+  color: rgba(214, 201, 238, 0.72);
+}
+.lyt-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin: 0 0 1.2rem;
+  padding: 0;
+  list-style: none;
+}
+.lyt-tag {
+  font-size: 0.72rem;
+  padding: 0.1rem 0.5rem;
+  border: 1px solid rgba(127, 233, 221, 0.35);
+  border-radius: 999px;
+  color: #8ff0e5;
+}
+
+/* 正文：用全站那套 .prose，这里只补几个深色底上要调的地方 */
+.lyt-body {
+  color: #f3edff;
+  line-height: 1.95;
+}
+.lyt-body :global(h2) {
+  margin-top: 1.8rem;
+  color: #eafcff;
+}
+.lyt-body :global(h3) {
+  color: #eafcff;
+}
+.lyt-body :global(a) {
+  color: #8ff0e5;
+}
+.lyt-body :global(blockquote) {
+  border-left-color: rgba(127, 233, 221, 0.5);
+  color: rgba(214, 201, 238, 0.9);
+}
+.lyt-body :global(img) {
+  max-width: 100%;
+  border-radius: 10px;
+}
+.lyt-body :global(code) {
+  background: rgba(255, 255, 255, 0.08);
+  padding: 0.1em 0.35em;
+  border-radius: 4px;
+}
+.lyt-body :global(pre) {
+  background: rgba(8, 3, 16, 0.8);
+  border: 1px solid rgba(127, 233, 221, 0.2);
+  border-radius: 10px;
+  padding: 0.9rem 1rem;
+  overflow-x: auto;
+}
+.lyt-body :global(pre code) {
+  background: none;
+  padding: 0;
+}

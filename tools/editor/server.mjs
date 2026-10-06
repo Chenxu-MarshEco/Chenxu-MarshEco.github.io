@@ -1567,6 +1567,9 @@ async function handleApi(req, res, url) {
   */
   if (route === '/api/liyutang/check' && req.method === 'POST') {
     const payload = await readBody(req);
+    /* 走哪一路看 provider：twikoo 那一路在 checkTwikoo() 里（多两步，见它的注释） */
+    const provider = String(payload?.provider ?? 'waline').trim();
+    if (provider === 'twikoo') return sendJson(res, 200, await checkTwikoo(payload));
     const raw = String(payload?.serverURL ?? '')
       .trim()
       .replace(/\/+$/, '');
@@ -1583,6 +1586,7 @@ async function handleApi(req, res, url) {
       }
       return sendJson(res, 200, {
         ok: true,
+        provider: 'waline',
         reachable: true,
         status: r.status,
         ms: Date.now() - started,
@@ -1592,6 +1596,7 @@ async function handleApi(req, res, url) {
     } catch (err) {
       return sendJson(res, 200, {
         ok: true,
+        provider: 'waline',
         reachable: false,
         ms: Date.now() - started,
         url,
@@ -3489,7 +3494,12 @@ function cleanAnnouncements(payload, current) {
    清洗只做三件事：版块必须有标题、评论系统只认那三种 provider、_readme 原样留着。
    ------------------------------------------------------------------ */
 const LIYUTANG_FILE = path.join(PROJECT_ROOT, 'src', 'data', 'liyutang.json');
-const LIYUTANG_PROVIDERS = new Set(['giscus', 'waline', 'none']);
+/*
+  评论系统的四种 provider：twikoo（现在用这个）/ waline / giscus / none。
+  2026-10-06 晚上从 Waline（Vercel）换成 Twikoo（腾讯云开发）：
+  Vercel 那条路功能最好但**国内不挂梯子打不开**，群友用不了。
+*/
+const LIYUTANG_PROVIDERS = new Set(['twikoo', 'waline', 'giscus', 'none']);
 
 async function readLiyutang() {
   const text = await fs.readFile(LIYUTANG_FILE, 'utf8');
@@ -3518,19 +3528,42 @@ function cleanLiyutang(payload, current) {
 
   /*
     ---- 评论系统 ----
-    ⚠ 认不出来的 provider 退回 **waline**（2026-10-06 起这是定下来的那条路）：
-    黎语堂要有「注册的用户」，而 Giscus 要求人人先有 GitHub 账号（用户明确不要）。
-    giscus 那几项照样原样存着 —— 万一以后人人都有 GitHub 账号，改一个字段就能切回去。
+    ⚠ 认不出来的 provider 退回 **twikoo**（2026-10-06 晚上定下来的那条路：
+    腾讯云开发 + Twikoo —— 国内直连、自带 HTTPS、自带审核后台）。
+    走过的两条错路记在这儿：Giscus 要求人人有 GitHub 账号（用户不要）；
+    Waline 部署在 Vercel 功能最全但**国内不挂梯子打不开**。
+    另外两套的配置照样原样存着 —— 想切回去改一个字段就行。
   */
   const src = (has('forum') ? payload.forum : current.forum) ?? {};
   const raw = src && typeof src === 'object' ? src : {};
-  const provider = LIYUTANG_PROVIDERS.has(String(raw.provider)) ? String(raw.provider) : 'waline';
+  const provider = LIYUTANG_PROVIDERS.has(String(raw.provider)) ? String(raw.provider) : 'twikoo';
   const rawGiscus = raw.giscus && typeof raw.giscus === 'object' ? raw.giscus : {};
   const rawWaline = raw.waline && typeof raw.waline === 'object' ? raw.waline : {};
+  const rawTwikoo = raw.twikoo && typeof raw.twikoo === 'object' ? raw.twikoo : {};
   const text = (v) => String(v ?? '').trim();
+  /*
+    envId 是「环境名-一串字母数字」，控制台里悬停左上角环境名就能看到。
+    有人会连 `https://` 和 `.tcloudbasegateway.com` 一起粘进来，所以这里帮着剥干净：
+    只留第一段（域名前缀），去掉协议、路径和多余的空格。
+  */
+  /*
+    这个字段现在**两种形态都收**：
+      · 网址（现在用这个）—— HTTP 网关那条路由，形如 https://xxx.app.tcloudbase.com/twikoo；
+      · 环境 id（老形态）—— 形如 liyutang-xxxxxxxx。
+    所以先看它是不是网址：是就只去掉末尾斜杠、原样留着（千万别再按点切——会把域名切成第一段）；
+    不是才按 envId 的规矩洗（去掉协议、取第一段）。
+  */
+  const rawEnv = text(rawTwikoo.envId);
+  const envId = /^https?:\/\//i.test(rawEnv)
+    ? rawEnv.replace(/\/+$/, '')
+    : rawEnv.replace(/^https?:\/\//i, '').split(/[/.]/)[0].trim();
   file.forum = {
     enabled: raw.enabled === true,
     provider,
+    twikoo: {
+      envId,
+      region: text(rawTwikoo.region) || 'ap-shanghai',
+    },
     giscus: {
       repo: text(rawGiscus.repo),
       repoId: text(rawGiscus.repoId),
@@ -3564,7 +3597,16 @@ function cleanLiyutang(payload, current) {
       dropped.noTitle++;
       continue;
     }
-    let id = String(b.id ?? '').trim();
+    /*
+      id 不只是 id —— 它**就是网址里那一段**（/liyutang/<id>/），
+      所以这里顺手洗成合法的地址段：小写字母数字和连字符。
+      洗不出东西来（比如有人填了中文）就退回自动生成的 bd-xxxx。
+    */
+    let id = String(b.id ?? '')
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9-]/g, '');
+    if (id && !/^[a-z0-9]/.test(id)) id = '';
     if (id && used.has(id)) {
       dropped.dupId++;
       id = '';
@@ -3581,6 +3623,223 @@ function cleanLiyutang(payload, current) {
 
   file.updated = formatDateParts(new Date()).date;
   return { file, dropped };
+}
+
+/* ------------------------------------------------------------------
+   Twikoo（腾讯云开发）自检
+
+   这一套没有「一个地址探一下」那么简单：评论框是先**匿名登录**拿一个 token，
+   再拿着 token 调云函数。所以这里照着走一遍那两步，把每一步的结果如实带回来 ——
+   这样"到底哪一步没配好"能一眼看出来：
+
+     · 匿名登录没过          -> 去「身份认证 → 配置 → 登录方式」打开「允许匿名登入」；
+     · 登录过了、函数拒绝调用 -> EXCEED_AUTHORITY：云函数的调用权限不认匿名身份，
+                                去云函数页面找「权限控制」，规则改成
+                                {"*": {"invoke": "auth != null"}}（或选「登录后调用」）；
+     · 函数能调但报别的错     -> 函数本身没建好（函数名 / Node 20.19 / twikoo-func 依赖）。
+
+   探活用的是 `GET_FUNC_VERSION` —— Twikoo 官方文档给的版本探测事件，不会写任何数据。
+   ------------------------------------------------------------------ */
+async function checkTwikoo(payload) {
+  const raw = String(payload?.envId ?? '').trim();
+  const region = String(payload?.region ?? '').trim() || 'ap-shanghai';
+  const out = { ok: true, provider: 'twikoo', steps: [], passed: false };
+
+  /*
+    ---- 形态一：后端地址（HTTP 网关）—— **现在用这个** ----
+    为什么不是"匿名登录 + 调云函数"那套了：这台云开发环境没有文档型数据库，
+    而且新版控制台的函数鉴权换成了 OPA、默认规则不认匿名身份（EXCEED_AUTHORITY）。
+    于是改成在 HTTP 网关挂一条**免鉴权**路由（官方文档：安全规则仅对客户端 SDK 调用生效），
+    前端把这条网址当 serverURL 用 —— Twikoo 客户端看到 http 开头就跳过云开发 SDK。
+
+    所以自检也照着新姿势走两步：
+      ① GET_FUNC_VERSION —— 函数活没活（不碰数据库）
+      ② GET_CONFIG       —— **数据库通不通**（这一步才是关键，会真去读一次库）
+  */
+  if (/^https?:\/\//i.test(raw)) {
+    const url = raw.replace(/\/+$/, '');
+    out.mode = 'http';
+    out.endpoint = url;
+
+    const post = async (event) => {
+      const t0 = Date.now();
+      const r = await fetch(url, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ event }),
+        signal: AbortSignal.timeout(20000),
+      });
+      const text = (await r.text()).slice(0, 600);
+      let body = null;
+      try {
+        body = JSON.parse(text);
+      } catch {
+        /* 不是 JSON 就原样当详情 */
+      }
+      return { status: r.status, ms: Date.now() - t0, text, body };
+    };
+
+    try {
+      const a = await post('GET_FUNC_VERSION');
+      const version = String(a.body?.version ?? '');
+      out.twikooVersion = version;
+      out.steps.push({
+        step: '函数应答（GET_FUNC_VERSION）',
+        status: a.status,
+        ms: a.ms,
+        ok: a.body?.code === 0,
+        detail: a.body?.code === 0 ? (version ? 'Twikoo ' + version : '有应答') : a.text.replace(/\s+/g, ' ').slice(0, 220),
+      });
+    } catch (err) {
+      out.steps.push({
+        step: '函数应答（GET_FUNC_VERSION）',
+        ok: false,
+        detail: String(err?.name === 'TimeoutError' ? '20 秒超时' : err?.message || err),
+      });
+    }
+
+    try {
+      const b = await post('GET_CONFIG');
+      const passed = b.body?.code === 0;
+      out.steps.push({
+        step: '读数据库（GET_CONFIG）',
+        status: b.status,
+        ms: b.ms,
+        ok: passed,
+        detail: passed ? '读到配置了（说明数据库连上了）' : b.text.replace(/\s+/g, ' ').slice(0, 260),
+      });
+      if (passed) {
+        out.passed = true;
+        out.verdict = out.twikooVersion
+          ? '通了 —— 函数和数据库都正常（Twikoo ' + out.twikooVersion + '）。'
+          : '通了 —— 函数和数据库都正常。';
+        out.hint =
+          '接下来当管理员：打开帖子页，点评论区右下角的**小齿轮**，设一个管理员密码（走 HTTP 这条路不用下载私钥）；' +
+          '设完之后在管理面板里打开「评论审核」，就是「没我点头谁也上不了墙」。';
+      } else {
+        const msg = b.text;
+        if (/bad auth|authentication failed/i.test(msg)) {
+          out.verdict = '数据库把账号密码拒了（bad auth）。';
+          out.hint =
+            'Atlas → Security → Database Access → 那个用户 → EDIT → Edit Password，改成一串**纯字母数字**' +
+            '（别带 @ : / ? # % & —— 那些字符放进连接串要转义），然后把云函数的 MONGODB_URI 换成新密码。';
+        } else if (/querySrv|ENOTFOUND|Server selection|timed out after|ECONNREFUSED/i.test(msg)) {
+          out.verdict = '连不上数据库那台服务器。';
+          out.hint =
+            '两件事：① 对着连接串逐字核对主机名（Atlas 里那串最准，别手打 —— 1 / i / l 极容易看错）；' +
+            '② Atlas → Security → Database & Network Access → IP Access List 里要有 0.0.0.0/0（云函数出口 IP 不固定，必须全网放行）。';
+        } else if (/TIME_LIMIT_EXCEEDED/i.test(msg)) {
+          out.verdict = '函数执行超时（冷启动第一次要现场连数据库，3 秒不够）。';
+          out.hint = '云函数 → 函数配置 → 环境配置 → 执行超时，从 3 秒调到 30 秒（个人版可调）。';
+        } else {
+          out.verdict = '读数据库失败了。';
+          out.hint = '把上面那条 detail 里的原文发我，我照着它定位。';
+        }
+      }
+    } catch (err) {
+      out.steps.push({
+        step: '读数据库（GET_CONFIG）',
+        ok: false,
+        detail: String(err?.name === 'TimeoutError' ? '20 秒超时' : err?.message || err),
+      });
+      out.verdict = '读数据库那一步没响应。';
+      out.hint = '云函数 → 日志监控 里看最后那条报错，或者把这条 detail 发我。';
+    }
+    return out;
+  }
+
+  /*
+    ---- 形态二：环境 id（云开发 SDK 那条老路）----
+    留着备用：匿名登录拿 token，再拿 token 调云函数。这台环境现在走不通（权限规则不认匿名身份），
+    但换到别的环境、或者以后把文件型数据库补上，这条路还能用。
+  */
+  const envId = raw.replace(/^https?:\/\//i, '').split(/[/.]/)[0].trim();
+  if (!/^[a-z0-9][a-z0-9-]*$/i.test(envId)) {
+    throw httpError(400, '后端地址看着不对：要么是 https://… 开头的网址，要么是环境 id（形如 liyutang-xxxxxxxx）');
+  }
+  const base = 'https://' + envId + '.api.tcloudbasegateway.com';
+  const device = 'huajiantang-editor-' + randomBytes(4).toString('hex');
+  out.mode = 'sdk';
+  out.envId = envId;
+  out.region = region;
+  out.gateway = base;
+
+  const t1 = Date.now();
+  let token = '';
+  try {
+    const r = await fetch(base + '/auth/v1/signin/anonymously?client_id=' + envId, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-device-id': device },
+      body: '{}',
+      signal: AbortSignal.timeout(9000),
+    });
+    const full = await r.text();
+    let body = null;
+    try {
+      body = JSON.parse(full);
+    } catch {
+      /* 原样 */
+    }
+    token = String(body?.access_token ?? '');
+    out.steps.push({
+      step: '匿名登录',
+      status: r.status,
+      ms: Date.now() - t1,
+      ok: r.ok && token !== '',
+      detail: token ? '拿到 token' : full.replace(/\s+/g, ' ').slice(0, 200),
+    });
+  } catch (err) {
+    out.steps.push({
+      step: '匿名登录',
+      ok: false,
+      ms: Date.now() - t1,
+      detail: String(err?.name === 'TimeoutError' ? '9 秒超时' : err?.message || err),
+    });
+  }
+  if (!token) {
+    out.verdict = '匿名登录这一步没过（这条老路要它）。';
+    out.hint = '要么去「身份认证 → 配置 → 登录方式」打开「允许匿名登入」，要么把后端地址换成 HTTP 网关那条网址。';
+    return out;
+  }
+  const t2 = Date.now();
+  try {
+    const r = await fetch(base + '/v1/functions/twikoo', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-device-id': device, authorization: 'Bearer ' + token },
+      body: JSON.stringify({ event: 'GET_FUNC_VERSION' }),
+      signal: AbortSignal.timeout(15000),
+    });
+    const full = await r.text();
+    const authority = /EXCEED_AUTHORITY|exceeds granted authority/i.test(full);
+    out.steps.push({
+      step: '调用云函数 twikoo（走 SDK）',
+      status: r.status,
+      ms: Date.now() - t2,
+      ok: r.ok && !authority,
+      detail: full.replace(/\s+/g, ' ').slice(0, 260),
+    });
+    if (authority) {
+      out.verdict = '云函数把「匿名登录」这个身份的调用挡掉了（EXCEED_AUTHORITY）。';
+      out.hint = '这就是现在改走 HTTP 网关那条路的原因 —— 把后端地址换成 https://…app.tcloudbase.com/twikoo 那种网址即可。';
+    } else if (!r.ok) {
+      out.verdict = '云函数返回了 ' + r.status + '。';
+      out.hint = '看云函数日志（日志监控）里最后那条报错。';
+    } else {
+      out.passed = true;
+      out.verdict = '通了（走 SDK 的形态）。';
+      out.hint = '这条形态要当管理员得下载「自定义登录私钥」，比 HTTP 那条路麻烦。';
+    }
+  } catch (err) {
+    out.steps.push({
+      step: '调用云函数 twikoo（走 SDK）',
+      ok: false,
+      ms: Date.now() - t2,
+      detail: String(err?.name === 'TimeoutError' ? '15 秒超时' : err?.message || err),
+    });
+    out.verdict = '云函数没响应。';
+    out.hint = '看函数状态是不是「正常」。';
+  }
+  return out;
 }
 
 /* ------------------------------------------------------------------

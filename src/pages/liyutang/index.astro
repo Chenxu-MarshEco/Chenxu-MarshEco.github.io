@@ -2,55 +2,62 @@
 /**
  * 黎语堂首页 —— /liyutang/
  *
- * 用户 2026-10-06：
- *   「在花娅陌域下方 冰室冰山和每日精华上方插入新板块：黎语堂 点进去以后是一个全新的
- *    黎语堂的首页 地址是 /liyutang 先暂时套用文章和笔记的背景 其他什么都不要放
- *    只留左上角的花涧堂logo以便回到花涧堂 别的都不要有 之后再来详细构筑
- *    但是先提前说好这里要干什么 …… 黎语堂是一个本网站的静态论坛 ……」
+ * 用户 2026-10-06：先只要一个空壳（背景 + 左上角徽记，别的都不要有）；
+ * 现在评论服务（腾讯云开发 + Twikoo）跑起来了，这一页开始长成**论坛首页**：
+ * 版块卡片列表。版块从 src/data/liyutang.json 的 boards 来（编辑器 /liyutang-admin 里改）。
  *
- * 所以这一页现在**是空的**，而且是有意空的：
- *   · 背景 = 文章 / 手记那一套 CRT（ForumLayout 里的 CrtScreen）；
- *   · 左上角 = 花涧堂徽记，点它回首页（也在 ForumLayout 里）；
- *   · 除此之外一个可见元素都没有 —— 不要卡片、不要标题、不要页脚。
- *
- * 那些"以后要长出来的东西"（版块列表、帖子页、评论挂载点）先不在这里摆占位框：
- * 摆一排空框子反而会让人以为功能已经做好了。路线和数据结构写在
- * src/data/liyutang.json 的 _readme 里、以及 README 的「黎语堂」一节。
- *
- * 唯一一个元素是**给读屏用的** h1（视觉上不存在）：页面总得有个名字，
- * 不然读屏进来只念得出"链接 回到花涧堂"。
+ * 帖子和回帖是两回事，这里分清楚：
+ *   · 帖子 = 站长 / 共创者写的 Markdown（src/content/liyutang/<版块>/xxx.md），构建期生成页面；
+ *   · 回帖 = Twikoo 的评论，存在腾讯云开发里，**谁都能发**，但要站长在管理面板点通过才显示。
+ *     每个版块页底部都有一个「自由讨论」线程，所以"谁都能在黎语堂发帖"这件事是成立的。
  */
 import ForumLayout from '../../layouts/ForumLayout.astro';
-import widgets from '../../data/home-widgets.json';
+import { boardCounts, boards, boardUrl, forum } from '../../utils/liyutang';
 
-/*
-  这一页的名字和首页那张卡是**同一个值**（home-widgets.json 的 liyutang.title）——
-  在编辑器里改一次，卡片和这一页的标题一起变，不用维护第二份。
-*/
-const card = ((widgets as Record<string, unknown>).liyutang ?? {}) as { title?: string };
-const title = String(card.title ?? '').trim() || '黎语堂';
+const list = boards();
+const counts = await boardCounts();
+const f = forum();
+/** 评论区挂没挂上 —— 首页上写清楚，免得用户以为"发不了言" */
+const canComment = f.enabled && f.provider !== 'none';
 ---
 
-<ForumLayout title={title} description={`${title} —— 花涧堂的静态论坛。`} noindex>
-  <h1 class="lyt-only" data-liyutang-home>{title}</h1>
-</ForumLayout>
+<ForumLayout
+  title="黎语堂"
+  description="黎语堂 —— 花涧堂的静态论坛：版块、帖子，留言用昵称和邮箱就能发。"
+  noindex
+>
+  <div class="lyt-page">
+    <h1 class="lyt-title" data-liyutang-home>黎语堂</h1>
+    <p class="lyt-lead">
+      花涧堂自己的论坛。留言只要<b>昵称 + 邮箱</b>，不用注册任何账号；
+      不过<b>所有留言都会先经过站长审核</b>，通过之后别人才看得见。
+    </p>
 
-<style>
-  /*
-    视觉上不存在、读屏读得到（标准那套 clip 写法）。
-    ⚠ 不用 display:none / visibility:hidden —— 那样读屏也读不到了，
-    就等于这一页没有名字。
-  */
-  .lyt-only {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    padding: 0;
-    margin: -1px;
-    overflow: hidden;
-    clip: rect(0 0 0 0);
-    clip-path: inset(50%);
-    white-space: nowrap;
-    border: 0;
-  }
-</style>
+    {
+      list.length > 0 ? (
+        <ul class="lyt-boards">
+          {list.map((b) => (
+            <li>
+              <a class="lyt-boardLink" href={boardUrl(b.id)}>
+                <span class="lyt-boardIcon" aria-hidden="true">{b.icon || '📌'}</span>
+                <span class="lyt-boardText">
+                  <b>{b.title}</b>
+                  {b.desc && <span>{b.desc}</span>}
+                </span>
+                <span class="lyt-boardCount">{counts[b.id] ?? 0} 帖</span>
+              </a>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p class="lyt-empty">
+          还没有版块 —— 编辑器右上角「黎语堂管理」里建一个（版块 id 就是网址里那一段，例如 notice）。
+        </p>
+      )
+    }
+
+    {!canComment && (
+      <p class="lyt-empty">评论区还没开（编辑器的「黎语堂」面板里填好评论服务之后打开）。</p>
+    )}
+  </div>
+</ForumLayout>

@@ -1,0 +1,76 @@
+---
+/**
+ * 帖子页 —— /liyutang/<版块 id>/<帖子文件名>/
+ *
+ * 正文是 src/content/liyutang/<版块>/<帖子>.md（站长 / 共创者写），
+ * 下面挂 Twikoo 的留言线 —— **帖子的回帖**（先审后发）。
+ *
+ * 地址和内容都由文件路径推出来，所以加一个帖子 = 往那个版块目录里放一个 .md，
+ * 不用改任何代码（这也是「静态论坛」唯一能让站长省事的地方）。
+ */
+import { render } from 'astro:content';
+import ForumLayout from '../../../layouts/ForumLayout.astro';
+import Twikoo from '../../../components/Twikoo.astro';
+import { formatDateFull, toISODate } from '../../../utils/date';
+import { withBase } from '../../../utils/url';
+import { allTopics, boardById, boardOf, boardUrl, type Topic } from '../../../utils/liyutang';
+
+export async function getStaticPaths() {
+  const topics = await allTopics();
+  return topics
+    .map((entry) => {
+      const seg = entry.id.split('/');
+      /* 只认「版块/帖子」两层：更深的路径不生成页面（构建日志里会说一声） */
+      if (seg.length !== 2) {
+        console.warn(`[黎语堂] 帖子 ${entry.id} 的路径不是「版块/帖子」两层，跳过了`);
+        return null;
+      }
+      return { params: { board: seg[0], topic: seg[1] }, props: { entry, boardId: seg[0] } };
+    })
+    .filter((x): x is { params: { board: string; topic: string }; props: { entry: Topic; boardId: string } } => x !== null);
+}
+
+const { entry, boardId } = Astro.props as { entry: Topic; boardId: string };
+const { Content } = await render(entry);
+const boardInfo = boardById(boardId);
+const boardName = boardInfo?.title ?? boardOf(entry);
+const home = withBase('/liyutang/');
+---
+
+<ForumLayout
+  title={entry.data.title}
+  description={`黎语堂 · ${boardName}：${entry.data.title}`}
+  noindex
+>
+  <div class="lyt-page">
+    <p class="lyt-crumb">
+      <a href={home}>← 黎语堂</a>
+      <span aria-hidden="true"> · </span>
+      <a href={boardUrl(boardId)}>{boardName}</a>
+    </p>
+
+    <h1 class="lyt-title">{entry.data.title}</h1>
+    <p class="lyt-meta">
+      {entry.data.author && <span>{entry.data.author}</span>}
+      <time datetime={toISODate(entry.data.date)}>{formatDateFull(entry.data.date)}</time>
+      {entry.data.pinned > 0 && <span>置顶</span>}
+    </p>
+    {
+      entry.data.tags.length > 0 && (
+        <ul class="lyt-tags">
+          {entry.data.tags.map((t: string) => (
+            <li class="lyt-tag">#{t}</li>
+          ))}
+        </ul>
+      )
+    }
+
+    <div class="lyt-card">
+      <div class="lyt-body prose">
+        <Content />
+      </div>
+    </div>
+
+    <Twikoo title="留言" hint="不用注册，填个昵称和邮箱就能发；站长审核通过之后别人才看得见。" />
+  </div>
+</ForumLayout>
