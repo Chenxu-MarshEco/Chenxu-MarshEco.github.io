@@ -1604,6 +1604,74 @@ async function handleApi(req, res, url) {
       });
     }
   }
+  /*
+    ---- 黎语堂的用户审核（2026-10-07 加）----
+
+    账号和审核都住在**云函数**里（见 tools/liyutang-backend/index.js）：
+    注册 / 登录 / 待审核 / 封禁，以及"没过审就发不出评论"那道硬门槛。
+    这个接口只做一件事：把管理页的请求转给云函数，并把结果如实带回来。
+
+    站长身份用**你在 Twikoo 设的那个管理员密码**（云函数内部会发一次 LOGIN 事件去验），
+    所以不用再记第二个秘密。密码由页面填，编辑器服务不存它。
+  */
+  if (route === '/api/liyutang/users' && req.method === 'POST') {
+    const payload = await readBody(req);
+    const api = String(payload?.api ?? '').trim();
+    const password = String(payload?.password ?? '');
+    const action = String(payload?.action ?? 'list').trim();
+    if (!/^https?:\/\//i.test(api)) throw httpError(400, '后端地址不对（应该是一条 https://… 的网址）');
+    if (!password) throw httpError(400, '要填站长密码（就是你在评论区小齿轮里设的那个）');
+    /*
+      probe = 只验密码（转发一次 LOGIN 事件）—— 用来把"密码错误 / 未配置管理密码 / 数据库无配置"
+      这几种情况分开，省得都笼统地说一句"密码不对"。
+    */
+    const event =
+      action === 'probe'
+        ? 'LOGIN'
+        : action === 'set'
+          ? 'LT_ADMIN_SET'
+          : action === 'delete'
+            ? 'LT_ADMIN_DELETE'
+            : 'LT_ADMIN_LIST';
+    const body = { event, password };
+    if (action === 'set') {
+      body.id = String(payload.id ?? '');
+      if (payload.status) body.status = String(payload.status);
+      if (payload.label !== undefined) body.label = String(payload.label);
+    }
+    if (action === 'delete') body.id = String(payload.id ?? '');
+    const started = Date.now();
+    try {
+      const r = await fetch(api, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(20000),
+      });
+      const text = (await r.text()).slice(0, 100000);
+      let json = null;
+      try {
+        json = JSON.parse(text);
+      } catch {
+        /* 不是 JSON 就原样带回去 */
+      }
+      return sendJson(res, 200, {
+        ok: true,
+        status: r.status,
+        ms: Date.now() - started,
+        result: json,
+        raw: json ? '' : text.slice(0, 400),
+      });
+    } catch (err) {
+      return sendJson(res, 200, {
+        ok: true,
+        reachable: false,
+        ms: Date.now() - started,
+        error: String(err?.name === 'TimeoutError' ? '20 秒内没有响应（超时）' : err?.message || err),
+      });
+    }
+  }
+
   if (route === '/api/liyutang' && req.method === 'POST') {
     const payload = await readBody(req);
     const current = await readLiyutang();

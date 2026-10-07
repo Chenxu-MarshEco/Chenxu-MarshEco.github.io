@@ -118,6 +118,8 @@ function markDirty() {
 
 /** src/data/liyutang.json 的草稿（在本页里改，按保存才写盘） */
 let draft = null;
+/** 站长密码存在浏览器本地（就是你在评论区小齿轮里设的那个），只为省得每次重填 */
+const ADMIN_PW_KEY = 'lt_admin_pw';
 /** 有没有没保存的改动 */
 let dirty = false;
 
@@ -545,10 +547,208 @@ function renderForum() {
 }
 
 /* ---------------------------------------------------------------
+   用户审核（2026-10-07 加）
+
+   用户在这一页点「通过」之前，注册了也**发不出任何东西**（硬门槛在云函数里）。
+   站长的身份用 Twikoo 那个管理员密码。
+   --------------------------------------------------------------- */
+
+/** 当前这一屏的用户列表（渲染用） */
+let userList = null;
+/** 上一次操作的反馈 */
+let userMsg = '';
+
+function renderUsers() {
+  const box = $('lt-users-box');
+  if (!box) return;
+  box.textContent = '';
+
+  const api = String(draft?.forum?.twikoo?.envId ?? '');
+  box.append(
+    el('h4', 'wbox__title', '用户审核'),
+    el(
+      'p',
+      'hint',
+      '注册了的人默认是「待审核」—— 在你说通过之前，他一个字都发不出去（这道门槛在云函数里，绕开页面直接调接口也没用）。' +
+        '通过之后就随便发，不用再逐条审。'
+    )
+  );
+
+  if (!/^https?:\/\//i.test(api)) {
+    box.append(el('p', 'lt-sub', '评论系统那边还没有后端地址（去上面「评论系统」里填好），先弄那个。'));
+    return;
+  }
+
+  /* 站长密码：填一次记在本地 */
+  let savedPw = '';
+  try {
+    savedPw = localStorage.getItem(ADMIN_PW_KEY) || '';
+  } catch {
+    savedPw = '';
+  }
+  /* ⚠ 不在输入时存 —— 敲错的那个版本会一直被带出来（用户真踩过这个坑）；
+     只在一次调用**成功**之后才记（见下面 ask() 里那处 setItem）。 */
+  const pwInput = input(savedPw, '站长密码（你在评论区小齿轮里设的那个）', () => {});
+  pwInput.type = 'password';
+  /*
+    密码框是掩码的，看不见自己敲了什么 —— 加上「显示」和字数，
+    省得一个看不见的错字符（或本地存下来的旧值）把人绕进去。
+  */
+  const pwWrap = el('div', 'lt-board__row');
+  const eye = button('👁 显示', '把刚才填的密码显示出来看一眼', () => {
+    const show = pwInput.type === 'password';
+    pwInput.type = show ? 'text' : 'password';
+    eye.textContent = show ? '🙈 隐藏' : '👁 显示';
+  });
+  const count = el('span', 'hint', '');
+  const paintCount = () => {
+    const n = String(pwInput.value ?? '').length;
+    count.textContent = n ? '当前输入了 ' + n + ' 个字符' : '还没填';
+  };
+  pwInput.addEventListener('input', paintCount);
+  paintCount();
+  pwWrap.append(pwInput, eye, count);
+  box.append(field('站长密码', pwWrap));
+
+  const out = el('p', 'lt-sub', userMsg || '填好密码点「刷新用户列表」。');
+  const bar = el('div', 'lt-board__row');
+
+  const ask = async (payload) => {
+    const password = String(pwInput.value ?? '').trim();
+    if (!password) {
+      userMsg = '先把站长密码填上。';
+      out.textContent = userMsg;
+      return null;
+    }
+    try {
+      const res = await fetch('/api/liyutang/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ api, password, ...payload }),
+      });
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.error || ('HTTP ' + res.status));
+      if (data.reachable === false) throw new Error(data.error || '连不上云函数');
+      const r = data.result ?? {};
+      if (r.code !== 0) throw new Error(String(r.message ?? '云函数说不行'));
+      /* 成功了才记这次密码（probe 那种只验密码的调用也算成功） */
+      try {
+        localStorage.setItem(ADMIN_PW_KEY, password);
+      } catch {
+        /* 无所谓 */
+      }
+      return r;
+    } catch (err) {
+      userMsg = '操作失败：' + err.message;
+      /*
+        密码那类错误再问一次云函数「这个密码到底怎么不对」——
+        Twikoo 会回「密码错误 / 未配置管理密码 / 数据库无配置」，比一句"不对"有用得多。
+      */
+      try {
+        const probe = await fetch('/api/liyutang/users', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ api, password, action: 'probe' }),
+        });
+        const pd = await probe.json();
+        const msg = pd?.result?.message;
+        if (msg) userMsg += '　（云函数的原话：' + msg + '）';
+      } catch {
+        /* 问不到就算了 */
+      }
+      out.textContent = userMsg;
+      out.style.color = 'var(--danger)';
+      return null;
+    }
+  };
+
+  const refresh = async () => {
+    out.textContent = '正在问云函数要名单…';
+    out.style.color = '';
+    const r = await ask({ action: 'list' });
+    if (!r) return;
+    userList = r.users ?? [];
+    userMsg =
+      '共 ' +
+      userList.length +
+      ' 个账号：待审核 ' +
+      userList.filter((u) => u.status === 'pending').length +
+      ' · 已通过 ' +
+      userList.filter((u) => u.status === 'approved').length +
+      ' · 停用 ' +
+      userList.filter((u) => u.status === 'banned').length;
+    renderUsers();
+  };
+
+  const setStatus = async (id, status, who) => {
+    out.textContent = '正在把「' + who + '」设为 ' + status + ' …';
+    out.style.color = '';
+    const r = await ask({ action: 'set', id, status });
+    if (!r) return;
+    userMsg = '已经把「' + who + '」设为 ' + status + '。';
+    await refresh();
+  };
+
+  const remove = async (id, who) => {
+    out.textContent = '正在删掉「' + who + '」…';
+    out.style.color = '';
+    const r = await ask({ action: 'delete', id });
+    if (!r) return;
+    userMsg = '已经删掉「' + who + '」。';
+    await refresh();
+  };
+
+  bar.append(button('刷新用户列表', '问一次云函数里有谁注册了', refresh));
+  box.append(bar, out);
+
+  if (!userList) {
+    box.append(el('p', 'lt-sub', '还没拉过名单。'));
+    return;
+  }
+  if (userList.length === 0) {
+    box.append(el('p', 'lt-sub', '还没有人注册。'));
+    return;
+  }
+
+  const list = el('div', 'lt-board__fields');
+  for (const u of userList) {
+    const row = el('div', 'lt-board');
+    const who = el('div', 'lt-board__fields');
+    const line = el('div', 'lt-board__row');
+    line.append(
+      el('strong', '', u.nick),
+      el('span', 'hint', (u.mail || '（没填邮箱）') + ' · ' + statusText(u.status) + (u.label ? ' · ' + u.label : ''))
+    );
+    const ops = el('div', 'lt-board__row');
+    if (u.status !== 'approved') {
+      ops.append(button('通过', '通过之后他就能随便发言了', () => setStatus(u.id, 'approved', u.nick)));
+    }
+    if (u.status !== 'pending') {
+      ops.append(button('改回待审', '收回发言权（但他还是能看到帖子）', () => setStatus(u.id, 'pending', u.nick)));
+    }
+    if (u.status !== 'banned') {
+      ops.append(button('封禁', '封禁后连登录都不行', () => setStatus(u.id, 'banned', u.nick)));
+    }
+    ops.append(button('删除', '把这个账号从库里删掉', () => remove(u.id, u.nick)));
+    who.append(line, ops);
+    row.append(el('div', 'lt-board__icon', ''), who);
+    list.append(row);
+  }
+  box.append(list);
+}
+
+/** 状态 → 人话 */
+function statusText(s) {
+  return s === 'approved' ? '已通过' : s === 'banned' ? '已停用' : '待审核';
+}
+
+/* ---------------------------------------------------------------
    渲染 + 启动
    --------------------------------------------------------------- */
 
 function render() {
+  /* 用户审核在最上面（页面上也是排第一的那个区块，2026-10-07） */
+  renderUsers();
   renderBoards();
   renderForum();
   if (!dirty) {

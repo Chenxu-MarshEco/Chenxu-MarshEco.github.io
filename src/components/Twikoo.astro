@@ -1,26 +1,30 @@
 ---
 /**
- * 黎语堂的评论区（Twikoo）。
+ * 黎语堂的「发言区」= 账号（注册 / 登录 / 待审核）+ Twikoo 评论区。
  *
- * 用户 2026-10-06 定下来的这套：
- *   · 评论 / 账号系统 = **Twikoo 2.x，部署在腾讯云开发（CloudBase）**——
- *     Vercel 那条路（Waline）功能最好但**国内不挂梯子打不开**，群友用不了；
- *     Giscus 又要求人人有 GitHub 账号。腾讯云开发是唯一「国内直连 + 自带 HTTPS + 能审核」的组合。
- *   · 审核是 Twikoo 的**先审后发**：谁都能提交，但站长在管理面板点通过之后别人才看得见
- *     —— 用户的原话「没有通过我的审核的路人账号不能随意发帖」，效果就在这里。
+ * 用户 2026-10-07 的要求（原话）：
+ *   「我要的不是每句话都给我审核 这样太累了 我要的是审核用户！！例如 A 在论坛上注册了
+ *    两个号 一个叫 hoshi 一个叫 arcarlight 而我通过了 hoshi 这个账号的审核 那 hoshi 就可以
+ *    随意在任何地方发贴发言 不再需要我的审核 而 arcarlight 因为我忘记审核了 所以它是注册了
+ *    也不能发送任何东西的 一定要等到我同意这个账号过审了才能发东西」
  *
- * 三个实现上的讲究（都是踩过或在坑边上看过才这么写的）：
+ * 所以这一块的规矩是：
+ *   · **评论区默认藏着**（`hidden`）—— 只有「登录 + 已过审」才露出来；
+ *   · 没登录 → 显示注册 / 登录表单；
+ *   · 登录了但还没过审 → 显示「等站长审核」，发不了；
+ *   · 过审了 → 评论区出现，提交时把账号令牌一起带上。服务端还会再验一遍
+ *     （tools/liyutang-backend/index.js 里 COMMENT_SUBMIT 那道硬门槛）——
+ *     所以绕开页面直接调接口也发不出去。
  *
- * ① **前端文件放本仓库**（public/vendor/twikoo/），不引 cdn.jsdelivr.net ——
- *    国外 CDN 在国内经常加载不出来，评论框会一直是个空盒子。
- *    用的是 **all 版**：它自带腾讯云开发的 SDK，精简版连不上 CloudBase（官方文档点名）。
+ * 三个实现上的讲究：
+ *  ① 后端地址就是 `forum.twikoo.envId` 里那条 HTTP 网关网址 —— 账号事件（LT_*）和评论事件
+ *     走的是**同一个云函数**，不用第二处配置。
+ *  ② 令牌存在 localStorage（按域名分开），刷新页面不掉线；「退出登录」直接刷新
+ *     —— Twikoo 客户端没有 destroy，重来一次最干净。
+ *  ③ 昵称 / 邮箱在服务端按账号写死（防冒名），这里 pre-fill 只是让人看着顺眼。
  *
- * ② 配置用 `<script type="application/json">` 传（和首页日历同一个做法），
- *    不用 define:vars —— 那样每个页面都要重新内联一遍配置，而且和模块脚本的时序容易打架。
- *
- * ③ 脚本的先后顺序是**故意**的：`<script src>`（经典脚本，解析到就同步执行）先下来
- *    定义好 window.twikoo；模块脚本是 defer 的，一定在后面跑，所以能直接用。
- *    另外还是加了一层「等一下 twikoo 出现」的兜底 —— 万一以后换成异步加载也不会炸。
+ * 另外：评论区的前端文件放本仓库（public/vendor/twikoo/，**all 版**自带腾讯云 SDK），
+ * 不引国外 CDN；配置用 `<script type="application/json">` 传（和首页日历一个做法）。
  */
 import { commentsReady, forum } from '../utils/liyutang';
 import { withBase } from '../utils/url';
@@ -28,7 +32,7 @@ import { withBase } from '../utils/url';
 interface Props {
   /** 评论区上面那行小标题 */
   title?: string;
-  /** 给一句说明（例如「自由讨论区」那一页要告诉人这里可以随便开话题） */
+  /** 给一句说明 */
   hint?: string;
 }
 
@@ -37,6 +41,7 @@ const f = forum();
 const ready = commentsReady() && f.provider === 'twikoo';
 const js = withBase('/vendor/twikoo/twikoo.all.min.js');
 const css = withBase('/vendor/twikoo/twikoo.css');
+const api = f.twikoo.envId;
 ---
 
 {
@@ -44,51 +49,285 @@ const css = withBase('/vendor/twikoo/twikoo.css');
     <section class="tkc" aria-label={title} data-twikoo data-env={f.twikoo.envId}>
       <h2 class="tkc__title">{title}</h2>
       {hint && <p class="tkc__hint">{hint}</p>}
-      <div id="tcomment" class="tkc__box" />
+
+      {/* 账号那一块：脚本按状态填内容 */}
+      <div class="tkc__auth" data-lt-auth>
+        <p class="tkc__note">正在看登录状态…</p>
+      </div>
+
+      {/* 评论区：默认藏着，登录且过审之后才露出来 */}
+      <div id="tcomment" class="tkc__box" hidden />
+
       <script
         type="application/json"
         id="twikoo-cfg"
-        set:html={JSON.stringify({ envId: f.twikoo.envId, region: f.twikoo.region, el: '#tcomment' })}
+        set:html={JSON.stringify({
+          api,
+          envId: f.twikoo.envId,
+          region: f.twikoo.region,
+          el: '#tcomment',
+          title,
+        })}
       />
       <link rel="stylesheet" href={css} />
       <script is:inline src={js} />
       <script>
         /* ---------------------------------------------------------------
-           初始化 Twikoo。这一步要是失败，页面上得留下话，不能只丢一个空盒子。
+           发言区：账号状态机 + 按需启动 Twikoo
+           状态：guest（没登录）/ pending（等审核）/ approved（能发）/ banned（停用）
            --------------------------------------------------------------- */
         const cfgEl = document.getElementById('twikoo-cfg');
-        const box = document.getElementById('tcomment');
-        const show = (text: string) => {
-          if (!box) return;
-          box.innerHTML = `<p style="margin:0;padding:.9rem 0;color:rgba(255,226,244,.75);font-size:.86rem;line-height:1.8">${text}</p>`;
+        const authBox = document.querySelector('[data-lt-auth]') as HTMLElement | null;
+        const commentBox = document.getElementById('tcomment');
+        const TOKEN_KEY = 'lt_token';
+        type User = { nick: string; mail: string; status: string; label?: string };
+        let user: User | null = null;
+        let twikooStarted = false;
+
+        const el = (tag: string, cls = '', text = '') => {
+          const n = document.createElement(tag);
+          if (cls) n.className = cls;
+          if (text) n.textContent = text;
+          return n;
         };
-        if (!cfgEl || !box) {
-          /* 什么都不做：这一页本来就没打算挂评论区 */
-        } else {
-          const cfg = JSON.parse(cfgEl.textContent || '{}');
-          let tries = 0;
-          const boot = () => {
-            const t = (window as unknown as { twikoo?: { init: (o: unknown) => void } }).twikoo;
-            if (t && typeof t.init === 'function') {
-              try {
-                t.init({ envId: cfg.envId, el: cfg.el, region: cfg.region });
-              } catch (err) {
-                show('评论区初始化失败了：' + String((err as Error)?.message ?? err));
+
+        /** 调一次后端（账号事件和评论事件是同一个云函数） */
+        const call = async (body: Record<string, unknown>) => {
+          const res = await fetch(cfg.api, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify(body),
+          });
+          return (await res.json()) as Record<string, unknown>;
+        };
+
+        const token = () => {
+          try {
+            return localStorage.getItem(TOKEN_KEY) || '';
+          } catch {
+            return '';
+          }
+        };
+
+        /** 启动 Twikoo（只在第一次露出评论区时调；提交前把令牌塞进 payload） */
+        const startTwikoo = () => {
+          if (twikooStarted) return;
+          const t = (window as unknown as { twikoo?: { init: (o: unknown) => void } }).twikoo;
+          if (!t || typeof t.init !== 'function') {
+            window.setTimeout(startTwikoo, 200);
+            return;
+          }
+          twikooStarted = true;
+          t.init({
+            envId: cfg.envId,
+            el: cfg.el,
+            region: cfg.region,
+            /* 把账号令牌带上 —— 服务端拿它验「这个号过审了没有」 */
+            onSubmit: (payload: Record<string, unknown>) => {
+              payload.ltToken = token();
+              if (user) {
+                payload.nick = user.nick;
+                if (user.mail) payload.mail = user.mail;
               }
-              return;
+            },
+          });
+        };
+
+        const showComment = () => {
+          if (commentBox) commentBox.hidden = false;
+          startTwikoo();
+        };
+
+        const logoutBtn = () => {
+          const out = el('button', 'tkc__link', '退出登录');
+          out.type = 'button';
+          out.addEventListener('click', () => {
+            try {
+              localStorage.removeItem(TOKEN_KEY);
+            } catch {
+              /* 无所谓 */
             }
-            if (tries++ < 50) {
-              window.setTimeout(boot, 100);
-              return;
-            }
-            show(
-              '评论区的前端脚本没加载出来（' +
-                'vendor/twikoo/twikoo.all.min.js' +
-                '）。刷新一下试试；一直这样的话告诉站长。'
+            location.reload();
+          });
+          return out;
+        };
+
+        /** 按状态画界面 */
+        const render = (state: 'guest' | 'pending' | 'approved' | 'banned', msg = '') => {
+          if (!authBox) return;
+          authBox.textContent = '';
+          authBox.dataset.state = state;
+
+          if (state === 'approved' && user) {
+            const bar = el('p', 'tkc__who');
+            bar.append(el('span', 'tkc__me', '你以 ' + user.nick + ' 的身份登录' + (user.label ? '（' + user.label + '）' : '')));
+            bar.append(logoutBtn());
+            authBox.append(bar);
+            showComment();
+            return;
+          }
+
+          if (state === 'pending') {
+            authBox.append(
+              el('p', 'tkc__note', '账号「' + (user?.nick ?? '') + '」已经注册好了，还在等站长审核 —— 通过之后就能随便发言。'),
+              el('p', 'tkc__note', '（不注册也能看帖子；发言要过审，是为了挡掉广告和闹事的。）'),
+              logoutBtn()
             );
+            return;
+          }
+
+          if (state === 'banned') {
+            authBox.append(el('p', 'tkc__note', '这个账号被停用了。'), logoutBtn());
+            return;
+          }
+
+          /* guest：注册 / 登录表单 */
+          const wrap = el('div', 'tkc__form');
+          const tabs = el('div', 'tkc__tabs');
+          const paneLogin = el('div', 'tkc__pane');
+          const paneReg = el('div', 'tkc__pane');
+          let mode: 'login' | 'register' = 'login';
+
+          const tabLogin = el('button', 'tkc__tab is-on', '登录');
+          const tabReg = el('button', 'tkc__tab', '注册');
+          tabLogin.type = 'button';
+          tabReg.type = 'button';
+          tabs.append(tabLogin, tabReg);
+
+          const msgLine = el('p', 'tkc__msg', msg);
+          const paint = () => {
+            tabLogin.classList.toggle('is-on', mode === 'login');
+            tabReg.classList.toggle('is-on', mode === 'register');
+            paneLogin.hidden = mode !== 'login';
+            paneReg.hidden = mode !== 'register';
           };
-          boot();
-        }
+          tabLogin.addEventListener('click', () => {
+            mode = 'login';
+            paint();
+          });
+          tabReg.addEventListener('click', () => {
+            mode = 'register';
+            paint();
+          });
+
+          const field = (label: string, type: string, ph: string, ac = 'off') => {
+            const line = el('label', 'tkc__field');
+            line.append(el('span', '', label));
+            const input = document.createElement('input');
+            input.type = type;
+            input.placeholder = ph;
+            input.autocomplete = ac;
+            line.append(input);
+            return { line, input };
+          };
+
+          /* ---- 登录 ---- */
+          const lNick = field('昵称', 'text', '你注册时用的昵称');
+          const lPass = field('密码', 'password', '', 'current-password');
+          const lBtn = el('button', 'tkc__btn', '登录');
+          lBtn.type = 'button';
+          const lMsg = el('p', 'tkc__msg', '');
+          lBtn.addEventListener('click', async () => {
+            lBtn.disabled = true;
+            lMsg.textContent = '登录中…';
+            try {
+              const r = await call({ event: 'LT_LOGIN', nick: lNick.input.value.trim(), pass: lPass.input.value });
+              if (r.code !== 0) {
+                lMsg.textContent = String(r.message ?? '登录失败');
+                return;
+              }
+              try {
+                localStorage.setItem(TOKEN_KEY, String(r.token ?? ''));
+              } catch {
+                /* 无痕模式之类，忽略 */
+              }
+              user = r.user as User;
+              render(user.status === 'approved' ? 'approved' : user.status === 'banned' ? 'banned' : 'pending');
+            } catch (err) {
+              lMsg.textContent = '连不上服务器：' + String((err as Error)?.message ?? err);
+            } finally {
+              lBtn.disabled = false;
+            }
+          });
+          paneLogin.append(lNick.line, lPass.line, lBtn, lMsg);
+
+          /* ---- 注册 ---- */
+          const rNick = field('昵称', 'text', '2~20 个字，中英文数字都行');
+          const rMail = field('邮箱', 'text', '选填，用来显示头像');
+          const rPass = field('密码', 'password', '至少 6 位', 'new-password');
+          const rBtn = el('button', 'tkc__btn', '注册');
+          rBtn.type = 'button';
+          const rMsg = el('p', 'tkc__msg', '');
+          rBtn.addEventListener('click', async () => {
+            rBtn.disabled = true;
+            rMsg.textContent = '提交中…';
+            try {
+              const r = await call({
+                event: 'LT_REGISTER',
+                nick: rNick.input.value.trim(),
+                mail: rMail.input.value.trim(),
+                pass: rPass.input.value,
+              });
+              if (r.code !== 0) {
+                rMsg.textContent = String(r.message ?? '注册失败');
+                return;
+              }
+              mode = 'login';
+              paint();
+              msgLine.textContent = '注册好了！等站长审核通过就能发言 —— 到时候用同样的昵称密码登录。';
+              msgLine.classList.add('is-ok');
+            } catch (err) {
+              rMsg.textContent = '连不上服务器：' + String((err as Error)?.message ?? err);
+            } finally {
+              rBtn.disabled = false;
+            }
+          });
+          paneReg.append(rNick.line, rMail.line, rPass.line, rBtn, rMsg);
+
+          paint();
+          wrap.append(tabs, msgLine, paneLogin, paneReg);
+          authBox.append(wrap);
+        };
+
+        /* ---------------------------------------------------------------
+           开场：有令牌就问一次「我是谁 / 过审没有」
+           --------------------------------------------------------------- */
+        (async () => {
+          if (!cfgEl || !authBox) return;
+
+          /*
+            站长的后门：地址后面加 #admin 就**不管登录状态，直接把评论区露出来** ——
+            因为评论区默认藏着，管理面板（那颗小齿轮）就长在评论区里，藏起来站长也进不去了。
+            普通读者不会知道、也不会用到它；知道这个口令的人本来就该能进管理面板。
+          */
+          if (location.hash === '#admin') {
+            authBox.append(el('p', 'tkc__note', '（#admin：强制显示评论区，方便打开管理面板）'));
+            showComment();
+            return;
+          }
+
+          const t = token();
+          if (!t) {
+            render('guest');
+            return;
+          }
+          try {
+            const r = await call({ event: 'LT_ME', ltToken: t });
+            if (r.code !== 0) {
+              try {
+                localStorage.removeItem(TOKEN_KEY);
+              } catch {
+                /* 无所谓 */
+              }
+              render('guest', '登录状态过期了，重新登录一下。');
+              return;
+            }
+            user = r.user as User;
+            render(user.status === 'approved' ? 'approved' : user.status === 'banned' ? 'banned' : 'pending');
+          } catch {
+            render('guest', '连不上服务器，稍后再试。');
+          }
+        })();
       </script>
     </section>
   )
@@ -96,9 +335,8 @@ const css = withBase('/vendor/twikoo/twikoo.css');
 
 <style>
   /*
-    评论区的皮：和文章页那个正文框（.crt-screen）一个味道 —— 半透明深底 + 粉边 + 圆角，
-    因为这一页的背景是 CRT 蒸汽波，Twikoo 自带的浅色控件直接放上去会看不清。
-    ⚠ Twikoo 自己的 CSS 是全局的（它按 .twikoo / .tk-* 选），所以这里只管外面这层壳。
+    发言区：和文章页那个正文框（.crt-screen）一个味道 —— 半透明深底 + 青边 + 圆角。
+    ⚠ Twikoo 自己的 CSS 是全局的（它按 .twikoo / .tk-* 选），这里只管外面这层壳和账号那块。
   */
   .tkc {
     margin: clamp(1.6rem, 4vh, 2.6rem) 0 0;
@@ -121,6 +359,107 @@ const css = withBase('/vendor/twikoo/twikoo.css');
     font-size: 0.84rem;
     line-height: 1.8;
     color: rgba(214, 201, 238, 0.85);
+  }
+  .tkc__auth {
+    margin: 0.4rem 0 0.9rem;
+  }
+  .tkc__note {
+    margin: 0.2rem 0;
+    font-size: 0.84rem;
+    line-height: 1.8;
+    color: rgba(214, 201, 238, 0.8);
+  }
+  .tkc__who {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.7rem;
+    margin: 0.2rem 0;
+    font-size: 0.84rem;
+  }
+  .tkc__me {
+    color: #8ff0e5;
+  }
+  .tkc__link {
+    padding: 0;
+    border: none;
+    background: none;
+    color: rgba(214, 201, 238, 0.72);
+    font-size: 0.8rem;
+    text-decoration: underline;
+    cursor: pointer;
+  }
+  .tkc__link:hover {
+    color: #dcfffb;
+  }
+  .tkc__form {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+    max-width: 24rem;
+  }
+  .tkc__tabs {
+    display: flex;
+    gap: 0.4rem;
+  }
+  .tkc__tab {
+    padding: 0.25rem 0.8rem;
+    border: 1px solid rgba(127, 233, 221, 0.28);
+    border-radius: 999px;
+    background: none;
+    color: rgba(214, 201, 238, 0.8);
+    font-size: 0.82rem;
+    cursor: pointer;
+  }
+  .tkc__tab.is-on {
+    border-color: rgba(127, 233, 221, 0.7);
+    color: #eafcff;
+    background: rgba(127, 233, 221, 0.12);
+  }
+  .tkc__field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    font-size: 0.78rem;
+    color: rgba(214, 201, 238, 0.75);
+  }
+  .tkc__field input {
+    padding: 0.45rem 0.6rem;
+    border: 1px solid rgba(127, 233, 221, 0.28);
+    border-radius: 8px;
+    background: rgba(8, 3, 16, 0.6);
+    color: #f3edff;
+    font-size: 0.9rem;
+  }
+  .tkc__field input:focus {
+    outline: none;
+    border-color: rgba(127, 233, 221, 0.7);
+  }
+  .tkc__btn {
+    align-self: flex-start;
+    padding: 0.4rem 1.1rem;
+    border: 1px solid rgba(127, 233, 221, 0.6);
+    border-radius: 8px;
+    background: rgba(127, 233, 221, 0.16);
+    color: #eafcff;
+    font-size: 0.88rem;
+    cursor: pointer;
+  }
+  .tkc__btn:hover {
+    background: rgba(127, 233, 221, 0.28);
+  }
+  .tkc__btn:disabled {
+    opacity: 0.6;
+    cursor: default;
+  }
+  .tkc__msg {
+    margin: 0;
+    font-size: 0.8rem;
+    line-height: 1.7;
+    color: #ffd9a8;
+  }
+  .tkc__msg.is-ok {
+    color: #8ff0e5;
   }
   .tkc__box {
     min-height: 6rem;

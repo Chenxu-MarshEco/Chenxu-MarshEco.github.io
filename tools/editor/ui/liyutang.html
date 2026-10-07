@@ -189,6 +189,11 @@
     <main class="lytadmin__main">
       <p class="lytadmin__status" id="lt-status">正在读取…</p>
 
+      <!--
+        用户审核放在**最上面**（2026-10-07）：站长进这一页最常干的事就是「谁注册了、要不要过」，
+        放最底下会被评论系统那一大块埋掉（真被埋过一次，用户找不到）。
+      -->
+      <section class="wbox" id="lt-users-box"></section>
       <section class="wbox" id="lt-boards-box"></section>
       <section class="wbox" id="lt-forum-box"></section>
     </main>

@@ -242,6 +242,7 @@ try {
       const root = document.querySelector('.twikoo');
       const err = document.querySelector('.tk-error, .tk-error__title, .tk-error__detail');
       const txt = (box ? box.innerText : '').replace(/\\s+/g, ' ').trim();
+      const authBox = document.querySelector('[data-lt-auth]');
       return {
         hasRoot: !!root,
         inputs: document.querySelectorAll('#tcomment input, #tcomment textarea').length,
@@ -250,9 +251,13 @@ try {
         commentsTitle: (document.querySelector('.tk-comments-title') || {}).innerText || '',
         errorText: err ? err.innerText.replace(/\\s+/g, ' ').trim().slice(0, 300) : '',
         text: txt.slice(0, 300),
+        boxHidden: box ? box.hasAttribute('hidden') : null,
+        authState: authBox ? authBox.dataset.state || '(还没画出来)' : '(没有账号区)',
+        authText: authBox ? (authBox.innerText || '').replace(/\\s+/g, ' ').trim().slice(0, 200) : '',
+        tabs: [...document.querySelectorAll('[data-lt-auth] .tkc__tab')].map((b) => b.textContent.trim()),
       };
     })()`);
-    if (state?.errorText || state?.submit) break;
+    if (state?.errorText || state?.submit || (state?.authState && state.authState !== '(还没画出来)')) break;
   }
 
   info('页面上的评论区状态：' + JSON.stringify(state));
@@ -262,10 +267,17 @@ try {
     info('评论区请求过的服务端地址：' + [...new Set(cdp.serverCalls)].slice(0, 6).join('  |  '));
   }
 
-  check('Twikoo 的根节点渲染出来了（.twikoo）', state?.hasRoot === true);
-  check('评论区出现了输入框 / 提交按钮（说明云函数那一边是通的）', (state?.inputs ?? 0) > 0 && (state?.buttons ?? 0) > 0,
-    `inputs=${state?.inputs} buttons=${state?.buttons}`);
-  check('页面上没有 Twikoo 报错盒子', !state?.errorText, state?.errorText || '');
+  /*
+    2026-10-07 起：评论区**默认藏着**，只露「登录 / 注册」——
+    只有登录且过审的账号才看得见输入框（服务端还会再验一遍令牌）。
+    所以这里断言的是"没登录的人看到什么"，而不是"输入框在不在"。
+  */
+  check('账号区画出来了（不是一直停在"正在看登录状态"）', state?.authState === 'guest', String(state?.authState));
+  check('没登录时给的是「登录 / 注册」两个入口', (state?.tabs ?? []).join(',') === '登录,注册', JSON.stringify(state?.tabs));
+  check('★ 没登录时评论区是**藏着的**（不是谁点开都能发）', state?.boxHidden === true, 'hidden=' + String(state?.boxHidden));
+  check('没登录时 Twikoo 还没启动（不白拉评论，也不给发帖入口）', state?.hasRoot === false);
+  info('账号区写了：' + String(state?.authText ?? '').slice(0, 120));
+  check('页面上没有报错盒子', !state?.errorText, state?.errorText || '');
   if (state?.errorText) {
     info('⚠ 这是 Twikoo 自己报的错，照着它去查腾讯云开发那一侧（跨域白名单 / 匿名登录 / 云函数状态）');
   }

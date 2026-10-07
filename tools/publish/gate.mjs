@@ -13,11 +13,16 @@
  * 判定规则（按顺序，命中就允许）：
  *   ① 是「Run workflow」手动触发的  → 允许（站长自己点的，这就是"同意"）
  *   ② 推送的人就是仓库所属者        → 允许（你自己的推送 / 启动器「发布上线」）
- *   ③ 这一次改的文件**全在放行名单里** → 允许（机器人的日常日记）
- *   ④ 其它情况                      → **拦住**：这次不构建、不发布，
+ *   ③ 推送的人在**免审名单 / 协作者**里 → 允许（用户 2026-10-07 的要求：
+ *      「直接改为 github 上我的 collaborators 可以直接推流 无需我的审核吧」——
+ *      机器人偶尔要改日记标题之类的元信息，那些文件不在"日常放行名单"里，原来会被拦下）
+ *   ④ 这一次改的文件**全在放行名单里** → 允许（机器人的日常日记）
+ *   ⑤ 其它情况                      → **拦住**：这次不构建、不发布，
  *      并把"越界的文件"打在日志里（Actions 里那次运行会失败并给你发通知）
  *
- * 放行名单（就这三条，都在下面 ALLOW 里，改这里就是改规则）：
+ * 免审名单（按"人"放行）在 tools/publish/trusted.json —— 加人只改那个文件，不用改代码。
+ *
+ * 按文件放行的名单（就这三条，都在下面 ALLOW 里）：
  *   · src/content/notes/**.md          日记正文（手记）
  *   · public/img/uploads/日期-*.图片    日记配图（机器人/编辑器上传的名字都以 8 位日期开头）
  *   · src/data/recent-edits.json       「最近编辑过哪几页」那张表，编辑器保存时自动写的
@@ -40,6 +45,20 @@
  * ============================================================================
  */
 import fs from 'node:fs';
+
+/**
+ * 免审名单（按"人"放行）：这些 GitHub 账号推什么都会直接发布。
+ * 名单在 tools/publish/trusted.json；读不到就当空名单（不影响其它规则）。
+ */
+const TRUSTED = (() => {
+  try {
+    const raw = JSON.parse(fs.readFileSync(new URL('./trusted.json', import.meta.url), 'utf8'));
+    const list = Array.isArray(raw?.autoPublish) ? raw.autoPublish : [];
+    return list.map((s) => String(s).trim().toLowerCase()).filter(Boolean);
+  } catch {
+    return [];
+  }
+})();
 
 /** 允许"不经同意就上线"的路径。命中任意一条即放行 */
 const ALLOW = [
@@ -145,6 +164,41 @@ function decide(files) {
   };
 }
 
+/**
+ * 问一次 GitHub：这个账号是不是本仓库的协作者（有 Write 权限的人）。
+ * 尽力而为：没 token、接口不通、权限不够 —— 都只是"查不出来"，不会因此拦住谁
+ * （免审名单那条规则照样兜底）。
+ * @param {string} login 推送人
+ * @returns {Promise<{known:boolean, hit?:boolean, why:string}>} 查询结果
+ */
+async function isCollaborator(login) {
+  if (!token || !repo || !login) return { known: false, why: '没有 token 或仓库名，跳过这一步' };
+  try {
+    const r = await fetch(
+      `https://api.github.com/repos/${repo}/collaborators?per_page=100&affiliation=all`,
+      {
+        headers: {
+          authorization: `Bearer ${token}`,
+          accept: 'application/vnd.github+json',
+          'user-agent': 'huajiantang-publish-gate',
+        },
+        signal: AbortSignal.timeout(9000),
+      }
+    );
+    if (!r.ok) return { known: false, why: `协作者接口回了 HTTP ${r.status}` };
+    const list = await r.json();
+    if (!Array.isArray(list)) return { known: false, why: '协作者接口返回的不是列表' };
+    const hit = list.some((u) => String(u?.login ?? '').toLowerCase() === login.toLowerCase());
+    return {
+      known: true,
+      hit,
+      why: hit ? '在仓库协作者名单里' : `不在协作者名单里（名单里 ${list.length} 人）`,
+    };
+  } catch (err) {
+    return { known: false, why: String(err?.message ?? err) };
+  }
+}
+
 const lines = [];
 const say = (s = '') => {
   lines.push(s);
@@ -157,12 +211,36 @@ if (event === 'workflow_dispatch') {
   decision = { allow: true, reason: '这次是「Run workflow」手动点的 —— 等于站长本人同意发布', ok: [], bad: [] };
 } else if (owner && actor && actor.toLowerCase() === owner.toLowerCase()) {
   decision = { allow: true, reason: `推送的人就是仓库所属者（${actor}），自己的推送直接发布`, ok: [], bad: [] };
+} else if (TRUSTED.includes(actor.toLowerCase())) {
+  decision = {
+    allow: true,
+    reason: `推送的人（${actor}）在免审名单里（tools/publish/trusted.json）—— 协作者的推送直接发布`,
+    ok: [],
+    bad: [],
+  };
 } else {
-  filesInfo = await changedFiles();
-  if (filesInfo.error) {
-    decision = { allow: false, reason: `拿不到"这次改了哪些文件"：${filesInfo.error}`, ok: [], bad: [] };
+  /* 不在名单里，再问一次 GitHub：他是不是本仓库的协作者 */
+  const collab = await isCollaborator(actor);
+  if (collab.known && collab.hit) {
+    decision = {
+      allow: true,
+      reason: `推送的人（${actor}）是仓库协作者（${collab.why}）—— 协作者的推送直接发布`,
+      ok: [],
+      bad: [],
+    };
   } else {
-    decision = decide(filesInfo.files);
+    filesInfo = await changedFiles();
+    if (filesInfo.error) {
+      decision = {
+        allow: false,
+        reason: `拿不到"这次改了哪些文件"：${filesInfo.error}（协作者那一步：${collab.why}）`,
+        ok: [],
+        bad: [],
+      };
+    } else {
+      decision = decide(filesInfo.files);
+      if (!collab.known) decision.reason += `（协作者那一步没查成：${collab.why}）`;
+    }
   }
 }
 
@@ -186,7 +264,9 @@ say(`理由：${decision.reason}`);
 if (!decision.allow) {
   say('');
   say('要发布这次的改动：审一遍上面的文件 → Actions →「部署到 GitHub Pages」→ Run workflow（选 main）。');
-  say('规则写在 tools/publish/gate.mjs 的头上，放行名单就是文件里那个 ALLOW 数组。');
+  say('规则写在 tools/publish/gate.mjs 的头上：');
+    say('  · 免审名单（按人）→ tools/publish/trusted.json');
+    say('  · 按文件放行的名单 → tools/publish/gate.mjs 里的 ALLOW 数组');
 }
 say('==========================');
 

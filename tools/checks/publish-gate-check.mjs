@@ -5,7 +5,8 @@
  * 用户的要求：「SSW的机器人每天都需要推送文章 让它推送到铃忆的冰室日记的文章
  * 无需同意也能推送 但是删改其他页面需要同意」。
  * 规则落在两处：
- *   · tools/publish/gate.mjs                —— 判定逻辑 + 放行名单（一个 ALLOW 数组）
+ *   · tools/publish/gate.mjs                —— 判定逻辑 + 按文件放行的 ALLOW 数组
+ *   · tools/publish/trusted.json            —— 免审名单（按人放行：协作者推什么都直接发布）
  *   · .github/workflows/deploy.yml 的 gate job —— 把这次推送的上下文喂给它，
  *     放行才构建、才发布
  * 这支脚本量两件事：
@@ -165,41 +166,65 @@ const cases = [
     allow: true,
   },
   {
-    name: '机器人碰了首页版块数据（home-boards.json）→ **拦住**',
-    args: { actor: 'SSWTLZZ69', event: 'push', files: ['src/data/home-boards.json'] },
+    name: '一个谁都不是的账号碰首页版块数据（home-boards.json）→ **拦住**',
+    args: { actor: 'random-guest', event: 'push', files: ['src/data/home-boards.json'] },
     allow: false,
     badIncludes: 'src/data/home-boards.json',
   },
   {
-    name: '机器人改了别的页面（index.astro）→ **拦住**',
-    args: { actor: 'SSWTLZZ69', event: 'push', files: ['src/pages/index.astro'] },
+    name: '一个谁都不是的账号改了别的页面（index.astro）→ **拦住**',
+    args: { actor: 'random-guest', event: 'push', files: ['src/pages/index.astro'] },
     allow: false,
     badIncludes: 'src/pages/index.astro',
   },
   {
-    name: '机器人改了文章（posts，不是日记手记）→ **拦住**',
-    args: { actor: 'SSWTLZZ69', event: 'push', files: ['src/content/posts/x.md'] },
+    name: '一个谁都不是的账号改了文章（posts，不是日记手记）→ **拦住**',
+    args: { actor: 'random-guest', event: 'push', files: ['src/content/posts/x.md'] },
     allow: false,
   },
   {
-    name: '机器人动了发布工作流自己 → **拦住**（改规则也得先过你）',
-    args: { actor: 'SSWTLZZ69', event: 'push', files: ['.github/workflows/deploy.yml'] },
+    name: '一个谁都不是的账号动了发布工作流自己 → **拦住**（改规则也得先过你）',
+    args: { actor: 'random-guest', event: 'push', files: ['.github/workflows/deploy.yml'] },
     allow: false,
   },
   {
-    name: '机器人换掉了名字不带日期的图（logo.png）→ **拦住**',
-    args: { actor: 'SSWTLZZ69', event: 'push', files: ['public/img/uploads/logo.png'] },
+    name: '一个谁都不是的账号换掉了名字不带日期的图（logo.png）→ **拦住**',
+    args: { actor: 'random-guest', event: 'push', files: ['public/img/uploads/logo.png'] },
     allow: false,
   },
   {
-    name: '日记 + 越界混在同一次推送里 → **拦住**（整次都要审）',
+    name: '一个谁都不是的账号：日记 + 越界混在同一次推送里 → **拦住**（整次都要审）',
     args: {
-      actor: 'SSWTLZZ69',
+      actor: 'random-guest',
       event: 'push',
       files: ['src/content/notes/2026-10-06-a.md', 'src/data/salon.json'],
     },
     allow: false,
     badIncludes: 'src/data/salon.json',
+  },
+  {
+    name: '★ 免审名单里的人（机器人）改首页版块数据 → **放行**（用户 2026-10-07 的要求：协作者直接推流）',
+    args: { actor: 'SSWTLZZ69', event: 'push', files: ['src/data/home-boards.json'] },
+    allow: true,
+    reasonIncludes: '免审名单',
+  },
+  {
+    name: '★ 免审名单里的人改了日记标题所在的文件（原来被拦的就是这种）→ **放行**',
+    args: { actor: 'sswtlzz69', event: 'push', files: ['src/content/notes/2026-10-06-a.md', 'src/data/salon.json'] },
+    allow: true,
+    reasonIncludes: '免审名单',
+  },
+  {
+    name: '★ 免审名单的人连发布工作流都能改（名单里是全权 —— 这条用例就是提醒这个代价）',
+    args: { actor: 'SSWTLZZ69', event: 'push', files: ['.github/workflows/deploy.yml'] },
+    allow: true,
+    reasonIncludes: '免审名单',
+  },
+  {
+    name: '不在名单、协作者又查不出来时，拦住理由里会写明「协作者那一步没查成」',
+    args: { actor: 'random-guest', event: 'push', files: ['src/pages/index.astro'] },
+    allow: false,
+    reasonIncludes: '协作者那一步没查成',
   },
   {
     name: '你自己推任何东西 → 放行（启动器「发布上线」照旧一点就发）',
@@ -212,7 +237,7 @@ const cases = [
     allow: true,
   },
   {
-    name: '别的协作者（不是机器人也不是你）改首页 → **拦住**',
+    name: '不认识的人改首页 → **拦住**（本地测不出协作者身份就按文件名单判；线上会先问 GitHub「他是不是协作者」）',
     args: { actor: 'somebodyelse', event: 'push', files: ['src/pages/index.astro'] },
     allow: false,
   },
@@ -223,13 +248,13 @@ const cases = [
   },
   {
     name: '拿不到改动清单（没有 token、没有前后 SHA）→ **拦住**（宁可拦住也不瞎发）',
-    args: { actor: 'SSWTLZZ69', event: 'push' },
+    args: { actor: 'random-guest', event: 'push' },
     allow: false,
     reasonIncludes: '拿不到',
   },
   {
     name: '强推 / 新分支（before 是全 0）→ **拦住**',
-    args: { actor: 'SSWTLZZ69', event: 'push', before: '0000000000000000000000000000000000000000', after: 'abc' },
+    args: { actor: 'random-guest', event: 'push', before: '0000000000000000000000000000000000000000', after: 'abc' },
     allow: false,
     reasonIncludes: '全 0',
   },
@@ -246,11 +271,18 @@ for (const c of cases) {
 }
 
 /* ---- 2c. 拦住的时候，日志里要写清楚"怎么才能发" ---- */
-const denyOut = runGate({ actor: 'SSWTLZZ69', event: 'push', files: ['src/pages/index.astro'] });
+const denyOut = runGate({ actor: 'random-guest', event: 'push', files: ['src/pages/index.astro'] });
 check(
-  '拦住时日志里写清了越界的文件和"怎么才能发"',
+  '拦住时日志里写清了越界的文件和「怎么才能发」',
   denyOut.out.includes('src/pages/index.astro') && /Run workflow/.test(denyOut.out) && /ALLOW/.test(denyOut.out),
   ''
+);
+/* 免审名单是文件驱动的：断言那个文件真的被读到了 */
+const trusted = JSON.parse(fs.readFileSync('tools/publish/trusted.json', 'utf8'));
+check(
+  '免审名单文件（tools/publish/trusted.json）里确实有机器人，而且是数组',
+  Array.isArray(trusted.autoPublish) && trusted.autoPublish.some((x) => String(x).toLowerCase() === 'sswtlzz69'),
+  JSON.stringify(trusted.autoPublish)
 );
 
 console.log(`\n==== ${pass} passed, ${fail} failed ====`);

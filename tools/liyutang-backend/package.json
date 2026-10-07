@@ -1,0 +1,11 @@
+{
+  "name": "liyutang-cloudbase-fn",
+  "private": true,
+  "version": "1.0.0",
+  "description": "黎语堂的云函数（腾讯云开发 · 函数名 twikoo）：Twikoo 外壳 + 黎语堂自己的账号与审核",
+  "main": "index.js",
+  "dependencies": {
+    "twikoo-func": "latest",
+    "mongodb": "^7.6.0"
+  }
+}
