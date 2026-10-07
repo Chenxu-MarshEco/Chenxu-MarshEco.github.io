@@ -19,6 +19,14 @@ export interface Board {
   title: string;
   desc: string;
   icon: string;
+  /**
+   * 版块公告（站长写的 Markdown，显示在版块页顶部）。
+   * 2026-10-07 晚上加的 —— 用户要求「编辑器端可以编辑各个板块，类似编辑主网站的页面」，
+   * 光有标题和一句话说明不够，得能写一段带图带链接的公告。
+   * ⚠ 它和用户发的帖子走**同一个渲染器**（src/utils/liyutang-md.mjs），
+   *   所以公告里写 HTML 标签会原样显示成文字，不会当标签解释。
+   */
+  notice: string;
 }
 
 /** 评论系统的配置。四个 provider 里当前用 twikoo（见 liyutang.json 的 _readme） */
@@ -98,7 +106,7 @@ export function boards(): Board[] {
     /* id 就是网址里那一段，所以只认小写字母数字和连字符 */
     if (!id || !title || !/^[a-z0-9][a-z0-9-]*$/.test(id) || seen.has(id)) continue;
     seen.add(id);
-    out.push({ id, title, desc: str(one.desc), icon: str(one.icon) });
+    out.push({ id, title, desc: str(one.desc), icon: str(one.icon), notice: str(one.notice) });
   }
   return out;
 }

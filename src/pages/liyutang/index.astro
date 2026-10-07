@@ -2,36 +2,50 @@
 /**
  * 黎语堂首页 —— /liyutang/
  *
- * 用户 2026-10-06：先只要一个空壳（背景 + 左上角徽记，别的都不要有）；
- * 现在评论服务（腾讯云开发 + Twikoo）跑起来了，这一页开始长成**论坛首页**：
- * 版块卡片列表。版块从 src/data/liyutang.json 的 boards 来（编辑器 /liyutang-admin 里改）。
+ * 用户 2026-10-06：先只要一个空壳（背景 + 左上角徽记）；后来开始长成**论坛首页**：
+ * 版块卡片 + 最新帖子。
  *
- * 帖子和回帖是两回事，这里分清楚：
- *   · 帖子 = 站长 / 共创者写的 Markdown（src/content/liyutang/<版块>/xxx.md），构建期生成页面；
- *   · 回帖 = Twikoo 的评论，存在腾讯云开发里，**谁都能发**，但要站长在管理面板点通过才显示。
- *     每个版块页底部都有一个「自由讨论」线程，所以"谁都能在黎语堂发帖"这件事是成立的。
+ * 用户 2026-10-07 晚上：
+ *   「帮我删掉黎语堂底下这段【花涧堂自己的论坛。留言只要昵称 + 邮箱，不用注册任何账号；
+ *     不过所有留言都会先经过站长审核，通过之后别人才看得见。】话」
+ *   ——那句话是"每句话都送审"那套的说明，早就作废了（现在是审账号），所以整段删掉。
+ *   首页不再解释规则（规则在账号区里按状态说），只负责"这儿有哪些版块、谁刚发了什么"。
+ *
+ * 三类东西分清楚：
+ *   · 版块卡片 = src/data/liyutang.json 的 boards（编辑器 /liyutang-admin 里改）；
+ *   · 帖子 = **用户发的**，住在云函数 + MongoDB 里，这一页是脚本去拉的（所以是"动态"的）；
+ *   · 留言 = Twikoo 的评论，在版块页 / 帖子页底部。
+ *
+ * ⚠ 版块 id 不能叫 `new` 或 `post` —— 那两条路径留给发帖页和帖子页了（撞了构建会直接报错）。
  */
 import ForumLayout from '../../layouts/ForumLayout.astro';
+import LiyutangAccount from '../../components/LiyutangAccount.astro';
 import { boardCounts, boards, boardUrl, forum } from '../../utils/liyutang';
+import { withBase } from '../../utils/url';
 
 const list = boards();
 const counts = await boardCounts();
 const f = forum();
-/** 评论区挂没挂上 —— 首页上写清楚，免得用户以为"发不了言" */
-const canComment = f.enabled && f.provider !== 'none';
+/** 帖子那一套挂在评论服务同一个云函数上，所以它没配好 = 帖子也读不出来 */
+const api = f.twikoo.envId;
+const titles = Object.fromEntries(list.map((b) => [b.id, b.title]));
+const newUrl = withBase('/liyutang/new/');
 ---
 
 <ForumLayout
   title="黎语堂"
-  description="黎语堂 —— 花涧堂的静态论坛：版块、帖子，留言用昵称和邮箱就能发。"
+  description="黎语堂 —— 花涧堂自己的论坛：版块、帖子，注册一个账号让站长过审之后就能发帖。"
   noindex
 >
   <div class="lyt-page">
     <h1 class="lyt-title" data-liyutang-home>黎语堂</h1>
-    <p class="lyt-lead">
-      花涧堂自己的论坛。留言只要<b>昵称 + 邮箱</b>，不用注册任何账号；
-      不过<b>所有留言都会先经过站长审核</b>，通过之后别人才看得见。
-    </p>
+
+    <div class="lyt-actions">
+      <a class="lyt-btn" href={newUrl}>发帖</a>
+      <span class="lyt-form__hint">发帖和留言都要登录；账号注册后要等站长过审。</span>
+    </div>
+
+    <LiyutangAccount />
 
     {
       list.length > 0 ? (
@@ -44,7 +58,13 @@ const canComment = f.enabled && f.provider !== 'none';
                   <b>{b.title}</b>
                   {b.desc && <span>{b.desc}</span>}
                 </span>
-                <span class="lyt-boardCount">{counts[b.id] ?? 0} 帖</span>
+                <span
+                  class="lyt-boardCount"
+                  data-board-count={b.id}
+                  data-static-count={counts[b.id] ?? 0}
+                >
+                  {counts[b.id] ?? 0} 帖
+                </span>
               </a>
             </li>
           ))}
@@ -56,8 +76,60 @@ const canComment = f.enabled && f.provider !== 'none';
       )
     }
 
-    {!canComment && (
-      <p class="lyt-empty">评论区还没开（编辑器的「黎语堂」面板里填好评论服务之后打开）。</p>
-    )}
+    {/* 最新帖子：脚本去云函数拉（用户发的帖子不进构建产物） */}
+    <div data-lt-latest></div>
+    <noscript>
+      <p class="lyt-empty">帖子列表要用 JavaScript 才读得出来（帖子存在云端，不在这张静态页里）。</p>
+    </noscript>
+
+    <script type="application/json" id="lyt-boards" set:html={JSON.stringify(titles)} />
+
+    {
+      api && (
+        <script>
+          /*
+            首页上那两件"动态"的事：
+              ① 版块卡片上的帖子数 = 构建期数出来的静态帖子 + 用户在论坛里发的；
+              ② 「最新帖子」那一栏。
+            一次请求就够：拉最近 50 条，既当列表又当计数（论坛这个体量没必要两趟）。
+          */
+          import { call, mountPostList } from '../../utils/liyutang-client';
+
+          const boardTitles = JSON.parse(document.getElementById('lyt-boards')?.textContent || '{}');
+          const box = document.querySelector('[data-lt-latest]') as HTMLElement | null;
+          /* 后端地址挂在账号区的 data-api 上（见 LiyutangAccount.astro）——只有一处配置 */
+          const apiUrl = document.querySelector('[data-lt-account]')?.getAttribute('data-api') || '';
+
+          if (box && apiUrl) {
+            await mountPostList({
+              api: apiUrl,
+              box,
+              limit: 8,
+              boardTitles,
+              heading: '最新帖子',
+              empty: '还没有人发帖 —— 你可以是第一个（上面「发帖」）。',
+            }).catch(() => {
+              /* 拉不到就什么都不显示：首页不能因为云端抽风变成一片报错 */
+            });
+
+            /* 顺手把"某一版有几帖"补齐（静态 + 用户发的） */
+            try {
+              const r = await call(apiUrl, { event: 'LT_POST_LIST', limit: 50 });
+              const mine: Record<string, number> = {};
+              for (const p of (r.posts ?? []) as { board: string }[]) {
+                mine[p.board] = (mine[p.board] ?? 0) + 1;
+              }
+              for (const node of document.querySelectorAll<HTMLElement>('[data-board-count]')) {
+                const id = node.dataset.boardCount || '';
+                const base = Number(node.dataset.staticCount || 0);
+                node.textContent = `${base + (mine[id] ?? 0)} 帖`;
+              }
+            } catch {
+              /* 数不出来就保持构建期那个数 */
+            }
+          }
+        </script>
+      )
+    }
   </div>
 </ForumLayout>

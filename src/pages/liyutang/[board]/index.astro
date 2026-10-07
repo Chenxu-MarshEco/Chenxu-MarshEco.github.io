@@ -2,25 +2,40 @@
 /**
  * 版块页 —— /liyutang/<版块 id>/
  *
- * 上半是这一版的帖子列表（站长 / 共创者写的 Markdown），
- * 下半是**这个版块自己的留言线**（Twikoo）—— 谁都能在这儿开话题，不用谁批准。
- * 所以「自由讨论区」那种版块即使一个帖子都没有，也照样能用。
+ * 一页上有四样东西，从上到下：
+ *   ① 版块公告（站长在编辑器的「黎语堂管理 → 版块」里写，Markdown，**构建期**渲染）；
+ *   ② 「发帖」按钮 —— 帖子是**用户发的**，住在云端，所以这一页不用重新构建就能看到新帖；
+ *   ③ 帖子列表分两段：站长 / 共创者写的**静态帖子**（src/content/liyutang/<版块>/*.md，
+ *      构建期生成页面）和用户发的**动态帖子**（脚本去云函数拉，统一落在 /liyutang/post/）；
+ *   ④ 底部一条本版块的留言线（Twikoo）。
+ *
+ * 两段帖子并存是故意的：静态那批是"论坛的正式文章"（进构建产物、改一次要重新发布），
+ * 动态这批是"随手发的"，发完立刻显示。等以后帖子编辑界面做出来，可以考虑把好帖子
+ * "收录"成静态文章（那件事记在 src/data/liyutang.json 的 _readme 里）。
  */
 import ForumLayout from '../../../layouts/ForumLayout.astro';
 import Twikoo from '../../../components/Twikoo.astro';
 import { formatDateFull, toISODate } from '../../../utils/date';
 import { withBase } from '../../../utils/url';
-import { boardById, boards, topicUrl, topicsOf } from '../../../utils/liyutang';
+import { boardById, boards, forum, topicUrl, topicsOf } from '../../../utils/liyutang';
+import { renderMarkdown } from '../../../utils/liyutang-md.mjs';
 
 export async function getStaticPaths() {
   return boards().map((b) => ({ params: { board: b.id }, props: { board: b } }));
 }
 
-const { board } = Astro.props as { board: { id: string; title: string; desc: string; icon: string } };
+const { board } = Astro.props as {
+  board: { id: string; title: string; desc: string; icon: string; notice?: string };
+};
 const topics = await topicsOf(board.id);
 /* 这个版块还在不在版块表里（有人手改数据时防一手） */
 const known = boardById(board.id) !== null;
 const home = withBase('/liyutang/');
+const newUrl = `${withBase('/liyutang/new/')}?board=${encodeURIComponent(board.id)}`;
+const api = forum().twikoo.envId;
+const titles = Object.fromEntries(boards().map((b) => [b.id, b.title]));
+/* 公告是站长自己写的（可信内容），但还是走同一个渲染器 —— 一个渲染器只有一套脾气 */
+const noticeHtml = board.notice ? renderMarkdown(board.notice) : '';
 ---
 
 <ForumLayout
@@ -39,38 +54,82 @@ const home = withBase('/liyutang/');
     {board.desc && <p class="lyt-lead">{board.desc}</p>}
     {!known && <p class="lyt-empty">这一版已经从版块表里删掉了，但页面还在（构建产物里留着）。</p>}
 
+    {noticeHtml && <div class="lyt-notice" set:html={noticeHtml} />}
+
+    <div class="lyt-actions">
+      <a class="lyt-btn" href={newUrl}>在这个版块发帖</a>
+      <span class="lyt-form__hint">发帖要登录（账号注册后等站长过审）。</span>
+    </div>
+
     {
+      /* 用户发的帖子：脚本去云函数拉 */
+    }
+    <div data-lt-board-posts data-board={board.id}></div>
+    <noscript>
+      <p class="lyt-empty">用户发的帖子要用 JavaScript 才读得出来（它们存在云端，不在这张静态页里）。</p>
+    </noscript>
+
+    {
+      /* 站长 / 共创者写的静态帖子 */
       topics.length > 0 ? (
-        <ul class="lyt-topics">
-          {topics.map((t) => (
-            <li>
-              <a class="lyt-topicLink" href={topicUrl(t)}>
-                {t.data.pinned > 0 && <span class="lyt-topicPin">置顶</span>}
-                <span class="lyt-topicTitle">{t.data.title}</span>
-                <span class="lyt-topicMeta">
-                  {t.data.author ? `${t.data.author} · ` : ''}
-                  <time datetime={toISODate(t.data.date)}>{formatDateFull(t.data.date)}</time>
-                </span>
-              </a>
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <p class="lyt-empty">
-          这一版还没有帖子。下面的留言线是<b>这个版块自己的</b>，想聊什么都行。
-        </p>
-      )
+        <div class="lyt-posts">
+          <h2 class="lyt-posts__head">文章</h2>
+          <ul class="lyt-topics">
+            {topics.map((t) => (
+              <li>
+                <a class="lyt-topicLink" href={topicUrl(t)}>
+                  {t.data.pinned > 0 && <span class="lyt-topicPin">置顶</span>}
+                  <span class="lyt-topicTitle">{t.data.title}</span>
+                  <span class="lyt-topicMeta">
+                    {t.data.author ? `${t.data.author} · ` : ''}
+                    <time datetime={toISODate(t.data.date)}>{formatDateFull(t.data.date)}</time>
+                  </span>
+                </a>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null
     }
 
     {
       /*
         「自由讨论」：版块页底部那条留言线。
-        hint 里把规则再说一遍：不用注册、先审后发。
+        2026-10-07 晚上改口径：留言**要登录**（账号还得过审）—— 以前那句"不用注册"作废了。
       */
     }
     <Twikoo
       title="自由讨论"
-      hint="不用注册，填个昵称和邮箱就能发；站长审核通过之后别人才看得见。"
+      hint="留言要登录（账号注册后要等站长过审）。想单独发一贴就点上面的「在这个版块发帖」。"
     />
+
+    <script type="application/json" id="lyt-boards" set:html={JSON.stringify(titles)} />
+
+    {
+      api && (
+        <script>
+          /* 本版块的用户帖子：一次请求，空列表就显示一句"你可以发第一贴" */
+          import { mountPostList } from '../../../utils/liyutang-client';
+
+          const box = document.querySelector('[data-lt-board-posts]') as HTMLElement | null;
+          const apiUrl = document.querySelector('[data-lt-account]')?.getAttribute('data-api') || '';
+          const boardTitles = JSON.parse(document.getElementById('lyt-boards')?.textContent || '{}');
+
+          if (box && apiUrl) {
+            await mountPostList({
+              api: apiUrl,
+              box,
+              board: box.dataset.board || '',
+              limit: 20,
+              boardTitles,
+              heading: '帖子',
+              empty: '这一版还没有人发帖 —— 点上面的按钮发第一贴。',
+            }).catch(() => {
+              /* 云端抽风不该让整页变成报错 */
+            });
+          }
+        </script>
+      )
+    }
   </div>
 </ForumLayout>

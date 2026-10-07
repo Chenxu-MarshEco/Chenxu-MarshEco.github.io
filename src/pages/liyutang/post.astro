@@ -1,0 +1,157 @@
+---
+/**
+ * 帖子页 —— /liyutang/post/?id=<帖子 id>
+ *
+ * 这是**用户发的帖子**的落脚点。和 /liyutang/<版块>/<文章>/ 那种"站长写进仓库的文章页"不一样：
+ * 帖子存在云端的 MongoDB 里（见 tools/liyutang-backend/index.js），构建的时候还不知道有它，
+ * 所以只能"一张壳 + 脚本去拉"。代价是：搜索引擎和非 JS 环境看不到它（帖子本来也没进索引）。
+ *
+ * 页面上的东西全部由脚本填（标题、作者、时间、正文、改/删按钮）——
+ * ⚠ 填的时候一律用 textContent / 我们自己的 Markdown 渲染器，
+ *   用户写的东西**永远不进 innerHTML**（除了渲染器产出的、已经先转义过的那份 HTML）。
+ *
+ * 回帖用 Twikoo，而且**每条帖子一条自己的留言线**：所有帖子共用这一个网址，
+ * 不显式给 path 的话全站帖子的回帖会挤在同一个线程里（这条是 2026-10-07 晚上想明白的）。
+ * path 只能由脚本算出来，所以走 window.__ltPostPath 交给 Twikoo.astro —— 见那个文件里的注释。
+ */
+import ForumLayout from '../../layouts/ForumLayout.astro';
+import Twikoo from '../../components/Twikoo.astro';
+import { forum } from '../../utils/liyutang';
+import { withBase } from '../../utils/url';
+
+const api = forum().twikoo.envId;
+const home = withBase('/liyutang/');
+---
+
+<ForumLayout title="帖子" description="黎语堂里的一条帖子。" noindex>
+  <div class="lyt-page">
+    <p class="lyt-crumb">
+      <a href={home}>← 黎语堂</a>
+      <span data-lt-board-crumb hidden>
+        <span aria-hidden="true"> · </span>
+        <a data-lt-board-link></a>
+      </span>
+    </p>
+
+    <h1 class="lyt-title" data-lt-post-title>正在读帖子…</h1>
+    <p class="lyt-meta" data-lt-post-meta></p>
+
+    <p class="lyt-empty" data-lt-post-error hidden></p>
+
+    <div class="lyt-card" data-lt-post-card hidden>
+      <div class="lyt-body prose" data-lt-post-body></div>
+    </div>
+
+    <div class="lyt-actions" data-lt-post-owner hidden>
+      <a class="lyt-btn lyt-btn--ghost" data-lt-post-edit>改这贴</a>
+      <button class="lyt-btn lyt-btn--danger" type="button" data-lt-post-del>删掉</button>
+      <span class="lyt-form__hint">作者本人可以改 / 删；站长也能删。</span>
+    </div>
+
+    {
+      /*
+        ⚠ 这一页的回帖线要按帖子分，而 path 只能由脚本算出来（见文件头）。
+        所以脚本放在 <Twikoo> **前面**：模块脚本按文档顺序执行，
+        Twikoo 那边真正用到 path 是"账号过审、启动评论区"那一刻，肯定晚于这里。
+      */
+    }
+    {
+      api && (
+        <script>
+          import { boardUrl, composeUrl, el, formatTime, getPost, removePost, renderInto } from '../../utils/liyutang-client';
+
+          const apiUrl = document.querySelector('[data-lt-account]')?.getAttribute('data-api') || '';
+          const id = new URLSearchParams(location.search).get('id') || '';
+
+          /* 先把这个钉上：Twikoo.astro 启动评论区时会读它（每条帖子一条留言线） */
+          (window as unknown as { __ltPostPath?: string }).__ltPostPath = `/liyutang/post/${id}`;
+
+          const titleEl = document.querySelector('[data-lt-post-title]') as HTMLElement;
+          const metaEl = document.querySelector('[data-lt-post-meta]') as HTMLElement;
+          const errEl = document.querySelector('[data-lt-post-error]') as HTMLElement;
+          const cardEl = document.querySelector('[data-lt-post-card]') as HTMLElement;
+          const bodyEl = document.querySelector('[data-lt-post-body]') as HTMLElement;
+          const ownerEl = document.querySelector('[data-lt-post-owner]') as HTMLElement;
+          const crumbEl = document.querySelector('[data-lt-board-crumb]') as HTMLElement;
+
+          const fail = (text: string) => {
+            titleEl.textContent = '读不到这条帖子';
+            errEl.textContent = text;
+            errEl.hidden = false;
+          };
+
+          if (!id || !apiUrl) {
+            fail(
+              !id
+                ? '地址里没有 id —— 从版块页或论坛首页点进来才有。'
+                : '论坛的账号 / 帖子服务还没配好（后端地址是空的）。'
+            );
+          } else {
+            const got = await getPost(apiUrl, id);
+            if ('error' in got) {
+              fail(got.error);
+            } else {
+              const post = got.post;
+              titleEl.textContent = post.title;
+              document.title = `${post.title} · 黎语堂`;
+
+              /* 面包屑：黎语堂 · 版块 */
+              if (post.board) {
+                const link = crumbEl.querySelector('[data-lt-board-link]') as HTMLAnchorElement;
+                link.href = boardUrl(post.board);
+                link.textContent = post.board;
+                crumbEl.hidden = false;
+              }
+
+              /* 作者那一行：头像 + 昵称 + 时间 + 浏览 + 图 */
+              const face = el('span', 'lt-avatar');
+              face.setAttribute('aria-hidden', 'true');
+              if (post.authorAvatar) {
+                const img = el('img', 'lt-avatar__img');
+                img.src = post.authorAvatar;
+                img.alt = '';
+                face.append(img);
+              } else {
+                face.textContent = (post.authorNick || '?').slice(0, 1).toUpperCase();
+              }
+              const bits = [
+                formatTime(post.createdAt),
+                post.updatedAt > post.createdAt + 60_000 ? `改过（${formatTime(post.updatedAt)}）` : '',
+                `${post.views} 浏览`,
+                post.images ? `${post.images} 张图` : '',
+                post.pinned ? '置顶' : '',
+                post.status === 'hidden' ? '（站长隐藏了这贴）' : '',
+              ].filter(Boolean);
+              metaEl.append(face, el('span', '', post.authorNick), el('span', '', bits.join(' · ')));
+
+              /* 正文：走我们那个"先转义再渲染"的小解析器 */
+              renderInto(bodyEl, post.md ?? '');
+              cardEl.hidden = false;
+
+              if (got.mine) {
+                ownerEl.hidden = false;
+                const edit = ownerEl.querySelector('[data-lt-post-edit]') as HTMLAnchorElement;
+                edit.href = composeUrl(post.id);
+                const del = ownerEl.querySelector('[data-lt-post-del]') as HTMLButtonElement;
+                del.addEventListener('click', async () => {
+                  if (!confirm('删掉这贴？删了就找不回来了。')) return;
+                  del.disabled = true;
+                  const r = await removePost(apiUrl, post.id);
+                  if ('error' in r) {
+                    errEl.textContent = r.error;
+                    errEl.hidden = false;
+                    del.disabled = false;
+                    return;
+                  }
+                  location.href = boardUrl(post.board);
+                });
+              }
+            }
+          }
+        </script>
+      )
+    }
+
+    <Twikoo title="回帖" hint="回帖要登录（账号注册后要等站长过审）。" />
+  </div>
+</ForumLayout>

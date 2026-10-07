@@ -1,0 +1,76 @@
+---
+/**
+ * 「你现在是谁」那一块 —— 注册 / 登录 / 待审核 / 换头像 / 退出登录。
+ *
+ * 2026-10-07 晚上从 Twikoo.astro 里抽出来的。抽的原因很实在：以前只有评论区要用它，
+ * 现在**发帖页、帖子页、版块页、论坛首页**都要用同一套界面和同一套文案 ——
+ * 复制四份必然越走越偏（"登录了吗""过审了吗"这种话说岔一句，用户就懵了）。
+ *
+ * 分工：
+ *   · 界面和状态机在 src/utils/liyutang-client.ts 的 mountAccount() 里；
+ *   · 这个组件只负责"渲染一个挂载点 + 把 api 写上去 + 把人挂上去"；
+ *   · 状态一变就往 document 上发一个 `lt-account` 事件（还有 window.__ltState 兜底）——
+ *     Twikoo.astro 靠它决定"要不要把评论区露出来"，发帖页靠它决定"让不让写"。
+ *     这样两个组件谁先跑完都不影响，不用互相 import。
+ */
+import { forum } from '../utils/liyutang';
+
+interface Props {
+  /** 过审之后要不要在那一行补一个「去发帖」的链接（发帖页自己不需要） */
+  composeLink?: boolean;
+}
+
+const { composeLink = false } = Astro.props;
+const api = forum().twikoo.envId;
+const ready = api !== '';
+---
+
+{
+  ready && (
+    <div
+      class="tkc__auth"
+      data-lt-account
+      data-api={api}
+      data-compose-link={composeLink ? '1' : '0'}
+    >
+      <p class="tkc__note">正在看登录状态…</p>
+    </div>
+  )
+}
+
+{
+  !ready && (
+    <p class="tkc__note">评论 / 账号服务还没配好（编辑器的「黎语堂管理 → 评论系统」里填后端地址）。</p>
+  )
+}
+
+<script>
+  /* 挂账号区。状态一变就往 document 上发事件，别的组件自己听。 */
+  import { composeUrl, mountAccount, type LtState, type LtUser } from '../utils/liyutang-client';
+
+  const box = document.querySelector('[data-lt-account]') as HTMLElement | null;
+  if (box) {
+    const api = String(box.dataset.api || '');
+    const wantCompose = box.dataset.composeLink === '1';
+    mountAccount({
+      api,
+      box,
+      /* 过审之后补一个「去发帖」的入口 —— 论坛首页 / 版块页上顺手就能发 */
+      extraLinks: () => {
+        if (!wantCompose) return [];
+        const a = document.createElement('a');
+        a.className = 'tkc__link';
+        a.href = composeUrl();
+        a.textContent = '去发帖 →';
+        return [a];
+      },
+      onState: (state: LtState, user: LtUser | null, extra?: { fake?: boolean }) => {
+        /* 两处都放：事件给"刚好已经挂上监听"的组件，全局变量给"晚一步才跑起来"的组件 */
+        (window as unknown as { __ltState?: unknown }).__ltState = { state, user, fake: !!extra?.fake };
+        document.dispatchEvent(
+          new CustomEvent('lt-account', { detail: { state, user, fake: !!extra?.fake } })
+        );
+      },
+    });
+  }
+</script>

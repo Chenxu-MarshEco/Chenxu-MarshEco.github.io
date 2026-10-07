@@ -1640,36 +1640,57 @@ async function handleApi(req, res, url) {
       if (payload.label !== undefined) body.label = String(payload.label);
     }
     if (action === 'delete') body.id = String(payload.id ?? '');
-    const started = Date.now();
-    try {
-      const r = await fetch(api, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(body),
-        signal: AbortSignal.timeout(20000),
-      });
-      const text = (await r.text()).slice(0, 100000);
-      let json = null;
-      try {
-        json = JSON.parse(text);
-      } catch {
-        /* 不是 JSON 就原样带回去 */
-      }
-      return sendJson(res, 200, {
-        ok: true,
-        status: r.status,
-        ms: Date.now() - started,
-        result: json,
-        raw: json ? '' : text.slice(0, 400),
-      });
-    } catch (err) {
-      return sendJson(res, 200, {
-        ok: true,
-        reachable: false,
-        ms: Date.now() - started,
-        error: String(err?.name === 'TimeoutError' ? '20 秒内没有响应（超时）' : err?.message || err),
-      });
+    /* 转发和"带原话回来"这件事和帖子管理共用（见 forwardLiyutangAdmin） */
+    return sendJson(res, 200, await forwardLiyutangAdmin(api, body));
+  }
+  /*
+    ---- 黎语堂的帖子管理（2026-10-07 加）----
+
+    站长在这一块管**用户发的帖子**（类似贴吧吧务）：谁发了什么、要不要隐藏 / 置顶 /
+    挪到别的版块 / 删掉。帖子本体不在仓库里 —— 它和账号一样住在云函数 + 外部 MongoDB
+    （见 tools/liyutang-backend/index.js），src/data/liyutang.json 里只有版块表。
+
+    所以这里也需要一条转发口，理由和上面 /api/liyutang/users 那条**一模一样**：
+    浏览器直接 fetch 云函数是跨源的 —— 读不到状态码、读不到正文，云函数那头也没给
+    浏览器直连准备 CORS。由编辑器服务转一手，把云函数说的原话原样带回去。
+
+    事件契约（云函数那边实现，这里照契约转）：
+      list   → LT_ADMIN_POST_LIST   { password, board? }
+                 → { code: 0, posts: [ { id, board, title, excerpt, cover, authorNick,
+                     authorAvatar, createdAt, updatedAt, status, pinned, views, images } ] }
+      set    → LT_ADMIN_POST_SET    { password, id, status?, pinned?, board?（= 挪到哪个版块） }
+                 → { code: 0, id, status, pinned, board }
+      delete → LT_ADMIN_POST_DELETE { password, id }
+    只带**传了的**字段：没传 = 这一项别动（比如只置顶就不带 status）。
+    移版块用的是 board（云函数那边认这个名字），页面上那颗下拉框叫 moveTo。
+  */
+  if (route === '/api/liyutang/posts' && req.method === 'POST') {
+    const payload = await readBody(req);
+    const api = String(payload?.api ?? '').trim();
+    const password = String(payload?.password ?? '');
+    const action = String(payload?.action ?? 'list').trim();
+    if (!/^https?:\/\//i.test(api)) throw httpError(400, '后端地址不对（应该是一条 https://… 的网址）');
+    if (!password) throw httpError(400, '要填站长密码（就是你在评论区小齿轮里设的那个）');
+    const id = String(payload?.id ?? '').trim();
+    const board = String(payload?.board ?? '').trim();
+    let body;
+    if (action === 'set') {
+      if (!id) throw httpError(400, '要指定是哪一篇帖子（id）');
+      body = { event: 'LT_ADMIN_POST_SET', password, id };
+      if (payload.status !== undefined) body.status = String(payload.status);
+      if (payload.pinned !== undefined) body.pinned = payload.pinned ? 1 : 0;
+      /* moveTo 是页面上那个下拉框的名字，转给云函数时叫 board */
+      const moveTo = String(payload.moveTo ?? '').trim();
+      if (moveTo) body.board = moveTo;
+    } else if (action === 'delete') {
+      if (!id) throw httpError(400, '要指定是哪一篇帖子（id）');
+      body = { event: 'LT_ADMIN_POST_DELETE', password, id };
+    } else {
+      /* list：board 空 = 所有版块的帖子都要（页面上没挑版块就是这种） */
+      body = { event: 'LT_ADMIN_POST_LIST', password };
+      if (board) body.board = board;
     }
+    return sendJson(res, 200, await forwardLiyutangAdmin(api, body));
   }
 
   if (route === '/api/liyutang' && req.method === 'POST') {
@@ -3559,7 +3580,8 @@ function cleanAnnouncements(payload, current) {
    干干净净的读写口（GET / POST /api/liyutang），它自己的管理页面是另一个 HTML
    （tools/editor/ui/liyutang.html，地址 /liyutang-admin），和编辑器主体分开。
 
-   清洗只做三件事：版块必须有标题、评论系统只认那三种 provider、_readme 原样留着。
+   清洗只做这几件事：版块必须有标题、公告超两万字截断、评论系统只认那三种 provider、
+   _readme 原样留着。
    ------------------------------------------------------------------ */
 const LIYUTANG_FILE = path.join(PROJECT_ROOT, 'src', 'data', 'liyutang.json');
 /*
@@ -3572,6 +3594,62 @@ const LIYUTANG_PROVIDERS = new Set(['twikoo', 'waline', 'giscus', 'none']);
 async function readLiyutang() {
   const text = await fs.readFile(LIYUTANG_FILE, 'utf8');
   return JSON.parse(text);
+}
+
+/* ------------------------------------------------------------------
+   把一次管理请求转给**云函数**（用户审核 / 帖子管理共用这一条）
+
+   为什么非要服务端转一手，而不是页面里直接 fetch 云函数：
+     · 跨源（编辑器是 127.0.0.1:4322，云函数是 …app.tcloudbase.com）读不到状态码，
+       正文也读不到 —— 拿到的要么是 opaque 响应，要么直接抛错，"到底哪里不对"说不清；
+     · 云函数那头也没有给浏览器直连准备 CORS 头，预检就过不去。
+   所以由编辑器服务去请求，再把**原话**带回来：status / 耗时 / 云函数返回的那份 JSON；
+   解析不出 JSON 的（网关的 HTML 错误页那种）就带前 400 字原文。
+
+   返回的形状前端两处共用：{ ok: true, status, ms, result, raw }，
+   请求根本发不出去时是 { ok: true, reachable: false, ms, error }（ok 仍是 true ——
+   这是"服务端自己办好了这件事"，连不上属于业务结果，不是接口错误）。
+   ------------------------------------------------------------------ */
+async function forwardLiyutangAdmin(api, body) {
+  const started = Date.now();
+  try {
+    const r = await fetch(api, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(20000),
+    });
+    const text = (await r.text()).slice(0, 100000);
+    let json = null;
+    try {
+      json = JSON.parse(text);
+    } catch {
+      /* 不是 JSON 就原样带回去 */
+    }
+    return {
+      ok: true,
+      status: r.status,
+      ms: Date.now() - started,
+      result: json,
+      raw: json ? '' : text.slice(0, 400),
+    };
+  } catch (err) {
+    return {
+      ok: true,
+      reachable: false,
+      ms: Date.now() - started,
+      /*
+        Node 的 fetch 连不上时只给一句 "fetch failed"，真正的原因（ENOTFOUND /
+        ECONNREFUSED / 证书不对…）在 err.cause 里 —— 一起带上，
+        不然页面上就只能看到干巴巴一句"fetch failed"，等于没说。
+      */
+      error: String(
+        err?.name === 'TimeoutError'
+          ? '20 秒内没有响应（超时）'
+          : (err?.message || err) + (err?.cause?.message ? `（${err.cause.message}）` : '')
+      ),
+    };
+  }
 }
 
 /** 新版块 id：`bd-xxxx` */
@@ -3681,12 +3759,22 @@ function cleanLiyutang(payload, current) {
     }
     if (!id) id = newBoardId(used);
     used.add(id);
-    file.boards.push({
+    /*
+      版块公告 notice（2026-10-07 加）：站长写给这个版块的一段 **Markdown**（可以放图片），
+      站点那边把它渲染在版块页顶部。两万字符够写一篇长文了，再长多半是有人把整篇文章
+      粘了进来 —— 所以在这里截断，别让一份配置撑爆。
+      空着就**不写这个键**：站点那边看到没有 notice 就知道不用画公告区
+      （和 desc / icon 那种"总是写空串"的字段不一样 —— 公告是有没有的那件事）。
+    */
+    const notice = String(b.notice ?? '').trim();
+    const board = {
       id,
       title,
       desc: String(b.desc ?? '').trim(),
       icon: String(b.icon ?? '').trim(),
-    });
+    };
+    if (notice) board.notice = notice.slice(0, 20000);
+    file.boards.push(board);
   }
 
   file.updated = formatDateParts(new Date()).date;

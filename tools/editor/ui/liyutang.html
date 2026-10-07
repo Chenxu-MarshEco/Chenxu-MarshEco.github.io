@@ -128,6 +128,40 @@
         font-size: 13px;
       }
 
+      /* 版块公告是一段 Markdown，多行 —— 占满整行，改起来看得见自己写了什么 */
+      .lt-board__notice {
+        min-height: 62px;
+        font-family: var(--font-mono);
+        font-size: 12.5px;
+      }
+
+      /* 帖子管理：一条帖子一行，标题能点开、摘要只留一行（列表是给人扫的） */
+      .lt-post__title {
+        color: var(--accent);
+        text-decoration: underline;
+        text-underline-offset: 2px;
+        word-break: break-word;
+      }
+      .lt-post__avatar {
+        display: block;
+        width: 26px;
+        height: 26px;
+        margin: 0 auto;
+        border-radius: 50%;
+        object-fit: cover;
+      }
+      .lt-post__excerpt {
+        font-size: 12.5px;
+        color: var(--text-muted);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .lt-post__move {
+        flex: 0 1 9rem;
+        min-width: 0;
+      }
+
       /* 评论系统那几个字段：label 在左、控件在右，和编辑器面板一个手感 */
       .lt-field {
         display: grid;
@@ -168,9 +202,9 @@
       <div class="lytadmin__brand">
         <strong>黎语堂 · 管理</strong>
         <span class="hint">
-          黎语堂自己的管理系统，和花涧堂编辑器分开：这里只改版块和评论系统
-          （src/data/liyutang.json）。首页那张卡片的标题 / 副标题 / 背景图在花涧堂编辑器的
-          「黎语堂」面板里。
+          黎语堂自己的管理系统，和花涧堂编辑器分开：版块和评论系统写 src/data/liyutang.json，
+          用户审核和帖子管理的数据在腾讯云函数里（这里只是转发 + 显示）。
+          首页那张卡片的标题 / 副标题 / 背景图在花涧堂编辑器的「黎语堂」面板里。
         </span>
       </div>
       <div class="lytadmin__acts">
@@ -195,6 +229,12 @@
       -->
       <section class="wbox" id="lt-users-box"></section>
       <section class="wbox" id="lt-boards-box"></section>
+      <!--
+        帖子管理夹在「版块」和「评论系统」**中间**（2026-10-07 加）：
+        上面那两块是配置（一年动不了几次），这一块是天天要动手的日常
+        （隐藏 / 置顶 / 挪版块 / 删），放评论系统前面省得每次往下翻。
+      -->
+      <section class="wbox" id="lt-posts-box"></section>
       <section class="wbox" id="lt-forum-box"></section>
     </main>
 

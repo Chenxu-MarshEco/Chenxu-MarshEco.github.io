@@ -1,9 +1,15 @@
 /*
  * 黎语堂管理系统（/liyutang-admin）—— 2026-10-06 建。
  *
- * 只干两件事，都写 src/data/liyutang.json：
- *   ① 论坛版块：增 / 删 / 改名 / 改说明 / 上下挪顺序
+ * 干这几件事：
+ *   ① 论坛版块：增 / 删 / 改名 / 改说明 / 改版块公告 / 上下挪顺序
  *   ② 评论系统：Giscus 还是 Waline（还是先不挂），以及那几项配置
+ *   ③ 用户审核（2026-10-07）：谁注册了、要不要放他进来发言
+ *   ④ 帖子管理（2026-10-07）：用户发的帖子在这儿隐藏 / 置顶 / 挪版块 / 删
+ *
+ * ① ② 写 src/data/liyutang.json；③ ④ 的数据**不在仓库里** —— 它们住在腾讯云函数 +
+ * 外部 MongoDB（见 tools/liyutang-backend/index.js），这一页只通过编辑器服务那条转发口
+ * （/api/liyutang/users、/api/liyutang/posts，见 server.mjs）问它、改它。
  *
  * 为什么单独一个页面、而不是编辑器里的一个面板（用户原话）：
  *   「黎语堂是一个本网站的静态论坛 有很多论坛独有的功能 所以不要将其接入原有的
@@ -61,6 +67,16 @@ function field(labelText, control, hint) {
 function input(value, placeholder, onInput) {
   const node = el('input', 'input');
   node.type = 'text';
+  node.placeholder = placeholder || '';
+  node.value = value ?? '';
+  node.addEventListener('input', () => onInput(node.value));
+  return node;
+}
+
+/** 多行输入（版块公告用）：rows 只是第一眼的高度，长了自己会长滚动条 */
+function textarea(value, placeholder, onInput, rows = 3) {
+  const node = el('textarea', 'input input--area');
+  node.rows = rows;
   node.placeholder = placeholder || '';
   node.value = value ?? '';
   node.addEventListener('input', () => onInput(node.value));
@@ -192,14 +208,15 @@ function renderBoards() {
       'p',
       'hint',
       '黎语堂首页上的分区。顺序就是页面上从上往下的顺序 —— 用 ↑ ↓ 挪。' +
-        '名字和说明都是纯文本，图标可以放一个 emoji。'
+        '名字和说明都是纯文本，图标可以放一个 emoji。' +
+        '「版块公告」是给这个版块写的一段 Markdown，站点把它渲染在版块页**顶部**（可以放图片）—— 留空就是没有公告。'
     )
   );
 
   const bar = el('div', 'lt-board__row');
   bar.append(
     button('＋ 新增版块', '在最后加一个版块，先写名字，再按保存', () => {
-      draft.boards.push({ id: '', title: '', desc: '', icon: '' });
+      draft.boards.push({ id: '', title: '', desc: '', icon: '', notice: '' });
       markDirty();
       render();
       /* 光标落到新那一行的名字框上，省一次点击 */
@@ -248,6 +265,21 @@ function boardRow(board, index) {
     markDirty();
   });
   fields.append(desc);
+
+  /*
+    版块公告（2026-10-07 加）：Markdown 原文，站点那边渲染在版块页顶部。
+    缺省写成空串而不是 undefined —— 站点和保存逻辑都不用再判一次"有没有这个字段"。
+  */
+  const notice = textarea(
+    board.notice ?? '',
+    '版块公告（Markdown，可空）：显示在这个版块页的顶部，可以放图片',
+    (v) => {
+      board.notice = v;
+      markDirty();
+    }
+  );
+  notice.classList.add('lt-board__notice');
+  fields.append(notice);
 
   const ops = el('div', 'lt-board__ops');
   ops.append(
@@ -547,6 +579,115 @@ function renderForum() {
 }
 
 /* ---------------------------------------------------------------
+   云端那两块的共用件（用户审核 / 帖子管理，都是 2026-10-07）
+
+   账号和帖子都住在腾讯云函数 + 外部 MongoDB 里（仓库里没有），这一页只是问它、改它，
+   而两边的"拿站长密码问一次"长得一模一样 —— 所以密码框和那次请求只写一份。
+   身份就是**你在评论区小齿轮里设的那个管理员密码**（云函数内部会拿它去 LOGIN 验一遍），
+   不用再记第二个秘密。
+   --------------------------------------------------------------- */
+
+/** 站长密码在内存里就这一份 —— 两个面板哪边填了，另一边也认 */
+let adminPw = '';
+/** 本地那份读过了没有（只在第一次建密码框时读一次） */
+let adminPwLoaded = false;
+/** 页面上那两个密码框：面板名 -> { node, paint }，用来让两边同步 */
+const adminPwViews = new Map();
+
+/**
+ * 建一个「站长密码」输入框（用户审核一个、帖子管理一个，长得一样）。
+ * 读的是内存里那份 adminPw；在一边敲的时候另一边的框立刻跟着变。
+ * ⚠ 敲的过程**不落本地** —— 敲错的那版会被一直带出来（用户真踩过这个坑）；
+ *   只有一次调用**成功**之后才记（见 rememberAdminPw）。
+ */
+function adminPasswordField(panel) {
+  if (!adminPwLoaded) {
+    adminPwLoaded = true;
+    try {
+      adminPw = localStorage.getItem(ADMIN_PW_KEY) || '';
+    } catch {
+      adminPw = '';
+    }
+  }
+  const node = input(adminPw, '站长密码（你在评论区小齿轮里设的那个）', () => {});
+  node.type = 'password';
+  /*
+    密码框是掩码的，看不见自己敲了什么 —— 加上「显示」和字数，
+    省得一个看不见的错字符（或本地存下来的旧值）把人绕进去。
+  */
+  const eye = button('👁 显示', '把刚才填的密码显示出来看一眼', () => {
+    const show = node.type === 'password';
+    node.type = show ? 'text' : 'password';
+    eye.textContent = show ? '🙈 隐藏' : '👁 显示';
+  });
+  const count = el('span', 'hint', '');
+  const view = {
+    node,
+    paint() {
+      const n = String(node.value ?? '').length;
+      count.textContent = n ? '当前输入了 ' + n + ' 个字符' : '还没填';
+    },
+  };
+  node.addEventListener('input', () => {
+    adminPw = node.value;
+    /* 两个面板共用一份密码：这边敲了，另一边那个框也立刻跟着变 */
+    for (const [key, other] of adminPwViews) {
+      if (key === panel) continue;
+      other.node.value = node.value;
+      other.paint();
+    }
+    view.paint();
+  });
+  /* 面板重画时换掉自己那一份，别把上一次那些死节点一直留在表里 */
+  adminPwViews.set(panel, view);
+  view.paint();
+
+  const wrap = el('div', 'lt-board__row');
+  wrap.append(node, eye, count);
+  return {
+    field: field('站长密码', wrap),
+    /** 现在该用哪个密码（内存里那一份，两个面板共用） */
+    read: () => String(adminPw).trim(),
+  };
+}
+
+/** 调用成功了才把这次密码记在本地（敲错的那版别被带出来） */
+function rememberAdminPw(password) {
+  try {
+    localStorage.setItem(ADMIN_PW_KEY, password);
+  } catch {
+    /* 无所谓 */
+  }
+}
+
+/**
+ * 往编辑器服务那条转发口扔一次管理请求，把云函数返回的东西拿回来。
+ * 失败时抛出的是**能给人看的原话**（页面要看得见到底哪儿不对，别吞）：
+ *   · 服务端就没办成（地址没填 / 不准）→ 它给的那句 error；
+ *   · 请求根本发不出去           → 「连不上云函数：…」；
+ *   · 云函数答了但 code !== 0    → 云函数自己那句 message（err.fromCloud 标着这是它说的）。
+ */
+async function postAdmin(route, payload) {
+  const res = await fetch(route, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  const data = await res.json().catch(() => null);
+  if (!data) throw new Error(`HTTP ${res.status}（编辑器服务没回 JSON）`);
+  if (!data.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  if (data.reachable === false) throw new Error('连不上云函数：' + (data.error || '没有响应'));
+  const r = data.result ?? {};
+  if (r.code !== 0) {
+    const err = new Error(String(r.message ?? data.raw ?? '云函数说不行'));
+    /* 标一下：这句话是**云函数说的**，不是网络问题（页面上要用它去问"密码到底怎么不对"） */
+    err.fromCloud = true;
+    throw err;
+  }
+  return r;
+}
+
+/* ---------------------------------------------------------------
    用户审核（2026-10-07 加）
 
    用户在这一页点「通过」之前，注册了也**发不出任何东西**（硬门槛在云函数里）。
@@ -579,64 +720,24 @@ function renderUsers() {
     return;
   }
 
-  /* 站长密码：填一次记在本地 */
-  let savedPw = '';
-  try {
-    savedPw = localStorage.getItem(ADMIN_PW_KEY) || '';
-  } catch {
-    savedPw = '';
-  }
-  /* ⚠ 不在输入时存 —— 敲错的那个版本会一直被带出来（用户真踩过这个坑）；
-     只在一次调用**成功**之后才记（见下面 ask() 里那处 setItem）。 */
-  const pwInput = input(savedPw, '站长密码（你在评论区小齿轮里设的那个）', () => {});
-  pwInput.type = 'password';
-  /*
-    密码框是掩码的，看不见自己敲了什么 —— 加上「显示」和字数，
-    省得一个看不见的错字符（或本地存下来的旧值）把人绕进去。
-  */
-  const pwWrap = el('div', 'lt-board__row');
-  const eye = button('👁 显示', '把刚才填的密码显示出来看一眼', () => {
-    const show = pwInput.type === 'password';
-    pwInput.type = show ? 'text' : 'password';
-    eye.textContent = show ? '🙈 隐藏' : '👁 显示';
-  });
-  const count = el('span', 'hint', '');
-  const paintCount = () => {
-    const n = String(pwInput.value ?? '').length;
-    count.textContent = n ? '当前输入了 ' + n + ' 个字符' : '还没填';
-  };
-  pwInput.addEventListener('input', paintCount);
-  paintCount();
-  pwWrap.append(pwInput, eye, count);
-  box.append(field('站长密码', pwWrap));
+  /* 站长密码：和「帖子管理」共用同一个框、同一份值（哪边填了另一边也认） */
+  const pw = adminPasswordField('users');
+  box.append(pw.field);
 
   const out = el('p', 'lt-sub', userMsg || '填好密码点「刷新用户列表」。');
   const bar = el('div', 'lt-board__row');
 
   const ask = async (payload) => {
-    const password = String(pwInput.value ?? '').trim();
+    const password = pw.read();
     if (!password) {
       userMsg = '先把站长密码填上。';
       out.textContent = userMsg;
       return null;
     }
     try {
-      const res = await fetch('/api/liyutang/users', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ api, password, ...payload }),
-      });
-      const data = await res.json();
-      if (!data.ok) throw new Error(data.error || ('HTTP ' + res.status));
-      if (data.reachable === false) throw new Error(data.error || '连不上云函数');
-      const r = data.result ?? {};
-      if (r.code !== 0) throw new Error(String(r.message ?? '云函数说不行'));
+      const r = await postAdmin('/api/liyutang/users', { api, password, ...payload });
       /* 成功了才记这次密码（probe 那种只验密码的调用也算成功） */
-      try {
-        localStorage.setItem(ADMIN_PW_KEY, password);
-      } catch {
-        /* 无所谓 */
-      }
+      rememberAdminPw(password);
       return r;
     } catch (err) {
       userMsg = '操作失败：' + err.message;
@@ -645,16 +746,9 @@ function renderUsers() {
         Twikoo 会回「密码错误 / 未配置管理密码 / 数据库无配置」，比一句"不对"有用得多。
       */
       try {
-        const probe = await fetch('/api/liyutang/users', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ api, password, action: 'probe' }),
-        });
-        const pd = await probe.json();
-        const msg = pd?.result?.message;
-        if (msg) userMsg += '　（云函数的原话：' + msg + '）';
-      } catch {
-        /* 问不到就算了 */
+        await postAdmin('/api/liyutang/users', { api, password, action: 'probe' });
+      } catch (probeErr) {
+        if (probeErr?.fromCloud) userMsg += '　（云函数的原话：' + probeErr.message + '）';
       }
       out.textContent = userMsg;
       out.style.color = 'var(--danger)';
@@ -743,6 +837,237 @@ function statusText(s) {
 }
 
 /* ---------------------------------------------------------------
+   帖子管理（2026-10-07 加）
+
+   站长在这一块管**用户发的帖子**（类似贴吧吧务）：隐藏 / 恢复 / 置顶 / 移版块 / 删除。
+   帖子本体**不在仓库里** —— 它和账号一样住在腾讯云函数 + 外部 MongoDB
+   （见 tools/liyutang-backend/index.js），所以全部走编辑器服务那条转发口
+   /api/liyutang/posts（为什么非要转一手，见 server.mjs 那段注释）。
+   身份还是那个站长密码：和「用户审核」共用同一份（见 adminPasswordField）。
+   --------------------------------------------------------------- */
+
+/** 当前这一屏的帖子列表（渲染用） */
+let postList = null;
+/** 上一次操作的反馈 */
+let postMsg = '';
+
+/** 版块 id → 版块标题（列表里给人看的是标题；id 是给网址用的那一段） */
+function boardTitle(id) {
+  const hit = (draft?.boards ?? []).find((b) => b.id === id);
+  return hit?.title || id || '（没版块）';
+}
+
+/** 时间戳 → 人话；认不出来就原样贴回去（别在页面上显示 Invalid Date） */
+function timeText(v) {
+  if (v == null || v === '') return '';
+  let ms = NaN;
+  if (typeof v === 'number') ms = v;
+  else if (/^\d+$/.test(String(v).trim())) ms = Number(String(v).trim());
+  /* 秒和毫秒都收（不同地方给的不一样）：十位数那一档是秒 */
+  if (Number.isFinite(ms) && ms < 1e12) ms *= 1000;
+  if (!Number.isFinite(ms)) ms = Date.parse(String(v));
+  if (!Number.isFinite(ms)) return String(v);
+  const d = new Date(ms);
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function renderPosts() {
+  const box = $('lt-posts-box');
+  if (!box) return;
+  box.textContent = '';
+
+  const api = String(draft?.forum?.twikoo?.envId ?? '');
+  box.append(
+    el('h4', 'wbox__title', '帖子管理'),
+    el(
+      'p',
+      'hint',
+      '用户发在这个版块里的帖子都在这儿。隐藏之后站点上看不见（只是看不见，内容还在），' +
+        '置顶的排在版块最前面，移版块会把帖子挪到另一个版块。删除是**真删**，删了就找不回来。'
+    )
+  );
+
+  if (!/^https?:\/\//i.test(api)) {
+    box.append(el('p', 'lt-sub', '先去评论系统那一块填好后端地址。'));
+    return;
+  }
+
+  /* 站长密码：和「用户审核」共用同一个框、同一份值（哪边填了另一边也认） */
+  const pw = adminPasswordField('posts');
+  const out = el('p', 'lt-sub', postMsg || '填好密码点「刷新帖子列表」。');
+  const bar = el('div', 'lt-board__row');
+
+  const say = (text, color = '') => {
+    postMsg = text;
+    out.textContent = text;
+    out.style.color = color;
+  };
+
+  const ask = async (payload) => {
+    const password = pw.read();
+    if (!password) {
+      say('填上站长密码再刷新。', 'var(--danger)');
+      return null;
+    }
+    try {
+      const r = await postAdmin('/api/liyutang/posts', { api, password, ...payload });
+      /* 成功了才记这次密码（和用户审核那边一个规矩：敲错的那版别被记下来） */
+      rememberAdminPw(password);
+      return r;
+    } catch (err) {
+      /* 云函数说的原话直接摆出来 —— 失败要看得见，别吞 */
+      say('操作失败：' + err.message, 'var(--danger)');
+      toast('帖子操作失败：' + err.message, true);
+      return null;
+    }
+  };
+
+  const refresh = async () => {
+    say('正在问云函数要帖子…');
+    const r = await ask({ action: 'list' });
+    if (!r) return;
+    postList = Array.isArray(r.posts) ? r.posts : [];
+    postMsg =
+      '共 ' +
+      postList.length +
+      ' 篇：正常 ' +
+      postList.filter((p) => p.status !== 'hidden').length +
+      ' · 已隐藏 ' +
+      postList.filter((p) => p.status === 'hidden').length +
+      ' · 置顶 ' +
+      postList.filter((p) => p.pinned).length;
+    renderPosts();
+  };
+
+  const setField = async (post, payload, okText) => {
+    const who = post.title || post.id;
+    say('正在处理「' + who + '」…');
+    try {
+      const r = await ask({ action: 'set', id: post.id, ...payload });
+      if (!r) return;
+      toast(okText);
+      await refresh();
+    } catch (err) {
+      say('操作失败：' + err.message, 'var(--danger)');
+    }
+  };
+
+  const remove = async (post) => {
+    const who = post.title || post.id;
+    if (!window.confirm(`删掉帖子「${who}」？删了就找不回来了。`)) return;
+    say('正在删「' + who + '」…');
+    const r = await ask({ action: 'delete', id: post.id });
+    if (!r) return;
+    toast('已经删掉「' + who + '」。');
+    await refresh();
+  };
+
+  bar.append(button('刷新帖子列表', '问一次云函数里都有谁发了什么', refresh));
+  box.append(pw.field, bar, out);
+
+  if (!postList) {
+    box.append(el('p', 'lt-sub', '还没拉过帖子列表。'));
+    return;
+  }
+  if (postList.length === 0) {
+    box.append(el('p', 'lt-sub', '还没有人发帖。'));
+    return;
+  }
+
+  const list = el('div', 'lt-board__fields');
+  for (const p of postList) list.append(postRow(p, { setField, remove }));
+  box.append(list);
+}
+
+/** 帖子列表里的一行 */
+function postRow(post, ops) {
+  const who = post.title || post.id;
+  const row = el('div', 'lt-board');
+  row.dataset.postId = post.id || '';
+
+  /* 头像那一格：有就显示小圆图，没有就空着（和用户审核那行的布局对齐） */
+  const icon = el('div', 'lt-board__icon');
+  if (post.authorAvatar) {
+    const img = el('img', 'lt-post__avatar');
+    img.src = String(post.authorAvatar);
+    img.alt = '';
+    img.loading = 'lazy';
+    img.referrerPolicy = 'no-referrer';
+    icon.append(img);
+  }
+  row.append(icon);
+
+  const fields = el('div', 'lt-board__fields');
+
+  /*
+    标题点了在新标签页打开**站点预览**上的那一页（编辑器服务和站点不是一个端口，
+    所以用 PREVIEW_URL —— 和右上角「打开 /liyutang/」是同一个地方）。
+  */
+  const title = el('a', 'lt-post__title', post.title || '（没标题）');
+  title.href = `${PREVIEW_URL}/liyutang/post/?id=${encodeURIComponent(post.id ?? '')}`;
+  title.target = '_blank';
+  title.rel = 'noopener';
+
+  const meta = [
+    boardTitle(post.board),
+    post.authorNick || '（没昵称）',
+    timeText(post.createdAt),
+    post.views != null ? post.views + ' 次浏览' : '',
+    post.status === 'hidden' ? '已隐藏' : '正常',
+    post.pinned ? '置顶' : '',
+  ]
+    .filter(Boolean)
+    .join(' · ');
+
+  const head = el('div', 'lt-board__row');
+  head.append(title, el('span', 'hint', meta));
+  fields.append(head, el('div', 'lt-post__excerpt', post.excerpt || '（没有摘要）'));
+
+  const actions = el('div', 'lt-board__row');
+  if (post.status === 'hidden') {
+    actions.append(
+      button('恢复', '恢复之后站点上又能看见这篇了', () => ops.setField(post, { status: 'ok' }, `已经把「${who}」恢复成正常。`))
+    );
+  } else {
+    actions.append(
+      button('隐藏', '站点上看不见（只是看不见，内容和回帖都还在）', () => ops.setField(post, { status: 'hidden' }, `已经把「${who}」隐藏了。`))
+    );
+  }
+  if (post.pinned) {
+    actions.append(
+      button('取消置顶', '不再排在版块最前面', () => ops.setField(post, { pinned: 0 }, `已经取消「${who}」的置顶。`))
+    );
+  } else {
+    actions.append(
+      button('置顶', '排在版块最前面', () => ops.setField(post, { pinned: 1 }, `已经把「${who}」置顶了。`))
+    );
+  }
+
+  /* 移版块：选项就是现有的版块表（值用版块 id —— 和网址里那一段是同一个东西） */
+  const move = el('select', 'input lt-post__move');
+  const blank = el('option', '', '移到…');
+  blank.value = '';
+  move.append(blank);
+  for (const b of draft?.boards ?? []) {
+    const opt = el('option', '', b.title || b.id);
+    opt.value = b.id;
+    move.append(opt);
+  }
+  move.addEventListener('change', () => {
+    const to = move.value;
+    /* 选回自己那个版块 = 什么都没做，别白跑一趟云函数 */
+    if (!to || to === post.board) return;
+    ops.setField(post, { moveTo: to }, `已经把「${who}」移到「${boardTitle(to)}」。`);
+  });
+  actions.append(move, button('删除', '真的从库里删掉（不是隐藏）', () => ops.remove(post)));
+
+  fields.append(actions);
+  row.append(fields);
+  return row;
+}
+
+/* ---------------------------------------------------------------
    渲染 + 启动
    --------------------------------------------------------------- */
 
@@ -750,6 +1075,8 @@ function render() {
   /* 用户审核在最上面（页面上也是排第一的那个区块，2026-10-07） */
   renderUsers();
   renderBoards();
+  /* 帖子管理夹在版块和评论系统中间（页面上也是这个位置，2026-10-07） */
+  renderPosts();
   renderForum();
   if (!dirty) {
     const n = draft?.boards?.length ?? 0;

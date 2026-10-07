@@ -59,10 +59,21 @@ check(
 check('密码是加盐哈希存的（不是明文）', /scryptSync/.test(backend) && /salt/.test(backend));
 check('昵称/邮箱在服务端按账号写死（防冒名）', /payload\.nick = user\.nick/.test(backend));
 
+/*
+  ⚠ 2026-10-07 晚上：注册 / 登录那一套从 Twikoo.astro 搬去了
+  src/components/LiyutangAccount.astro + src/utils/liyutang-client.ts
+  （发帖页、帖子页也要用同一套界面，不能四份各说各话）。
+  所以「有没有注册 / 登录表单」这条要在这几份**加起来**里找，不能只盯 Twikoo.astro。
+*/
 const frontend = fs.readFileSync(path.join(SRC, 'src', 'components', 'Twikoo.astro'), 'utf8');
+const frontendAll = [
+  frontend,
+  fs.readFileSync(path.join(SRC, 'src', 'components', 'LiyutangAccount.astro'), 'utf8'),
+  fs.readFileSync(path.join(SRC, 'src', 'utils', 'liyutang-client.ts'), 'utf8'),
+].join('\n');
 check('前端评论区默认是藏着的（只有登录+过审才露出来）', /id="tcomment"[^>]*hidden/.test(frontend));
 check('前端提交时把账号令牌一起带上', /onSubmit/.test(frontend) && /ltToken/.test(frontend));
-check('前端有注册 / 登录表单', /LT_REGISTER/.test(frontend) && /LT_LOGIN/.test(frontend) && /站长审核/.test(frontend));
+check('前端有注册 / 登录表单', /LT_REGISTER/.test(frontendAll) && /LT_LOGIN/.test(frontendAll) && /站长审核/.test(frontendAll));
 
 const adminUi = fs.readFileSync(path.join(SRC, 'tools', 'editor', 'ui', 'liyutang.js'), 'utf8');
 check('管理页有「用户审核」那一块', /renderUsers/.test(adminUi) && /用户审核/.test(adminUi));

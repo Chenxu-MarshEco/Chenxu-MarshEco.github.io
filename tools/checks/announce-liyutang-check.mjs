@@ -422,7 +422,12 @@ try {
     lyt.boardLinks.length > 0 && lyt.boardLinks.every((b) => /帖/.test(b.text) && b.text.length > 4),
     JSON.stringify(lyt.boardLinks)
   );
-  check('首页把「先审后发」这条规则写出来了', /审核/.test(lyt.mainText), lyt.mainText.slice(0, 80));
+  /*
+    2026-10-07 晚上口径变了：首页那段「留言不用注册、都要先审」的说明**整段删掉**，
+    换成一句"发帖和留言都要登录；账号注册后要等站长过审"。
+    所以这条断言从「写没写先审后发」改成「写没写要登录 / 要过审」。
+  */
+  check('首页把「要登录、账号要过审」这条规矩写出来了', /过审|审核/.test(lyt.mainText), lyt.mainText.slice(0, 80));
   check('/liyutang 没有横向溢出', lyt.overflow <= 1, `${lyt.overflow}px`);
   check('没有 console 报错', cdp.errors.length === 0, cdp.errors.slice(0, 2).join(' | '));
 

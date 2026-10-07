@@ -1,0 +1,381 @@
+---
+/**
+ * 发帖页 —— /liyutang/new/　（带 ?id=… 就是"改这一篇"）
+ *
+ * 用户 2026-10-07 晚上：
+ *   「参考主网站为我制作一套管理黎语堂的系统 … 而用户可以选择发帖 帖子类似主网站的文章
+ *     可以传图写字 写好以后选择发在我已经建立的板块下」
+ *
+ * 所以这一页就是"论坛的文章编辑器"：
+ *   · 写的是 **Markdown**（和主站文章一个手感），有工具条、有预览；
+ *   · 图片**在浏览器里压小**（1600px 的 WebP）之后内嵌进正文（`![图](data:image/…)`），
+ *     所以发完立刻看得见，不用等谁去传图床、也不用重新构建站点；
+ *   · 发之前必须选一个版块 —— 版块表来自 src/data/liyutang.json（编辑器里改）。
+ *
+ * 权限只有一句话：**账号过审了才能发**（没过审的连表单都是灰的），服务端还会再验一次令牌。
+ *
+ * ⚠ 版块 id 不能叫 `new` / `post`：那两条路径留给这一页和帖子页了。
+ */
+import ForumLayout from '../../layouts/ForumLayout.astro';
+import LiyutangAccount from '../../components/LiyutangAccount.astro';
+import { boards, forum } from '../../utils/liyutang';
+import { withBase } from '../../utils/url';
+
+const list = boards();
+const api = forum().twikoo.envId;
+const home = withBase('/liyutang/');
+const titles = Object.fromEntries(list.map((b) => [b.id, b.title]));
+---
+
+<ForumLayout title="发帖" description="在黎语堂发帖。" noindex>
+  <div class="lyt-page">
+    <p class="lyt-crumb">
+      <a href={home}>← 黎语堂</a>
+    </p>
+    <h1 class="lyt-title" data-lt-heading>发帖</h1>
+
+    <LiyutangAccount />
+
+    {/* 没登录 / 没过审的时候，这里说明白为什么表单是灰的 */}
+    <p class="lyt-form__msg" data-lt-gate>正在看登录状态…</p>
+
+    <div class="lyt-form">
+      <div class="lyt-form__row">
+        <span class="lyt-form__label">发在</span>
+        <select class="lyt-select" data-lt-board>
+          {list.map((b) => (
+            <option value={b.id}>{b.icon ? `${b.icon} ` : ''}{b.title}</option>
+          ))}
+        </select>
+        {list.length === 0 && <span class="lyt-form__msg">还没有版块 —— 先去「黎语堂管理」里建一个。</span>}
+      </div>
+
+      <label class="lyt-form__label" for="lt-title">标题</label>
+      <input
+        class="lyt-input"
+        id="lt-title"
+        data-lt-title
+        type="text"
+        maxlength="80"
+        placeholder="一句话说清楚这贴是说什么的（2~80 个字）"
+      />
+
+      <span class="lyt-form__label">正文（支持 Markdown；图片会压小以后内嵌进来）</span>
+      <div class="lyt-bar">
+        <button class="lyt-bar__btn" type="button" data-lt-cmd="bold" title="粗体">粗体</button>
+        <button class="lyt-bar__btn" type="button" data-lt-cmd="italic" title="斜体">斜体</button>
+        <button class="lyt-bar__btn" type="button" data-lt-cmd="h2" title="二级标题">标题</button>
+        <button class="lyt-bar__btn" type="button" data-lt-cmd="ul" title="无序列表">列表</button>
+        <button class="lyt-bar__btn" type="button" data-lt-cmd="quote" title="引用">引用</button>
+        <button class="lyt-bar__btn" type="button" data-lt-cmd="code" title="行内代码">代码</button>
+        <button class="lyt-bar__btn" type="button" data-lt-cmd="link" title="链接">链接</button>
+        <button class="lyt-bar__btn" type="button" data-lt-cmd="hr" title="分割线">分割线</button>
+        <button class="lyt-bar__btn" type="button" data-lt-cmd="image" title="传图（压到 1600px 后内嵌）">
+          传图
+        </button>
+        <button class="lyt-bar__btn" type="button" data-lt-cmd="preview" title="看一眼发出来长什么样">
+          预览
+        </button>
+      </div>
+
+      <textarea class="lyt-textarea" data-lt-md placeholder="写点什么…&#10;&#10;空行分段；**粗体**；- 列表；> 引用；点「传图」插图片。"></textarea>
+
+      <div class="lyt-form__row">
+        <span class="lyt-form__label">封面（选填）</span>
+        <div class="lyt-cover" data-lt-cover></div>
+        <button class="lyt-bar__btn" type="button" data-lt-cover-pick>选一张</button>
+        <button class="lyt-bar__btn" type="button" data-lt-cover-clear>去掉</button>
+      </div>
+
+      <div class="lyt-form__row">
+        <button class="lyt-btn" type="button" data-lt-submit>发出去</button>
+        <a class="lyt-btn lyt-btn--ghost" href={home} data-lt-cancel>取消</a>
+        <span class="lyt-form__hint" data-lt-size></span>
+      </div>
+      <p class="lyt-form__msg" data-lt-msg></p>
+    </div>
+
+    <div class="lyt-preview" data-lt-preview hidden></div>
+
+    <script type="application/json" id="lyt-boards" set:html={JSON.stringify(titles)} />
+
+    {
+      api && (
+        <script>
+          /*
+            发帖页的全部逻辑。
+
+            两件事值得说：
+             ① **能不能发**由账号状态决定（lt-account 事件），不是由这个页面自己判断 ——
+                判错了也只是界面骗人，服务端 LT_POST_CREATE 会再验一次令牌；
+             ② 正文里的图片是**在浏览器里压完直接内嵌成 data URL** 的。压之前手机随手一张
+                3MB，四张就撞上服务端 4MB 的正文上限，所以 compressImage() 必不可少。
+          */
+          import {
+            boardUrl,
+            compressImage,
+            getPost,
+            postUrl,
+            removePost,
+            renderInto,
+            savePost,
+          } from '../../utils/liyutang-client';
+
+          const apiUrl = document.querySelector('[data-lt-account]')?.getAttribute('data-api') || '';
+          const boardSel = document.querySelector('[data-lt-board]') as HTMLSelectElement;
+          const titleIn = document.querySelector('[data-lt-title]') as HTMLInputElement;
+          const mdIn = document.querySelector('[data-lt-md]') as HTMLTextAreaElement;
+          const gate = document.querySelector('[data-lt-gate]') as HTMLElement;
+          const msg = document.querySelector('[data-lt-msg]') as HTMLElement;
+          const sizeLine = document.querySelector('[data-lt-size]') as HTMLElement;
+          const heading = document.querySelector('[data-lt-heading]') as HTMLElement;
+          const submitBtn = document.querySelector('[data-lt-submit]') as HTMLButtonElement;
+          const previewBox = document.querySelector('[data-lt-preview]') as HTMLElement;
+          const coverBox = document.querySelector('[data-lt-cover]') as HTMLElement;
+          let cover = '';
+          /** 改帖子时才有：这条帖子的 id */
+          let editingId = '';
+          /** 过审了没有（没过审就不让写，写了也发不出去） */
+          let canPost = false;
+
+          const say = (text: string, ok = false) => {
+            msg.textContent = text;
+            msg.classList.toggle('is-ok', ok);
+          };
+
+          /** 正文大小（服务端上限 4MB；图片内嵌进来很容易变胖，所以给用户看一眼） */
+          const paintSize = () => {
+            const kb = Math.round(mdIn.value.length / 1024);
+            sizeLine.textContent = `正文 ${kb} KB / 4096 KB 上限`;
+          };
+
+          /** 过审之前一切都灰着 */
+          const setEnabled = (on: boolean) => {
+            canPost = on;
+            for (const n of document.querySelectorAll<HTMLElement | HTMLInputElement | HTMLTextAreaElement | HTMLButtonElement>(
+              '[data-lt-board], [data-lt-title], [data-lt-md], [data-lt-submit], [data-lt-cmd], [data-lt-cover-pick], [data-lt-cover-clear]'
+            )) {
+              (n as HTMLButtonElement).disabled = !on;
+            }
+          };
+
+          /* ---- 账号状态：没登录 / 没过审就不让写 ---- */
+          const applyState = (state: string, user: { nick?: string } | null, fake: boolean) => {
+            if (fake || !user) {
+              setEnabled(false);
+              gate.textContent =
+                state === 'pending'
+                  ? '账号还在等站长审核 —— 通过之后这一页就能用了。'
+                  : '发帖要先登录（右上角那一块）；注册之后账号要等站长过审。';
+              return;
+            }
+            if (state === 'approved') {
+              setEnabled(true);
+              gate.textContent = `你以 ${user.nick ?? ''} 的身份发帖。`;
+              return;
+            }
+            setEnabled(false);
+            gate.textContent = state === 'banned' ? '这个账号被停用了，发不了。' : '这个账号还不能发帖。';
+          };
+          document.addEventListener('lt-account', (ev) => {
+            const d = (ev as CustomEvent).detail as { state?: string; user?: { nick?: string } | null; fake?: boolean };
+            applyState(String(d?.state ?? ''), d?.user ?? null, !!d?.fake);
+          });
+          const early = (window as unknown as {
+            __ltState?: { state?: string; user?: { nick?: string } | null; fake?: boolean };
+          }).__ltState;
+          if (early?.state) applyState(early.state, early.user ?? null, !!early.fake);
+
+          setEnabled(false);
+          paintSize();
+
+          /* ---- 工具条：往光标那儿插 Markdown ---- */
+          const wrap = (before: string, after: string, placeholder: string) => {
+            const s = mdIn.selectionStart;
+            const e = mdIn.selectionEnd;
+            const picked = mdIn.value.slice(s, e) || placeholder;
+            mdIn.value = mdIn.value.slice(0, s) + before + picked + after + mdIn.value.slice(e);
+            mdIn.selectionStart = s + before.length;
+            mdIn.selectionEnd = s + before.length + picked.length;
+            mdIn.focus();
+            paintSize();
+          };
+          const prefix = (mark: string) => {
+            const s = mdIn.selectionStart;
+            const e = mdIn.selectionEnd;
+            const before = mdIn.value.slice(0, s);
+            const picked = mdIn.value.slice(s, e) || '这一行';
+            const after = mdIn.value.slice(e);
+            const lines = picked.split('\n').map((l) => mark + l).join('\n');
+            mdIn.value = before + lines + after;
+            mdIn.focus();
+            paintSize();
+          };
+          const insert = (text: string) => {
+            const s = mdIn.selectionStart;
+            mdIn.value = mdIn.value.slice(0, s) + text + mdIn.value.slice(mdIn.selectionEnd);
+            mdIn.selectionStart = mdIn.selectionEnd = s + text.length;
+            mdIn.focus();
+            paintSize();
+          };
+
+          /** 选图 → 压小 → 内嵌进正文（这一步是"能传图"的全部秘密） */
+          const pickImages = () => {
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = 'image/png,image/jpeg,image/webp,image/gif';
+            input.multiple = true;
+            input.addEventListener('change', async () => {
+              const files = [...(input.files ?? [])];
+              if (!files.length) return;
+              for (const [i, file] of files.entries()) {
+                say(`正在压第 ${i + 1}/${files.length} 张图…`);
+                try {
+                  const dataUrl = await compressImage(file, { max: 1600 });
+                  insert(`\n![${file.name.replace(/[|[\]]/g, '')}](${dataUrl})\n`);
+                  say(`第 ${i + 1} 张压好了，已插到光标处（${Math.round(dataUrl.length / 1024)} KB）。`, true);
+                } catch (err) {
+                  say(`第 ${i + 1} 张没插进去：` + String((err as Error)?.message ?? err));
+                  return;
+                }
+              }
+            });
+            input.click();
+          };
+
+          const previewOn = () => {
+            renderInto(previewBox, mdIn.value);
+            previewBox.hidden = false;
+            previewBox.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+          };
+
+          for (const btn of document.querySelectorAll<HTMLButtonElement>('[data-lt-cmd]')) {
+            btn.addEventListener('click', () => {
+              const cmd = btn.dataset.ltCmd;
+              if (cmd === 'bold') wrap('**', '**', '粗体');
+              else if (cmd === 'italic') wrap('*', '*', '斜体');
+              else if (cmd === 'code') wrap('`', '`', '代码');
+              else if (cmd === 'link') wrap('[', '](https://)', '链接文字');
+              else if (cmd === 'h2') prefix('## ');
+              else if (cmd === 'ul') prefix('- ');
+              else if (cmd === 'quote') prefix('> ');
+              else if (cmd === 'hr') insert('\n\n---\n\n');
+              else if (cmd === 'image') pickImages();
+              else if (cmd === 'preview') {
+                if (previewBox.hidden) previewOn();
+                else previewBox.hidden = true;
+              }
+            });
+          }
+          mdIn.addEventListener('input', () => {
+            paintSize();
+            if (!previewBox.hidden) renderInto(previewBox, mdIn.value);
+          });
+
+          /* ---- 封面 ---- */
+          const paintCover = () => {
+            coverBox.textContent = '';
+            if (cover) {
+              const img = document.createElement('img');
+              img.src = cover;
+              img.alt = '';
+              coverBox.append(img);
+            } else {
+              coverBox.append(document.createTextNode('（没选）'));
+            }
+          };
+          paintCover();
+          document.querySelector('[data-lt-cover-pick]')?.addEventListener('click', () => {
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = 'image/png,image/jpeg,image/webp';
+            input.addEventListener('change', async () => {
+              const file = input.files?.[0];
+              if (!file) return;
+              try {
+                cover = await compressImage(file, { max: 480, maxBytes: 120_000 });
+                paintCover();
+                say('封面选好了。', true);
+              } catch (err) {
+                say('封面没弄成：' + String((err as Error)?.message ?? err));
+              }
+            });
+            input.click();
+          });
+          document.querySelector('[data-lt-cover-clear]')?.addEventListener('click', () => {
+            cover = '';
+            paintCover();
+          });
+
+          /* ---- 改旧帖：?id=… ---- */
+          const params = new URLSearchParams(location.search);
+          const wantBoard = params.get('board');
+          if (wantBoard && boardSel) boardSel.value = wantBoard;
+
+          const editId = params.get('id');
+          if (editId && apiUrl) {
+            const got = await getPost(apiUrl, editId);
+            if ('error' in got) {
+              say(got.error);
+            } else if (!got.mine) {
+              say('这条帖子不是你发的，改不了（要删可以让站长处理）。');
+            } else {
+              editingId = got.post.id;
+              titleIn.value = got.post.title;
+              mdIn.value = got.post.md ?? '';
+              cover = got.post.cover || '';
+              if (boardSel) boardSel.value = got.post.board;
+              paintCover();
+              paintSize();
+              heading.textContent = '改帖子';
+              submitBtn.textContent = '保存修改';
+              const del = document.querySelector('[data-lt-cancel]') as HTMLAnchorElement;
+              del.textContent = '删除这贴';
+              del.href = '#';
+              del.addEventListener('click', async (ev) => {
+                ev.preventDefault();
+                if (!confirm('删掉这贴？删了就找不回来了。')) return;
+                const r = await removePost(apiUrl, editingId);
+                if ('error' in r) say(r.error);
+                else location.href = boardUrl(got.post.board);
+              });
+            }
+          }
+
+          /* ---- 发出去 ---- */
+          submitBtn.addEventListener('click', async () => {
+            if (!canPost) {
+              say('先登录、等站长过审之后再发。');
+              return;
+            }
+            const board = boardSel?.value || '';
+            const title = titleIn.value.trim();
+            const md = mdIn.value;
+            if (!board) {
+              say('得先选一个版块。');
+              return;
+            }
+            if (title.length < 2) {
+              say('标题太短了（至少 2 个字）。');
+              return;
+            }
+            if (!md.trim()) {
+              say('正文还是空的。');
+              return;
+            }
+            submitBtn.disabled = true;
+            say('正在发…');
+            const r = await savePost(apiUrl, { id: editingId || undefined, board, title, md, cover });
+            if ('error' in r) {
+              say(r.error);
+              submitBtn.disabled = false;
+              return;
+            }
+            say('发出去了，正在跳过去…', true);
+            location.href = postUrl(r.id);
+          });
+        </script>
+      )
+    }
+  </div>
+</ForumLayout>

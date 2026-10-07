@@ -190,42 +190,431 @@
   color: #8ff0e5;
 }
 
-/* 正文：用全站那套 .prose，这里只补几个深色底上要调的地方 */
+/* ============================================================================
+   账号那一块（注册 / 登录 / 待审核 / 换头像 / 退出）
+   ----------------------------------------------------------------------------
+   2026-10-07 晚上从 src/components/Twikoo.astro 的 <style> 里搬过来的。
+   两个原因，都是硬的：
+     · 发帖页（/liyutang/new/）也要用同一套界面，而它不在 Twikoo 组件里；
+     · Astro 的 <style> 是**按组件加作用域**的（选择器会被加上 data-astro-cid-*），
+       而这块界面的 DOM 全是脚本建出来的 —— 那些节点身上没有 cid，压根匹配不上。
+       所以它从一开始就该是全局样式（这是搬家时才想明白的）。
+   ============================================================================ */
+.tkc__auth {
+  margin: 0.4rem 0 0.9rem;
+}
+.tkc__note {
+  margin: 0.2rem 0;
+  font-size: 0.84rem;
+  line-height: 1.8;
+  color: rgba(214, 201, 238, 0.8);
+}
+.tkc__who {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.7rem;
+  margin: 0.2rem 0;
+  font-size: 0.84rem;
+}
+.tkc__me {
+  color: #8ff0e5;
+}
+.tkc__link {
+  padding: 0;
+  border: none;
+  background: none;
+  color: rgba(214, 201, 238, 0.72);
+  font-size: 0.8rem;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.tkc__link:hover {
+  color: #dcfffb;
+}
+.tkc__form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  max-width: 24rem;
+}
+.tkc__tabs {
+  display: flex;
+  gap: 0.4rem;
+}
+.tkc__tab {
+  padding: 0.25rem 0.8rem;
+  border: 1px solid rgba(127, 233, 221, 0.28);
+  border-radius: 999px;
+  background: none;
+  color: rgba(214, 201, 238, 0.8);
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+.tkc__tab.is-on {
+  border-color: rgba(127, 233, 221, 0.7);
+  color: #eafcff;
+  background: rgba(127, 233, 221, 0.12);
+}
+.tkc__field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  font-size: 0.78rem;
+  color: rgba(214, 201, 238, 0.75);
+}
+.tkc__field input {
+  padding: 0.45rem 0.6rem;
+  border: 1px solid rgba(127, 233, 221, 0.28);
+  border-radius: 8px;
+  background: rgba(8, 3, 16, 0.6);
+  color: #f3edff;
+  font-size: 0.9rem;
+}
+.tkc__field input:focus {
+  outline: none;
+  border-color: rgba(127, 233, 221, 0.7);
+}
+.tkc__btn {
+  align-self: flex-start;
+  padding: 0.4rem 1.1rem;
+  border: 1px solid rgba(127, 233, 221, 0.6);
+  border-radius: 8px;
+  background: rgba(127, 233, 221, 0.16);
+  color: #eafcff;
+  font-size: 0.88rem;
+  cursor: pointer;
+}
+.tkc__btn:hover {
+  background: rgba(127, 233, 221, 0.28);
+}
+.tkc__btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.tkc__msg {
+  margin: 0;
+  font-size: 0.8rem;
+  line-height: 1.7;
+  color: #ffd9a8;
+}
+.tkc__msg.is-ok {
+  color: #8ff0e5;
+}
+.tkc__msg.is-bad {
+  color: #ff9db1;
+}
+
+/* 头像：没有图就显示昵称首字（不做 Gravatar —— 这条路上不再引国外域名） */
+.lt-avatar {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  overflow: hidden;
+  border: 1px solid rgba(127, 233, 221, 0.35);
+  border-radius: 50%;
+  background: rgba(127, 233, 221, 0.12);
+  color: #8ff0e5;
+  font-size: 0.9rem;
+  line-height: 1;
+}
+.lt-avatar__img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* ============================================================================
+   帖子（用户发的那些）—— 列表、正文、发帖页
+   ============================================================================ */
+.lyt-posts {
+  margin: 1.6rem 0 0;
+}
+.lyt-posts__head {
+  margin: 0 0 0.7rem;
+  font-size: 1.05rem;
+  letter-spacing: 0.12em;
+  color: #eafcff;
+  text-shadow: 0 0 12px rgba(127, 233, 221, 0.3);
+}
+.lyt-posts__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.lyt-post {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.7rem;
+  padding: 0.7rem 0.9rem;
+  border: 1px solid rgba(127, 233, 221, 0.18);
+  border-radius: 10px;
+  background: rgba(18, 10, 32, 0.66);
+  transition: border-color 0.16s ease, background 0.16s ease;
+}
+.lyt-post:hover,
+.lyt-post:focus-within {
+  border-color: rgba(127, 233, 221, 0.55);
+  background: rgba(24, 14, 42, 0.85);
+}
+.lyt-post__link {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  color: #f3edff;
+  text-decoration: none;
+}
+.lyt-post__titleRow {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+.lyt-post__cover {
+  flex: none;
+  width: 3rem;
+  height: 2.2rem;
+  object-fit: cover;
+  border-radius: 6px;
+}
+.lyt-post__title {
+  min-width: 0;
+  font-size: 0.98rem;
+  overflow-wrap: anywhere;
+}
+.lyt-post__meta {
+  font-size: 0.76rem;
+  color: rgba(214, 201, 238, 0.6);
+  font-variant-numeric: tabular-nums;
+}
+.lyt-post__excerpt {
+  font-size: 0.84rem;
+  line-height: 1.7;
+  color: rgba(214, 201, 238, 0.78);
+  overflow-wrap: anywhere;
+}
+
+/* 版块页顶上那条"这个版块是什么"的公告（站长写 Markdown，构建期渲染） */
+.lyt-notice {
+  margin: 0 0 1.4rem;
+  padding: 0.9rem 1.1rem;
+  border: 1px solid rgba(127, 233, 221, 0.2);
+  border-left: 3px solid rgba(127, 233, 221, 0.6);
+  border-radius: 10px;
+  background: rgba(18, 10, 32, 0.7);
+  color: rgba(226, 216, 248, 0.92);
+  font-size: 0.9rem;
+  line-height: 1.9;
+}
+
+/* 一行动作（「发帖」按钮 + 账号状态之类） */
+.lyt-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.8rem;
+  margin: 0 0 1.4rem;
+}
+.lyt-btn {
+  display: inline-block;
+  padding: 0.4rem 1.1rem;
+  border: 1px solid rgba(127, 233, 221, 0.6);
+  border-radius: 8px;
+  background: rgba(127, 233, 221, 0.16);
+  color: #eafcff;
+  font-size: 0.88rem;
+  text-decoration: none;
+  cursor: pointer;
+}
+.lyt-btn:hover {
+  background: rgba(127, 233, 221, 0.3);
+}
+.lyt-btn[disabled],
+.lyt-btn.is-off {
+  opacity: 0.5;
+  cursor: default;
+}
+.lyt-btn--ghost {
+  border-color: rgba(127, 233, 221, 0.3);
+  background: none;
+  color: rgba(214, 201, 238, 0.85);
+}
+.lyt-btn--danger {
+  border-color: rgba(255, 130, 160, 0.5);
+  background: rgba(255, 90, 140, 0.12);
+  color: #ffd7e2;
+}
+
+/* 发帖页：表单 */
+.lyt-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+  padding: clamp(1rem, 2.4vw, 1.5rem);
+  border: 1px solid rgba(127, 233, 221, 0.22);
+  border-radius: 14px;
+  background: rgba(18, 10, 32, 0.86);
+}
+.lyt-form__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+}
+.lyt-form > label,
+.lyt-form__label {
+  font-size: 0.82rem;
+  color: rgba(214, 201, 238, 0.8);
+}
+.lyt-input,
+.lyt-select,
+.lyt-textarea {
+  width: 100%;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid rgba(127, 233, 221, 0.28);
+  border-radius: 8px;
+  background: rgba(8, 3, 16, 0.6);
+  color: #f3edff;
+  font-size: 0.92rem;
+  font-family: inherit;
+}
+.lyt-input:focus,
+.lyt-select:focus,
+.lyt-textarea:focus {
+  outline: none;
+  border-color: rgba(127, 233, 221, 0.7);
+}
+.lyt-select {
+  max-width: 16rem;
+}
+.lyt-textarea {
+  min-height: 16rem;
+  line-height: 1.8;
+  resize: vertical;
+}
+.lyt-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+.lyt-bar__btn {
+  padding: 0.2rem 0.6rem;
+  border: 1px solid rgba(127, 233, 221, 0.28);
+  border-radius: 6px;
+  background: rgba(127, 233, 221, 0.08);
+  color: rgba(230, 222, 250, 0.9);
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+.lyt-bar__btn:hover {
+  background: rgba(127, 233, 221, 0.22);
+}
+.lyt-form__hint {
+  margin: 0;
+  font-size: 0.78rem;
+  line-height: 1.7;
+  color: rgba(214, 201, 238, 0.65);
+}
+.lyt-form__msg {
+  margin: 0;
+  font-size: 0.84rem;
+  line-height: 1.7;
+  color: #ffd9a8;
+}
+.lyt-form__msg.is-ok {
+  color: #8ff0e5;
+}
+.lyt-preview {
+  padding: 0.9rem 1.1rem;
+  border: 1px dashed rgba(127, 233, 221, 0.35);
+  border-radius: 10px;
+  background: rgba(8, 3, 16, 0.5);
+  color: #f3edff;
+  line-height: 1.95;
+}
+.lyt-cover {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+}
+.lyt-cover img {
+  width: 6rem;
+  height: 3.6rem;
+  object-fit: cover;
+  border-radius: 8px;
+}
+
+/* 正文：用全站那套 .prose，这里只补几个深色底上要调的地方。
+   ⚠ 2026-10-07 晚上发现：这几条以前写成了 `.lyt-body :global(h2)` —— `:global()` 只在
+   .astro 的 <style> 里有意义，**写在独立 .css 文件里是无效选择器，浏览器整条丢掉**，
+   也就是说这些调整一直是死的（以前只有一篇 welcome.md，没人看出来）。
+   现在用户帖子的正文就走这条样式，所以按普通选择器重写了一遍。 */
 .lyt-body {
   color: #f3edff;
   line-height: 1.95;
 }
-.lyt-body :global(h2) {
-  margin-top: 1.8rem;
+.lyt-body h1,
+.lyt-body h2 {
+  margin: 1.8rem 0 0.6rem;
   color: #eafcff;
 }
-.lyt-body :global(h3) {
+.lyt-body h3,
+.lyt-body h4,
+.lyt-body h5,
+.lyt-body h6 {
+  margin: 1.4rem 0 0.5rem;
   color: #eafcff;
 }
-.lyt-body :global(a) {
+.lyt-body a {
   color: #8ff0e5;
 }
-.lyt-body :global(blockquote) {
-  border-left-color: rgba(127, 233, 221, 0.5);
+.lyt-body blockquote {
+  margin: 1rem 0;
+  padding-left: 0.9rem;
+  border-left: 3px solid rgba(127, 233, 221, 0.5);
   color: rgba(214, 201, 238, 0.9);
 }
-.lyt-body :global(img) {
+.lyt-body img {
   max-width: 100%;
   border-radius: 10px;
 }
-.lyt-body :global(code) {
+.lyt-body code {
   background: rgba(255, 255, 255, 0.08);
   padding: 0.1em 0.35em;
   border-radius: 4px;
 }
-.lyt-body :global(pre) {
+.lyt-body pre {
   background: rgba(8, 3, 16, 0.8);
   border: 1px solid rgba(127, 233, 221, 0.2);
   border-radius: 10px;
   padding: 0.9rem 1rem;
   overflow-x: auto;
 }
-.lyt-body :global(pre code) {
+.lyt-body pre code {
   background: none;
   padding: 0;
 }
+.lyt-body hr {
+  border: none;
+  border-top: 1px dashed rgba(127, 233, 221, 0.3);
+  margin: 1.6rem 0;
+}
+.lyt-body ul,
+.lyt-body ol {
+  padding-left: 1.4rem;
+}
+.lyt-body li {
+  margin: 0.25rem 0;
+}
+.lyt-notice p {
+  margin: 0.3rem 0;
+}
+

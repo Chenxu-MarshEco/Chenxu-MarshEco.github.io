@@ -64,7 +64,11 @@ check(
   boards.every((b) => home.includes(b.title) && home.includes(`/liyutang/${b.id}/`)),
   boards.map((b) => b.title).join(' / ')
 );
-check('首页说明了「先审后发」这条规则', /审核/.test(home));
+/*
+  2026-10-07 晚上：首页那段「留言不用注册、都要先审」的说明按用户要求整段删了，
+  换成一句「发帖和留言都要登录；账号注册后要等站长过审」——断言跟着改口径。
+*/
+check('首页把「要登录、账号要过审」这条规矩写出来了', /过审|审核/.test(home));
 
 /* 帖子文件：src/content/liyutang/<版块>/<帖子>.md */
 const contentDir = path.join(SRC, 'src', 'content', 'liyutang');
@@ -240,7 +244,7 @@ try {
       const root = document.querySelector('.twikoo');
       const err = document.querySelector('.tk-error, .tk-error__title, .tk-error__detail');
       const txt = (box ? box.innerText : '').replace(/\\s+/g, ' ').trim();
-      const authBox = document.querySelector('[data-lt-auth]');
+      const authBox = document.querySelector('[data-lt-account]');
       return {
         hasRoot: !!root,
         inputs: document.querySelectorAll('#tcomment input, #tcomment textarea').length,
@@ -252,7 +256,7 @@ try {
         boxHidden: box ? box.hasAttribute('hidden') : null,
         authState: authBox ? authBox.dataset.state || '(还没画出来)' : '(没有账号区)',
         authText: authBox ? (authBox.innerText || '').replace(/\\s+/g, ' ').trim().slice(0, 200) : '',
-        tabs: [...document.querySelectorAll('[data-lt-auth] .tkc__tab')].map((b) => b.textContent.trim()),
+        tabs: [...document.querySelectorAll('[data-lt-account] .tkc__tab')].map((b) => b.textContent.trim()),
       };
     })()`;
 

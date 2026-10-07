@@ -25,10 +25,17 @@
     "latest 是首页板块卡上显示几条。"
   ],
   "title": "曼沫砾总线",
-  "subtitle": "花涧堂的公告栏",
+  "subtitle": "",
   "latest": 5,
-  "updated": "2026-10-06",
+  "updated": "2026-10-07",
   "items": [
+    {
+      "id": "an-20261007-01",
+      "kind": "update",
+      "date": "2026-10-07",
+      "title": "黎语堂注册功能已经开放，欢迎前往注册！具体构筑仍在制作中。",
+      "href": "https://chenxu-marsheco.github.io/liyutang/"
+    },
     {
       "id": "an-20261006-a",
       "kind": "notice",
