@@ -91,6 +91,19 @@ const api = f.twikoo.envId;
           return n;
         };
 
+        /*
+          ⚠ 配置要在**模块最外层**解析：`call()` / `startTwikoo()` 都定义在这一层，
+          它们都要用 cfg —— 把 cfg 放进下面那个 IIFE 里，它们就看不见了
+          （2026-10-07 线上真踩到：「ReferenceError: cfg is not defined」，
+           表现是站长后门 #admin 和"已过审用户登录后"这两条路都起不来 Twikoo）。
+        */
+        const cfg = JSON.parse((cfgEl && cfgEl.textContent) || '{}') as {
+          api: string;
+          envId: string;
+          region: string;
+          el: string;
+        };
+
         /** 调一次后端（账号事件和评论事件是同一个云函数） */
         const call = async (body: Record<string, unknown>) => {
           const res = await fetch(cfg.api, {

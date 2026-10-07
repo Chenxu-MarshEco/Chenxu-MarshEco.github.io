@@ -234,10 +234,8 @@ try {
   }
   check('本站那份 twikoo.all.min.js 真的执行了（window.twikoo 有了）', lib === true, lib ? '' : '没等到');
 
-  let state = null;
-  for (let i = 0; i < 120; i++) {
-    await sleep(500);
-    state = await cdp.ev(`(() => {
+  /* 读一次页面状态（两趟都用它：访客一趟、#admin 一趟） */
+  const readState = `(() => {
       const box = document.getElementById('tcomment');
       const root = document.querySelector('.twikoo');
       const err = document.querySelector('.tk-error, .tk-error__title, .tk-error__detail');
@@ -256,7 +254,12 @@ try {
         authText: authBox ? (authBox.innerText || '').replace(/\\s+/g, ' ').trim().slice(0, 200) : '',
         tabs: [...document.querySelectorAll('[data-lt-auth] .tkc__tab')].map((b) => b.textContent.trim()),
       };
-    })()`);
+    })()`;
+
+  let state = null;
+  for (let i = 0; i < 120; i++) {
+    await sleep(500);
+    state = await cdp.ev(readState);
     if (state?.errorText || state?.submit || (state?.authState && state.authState !== '(还没画出来)')) break;
   }
 
@@ -283,6 +286,36 @@ try {
   }
   check('这一趟没有未捕获的 JS 异常', cdp.errors.filter((e) => /Uncaught|TypeError|ReferenceError/.test(e)).length === 0,
     cdp.errors.slice(0, 2).join(' | '));
+
+  /*
+    ---- 第三趟：站长后门 #admin ----
+    这条是 2026-10-07 线上真踩出来的：后门那段代码在 cfg 还没解析出来的时候就调了启动函数，
+    于是「ReferenceError: cfg is not defined」—— 评论区露出来了，但 Twikoo 起不来。
+    而**已过审的用户登录后走的是同一条路**（render('approved') → showComment() → startTwikoo()），
+    所以这个 bug 不修的话，过审的人根本看不到输入框。留一趟在这里盯着它。
+
+    ⚠ 只改 hash 的导航不会重新加载页面 —— 必须先跳 about:blank。
+  */
+  console.log('\n=== ③ 站长后门 #admin（顺带验证"登录之后能启动 Twikoo"那条路）===');
+  cdp.errors = [];
+  await cdp.send('Page.navigate', { url: 'about:blank' });
+  await sleep(500);
+  await cdp.send('Page.navigate', { url: `${url}#admin` });
+  for (let i = 0; i < 150; i++) {
+    await sleep(120);
+    if ((await cdp.ev('document.readyState')) === 'complete') break;
+  }
+  let adm = null;
+  for (let i = 0; i < 120; i++) {
+    await sleep(500);
+    adm = await cdp.ev(readState);
+    if (adm?.hasRoot || adm?.errorText) break;
+  }
+  info('#admin 状态：' + JSON.stringify({ boxHidden: adm?.boxHidden, hasRoot: adm?.hasRoot, inputs: adm?.inputs, err: adm?.errorText }));
+  check('★ #admin 把评论区强制露出来了', adm?.boxHidden === false, 'hidden=' + String(adm?.boxHidden));
+  check('★ Twikoo 真的启动了（这条就是那个 cfg bug 的哨兵）', adm?.hasRoot === true);
+  check('输入框出来了（能发言）', (adm?.inputs ?? 0) > 0, `inputs=${adm?.inputs}`);
+  check('#admin 这一趟没有 JS 报错', cdp.errors.filter((e) => /Uncaught|TypeError|ReferenceError/.test(e)).length === 0, cdp.errors.slice(0, 2).join(' | '));
 } catch (err) {
   fail++;
   console.log('FAIL  浏览器那一段异常: ' + (err?.stack ?? err));
