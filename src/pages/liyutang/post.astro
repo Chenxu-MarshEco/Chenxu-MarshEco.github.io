@@ -16,14 +16,17 @@
  */
 import ForumLayout from '../../layouts/ForumLayout.astro';
 import Twikoo from '../../components/Twikoo.astro';
-import { forum } from '../../utils/liyutang';
+import { copy, forum } from '../../utils/liyutang';
 import { withBase } from '../../utils/url';
 
 const api = forum().twikoo.envId;
 const home = withBase('/liyutang/');
+/* 文案归站长写（copy.post.hint）；留空时那一行小字就不显示 */
+const c = copy();
 ---
 
-<ForumLayout title="帖子" description="黎语堂里的一条帖子。" noindex>
+{/* 搜索结果 / 分享卡片上那句描述归站长写（copy.post.desc）；留空就退回站点总描述 */}
+<ForumLayout title="帖子" description={c.post.desc || undefined} noindex>
   <div class="lyt-page">
     <p class="lyt-crumb">
       <a href={home}>← 黎语堂</a>
@@ -45,7 +48,7 @@ const home = withBase('/liyutang/');
     <div class="lyt-actions" data-lt-post-owner hidden>
       <a class="lyt-btn lyt-btn--ghost" data-lt-post-edit>改这贴</a>
       <button class="lyt-btn lyt-btn--danger" type="button" data-lt-post-del>删掉</button>
-      <span class="lyt-form__hint">作者本人可以改 / 删；站长也能删。</span>
+      {c.post.hint && <span class="lyt-form__hint" data-lt-copy="post.hint">{c.post.hint}</span>}
     </div>
 
     {

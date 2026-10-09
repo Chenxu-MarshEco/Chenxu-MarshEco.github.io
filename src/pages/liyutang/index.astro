@@ -20,13 +20,15 @@
  */
 import ForumLayout from '../../layouts/ForumLayout.astro';
 import LiyutangAccount from '../../components/LiyutangAccount.astro';
-import { boardCounts, boards, boardUrl, forum, halls } from '../../utils/liyutang';
+import { boardCounts, boards, boardUrl, copy, forum, halls } from '../../utils/liyutang';
 import { withBase } from '../../utils/url';
 
 const list = boards();
 const bigList = halls();
 const counts = await boardCounts();
 const f = forum();
+/* 页面文案：站长在编辑器「页面文案 → 首页」里填；留空 = 那一块不渲染（见 utils/liyutang.ts 的 copy()） */
+const c = copy();
 /** 帖子那一套挂在评论服务同一个云函数上，所以它没配好 = 帖子也读不出来 */
 const api = f.twikoo.envId;
 const titles = Object.fromEntries(list.map((b) => [b.id, b.title]));
@@ -35,15 +37,20 @@ const newUrl = withBase('/liyutang/new/');
 
 <ForumLayout
   title="黎语堂"
-  description="黎语堂 —— 花涧堂自己的论坛：版块、帖子，注册一个账号让站长过审之后就能发帖。"
+  /* 搜索结果 / 分享卡片上那句描述也归站长写（copy.home.lead）；留空就退回站点总描述 */
+  description={c.home.lead || undefined}
   noindex
 >
   <div class="lyt-page">
     <h1 class="lyt-title" data-liyutang-home>黎语堂</h1>
 
+    {/* 顶部引导语：站长在编辑器里填（copy.home.lead）；空着就整块不出现 */}
+    {c.home.lead && <p class="lyt-lead" data-lt-copy="home.lead">{c.home.lead}</p>}
+
     <div class="lyt-actions">
       <a class="lyt-btn" href={newUrl}>发帖</a>
-      <span class="lyt-form__hint">发帖和留言都要登录；账号注册后要等站长过审。</span>
+      {/* 「发帖」旁边那一行提示也归站长写（copy.home.note）；空着就不显示 */}
+      {c.home.note && <span class="lyt-form__hint" data-lt-copy="home.note">{c.home.note}</span>}
     </div>
 
     <LiyutangAccount />
@@ -98,9 +105,7 @@ const newUrl = withBase('/liyutang/new/');
           ))}
         </ul>
       ) : (
-        <p class="lyt-empty">
-          还没有版块 —— 编辑器右上角「黎语堂管理」里建一个（版块 id 就是网址里那一段，例如 notice）。
-        </p>
+        <p class="lyt-empty">还没有版块。</p>
       )
     }
 
@@ -135,7 +140,8 @@ const newUrl = withBase('/liyutang/new/');
               limit: 8,
               boardTitles,
               heading: '最新帖子',
-              empty: '还没有人发帖 —— 你可以是第一个（上面「发帖」）。',
+              /* 空列表那句只讲事实（不要"你可以是第一个"这种闲聊） */
+              empty: '还没有人发帖。',
             }).catch(() => {
               /* 拉不到就什么都不显示：首页不能因为云端抽风变成一片报错 */
             });

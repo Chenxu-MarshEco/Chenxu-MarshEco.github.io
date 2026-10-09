@@ -11,28 +11,44 @@
  *     都画了什么 最好参考一下网上比较成熟的在线画画网页 让画画的手感可以比较舒服丝滑」
  *
  * 这一页现在长成什么样、怎么分工：
- *   · **画板**：一块固定 2400×1500 的画布（屏幕上按容器等比缩放，坐标跟屏幕无关），
+ *   · **画板**：一块固定 3600×2250 的画布（屏幕上按容器等比缩放，坐标跟屏幕无关），
  *     矢量笔划（一笔一个点集），画布和存档 SVG 用**同一份平滑几何**
  *     （src/utils/liyutang-strokes.mjs）—— 手感与"存档长得一样"是同一件事；
- *   · **引擎**在 src/utils/liyutang-draw.ts 里（工具条、输入、两层画布、轮询、逐人显隐），
- *     这一页只负责摆控件 + 按账号状态开闸；
+ *   · **引擎**在 src/utils/liyutang-draw.ts 里（工具条、输入、两层画布、轮询、逐人显隐、
+ *     光标圆、网格、快捷键、橡皮两种模式），这一页只负责摆控件 + 按账号状态开闸；
  *   · **当天**的笔划住在云端的 lt_draw 里（活的：谁都能看见刚画的）；
  *   · **过完这一天**由 .github/workflows/chat-archive.yml 搬进仓库
  *     （src/data/draw/<日>.json + public/img/draw/<日>.svg），搬完把云端那天的笔划删掉 ——
  *     所以"日历里翻旧画"是**纯静态**的，不碰腾讯云额度。
+ *
+ * 页面上的介绍 / 提示文字（lead / hint / note）**一律从 src/data/liyutang.json 的 copy 区读**，
+ * 站长在编辑器里填。规矩是 2026-10-09 定的（用户原话：「不要再写生造的介绍/提示句子」）：
+ *   · 留空 = 那一块**整块不渲染**（这个文件里不许再出现写死的引导语）；
+ *   · 功能性的短提示（"只能挪自己画的。"这类报错）留在引擎里，不算"介绍句"。
  */
 import ForumLayout from '../../layouts/ForumLayout.astro';
 import LiyutangAccount from '../../components/LiyutangAccount.astro';
-import { forum } from '../../utils/liyutang';
+import { copy, forum } from '../../utils/liyutang';
 import { withBase } from '../../utils/url';
 
 const api = forum().twikoo.envId;
 const home = withBase('/liyutang/');
+/*
+  三块文案（都不给默认值：copy() 里没填就是空串）。
+  为什么在 frontmatter 里先取成变量：Astro 里 `{lead && <p>…</p>}` 这种"空就不渲染"
+  最好读，也免得在模板里写一长串可选链。
+*/
+const cp = copy().board;
+const lead = cp.lead;
+const hint = cp.hint;
+const note = cp.note;
+/* 「今天画过画的人」一个都没有时那句话（引擎要用，所以同时挂到 data-lt-empty 上给客户端脚本读） */
+const empty = cp.empty;
 ---
 
 <ForumLayout
   title="久昭卿茶绘"
-  description="黎语堂的公共画板：谁都能添两笔，每天存档，日历里能翻回任何一天。"
+  description={lead || undefined}
   noindex
 >
   <div class="lyt-page">
@@ -42,33 +58,67 @@ const home = withBase('/liyutang/');
       <a href={withBase('/liyutang/teahouse/calendar/')}>画过的日子 ›</a>
     </p>
     <h1 class="lyt-title">久昭卿茶绘</h1>
-    <p class="lyt-lead">
-      一块大家共用的画板。画笔、橡皮、调色板都在，谁都能添两笔；每天存档，日历里能翻回任何一天看当时画成了什么样。
-    </p>
+    {lead && <p class="lyt-lead">{lead}</p>}
 
     <LiyutangAccount />
 
     <p class="lyt-form__msg" data-lt-draw-gate>正在看登录状态…</p>
 
     <div class="lyt-draw">
+      {/*
+        工具条。每个按钮都包在 `.lyt-tip__wrap` 里、后面跟一张 `.lyt-tip` 卡片：
+        鼠标移上去（或者键盘 Tab 聚焦）就弹出来，卡片里是**功能名 + 快捷键**。
+
+        ⚠ 卡片为什么是**兄弟节点**而不是塞进按钮里：
+          塞进去按钮的 textContent 就变成"画笔画笔 B"，页面里到处按 textContent 找按钮
+          （验收脚本、别的组件）全会失配 —— 卡片是给眼睛看的，不该混进按钮的名字里。
+          无障碍走 aria-describedby（指向卡片 id）+ aria-keyshortcuts（真正的快捷键语义）。
+      */}
       <div class="lyt-draw__bar">
-        <button class="lyt-bar__btn" type="button" data-lt-tool="pen" disabled>画笔</button>
-        <button class="lyt-bar__btn" type="button" data-lt-tool="eraser" disabled>橡皮</button>
-        <button class="lyt-bar__btn" type="button" data-lt-tool="pan" disabled title="拖着看：也可以按住空格、或者用鼠标中键">抓手</button>
+        <span class="lyt-tip__wrap">
+          <button class="lyt-bar__btn" type="button" data-lt-tool="pen" disabled aria-describedby="lt-tip-pen" aria-keyshortcuts="B">画笔</button>
+          <span class="lyt-tip" role="tooltip" id="lt-tip-pen"><b>画笔</b><em>B</em></span>
+        </span>
+        <span class="lyt-tip__wrap">
+          <button class="lyt-bar__btn" type="button" data-lt-tool="eraser" disabled aria-describedby="lt-tip-eraser" aria-keyshortcuts="E">橡皮</button>
+          <span class="lyt-tip" role="tooltip" id="lt-tip-eraser"><b>橡皮</b><em>E</em></span>
+        </span>
         {/*
-          「移动」和「取色」是 2026-10-10 按用户要求加的：
+          「擦所有人」= 橡皮的第二种模式（默认关着 = 只擦自己画的）。
+          关着的时候橡皮是**软删自己的笔划**（云端只认自己的，别人那边也真没了）；
+          打开之后才回到"画一条纸色笔划盖住"，别人也看得见。
+        */}
+        <span class="lyt-tip__wrap">
+          <button class="lyt-bar__btn" type="button" data-lt-eraser-all disabled aria-pressed="false" aria-describedby="lt-tip-eraser-all">擦所有人</button>
+          <span class="lyt-tip" role="tooltip" id="lt-tip-eraser-all"><b>擦所有人</b><em>橡皮的第二种模式</em></span>
+        </span>
+        <span class="lyt-tip__wrap">
+          <button class="lyt-bar__btn" type="button" data-lt-tool="pan" disabled aria-describedby="lt-tip-pan" aria-keyshortcuts="C">拖动画布</button>
+          <span class="lyt-tip" role="tooltip" id="lt-tip-pan"><b>拖动画布</b><em>C</em></span>
+        </span>
+        {/*
+          「移动」和「取色」是 2026-10-09 按用户要求加的：
             · 移动：单独拖一根线条（命中测试按笔划粗细给阈值，拖动时本地预览，松手才发一次 LT_DRAW_MOVE）；
               只能挪自己画的（后端也会拒别人的，这里先说人话）。
             · 取色：读**渲染出来的**画布像素当画笔颜色。
         */}
-        <button class="lyt-bar__btn" type="button" data-lt-tool="move" disabled title="拖动一根线条：只能挪自己画的（点在墨迹近旁才算抓住）">移动</button>
-        <button class="lyt-bar__btn" type="button" data-lt-tool="pick" disabled title="点画布上任意一点，取那一点渲染出来的颜色">取色</button>
+        <span class="lyt-tip__wrap">
+          <button class="lyt-bar__btn" type="button" data-lt-tool="move" disabled aria-describedby="lt-tip-move" aria-keyshortcuts="T">移动</button>
+          <span class="lyt-tip" role="tooltip" id="lt-tip-move"><b>移动线条</b><em>T</em></span>
+        </span>
+        <span class="lyt-tip__wrap">
+          <button class="lyt-bar__btn" type="button" data-lt-tool="pick" disabled aria-describedby="lt-tip-pick">取色</button>
+          <span class="lyt-tip" role="tooltip" id="lt-tip-pick"><b>取色</b><em>点画布取色</em></span>
+        </span>
         <span class="lyt-draw__swatches" data-lt-swatches aria-label="调色板"></span>
         <label class="lyt-draw__mini">
           别的颜色
-          <input type="color" value="#1d1430" data-lt-color disabled />
+          <input type="color" value="#000000" data-lt-color disabled />
         </label>
-        <button class="lyt-bar__btn" type="button" data-lt-color-add disabled title="把当前颜色收进自己的调色盘（跟着账号走，换设备也在）">＋收藏</button>
+        <span class="lyt-tip__wrap">
+          <button class="lyt-bar__btn" type="button" data-lt-color-add disabled aria-describedby="lt-tip-color-add">＋收藏</button>
+          <span class="lyt-tip" role="tooltip" id="lt-tip-color-add"><b>＋收藏</b><em>收进调色盘</em></span>
+        </span>
         <label class="lyt-draw__mini">
           粗细
           {/*
@@ -79,27 +129,43 @@ const home = withBase('/liyutang/');
           <input type="range" min="1" max="64" value="6" data-lt-size disabled aria-label="粗细（滑块）" />
           <input class="lyt-draw__size-num" type="number" min="1" max="64" step="1" value="6" data-lt-size-num disabled aria-label="粗细（数字）" />
         </label>
-        <button class="lyt-bar__btn" type="button" data-lt-undo disabled>撤销</button>
-        <button class="lyt-bar__btn" type="button" data-lt-redo disabled title="取消撤回：照原样重新画一笔（id 是新的）">重做</button>
-        <button class="lyt-bar__btn" type="button" data-lt-reset disabled title="缩放回 1×、回到左上角">全览</button>
-        <span class="lyt-draw__zoom" data-lt-zoom title="滚轮（或触控板）在画布上缩放">1.0×</span>
+        <span class="lyt-tip__wrap">
+          <button class="lyt-bar__btn" type="button" data-lt-undo disabled aria-describedby="lt-tip-undo" aria-keyshortcuts="Control+Z">撤销</button>
+          <span class="lyt-tip" role="tooltip" id="lt-tip-undo"><b>撤销</b><em>Ctrl+Z</em></span>
+        </span>
+        <span class="lyt-tip__wrap">
+          <button class="lyt-bar__btn" type="button" data-lt-redo disabled aria-describedby="lt-tip-redo" aria-keyshortcuts="Control+R">重做</button>
+          <span class="lyt-tip" role="tooltip" id="lt-tip-redo"><b>重做</b><em>Ctrl+R</em></span>
+        </span>
+        <span class="lyt-tip__wrap">
+          <button class="lyt-bar__btn" type="button" data-lt-grid-toggle disabled aria-pressed="true" aria-describedby="lt-tip-grid">网格</button>
+          <span class="lyt-tip" role="tooltip" id="lt-tip-grid"><b>网格线</b><em>300 一格</em></span>
+        </span>
+        <span class="lyt-tip__wrap">
+          <button class="lyt-bar__btn" type="button" data-lt-reset disabled aria-describedby="lt-tip-reset">全览</button>
+          <span class="lyt-tip" role="tooltip" id="lt-tip-reset"><b>全览</b><em>整块板装下</em></span>
+        </span>
+        <span class="lyt-draw__zoom" data-lt-zoom>1.0×</span>
         <span class="lyt-form__msg" data-lt-draw-status></span>
       </div>
 
-      <p class="lyt-form__hint">
-        滚轮在画布上缩放（1×~4×）：光标底下那一点会被钉住不动；按住空格、或者用「抓手」/鼠标中键拖动看别处。
-        <b>手机上用两根手指</b>捏合缩放、拖着平移（手机没有滚轮）。
-        「移动」按住一根自己画的线条拖走；「取色」点一下就把那一点的颜色拿来当画笔。
-      </p>
+      {hint && <p class="lyt-form__hint" data-lt-draw-hint>{hint}</p>}
 
       <div class="lyt-draw__stage">
-        <canvas class="lyt-draw__canvas" width="2400" height="1500" data-lt-canvas></canvas>
+        {/*
+          画布是**透明**的：纸色来自 .lyt-draw__stage 的底色，为的是让网格那一层
+          （引擎自己插在画布**前面**的 .lyt-draw__grid）能透出来 ——
+          网格在画布下面，所以它从结构上就不可能盖住画。
+        */}
+        <canvas class="lyt-draw__canvas" width="3600" height="2250" data-lt-canvas></canvas>
       </div>
 
-      <details class="lyt-draw__who" data-lt-draw-who open>
-        <summary>今天画过画的人（点一下就先不看他的）</summary>
+      {note && <p class="lyt-form__hint" data-lt-draw-note>{note}</p>}
+
+      <details class="lyt-draw__who" data-lt-draw-who data-lt-empty={empty} open>
+        <summary>今天画过画的人</summary>
         <div class="lyt-draw__faces" data-lt-draw-faces>
-          <p class="lyt-form__hint">还没有人动笔 —— 你可以先画两笔。</p>
+          {empty && <p class="lyt-form__hint">{empty}</p>}
         </div>
       </details>
     </div>
@@ -110,8 +176,9 @@ const home = withBase('/liyutang/');
           /*
             闸门 + 引擎接线。
             闸门：没登录 / 没过审 → 工具条和画布都锁上并说明原因（服务端还会再验一次，绕不过去）。
-            引擎：过审之后 mountBoard() 接管 —— 画笔/橡皮/抓手/移动/取色、调色盘（内置色 + 自己收藏的）、
-            画笔和橡皮各自一个粗细、撤销/重做、本地先画、每 3 秒问一次别人画了什么、
+            引擎：过审之后 mountBoard() 接管 —— 画笔/橡皮（两种模式）/拖动画布/移动/取色、
+            调色盘（默认黑白 + 自己收藏的）、画笔和橡皮各自一个粗细、撤销/重做、本地先画、
+            每 3 秒问一次别人画了什么、跨天自清、光标粗细圆、网格开关、快捷键、
             还有「今天画过画的人」那张表（点人头像 = 先不看他的）。
           */
           import { mountBoard, type BoardHandle } from '../../utils/liyutang-draw';
@@ -124,6 +191,7 @@ const home = withBase('/liyutang/');
           const faces = document.querySelector('[data-lt-draw-faces]') as HTMLElement;
           const pen = document.querySelector('[data-lt-tool="pen"]') as HTMLButtonElement;
           const eraser = document.querySelector('[data-lt-tool="eraser"]') as HTMLButtonElement;
+          const eraserAll = document.querySelector('[data-lt-eraser-all]') as HTMLButtonElement;
           const pan = document.querySelector('[data-lt-tool="pan"]') as HTMLButtonElement;
           const move = document.querySelector('[data-lt-tool="move"]') as HTMLButtonElement;
           const pick = document.querySelector('[data-lt-tool="pick"]') as HTMLButtonElement;
@@ -134,6 +202,7 @@ const home = withBase('/liyutang/');
           const sizeNumber = document.querySelector('[data-lt-size-num]') as HTMLInputElement;
           const undo = document.querySelector('[data-lt-undo]') as HTMLButtonElement;
           const redo = document.querySelector('[data-lt-redo]') as HTMLButtonElement;
+          const gridToggle = document.querySelector('[data-lt-grid-toggle]') as HTMLButtonElement;
           const reset = document.querySelector('[data-lt-reset]') as HTMLButtonElement;
           const zoomText = document.querySelector('[data-lt-zoom]') as HTMLElement;
           /*
@@ -141,13 +210,15 @@ const home = withBase('/liyutang/');
             没登录的时候它们必须全是 disabled（验收里那一条就是挨个看 disabled 的），
             漏一个就等于给访客留了个能点的按钮。
           */
-          const controls = [pen, eraser, pan, move, pick, colorInput, colorAdd, sizeInput, sizeNumber, undo, redo, reset];
+          const controls = [pen, eraser, eraserAll, pan, move, pick, colorInput, colorAdd, sizeInput, sizeNumber, undo, redo, gridToggle, reset];
           let board: BoardHandle | null = null;
 
           const lock = (on: boolean) => {
             for (const c of controls) c.disabled = on;
             canvas.style.pointerEvents = on ? 'none' : '';
             canvas.style.opacity = on ? '0.55' : '1';
+            /* 锁着的时候光标说明"这儿现在不能画"（没挂引擎，也就没人管 canvas 的光标） */
+            canvas.style.cursor = on ? 'not-allowed' : '';
           };
           lock(true);
 
@@ -171,9 +242,11 @@ const home = withBase('/liyutang/');
                   status,
                   pen,
                   eraser,
+                  eraserAll,
                   pan,
                   move,
                   pick,
+                  gridToggle,
                   reset,
                   swatches,
                   colorInput,
@@ -188,6 +261,11 @@ const home = withBase('/liyutang/');
                     LtUser 的类型里还没有 prefs 字段，就地补一下。
                   */
                   prefs: (user as LtUser & { prefs?: unknown }).prefs,
+                  /*
+                    「今天画过画的人」空着时那句话：从页面上的 data-lt-empty 读
+                    （它就是 copy.board.empty；站长没填就是空串 → 引擎什么都不显示）。
+                  */
+                  emptyText: document.querySelector('[data-lt-draw-who]')?.getAttribute('data-lt-empty') || '',
                   /* 缩放读数：画布上滚轮一动就更新 */
                   onView: (scale: number) => {
                     zoomText.textContent = scale.toFixed(1) + '×';
@@ -219,7 +297,7 @@ const home = withBase('/liyutang/');
 </ForumLayout>
 
 <!--
-  工具条上**新增控件**的样式（2026-10-10）—— 按用户要求写在茶绘这一页自己的 <style> 里，
+  工具条上**新增控件**的样式（2026-10-09）—— 按用户要求写在茶绘这一页自己的 <style> 里，
   不往 src/styles/forum.css 塞：那里的画板样式是全站共用的，而"收藏色右上角那个小×"
   只有茶绘会出现。
 
@@ -268,10 +346,106 @@ const home = withBase('/liyutang/');
     画布：手指 / 压感笔落在它上面时，浏览器**不许**把它当成滚动或文本选中。
     forum.css 里已经有 touch-action: none（主防线）；这里补一份是给拖动（画线 / 挪线条）用的双保险 ——
     拖动时在页面上顺手选中一片文字、或者让页面滚一下，笔划看着就"歪"了。
+
+    ⚠ cursor: none：画图软件都不显示十字（用户原话：「鼠标光标样式不应该为十字 难以判断当前
+    画笔和橡皮粗细」）—— 改看那个跟手的粗细圆（.lyt-draw__ring，由引擎创建）。
+    这里多带一层 `.lyt-draw` 是为了压过 forum.css 里 `.lyt-draw__canvas { cursor: crosshair }`
+    （那个文件全站共用，没动它）；引擎随后还会写一次行内样式，双保险。
+    position/z-index 是给网格让路的：网格那层要画在画布**下面**（见 .lyt-draw__grid）。
   */
-  .lyt-draw__canvas {
+  .lyt-draw .lyt-draw__canvas {
+    position: relative;
+    z-index: 1;
     touch-action: none;
     user-select: none;
     -webkit-user-select: none;
+    cursor: none;
+  }
+  .lyt-draw .lyt-draw__canvas.is-panning {
+    cursor: grabbing;
+  }
+
+  /*
+    网格：引擎插在画布**前面**的一层 div（纸色是 .lyt-draw__stage 的底色，画布本身透明）。
+    它只管盒子；线的颜色 / 间距 / 偏移都由引擎写在 background-* 上（颜色只有一处：GRID_COLOR）。
+    为什么画成一层 div 而不是画进画布，见 liyutang-draw.ts 里那一段注释。
+  */
+  .lyt-draw .lyt-draw__grid {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+  }
+
+  /*
+    跟着指针的粗细圆：直径 = 当前工具粗细 × 视野缩放（引擎每帧写 width/height/left/top）。
+    box-sizing: border-box 是关键 —— 量出来的外径必须**正好**是那个粗细值，
+    不许被 1px 的边框撑大（验收就是量 getBoundingClientRect().width）。
+    里面 1px 深色描边 + 一圈白色投影：浅色纸上、深色墨上都看得见。
+  */
+  .lyt-draw .lyt-draw__ring {
+    position: absolute;
+    z-index: 2;
+    box-sizing: border-box;
+    border: 1px solid rgba(28, 16, 40, 0.62);
+    border-radius: 50%;
+    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.55);
+    pointer-events: none;
+    opacity: 0;
+    visibility: hidden;
+  }
+  .lyt-draw .lyt-draw__ring.is-on {
+    opacity: 1;
+    visibility: visible;
+  }
+
+  /*
+    工具条按钮的悬停卡片（功能名 + 快捷键）。
+    视觉照**花涧堂时间轴那个事件塔吊的浮层**（src/components/Timeline.astro 的 .tl__tip）：
+    同一个底色 rgba(24,3,36,.96)、同一道粉色描边 rgba(255,120,190,.6)、同一个圆角 7px、
+    同样的字号 0.76rem 和 0.14s 的出现节奏 —— 不另起一套样子。
+    多一条 :focus-within：键盘 Tab 聚焦到按钮上时卡片也要出来（无障碍）。
+  */
+  .lyt-tip__wrap {
+    position: relative;
+    display: inline-flex;
+  }
+  .lyt-tip {
+    position: absolute;
+    left: 50%;
+    bottom: calc(100% + 6px);
+    transform: translateX(-50%);
+    padding: 0.2rem 0.55rem;
+    border-radius: 7px;
+    border: 1px solid rgba(255, 120, 190, 0.6);
+    background: rgba(24, 3, 36, 0.96);
+    color: #ffd9ef;
+    font-size: 0.76rem;
+    line-height: 1.5;
+    white-space: nowrap;
+    display: flex;
+    gap: 0.5rem;
+    align-items: baseline;
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity 0.14s ease, visibility 0.14s ease;
+    z-index: 5;
+  }
+  .lyt-tip b {
+    font-weight: 700;
+  }
+  .lyt-tip em {
+    font-style: normal;
+    color: rgba(255, 190, 220, 0.85);
+    font-variant-numeric: tabular-nums;
+  }
+  .lyt-tip__wrap:hover .lyt-tip,
+  .lyt-tip__wrap:focus-within .lyt-tip,
+  /* 调色盘那些色块是引擎运行时造的，包在 .lyt-draw__chip 里（那个盒子本来就是 relative） */
+  .lyt-draw__chip:hover .lyt-tip,
+  .lyt-draw__chip:focus-within .lyt-tip {
+    opacity: 1;
+    visibility: visible;
   }
 </style>

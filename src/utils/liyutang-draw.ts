@@ -1,6 +1,6 @@
 /*
  * ============================================================================
- * 久昭卿茶绘的「画板」—— 浏览器这一侧（2026-10-09 建；2026-10-10 加了重做/移动/取色/调色盘等）
+ * 久昭卿茶绘的「画板」—— 浏览器这一侧（2026-10-09 建；2026-10-09 加了重做/移动/取色/调色盘等）
  * ----------------------------------------------------------------------------
  * 用户原话：
  *   「点进去以后是一个巨大的公共画板 有基本的画笔橡皮调色板等功能 所有注册后通过审核的用户
@@ -19,22 +19,23 @@
  *      ⚠ 缓存的重建（整块 2400×1500 重画）**只在"集合变了"的时候做**（显隐 / 撤销 / 换天 /
  *      别人的线条被拖动）；新笔划一律**增量画进缓存**（见 paintIntoCache），
  *      而且**自己正在画的时候不做远端轮询带来的重建**（推迟到抬笔之后）——
- *      2026-10-10 用户要求的就是这一条：「网络差的时候轮询整块重画会卡手」。
+ *      2026-10-09 用户要求的就是这一条：「网络差的时候轮询整块重画会卡手」。
  *   ⑤ 采样按距离过滤（画板坐标里 1.2px 以内不留点）—— 又省体积又更像笔迹。
  *   ⑥ `requestAnimationFrame` 合帧：pointermove 的频率比屏幕刷新高，直接同步重画会白烧 CPU。
  *
- * 坐标：画板内部是固定 2400×1500（`BOARD_W/BOARD_H`），屏幕上按容器宽度等比缩放 ——
+ * 坐标：画板内部是固定 3600×2250（`BOARD_W/BOARD_H`，2026-10-09 从 2400×1500 放大过，
+ * 长宽都 ×1.5、原点仍在左上角），屏幕上按容器宽度等比缩放 ——
  * 所以不同屏幕看到的是同一块板，笔划坐标跟屏幕无关（存档也就不用管访问者的屏幕）。
  *
  * 坐标与视野（2026-10-09 晚上加的缩放/平移，别把它当装饰）：
- *   画板内部是固定 2400×1500；**画布的像素尺寸跟着"它显示多大 × DPR"走**，
+ *   画板内部是固定 3600×2250；**画布的像素尺寸跟着"它显示多大 × DPR"走**，
  *   渲染时把"看得见的那一块画板"贴上去 —— 所以放大是**真的按更高分辨率重画**，不是把位图拉大。
  *   笔划缓存按画板坐标画、和缩放无关，于是滚轮缩放/拖动平移都不用重画缓存。
  *   最小缩放 = "整块板正好装下"（读数 1.0×），最大 4×；缩放钉住光标底下那一点。
  *   ⚠ 初版把最小缩放写成 1（1 画板像素 = 1 屏幕像素）—— 画布才一千来像素宽，
  *     于是"全览"只看得见左上角一块。这个错是被像素验收逮住的。
  *
- * 2026-10-10 这一轮加的东西（用户逐条要的，注释里写清取舍）：
+ * 2026-10-09 这一轮加的东西（用户逐条要的，注释里写清取舍）：
  *   · **重做**：撤销在服务端是**软删**（LT_DRAW_DELETE），原始那一条回不来了，
  *     所以"取消撤回"只能是**照原样再画一笔新的**（工具/颜色/粗细/点集一模一样，id 会变）。
  *     取舍写在 doRedo() 里：观感完全一样，但它不是"原来那一条"。
@@ -49,18 +50,43 @@
  *     被浏览器收走、或者某一笔拖到画布外面松手，笔划照样跟手、照样提交。
  *     老版本靠 canvas 上的 pointerup 收尾 —— capture 一失效，那一笔直接**丢掉**（验收里量过）。
  *
+ * 2026-10-09 第二批（用户逐条要的，取舍都写在对应那段注释里）：
+ *   · **粗细圆**：跟着指针一个圆，直径 = 工具粗细 × 视野缩放 —— 选中的多粗，屏幕上看着就多粗
+ *     （见下面"光标圆"那段：为什么是 div 而不是画在画布上）。
+ *   · **板子放大到 3600×2250 + 网格线**：网格**画在画布下面的一层 div 上**（不是画进画布），
+ *     所以它永远盖不住用户的画、也不会污染"读画布像素"那套东西（见"网格"那段）。
+ *   · **快捷键** B/E/1~9/C/T/Ctrl+Z/Ctrl+R（见"快捷键"那段；输入框里打字一律不认）。
+ *   · **工具条悬停卡片**：功能名 + 快捷键，视觉照花涧堂时间轴那个事件卡片
+ *     （底色/描边/字号都照它；页面上写死的按钮由 .astro 那边给，动态的色块由这里补）。
+ *   · **橡皮两种模式**：默认"只擦自己的"= 碰到自己的笔划就**软删**（LT_DRAW_DELETE，
+ *     云端只认自己的，所以别人那边也真的没了）；打开「擦所有人」才回到"画一条纸色笔划盖住"
+ *     （见 doErase 那段：为什么默认不能是"盖住"，以及为什么不是 destination-out）。
+ *
  * ⚠ 这里**不做**的事（想加的时候先想清楚）：压感（协议是一笔一个粗细）、
  *   旋转、图层、清除整块板（一天一块板，存档之后再清 —— 见存档脚本）。
  * ============================================================================
  */
 import { call, formatTime, getToken } from './liyutang-client';
-import { BOARD_H, BOARD_W, MAX_POINTS, paintersOf, strokeSegments } from './liyutang-strokes.mjs';
+import { BOARD_H, BOARD_W, GRID_STEP, MAX_POINTS, gridLines, paintersOf, strokeSegments } from './liyutang-strokes.mjs';
 
 /** 画布纸色 —— 和存档 SVG、forum.css 里 .lyt-draw__stage 的底色必须是同一个值 */
 export const PAPER = '#fbf6ee';
 
-/** 调色板：一眼能看懂的落日色（第一个是默认） */
-export const PALETTE = ['#1d1430', '#ff4d6d', '#ff9f1c', '#ffd166', '#8ac926', '#2ec4b6', '#3a86ff', '#b5179e'];
+/**
+ * 网格线的颜色 —— 克制到"能看出格子、但不抢画面"。
+ * 它画在画布**下面**那一层上（纸色是 stage 的底色 #fbf6ee），所以这里给的是**不透明**的
+ * 实色：不透明才在截图里读得出准确像素（验收就是靠截图取色的）。
+ */
+export const GRID_COLOR = '#e6ddcd';
+
+/**
+ * 调色板：**默认只有黑白两个**（2026-10-09 用户原话：「调色盘默认选色只保留黑白二色
+ * 其他都交给用户自己选上」）。
+ * 所以现在没有"一眼能看懂的落日色"内置色了 —— 想要什么色就自己调、自己「＋收藏」，
+ * 收藏跟着账号走（LT_PREFS_SET / LT_ME），换设备也在。`1~9` 快捷键选的就是
+ * 「当前可见顺序」（内置黑白 + 自己收藏的）里的前 9 个。
+ */
+export const PALETTE = ['#000000', '#ffffff'];
 
 /** 橡皮在协议里也带一个颜色（服务端要求 #rrggbb），就发纸色 —— 和存档 SVG 的画法一致 */
 const ERASER_COLOR = PAPER;
@@ -113,6 +139,10 @@ export interface LtPrefs {
   eraserSize?: number;
   color?: string;
   tool?: string;
+  /** 网格线开着没有（切换按钮的状态跟着账号走） */
+  grid?: boolean;
+  /** 橡皮是不是"擦所有人"（默认 false = 只擦自己的） */
+  eraserAll?: boolean;
 }
 
 export interface BoardOpts {
@@ -124,7 +154,7 @@ export interface BoardOpts {
   status?: HTMLElement;
   pen?: HTMLButtonElement;
   eraser?: HTMLButtonElement;
-  /** 「抓手」：整块板拖着看（也可以按住空格、或者用鼠标中键） */
+  /** 「拖动画布」：整块板拖着看（也可以按住空格、或者用鼠标中键） */
   pan?: HTMLButtonElement;
   /** 「移动」：单独拖一根线条（只能挪自己画的） */
   move?: HTMLButtonElement;
@@ -132,6 +162,10 @@ export interface BoardOpts {
   pick?: HTMLButtonElement;
   /** 「全览」：缩放回 1×、回到左上角 */
   reset?: HTMLButtonElement;
+  /** 「网格」：网格线开关（默认开着） */
+  gridToggle?: HTMLButtonElement;
+  /** 「擦所有人」：橡皮的第二种模式（默认关着 = 只擦自己的） */
+  eraserAll?: HTMLButtonElement;
   swatches?: HTMLElement;
   colorInput?: HTMLInputElement;
   /** 「＋ 收进调色盘」：把当前颜色存进账号的调色盘 */
@@ -147,6 +181,11 @@ export interface BoardOpts {
    * 页面手上的 user 对象里就有；引擎另外还会问一次 LT_ME 兜底（那份可能是缓存里的旧值）。
    */
   prefs?: unknown;
+  /**
+   * 「今天画过画的人」一个都没有时显示的那句话。
+   * **代码里不写死**：页面从 copy 区（`board.empty`）读进来，站长在编辑器里填；留空就什么都不显示。
+   */
+  emptyText?: string;
   /** 缩放变了就叫一声（页面拿它显示"1.0×"这种读数） */
   onView?: (scale: number) => void;
   /** 每几秒问一次别人画了什么 */
@@ -178,7 +217,7 @@ export function mountBoard(opts: BoardOpts): BoardHandle {
     这一趟挂上去的所有监听都挂在这个 controller 上（stop() 一 abort 就全摘掉）。
     为什么要这个：页面在账号状态来回变的时候会 stop() 再 mountBoard()，
     而老版本的 stop() 只停了轮询 —— 上一份引擎还挂在画布上，于是**画一笔会提交两次**
-    （2026-10-10 顺着"重做/移动"改这一块时发现的，别再退回去）。
+    （2026-10-09 顺着"重做/移动"改这一块时发现的，别再退回去）。
   */
   const ac = new AbortController();
   const on = <T extends EventTarget>(target: T, type: string, fn: EventListener, add: AddEventListenerOptions = {}) =>
@@ -243,6 +282,12 @@ export function mountBoard(opts: BoardOpts): BoardHandle {
   /** 被"点灭了"的人（uk）：他们的笔划不画 */
   const hidden = new Set<string>();
   let cursor = 0;
+  /**
+   * 服务端说的"今天是哪天"（`LT_DRAW_LIST` 回的那个 `today`）。
+   * ⚠ 页面**不自己算日期**：切天点是云函数里的（北京时间凌晨 4 点），
+   * 两边各算一份迟早会打架 —— 只认服务端回的这一天，变了就跨天自清（见 refresh）。
+   */
+  let day = '';
   let stop = false;
   let raf = 0;
   let cacheDirty = true;
@@ -255,6 +300,21 @@ export function mountBoard(opts: BoardOpts): BoardHandle {
   let penSize = PEN_SIZE_DEFAULT;
   /** 橡皮的粗细（和画笔**分开记** —— 用户要的就是"切到橡皮用橡皮那个粗细"） */
   let eraserSize = ERASER_SIZE_DEFAULT;
+  /**
+   * 橡皮是不是"擦所有人"（2026-10-09 用户要求）。
+   * 默认 **false = 只擦自己画的**：碰到自己的笔划就**软删**它（LT_DRAW_DELETE，云端只认自己的，
+   * 所以别人那边也是真的没了）。打开这个开关才回到"画一条纸色笔划盖住"的老做法 ——
+   * 为什么默认不能是"盖住"，见 doErase 那一段。
+   */
+  let eraserAll = false;
+  /**
+   * 正在"擦（只擦自己的）"这一趟：记下这一趟已经删过谁（同一根笔划别连点着删好几次）。
+   * 默认模式下橡皮**不画东西**，它只是在指针底下找自己的笔划然后软删 ——
+   * 所以它既没有 live 笔划、也没有要提交的东西。
+   */
+  let erasing: { done: Set<string>; last: number[] } | null = null;
+  /** 已经发出、还没回来的删除请求（防止同一根笔划被连发两次） */
+  const deleting = new Set<string>();
   /** 用户自己收藏进调色盘的颜色（跟着账号走，最多 MAX_SAVED 个） */
   let saved: string[] = [];
   /**
@@ -342,8 +402,13 @@ export function mountBoard(opts: BoardOpts): BoardHandle {
     if (!cctx) return;
     const t0 = performance.now();
     cctx.setTransform(1, 0, 0, 1, 0, 0);
-    cctx.fillStyle = PAPER;
-    cctx.fillRect(0, 0, BOARD_W, BOARD_H);
+    /*
+      ⚠ 这里**只清空、不刷纸色**（2026-10-09 第二批改的）：纸色现在来自 .lyt-draw__stage
+      的底色，画布本身是**透明**的 —— 就是为了让网格那一层（在画布下面）能透出来。
+      刷成纸色的话它就成了一块不透明底板，网格那层永远被压在下面看不见。
+      （存档 SVG 那边照旧刷纸色，见 liyutang-strokes.mjs 的 strokesToSvg。）
+    */
+    cctx.clearRect(0, 0, BOARD_W, BOARD_H);
     for (const s of strokes) {
       if (hidden.has(s.uk)) continue;
       /* 正在拖的那一根从缓存里摘出去：它每帧以"平移后的样子"单独叠在最上面 */
@@ -369,8 +434,14 @@ export function mountBoard(opts: BoardOpts): BoardHandle {
     fitCanvas();
     if (cacheDirty) rebuildCache();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.fillStyle = PAPER;
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    /*
+      ⚠ 只清空、不刷纸色（纸色是 stage 的底色）：画布保持透明，下面那层网格才看得见。
+      见 rebuildCache 里那段注释 —— 两处必须一致，不然网格会一会儿有一会儿没有。
+    */
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    /* 网格和指针圆都不是"画布上的像素"：一格一格的线画在画布下面那层 div 上 */
+    syncGrid();
+    paintRing();
     /*
       把缓存里"当前看得见的那一块画板"贴到画布上：
       九参数 drawImage（源矩形 = 视野在画板上的范围）比先 setTransform 再整张贴更省一次重采样。
@@ -401,6 +472,126 @@ export function mountBoard(opts: BoardOpts): BoardHandle {
     });
   };
 
+  /* ------------------------------------------------------------ 网格线（画布下面那一层） */
+
+  /*
+    网格为什么是"画布**下面**的一层 div"，而不是画进画布：
+      ① 画进画布只有两种分辨率可选，两种都难受：画在**画板坐标**里，全览（≈0.29×）时
+         1 画板像素的线落到屏幕上不到半个像素（基本看不见），放到 4× 又粗成一条带子；
+         画在**屏幕像素**里，就得每帧重描几十条线，而且它会**变成画布上的像素** ——
+         取色器会取到网格色，"这一点是什么颜色"的那套验收也全被污染。
+      ② 放在画布下面，它**从结构上就不可能盖住用户的画**（画布在它上面）；
+         开关只是 display 一下：不用重建笔划缓存、不会闪一下。
+    代价：网格不在画布像素里 —— 存档 SVG 和"从画布读像素"的东西都没有格子。
+    这恰好是想要的：存档要存的是"画了什么"，不是"当时 UI 长什么样"。
+  */
+  const stage = canvas.parentElement;
+  const gridLayer = document.createElement('div');
+  gridLayer.className = 'lyt-draw__grid';
+  gridLayer.setAttribute('data-lt-grid', '1');
+  gridLayer.setAttribute('aria-hidden', 'true');
+  gridLayer.setAttribute('role', 'presentation');
+  /* 线只在这里定义一次（颜色只有 GRID_COLOR 一处）；之后每次只改 size / position */
+  gridLayer.style.backgroundImage =
+    `linear-gradient(to right, ${GRID_COLOR} 1px, transparent 1px),` +
+    `linear-gradient(to bottom, ${GRID_COLOR} 1px, transparent 1px)`;
+  if (stage) stage.insertBefore(gridLayer, canvas);
+
+  /** 网格默认**开着**（用户要求） */
+  let gridOn = true;
+
+  /** 把网格对到视野上：一格 = 300 画板像素 × 缩放，整层跟着视野平移 */
+  const syncGrid = () => {
+    if (!stage) return;
+    gridLayer.style.display = gridOn ? '' : 'none';
+    if (!gridOn) return;
+    const step = GRID_STEP * view.scale;
+    gridLayer.style.backgroundSize = `${step}px ${step}px`;
+    gridLayer.style.backgroundPosition = `${-view.x * view.scale}px ${-view.y * view.scale}px`;
+  };
+
+  /** 网格开关（和粗细一样存进账号偏好，换设备也在） */
+  const setGrid = (on: boolean, save = true) => {
+    gridOn = !!on;
+    syncGrid();
+    paintBar();
+    if (save) savePrefs(0);
+  };
+  if (opts.gridToggle) on(opts.gridToggle, 'click', () => setGrid(!gridOn));
+
+  /* ------------------------------------------------------------ 光标圆（和粗细一样大的那个圈） */
+
+  /*
+    为什么是 div 而不是画在画布上（三条理由，第一条最要紧）：
+      ① **它不该变成画布像素**：画布上每个像素都被"取色器"和 `pixelAt` 当作"这一点是什么颜色"，
+         把圈画进去，取色就会取到圈的颜色，读像素的验收也会被那一圈污染。
+      ② 指针一动它就得跟手：div 只改 left/top（合成层，不用重绘画布），
+         画在画布上等于每个 pointermove 都清一层重画一遍 —— 正在画的时候最不该干这个。
+      ③ 它本来就是"屏幕上的东西"（直径 = 粗细 × 缩放），和网格一样属于 UI，不属于画面。
+    直径 = sizeOf() × view.scale：选中的多粗，屏幕上看着就多粗；缩放之后跟着一起变。
+  */
+  const ring = document.createElement('div');
+  ring.className = 'lyt-draw__ring';
+  ring.setAttribute('data-lt-ring', '1');
+  ring.setAttribute('aria-hidden', 'true');
+  /* 插在画布之后（定位元素压在上面），但 pointer-events: none —— 一个输入都不挡 */
+  if (stage) stage.append(ring);
+
+  let pointerInside = false;
+  let pointerType = 'mouse';
+
+  /** 圆的直径（CSS 像素）：画笔读 penSize、橡皮读 eraserSize，都要过一遍视野缩放 */
+  const ringSize = () => sizeOf() * view.scale;
+
+  const paintRing = () => {
+    const d = ringSize();
+    ring.style.width = `${d}px`;
+    ring.style.height = `${d}px`;
+    ring.style.margin = `${-d / 2}px 0 0 ${-d / 2}px`;
+    /*
+      什么时候显示：画笔/橡皮（有粗细可言）、指针在画布上、**不是触摸**（手指没有"光标"这回事），
+      而且不是按住空格临时当拖动画布的时候（那时是拖动画布的形状）。
+      拖动画布 / 移动线条不显示：那两个已经是 grab / move 光标了，再画个圈反而碍事。
+    */
+    const on = (tool === 'pen' || tool === 'eraser') && pointerInside && pointerType !== 'touch' && !spaceHeld;
+    ring.classList.toggle('is-on', on);
+  };
+
+  /** 圆的中心跟着指针（坐标相对 stage：stage 的 padding 盒左上角就是画布左上角） */
+  const moveRing = (clientX: number, clientY: number) => {
+    const r = canvas.getBoundingClientRect();
+    ring.style.left = `${clientX - r.left}px`;
+    ring.style.top = `${clientY - r.top}px`;
+  };
+
+  /** 记下指针在哪、用的什么设备（只有"该不该显示"真变了才去动样式，别每帧都写） */
+  const trackPointer = (pe: PointerEvent) => {
+    const r = canvas.getBoundingClientRect();
+    const inside = pe.clientX >= r.left && pe.clientX <= r.right && pe.clientY >= r.top && pe.clientY <= r.bottom;
+    const type = pe.pointerType || 'mouse';
+    const changed = inside !== pointerInside || type !== pointerType;
+    pointerInside = inside;
+    pointerType = type;
+    if (inside) moveRing(pe.clientX, pe.clientY);
+    if (changed) paintRing();
+  };
+  /* 指针出了画布（有时候根本不再发 move）圈也得立刻消失 */
+  on(canvas, 'pointerleave', () => {
+    pointerInside = false;
+    paintRing();
+  });
+
+  /**
+   * 画布上的光标：画笔/橡皮**没有光标**（就看那个圈），拖动画布是 grab / grabbing，
+   * 移动线条是 move。
+   * ⚠ 走**行内样式**：forum.css 里 `.lyt-draw__canvas` 写死了 cursor: crosshair
+   * （全站共用的文件，不去动它）；行内样式一定压得过它，也压得过 `.is-panning` 那条。
+   */
+  const syncCursor = () => {
+    canvas.style.cursor =
+      tool === 'pan' ? (panning ? 'grabbing' : 'grab') : tool === 'move' ? 'move' : tool === 'pick' ? 'crosshair' : 'none';
+  };
+
   /* ------------------------------------------------------------ 人表 */
 
   const paintFaces = () => {
@@ -408,7 +599,10 @@ export function mountBoard(opts: BoardOpts): BoardHandle {
     const list = paintersOf(strokes);
     faces.textContent = '';
     if (!list.length) {
-      faces.append(Object.assign(document.createElement('p'), { className: 'lyt-form__hint', textContent: '还没有人动笔 —— 你可以先画两笔。' }));
+      /* 这句话由站长在编辑器里填（copy.board.empty）；没填就什么都不显示 —— 不在代码里写死。 */
+      if (opts.emptyText) {
+        faces.append(Object.assign(document.createElement('p'), { className: 'lyt-form__hint', textContent: opts.emptyText }));
+      }
       return;
     }
     for (const p of list) {
@@ -483,7 +677,7 @@ export function mountBoard(opts: BoardOpts): BoardHandle {
 
   const refresh = async () => {
     /*
-      ⚠ 正在画 / 正在拖的时候**不做远端这一趟**（2026-10-10 用户要求）：
+      ⚠ 正在画 / 正在拖的时候**不做远端这一趟**（2026-10-09 用户要求）：
       拉回来的新笔划要重画缓存 —— 老版本一律整块重建，网络一抖就正好卡在笔尖上。
       记个记号，抬手（finish）之后补一次，笔划一条都不会少。
     */
@@ -509,6 +703,38 @@ export function mountBoard(opts: BoardOpts): BoardHandle {
       );
       return;
     }
+    /*
+      ---- 跨天自清（2026-10-09 用户要求）----
+
+      用户原话：「每天凌晨四点存完，网页上的画板就清空，方便第二天画别的」。
+      服务端**早就是**这个行为：凌晨四点的存档脚本搬完就调 LT_ADMIN_DRAW_CLEAR 把云端那天的
+      笔划删掉。可客户端是**按 updatedAt 游标增量拉**的 —— 删掉的那些不会出现在"增量"里
+      （没有墓碑），于是页面会一直显示已经被清掉的那些笔划，非刷新不可。这就是要补的一环。
+
+      规矩：**只认服务端回的 `today`**（切天点是北京时间凌晨 4 点，写死在云函数里；
+      页面**绝不自己算日期**，不然两边切天点一旦不一样就会互相打架）。发现 today 变了就
+      把本地笔划全部丢掉、游标归零、整块重画，然后立刻按新的一天重新拉一遍。
+
+      顺带把两种情况一起覆盖了：① 开着页面熬到凌晨四点（下一次轮询就发现 today 变了）；
+      ② 页面被切到后台过了一夜 —— visibilitychange 那条路也是走 refresh()，同一段逻辑。
+    */
+    const today = String(r.today ?? '');
+    if (today && day && today !== day) {
+      /* 换天了：旧的一批（今天的）全部作废 —— 不 clear 的话会一直挂在画布上 */
+      const wasDay = day;
+      day = today;
+      strokes = [];
+      hidden.clear();
+      cursor = 0;
+      redoStack = [];
+      cacheDirty = true;
+      paintFaces();
+      schedule();
+      say(`已经是新的一天了（${wasDay} → ${today}），板子重新开始。`, true);
+      /* 游标归零之后得按"一整天"重新拉一遍（这一趟的增量对新的一天已经没意义了） */
+      return refresh();
+    }
+    if (today) day = today;
     const got = (r.strokes ?? []) as LtStroke[];
     absorb(got);
     /*
@@ -597,6 +823,9 @@ export function mountBoard(opts: BoardOpts): BoardHandle {
     if (Number.isFinite(Number(p.eraserSize))) eraserSize = clampSize(p.eraserSize);
     if (/^#[0-9a-f]{6}$/i.test(String(p.color ?? ''))) color = String(p.color).toLowerCase();
     if (p.tool === 'pen' || p.tool === 'eraser' || p.tool === 'pan') tool = p.tool;
+    /* 两个开关也照账号恢复（换设备也在）：网格线、橡皮是否擦所有人 */
+    if (typeof p.grid === 'boolean') gridOn = p.grid;
+    if (typeof p.eraserAll === 'boolean') eraserAll = p.eraserAll;
   };
 
   /** 把偏好存回账号（拖动粗细会连发很多次 input，所以攒一下再发） */
@@ -612,6 +841,9 @@ export function mountBoard(opts: BoardOpts): BoardHandle {
           color,
           /* 服务端只认 pen / eraser / pan：移动和取色是纯本地工具，存的时候归到画笔 */
           tool: tool === 'move' || tool === 'pick' ? 'pen' : tool,
+          /* 两个开关（服务端 checkPrefs 放行了这两个字段） */
+          grid: gridOn,
+          eraserAll,
         };
         try {
           const r = await call(api, { event: 'LT_PREFS_SET', ltToken: getToken(), prefs });
@@ -638,8 +870,9 @@ export function mountBoard(opts: BoardOpts): BoardHandle {
     const box = opts.swatches;
     if (!box) return;
     const own = new Set(saved);
+    const list = paletteColors();
     box.textContent = '';
-    for (const c of paletteColors()) {
+    for (const c of list) {
       const chip = document.createElement('span');
       chip.className = 'lyt-draw__chip';
       const b = document.createElement('button');
@@ -648,14 +881,36 @@ export function mountBoard(opts: BoardOpts): BoardHandle {
       b.dataset.color = c;
       if (own.has(c)) b.dataset.saved = '1';
       b.style.background = c;
-      b.title = own.has(c) ? `${c}（你收藏的）` : c;
+      /*
+        色块也是"工具条按钮"：一样要有悬停卡片。前 9 个把快捷键一起写上
+        （1~9 选的就是**当前可见顺序**里的第 1~9 个 —— 内置黑白在前，自己收藏的在后）。
+      */
+      const key = list.indexOf(c) + 1;
+      const tip = document.createElement('span');
+      tip.className = 'lyt-tip';
+      tip.setAttribute('role', 'tooltip');
+      tip.id = `lt-tip-swatch-${c.slice(1)}`;
+      const tipName = document.createElement('b');
+      const tipNameText = own.has(c) ? `${c}（你收藏的）` : c;
+      tipName.textContent = tipNameText;
+      const tipKey = document.createElement('em');
+      tip.append(tipName);
+      if (key <= 9) {
+        tipKey.textContent = String(key);
+        tip.append(tipKey);
+        b.setAttribute('aria-keyshortcuts', String(key));
+        b.title = own.has(c) ? `${c}（你收藏的，按 ${key} 也能选）` : `${c}（按 ${key} 也能选）`;
+      } else {
+        b.title = own.has(c) ? `${c}（你收藏的）` : c;
+      }
+      b.setAttribute('aria-describedby', tip.id);
       b.addEventListener('click', () => {
         color = c;
         tool = 'pen';
         paintBar();
         savePrefs();
       });
-      chip.append(b);
+      chip.append(b, tip);
       if (own.has(c)) {
         /* 只有**自己收藏的**才给删；内置色删不掉（删了下次还得回来） */
         const del = document.createElement('button');
@@ -664,6 +919,22 @@ export function mountBoard(opts: BoardOpts): BoardHandle {
         del.textContent = '×';
         del.title = `把 ${c} 从调色盘里删掉`;
         del.setAttribute('aria-label', `把 ${c} 从调色盘里删掉`);
+        /*
+          × 也是工具条上的一个按钮，一样要有卡片（验收里"每个按钮都挂了自己的卡片"那条会数到它）。
+          但一个色块上**只留一张卡**：指针/焦点落到 × 上时把这张卡的内容换成"删掉"，
+          离开再换回颜色名 —— 两张卡叠着弹会看不清。
+        */
+        del.setAttribute('aria-describedby', tip.id);
+        const showColorTip = () => {
+          tipName.textContent = tipNameText;
+          if (key <= 9) tipKey.textContent = String(key);
+        };
+        const showDelTip = () => {
+          tipName.textContent = '删掉这个收藏色';
+          if (key <= 9) tipKey.textContent = c;
+        };
+        for (const evName of ['mouseenter', 'focus']) del.addEventListener(evName, showDelTip);
+        for (const evName of ['mouseleave', 'blur']) del.addEventListener(evName, showColorTip);
         del.addEventListener('click', (ev) => {
           ev.stopPropagation();
           saved = saved.filter((x) => x !== c);
@@ -678,13 +949,22 @@ export function mountBoard(opts: BoardOpts): BoardHandle {
     }
   };
 
-  /** 工具条上的选中态 / 颜色 / 粗细数字 / 重做能不能点 */
+  /** 工具条上的选中态 / 颜色 / 粗细数字 / 重做能不能点 / 两个开关 / 光标 */
   const paintBar = () => {
     opts.pen?.classList.toggle('is-on', tool === 'pen');
     opts.eraser?.classList.toggle('is-on', tool === 'eraser');
     opts.pan?.classList.toggle('is-on', tool === 'pan');
     opts.move?.classList.toggle('is-on', tool === 'move');
     opts.pick?.classList.toggle('is-on', tool === 'pick');
+    /* 两个开关：网格线、橡皮「擦所有人」 */
+    if (opts.gridToggle) {
+      opts.gridToggle.classList.toggle('is-on', gridOn);
+      opts.gridToggle.setAttribute('aria-pressed', gridOn ? 'true' : 'false');
+    }
+    if (opts.eraserAll) {
+      opts.eraserAll.classList.toggle('is-on', eraserAll);
+      opts.eraserAll.setAttribute('aria-pressed', eraserAll ? 'true' : 'false');
+    }
     if (opts.colorInput && /^#[0-9a-f]{6}$/i.test(color)) opts.colorInput.value = color;
     for (const b of opts.swatches?.querySelectorAll<HTMLElement>('[data-color]') ?? []) {
       b.classList.toggle('is-on', String(b.dataset.color).toLowerCase() === color.toLowerCase());
@@ -699,6 +979,9 @@ export function mountBoard(opts: BoardOpts): BoardHandle {
       opts.sizeNumber.min = String(SIZE_MIN);
     }
     if (opts.redo) opts.redo.disabled = !redoStack.length;
+    /* 光标和那个粗细圆都跟着"当前工具 / 粗细 / 缩放"走 */
+    syncCursor();
+    paintRing();
   };
 
   /** 切工具（画笔/橡皮各自带着自己的粗细） */
@@ -710,23 +993,27 @@ export function mountBoard(opts: BoardOpts): BoardHandle {
 
   /* ⚠ 工具条这些监听也挂在 abort 上：stop() 之后它们不该再响应（不然新旧两份引擎会各干一遍） */
   if (opts.pen) on(opts.pen, 'click', () => useTool('pen'));
-  if (opts.eraser) on(opts.eraser, 'click', () => useTool('eraser'));
-  /* 「抓手」：整块板拖来拖去（也可以按住空格临时当抓手、或者用鼠标中键） */
+  if (opts.eraser) {
+    on(opts.eraser, 'click', () => useTool('eraser'));
+  }
+  /* 「拖动画布」：整块板拖来拖去（也可以按住空格临时当拖动画布、或者用鼠标中键） */
   if (opts.pan) on(opts.pan, 'click', () => useTool('pan'));
   if (opts.move) {
-    on(opts.move, 'click', () => {
-      useTool('move');
-      say('「移动」：按住一根**自己画的**线条拖走（松手才发出去）。');
-    });
+    on(opts.move, 'click', () => useTool('move'));
   }
   if (opts.pick) {
-    on(opts.pick, 'click', () => {
-      useTool('pick');
-      say('「取色」：点画布上任意一点，取那一点**渲染出来的**颜色当画笔。');
+    on(opts.pick, 'click', () => useTool('pick'));
+  }
+  /* 「擦所有人」：橡皮的第二种模式（默认关着 = 只擦自己的） */
+  if (opts.eraserAll) {
+    on(opts.eraserAll, 'click', () => {
+      eraserAll = !eraserAll;
+      paintBar();
+      savePrefs(0);
     });
   }
   /*
-    ⚠ 接线这里有个坑（2026-10-10 被真浏览器验收逮住，画板对过审用户整个不工作）：
+    ⚠ 接线这里有个坑（2026-10-09 被真浏览器验收逮住，画板对过审用户整个不工作）：
     这一段排在文件**前面**，而 resetView / finish / doUndo… 都是后面才 `const` 声明的。
     直接把函数名交给 addEventListener，等于**当场就要求它已经初始化** → 
     `ReferenceError: Cannot access 'resetView' before initialization`，mountBoard 半路断掉
@@ -863,16 +1150,18 @@ export function mountBoard(opts: BoardOpts): BoardHandle {
 
   /**
    * 命中测试：谁在这附近？从**最上面**那根开始找（后来画的压在上面，抓的该是它）。
-   * 阈值 = 笔划半宽 + HIT_SLACK —— 一条 6 号的线只有 3 个画板像素宽，
+   * 阈值 = 笔划半宽 + pad —— 一条 6 号的线只有 3 个画板像素宽，
    * 光按线宽点，用户得"像素级"瞄准，根本抓不住。
+   * @param pad 除笔划半宽之外再放宽多少**画板像素**（移动线条用 HIT_SLACK；
+   *   橡皮传的是自己那个半径：橡皮是个圆盘，半径多大就够得着多远）
    */
-  const hitTest = (x: number, y: number): LtStroke | null => {
+  const hitTest = (x: number, y: number, pad: number = HIT_SLACK): LtStroke | null => {
     for (let i = strokes.length - 1; i >= 0; i -= 1) {
       const s = strokes[i];
       if (hidden.has(s.uk)) continue;
       const pts = s.points;
       if (!pts || !pts.length) continue;
-      const r = Number(s.size) / 2 + HIT_SLACK;
+      const r = Number(s.size) / 2 + pad;
       if (pts.length === 1) {
         if (Math.hypot(pts[0][0] - x, pts[0][1] - y) <= r) return s;
         continue;
@@ -888,6 +1177,10 @@ export function mountBoard(opts: BoardOpts): BoardHandle {
    * 读画布上某一点**渲染出来的**颜色（取色器用）。
    * 3×3 取众数：一条 6 号笔在"全览"下只有两三个设备像素宽，
    * 直接读最近那一个像素很容易落在抗锯齿的边上 —— 取回来的颜色会淡一截。
+   *
+   * ⚠ 画布现在是**透明**的（纸色来自 .lyt-draw__stage 的底色，为的是让下面那层网格透出来），
+   * 所以这里要把每个像素**合成到纸色上**再算 —— 不然点空白处取到的是"透明黑" #000000，
+   * 用户点一下干净的板子会被告知"取到了 #000000"。
    */
   const readPixel = (bx: number, by: number): string => {
     if (!ctx) return '';
@@ -904,7 +1197,7 @@ export function mountBoard(opts: BoardOpts): BoardHandle {
     let best = '';
     let bestN = 0;
     for (let i = 0; i < w * h; i += 1) {
-      const hex = '#' + [d[i * 4], d[i * 4 + 1], d[i * 4 + 2]].map((v) => v.toString(16).padStart(2, '0')).join('');
+      const hex = overPaper(d[i * 4], d[i * 4 + 1], d[i * 4 + 2], d[i * 4 + 3]);
       const n = (count.get(hex) ?? 0) + 1;
       count.set(hex, n);
       if (n > bestN) {
@@ -915,12 +1208,79 @@ export function mountBoard(opts: BoardOpts): BoardHandle {
     return best;
   };
 
+  /*
+    ---- 橡皮（两种模式）----
+
+    默认（eraserAll = false）**只擦自己画的**：指针底下碰到自己的笔划就把它**软删**
+    （LT_DRAW_DELETE；云端只允许删自己的，所以别人那边也是真的没了 —— 这正是用户要的
+    "只擦掉自己的笔画"）。碰到别人的笔划**一动不动**：
+    它既不删、也不盖纸色 —— 盖纸色就是"把别人的画涂掉"，那正是这一条要禁止的事。
+
+    另一个（eraserAll = true）才回到老做法：画一条纸色笔划盖住，谁看都是被盖掉了。
+
+    为什么"只擦自己的"不能用"盖纸色"实现（这是 2026-10-09 想清楚的一条）：
+    自己那根和别人的那根经常交叉，笔尖落在交叉点上时，"盖纸色"会连别人的线条一起盖掉 ——
+    看起来就像擦了别人的画；而软删只动自己那一条，别人的线条从底下露出来，干干净净。
+    顺带：软删之后**连纸也干净**（没有多余的笔划留在板上），而不是在别人板上留一道纸色。
+  */
+
+  /** 把画布上一个像素合成到纸色上（画布透明，纸色在 stage 上） */
+  const overPaper = (r: number, g: number, b: number, a: number): string => {
+    if (a >= 255) return '#' + [r, g, b].map((v) => v.toString(16).padStart(2, '0')).join('');
+    const bg = [251, 246, 238];
+    const k = Math.max(0, Math.min(255, a)) / 255;
+    const mix = [0, 1, 2].map((i) => Math.round([r, g, b][i] * k + bg[i] * (1 - k)));
+    return '#' + mix.map((v) => v.toString(16).padStart(2, '0')).join('');
+  };
+
+  /** 软删自己的一笔（橡皮"只擦自己的"用；和撤销不同：不进重做栈） */
+  const softDelete = async (s: LtStroke) => {
+    deleting.add(s.id);
+    try {
+      const r = await call(api, { event: 'LT_DRAW_DELETE', ltToken: getToken(), id: s.id });
+      if (r.code !== 0) throw new Error(String(r.message ?? '擦不掉'));
+      strokes = strokes.filter((x) => x.id !== s.id);
+      /* 少了一根 = 集合变了：只能整块重建（缓存上没法"擦掉一根"） */
+      cacheDirty = true;
+      paintFaces();
+      schedule();
+      say('擦掉了自己的一笔。', true);
+    } catch (err) {
+      say('擦不掉：' + String((err as Error)?.message ?? err));
+    } finally {
+      deleting.delete(s.id);
+    }
+  };
+
+  /** 笔尖（画板坐标）底下那一根——够得着的判定按**橡皮自己的半径**来 */
+  const eraseUnder = (bx: number, by: number) => {
+    const hit = hitTest(bx, by, eraserSize / 2);
+    if (!hit) return;
+    /* 别人的笔划：不动（这是默认模式的核心） */
+    if (!hit.mine) return;
+    /* 还没落到服务端的那一笔（本地临时 id）删不了 —— 等它拿到 id 再说 */
+    if (String(hit.id).startsWith('local-')) return;
+    if (erasing?.done.has(hit.id) || deleting.has(hit.id)) return;
+    erasing?.done.add(hit.id);
+    void softDelete(hit);
+  };
+
+  /** 橡皮拖过去的一整条路径：按 4 个画板像素采样着擦（太密没意义，太疏会漏） */
+  const eraseAlong = (pe: PointerEvent) => {
+    if (!erasing) return;
+    const [bx, by] = toBoard(pe);
+    const last = erasing.last;
+    if (last && Math.hypot(bx - last[0], by - last[1]) < 4) return;
+    erasing.last = [bx, by];
+    eraseUnder(bx, by);
+  };
+
   let drawing = false;
   /** 平移中：记住"按下时的指针位置 + 当时的视野"，拖动时按位移反推 */
   let panning: { px: number; py: number; vx: number; vy: number } | null = null;
-  /** 空格按住 = 临时当"抓手"（和画图软件一个习惯） */
+  /** 空格按住 = 临时当"拖动画布"（和画图软件一个习惯） */
   let spaceHeld = false;
-  /** 拖动那根线条时，按下那一刻的"抓手点"（画板坐标） */
+  /** 拖动那根线条时，按下那一刻的"抓住点"（画板坐标） */
   let grab: number[] | null = null;
 
   /** 缩放：把光标底下那个画板点**钉住不动**（不然一滚就跑，很难用） */
@@ -946,7 +1306,7 @@ export function mountBoard(opts: BoardOpts): BoardHandle {
   };
 
   /*
-    ---- 画布上的滚轮（2026-10-10 修的就是这里）----
+    ---- 画布上的滚轮（2026-10-09 修的就是这里）----
 
     用户原话：「电脑端画线时页面异常滚动、把线条画歪」。真原因是**精密触控板的小数 delta**：
     老代码第一句是 `if (!ctrl && !meta && |deltaY| < 1) return;` —— 那**不是"不管"，
@@ -954,7 +1314,7 @@ export function mountBoard(opts: BoardOpts): BoardHandle {
     deltaY 正好是 0.2~0.6 这种小数 → 页面滚了、画布在指针底下位移，
     笔画到一半画布跑掉，看起来就是"页面乱滚 + 线条画歪/断开"。
 
-    实验（headless 真浏览器，2026-10-10，见 tools/checks/liyutang-draw-check.mjs 的那两条）：
+    实验（headless 真浏览器，2026-10-09，见 tools/checks/liyutang-draw-check.mjs 的那两条）：
       deltaY=0.6 连发 6 下 → window.scrollY 244 → 248；deltaY=0.2 → 244 → 245；
       deltaY=4（>= 1）时页面纹丝不动。所以规矩改成：**画布上的滚轮一律归画板**，
      deltaY 为 0（纯横向滑动）也吃掉、但不动缩放 —— 页面绝不在这里被滚。
@@ -1000,9 +1360,11 @@ export function mountBoard(opts: BoardOpts): BoardHandle {
       bx: view.x + (p.cx - rect.left) / view.scale,
       by: view.y + (p.cy - rect.top) / view.scale,
     };
-    if (drawing || live) {
+    if (drawing || live || erasing) {
       drawing = false;
       live = null;
+      /* 双指一上来，"只擦自己的"那一趟也算作废（不然捏合时手指划过去会连删好几根） */
+      erasing = null;
       strokeCancelled = true;
       schedule();
     }
@@ -1021,11 +1383,74 @@ export function mountBoard(opts: BoardOpts): BoardHandle {
     opts.onView?.(zoomText());
   };
 
+  /*
+    ---- 快捷键（2026-10-09 第二批加）----
+      B 画笔 / E 橡皮 / 1~9 选调色盘里第 1~9 个颜色 / C 拖动画布 / T 移动线条 /
+      Ctrl+Z 撤回 / Ctrl+R 重做。
+    三条讲究：
+      ① **焦点在输入框里就一个都不认**：粗细那个数字框、颜色框里打字就是打字 ——
+         不然想在数字框里打个 "e"（指数），工具先被切走了；Ctrl+Z 在输入框里也该是
+         "撤销我刚打的字"，不是"撤掉板上一笔"。
+      ② **Ctrl+R 要 preventDefault**：浏览器默认是刷新页面，按一下整块板重来（还没画完就白画了）。
+         同理 Ctrl+Z 也吃掉（页面本身没有别的可撤的，让给画板）。
+      ③ 只在**这块画板挂着的时候**生效：这些监听挂在 mountBoard 的 abort 上，
+         页面一 stop（没登录 / 退到访客）就全摘了，别的页面更没有它。
+  */
+  const typingIn = (el: Element | null) => {
+    const t = el as HTMLElement | null;
+    if (!t) return false;
+    const tag = String(t.tagName || '').toUpperCase();
+    return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || t.isContentEditable === true;
+  };
+
   on(window, 'keydown', (e) => {
-    if ((e as KeyboardEvent).code === 'Space') spaceHeld = true;
+    const ke = e as KeyboardEvent;
+    if (ke.code === 'Space') {
+      spaceHeld = true;
+      /* 按住空格 = 临时当"拖动画布"：光标立刻变拖动画布的形状，那个粗细圆跟着收起来 */
+      syncCursor();
+      paintRing();
+    }
+    if (typingIn(document.activeElement)) return;
+    if (ke.ctrlKey || ke.metaKey) {
+      /* 只认 Ctrl+Z / Ctrl+R；别的组合键（Ctrl+C 复制之类）一个都别碰 */
+      if (ke.code === 'KeyZ') {
+        ke.preventDefault();
+        void doUndo();
+      } else if (ke.code === 'KeyR') {
+        ke.preventDefault();
+        void doRedo();
+      }
+      return;
+    }
+    if (ke.altKey) return;
+    const tools: Record<string, string> = { KeyB: 'pen', KeyE: 'eraser', KeyC: 'pan', KeyT: 'move' };
+    const want = tools[ke.code];
+    if (want) {
+      ke.preventDefault();
+      useTool(want);
+      return;
+    }
+    const digit = /^Digit([1-9])$/.exec(ke.code);
+    if (digit) {
+      const list = paletteColors();
+      const c = list[Number(digit[1]) - 1];
+      if (!c) return;
+      ke.preventDefault();
+      color = c;
+      tool = 'pen';
+      paintBar();
+      savePrefs();
+      say(`调色盘第 ${digit[1]} 个：${c}。`, true);
+    }
   });
   on(window, 'keyup', (e) => {
-    if ((e as KeyboardEvent).code === 'Space') spaceHeld = false;
+    if ((e as KeyboardEvent).code === 'Space') {
+      spaceHeld = false;
+      /* 空格松开 → 光标从拖动画布的形状变回画笔那一套 */
+      syncCursor();
+      paintRing();
+    }
   });
 
   /** 松开指针的捕获（设没设上都无所谓） */
@@ -1050,9 +1475,7 @@ export function mountBoard(opts: BoardOpts): BoardHandle {
     paintBar();
     savePrefs(0);
     say(
-      got === PAPER.toLowerCase()
-        ? `取到了纸色 ${got} —— 想画白色的话换个颜色（纸色画上去等于擦掉）。`
-        : `取到了 ${got}，已经当画笔颜色。`,
+      got === PAPER.toLowerCase() ? `取到了纸色 ${got}。` : `取到了 ${got}，已经当画笔颜色。`,
       got !== PAPER.toLowerCase()
     );
   };
@@ -1065,11 +1488,13 @@ export function mountBoard(opts: BoardOpts): BoardHandle {
       e.preventDefault();
       return;
     }
-    /* 中键 / 抓手工具 / 按住空格 → 平移，而不是画 */
+    /* 中键 / 拖动画布工具 / 按住空格 → 平移，而不是画 */
     const wantPan = e.button === 1 || tool === 'pan' || spaceHeld;
     if (wantPan) {
       panning = { px: e.clientX, py: e.clientY, vx: view.x, vy: view.y };
       canvas.classList.add('is-panning');
+      /* 按住的一瞬间光标就从 grab 变成 grabbing（画图软件都是这个手感） */
+      syncCursor();
       try {
         canvas.setPointerCapture(e.pointerId);
       } catch {
@@ -1088,6 +1513,16 @@ export function mountBoard(opts: BoardOpts): BoardHandle {
     }
     if (tool === 'pick') {
       pickAt(e);
+      return;
+    }
+    /*
+      橡皮的**默认模式**（只擦自己的）：不画东西，只在指针底下找自己的笔划、软删它。
+      所以这里不起 live 笔划（也就不需要"抬笔提交"那一套），只是记下这一趟已经删过谁。
+    */
+    if (tool === 'eraser' && !eraserAll) {
+      const [bx, by] = toBoard(e);
+      erasing = { done: new Set<string>(), last: [bx, by] };
+      eraseUnder(bx, by);
       return;
     }
     if (tool === 'move') {
@@ -1116,7 +1551,7 @@ export function mountBoard(opts: BoardOpts): BoardHandle {
   }) as EventListener);
 
   /*
-    ---- move / up **挂在 window 上**（2026-10-10 改的）----
+    ---- move / up **挂在 window 上**（2026-10-09 改的）----
     老版本只挂在 canvas 上、靠 pointer capture 兜住"指针跑到画布外面"的情况。
     可 capture 是会失效的：有的内核不认（老代码的 catch 写着"无所谓"），
     浏览器也可能中途把它收走。量过的后果（验收里那两条）：capture 一失效，
@@ -1126,6 +1561,8 @@ export function mountBoard(opts: BoardOpts): BoardHandle {
   */
   on(window, 'pointermove', (e) => {
     const pe = e as PointerEvent;
+    /* 光标圆：先更新"指针在哪、什么设备、该不该显示"（不挡任何输入，纯显示） */
+    trackPointer(pe);
     if (pointers.has(pe.pointerId)) pointers.set(pe.pointerId, { x: pe.clientX, y: pe.clientY });
     if (pinch && pointers.size >= 2) {
       movePinch();
@@ -1138,6 +1575,12 @@ export function mountBoard(opts: BoardOpts): BoardHandle {
       clampView();
       pe.preventDefault();
       schedule();
+      return;
+    }
+    /* 橡皮"只擦自己的"：沿着路径擦过去（采样在 eraseAlong 里做） */
+    if (erasing) {
+      eraseAlong(pe);
+      pe.preventDefault();
       return;
     }
     if (moving && grab) {
@@ -1218,6 +1661,14 @@ export function mountBoard(opts: BoardOpts): BoardHandle {
     if (panning) {
       panning = null;
       canvas.classList.remove('is-panning');
+      /* 松手 → 光标从 grabbing 变回 grab */
+      syncCursor();
+      uncapture(pe.pointerId);
+      return;
+    }
+    /* 橡皮"只擦自己的"这一趟收了：它本来就没有要提交的东西 */
+    if (erasing) {
+      erasing = null;
       uncapture(pe.pointerId);
       return;
     }
@@ -1239,7 +1690,7 @@ export function mountBoard(opts: BoardOpts): BoardHandle {
     schedule();
     if (!done.points.length) return;
     /*
-      ⚠ 画了新的一笔 → **作废重做栈**（2026-10-10 静态审计逮到的）：
+      ⚠ 画了新的一笔 → **作废重做栈**（2026-10-09 静态审计逮到的）：
       标准编辑器都这样（"撤销 → 又画了新的 → 重做"不该复活被撤掉的那一笔）。
       这一句只能放在**用户自己画**的这条路上 —— 放进 commit() 会把 doRedo 自己
       （它也走 commit）也清掉，重做就永远失效了。
@@ -1317,8 +1768,10 @@ export function mountBoard(opts: BoardOpts): BoardHandle {
     给"读像素"用的调试口（验收脚本靠它证明"画上去的东西真的在画布那一点上"）。
     站里已有先例（LiyutangAccount 会把账号状态挂到 window.__ltState），所以这里不算破例；
     真实用户不会用到它 —— 页面自己也不需要。
-    state / stats 是 2026-10-10 给验收加的（读当前工具/颜色/两份粗细/重做栈，
+    state / stats 是 2026-10-09 给验收加的（读当前工具/颜色/两份粗细/重做栈，
     以及"缓存到底整块重建了几次"——同步那一条就是靠它证明"画的过程中没有全量重建"）。
+    grid / ring 是第二批加的（网格开着没有、格子怎么切；光标圆多大、该不该显示）——
+    ⚠ 契约是"**只加不改**"：view / reset / device / pixelAt 的签名和含义一个字都没动。
   */
   (window as unknown as { __ltBoard?: unknown }).__ltBoard = {
     get view() {
@@ -1327,14 +1780,18 @@ export function mountBoard(opts: BoardOpts): BoardHandle {
     reset: resetView,
     /** 画板坐标 → 画布设备像素 */
     device: (x: number, y: number) => boardToDevice(x, y),
-    /** 读画布上某一点（**画板坐标**）的颜色，例如 '#1d1430' */
+    /**
+     * 读画布上某一点（**画板坐标**）的颜色，例如 '#000000'。
+     * ⚠ 画布是透明的（纸色在 stage 的底色上），所以透明的地方**按纸色算** ——
+     * 这个口子的含义还是"这一点看上去是什么颜色"，只是把合成那一步补上了。
+     */
     pixelAt(x: number, y: number) {
       const c2 = canvas.getContext('2d');
       if (!c2) return '';
       const [dx, dy] = boardToDevice(x, y);
       if (dx < 0 || dy < 0 || dx >= canvas.width || dy >= canvas.height) return '';
       const d = c2.getImageData(dx, dy, 1, 1).data;
-      return '#' + [d[0], d[1], d[2]].map((v) => v.toString(16).padStart(2, '0')).join('');
+      return overPaper(d[0], d[1], d[2], d[3]);
     },
     get state() {
       return {
@@ -1349,7 +1806,29 @@ export function mountBoard(opts: BoardOpts): BoardHandle {
         strokes: strokes.length,
         mine: strokes.filter((s) => s.mine).map((s) => s.id),
         cursor,
+        day,
+        grid: gridOn,
+        eraserAll,
+        palette: paletteColors(),
       };
+    },
+    /** 网格：开关、线距、格子怎么切、以及那一层现在对到哪儿了 */
+    get grid() {
+      return {
+        on: gridOn,
+        color: GRID_COLOR,
+        ...gridLines(BOARD_W, BOARD_H, GRID_STEP),
+        css: {
+          display: gridLayer.style.display,
+          size: gridLayer.style.backgroundSize,
+          pos: gridLayer.style.backgroundPosition,
+          image: gridLayer.style.backgroundImage,
+        },
+      };
+    },
+    /** 光标圆：开关、直径（CSS 像素）、当前粗细、指针是什么设备 */
+    get ring() {
+      return { on: ring.classList.contains('is-on'), d: ringSize(), size: sizeOf(), pointerType, inside: pointerInside };
     },
     get stats() {
       return { ...stats };
@@ -1370,6 +1849,13 @@ export function mountBoard(opts: BoardOpts): BoardHandle {
       ro?.disconnect();
       /* ★ 监听全摘掉：只停轮询的话，上一份引擎还挂在画布上（画一笔提交两次） */
       ac.abort();
+      /*
+        ★ 网格层和光标圆是这一趟自己造出来的 DOM，也得一起撤掉：
+        页面在账号状态反复变化时会 stop() 再 mountBoard()，不撤的话 stage 里会叠上
+        **第二层网格**（同色还好）和**第二个圆**（那个停在上一次的位置，很明显）。
+      */
+      gridLayer.remove();
+      ring.remove();
     },
   };
 }

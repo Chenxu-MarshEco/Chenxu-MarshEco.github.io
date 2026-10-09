@@ -23,16 +23,18 @@
  *     "服务器那边这次没成"：令牌留着，页面也不能把人显示成未登录。
  */
 import ForumLayout from '../../../layouts/ForumLayout.astro';
-import { forum } from '../../../utils/liyutang';
+import { copy, forum } from '../../../utils/liyutang';
 import { withBase } from '../../../utils/url';
 
 const api = forum().twikoo.envId;
 const home = withBase('/liyutang/');
+/* 用户名 / 昵称那段说明归站长写（copy.user.lead）；留空就整段不出现（见 utils/liyutang.ts 的 copy()） */
+const c = copy();
 ---
 
 <ForumLayout
   title="用户页"
-  description="黎语堂的用户页：看自己的资料（能改昵称和头像），也能看别人的（只读）。"
+  description={c.user.lead || undefined}
   noindex
 >
   <div class="lyt-page ltuser" data-lt-user-page data-api={api}>
@@ -72,11 +74,12 @@ const home = withBase('/liyutang/');
       </dl>
     </section>
 
-    {/* 两者的区别：本人和看别人时都显示 —— 这是这一页存在的理由之一 */}
-    <p class="ltuser__rule" data-lt-user-rule hidden>
-      <b>用户名</b>是注册时定下来的那个（上面带 @ 的那一串）：用来登录，<b>不能改</b>。
-      <b>昵称</b>随时能改，论坛里别的地方显示的都是昵称。
-    </p>
+    {/*
+      用户名 / 昵称的区别（这一页存在的理由之一）：**文案归站长写** ——
+      编辑器「页面文案 → 用户页」的 `user.lead`。留空 = 这一段根本不渲染，
+      代码里不再写死那句话（2026-10-09 用户要求：生造的简介一律删掉，只留编辑接口）。
+    */}
+    {c.user.lead && <p class="ltuser__rule" data-lt-user-rule>{c.user.lead}</p>}
 
     {/*
       本人的编辑区在这里由脚本**现建**（改头像 / 改昵称，见下面的脚本）。
@@ -86,7 +89,7 @@ const home = withBase('/liyutang/');
 
     {/*
       ============================================================
-      TODO（以后填这三块，现在故意空着 —— 宁可不显示，也不拿假数据糊上去）：
+      TODO（以后填这三块，现在**页面上什么都不显示**）：
 
         · 背景图     —— 等后端给用户文档加一个 background 字段（和 avatar 一条路：前端压成
                        data URL 上送、LT_AVATAR_SET 那样存），到时候这里放 <img> 当资料卡的底图。
@@ -96,26 +99,12 @@ const home = withBase('/liyutang/');
         · 他画过的画 —— 等画板存档接上来：src/data/draw/<日期>.json 由
                        .github/workflows/daily-archive.yml 搬进仓库，里面的笔划带着 uk / nick，
                        按人捞就能列"他画过的那些天"（lt_draw 只留当天，旧的都在仓库里）。
+
+      ⚠ 这三块原来在页面上摆过一段「以后会长在这里」的说明（写着 background 字段 /
+        authorId 这些内部术语）。2026-10-09 按用户要求**从页面上删掉**了 ——
+        群友看的页面上不该出现这种东西；要做就在做出来的那天直接显示。这一段只留给改代码的人。
       ============================================================
     */}
-    <section class="ltuser__later" data-lt-user-later>
-      <h2 class="ltuser__laterHead">以后会长在这里</h2>
-      <ul class="ltuser__laterList">
-        <li>
-          <b>背景图</b>
-          <span>等用户文档有了 background 字段（和头像同一条上传路），这一块放他的背景图。</span>
-        </li>
-        <li>
-          <b>他发过的贴</b>
-          <span>等云函数能按 authorId 给回这个人发的帖子（现在只知道"发过几篇"）。</span>
-        </li>
-        <li>
-          <b>他画过的画</b>
-          <span>等画板存档接上来（<code>src/data/draw/&lt;日期&gt;.json</code> 那些，按人捞）。</span>
-        </li>
-      </ul>
-      <p class="ltuser__laterNote">这三块现在空着是<b>故意的</b>：没有的东西就不画，先把位置留好。</p>
-    </section>
 
     {
       api && (
@@ -145,7 +134,8 @@ const home = withBase('/liyutang/');
             const aliasFact = page.querySelector('[data-lt-user-alias2]') as HTMLElement;
             const sinceFact = page.querySelector('[data-lt-user-since]') as HTMLElement;
             const postsFact = page.querySelector('[data-lt-user-posts]') as HTMLElement;
-            const rule = page.querySelector('[data-lt-user-rule]') as HTMLElement;
+            /* 用户名 / 昵称那段说明是**可选的**（站长没填文案时页面上就没有这个节点） */
+            const rule = page.querySelector('[data-lt-user-rule]') as HTMLElement | null;
             const editHost = page.querySelector('[data-lt-user-edit-host]') as HTMLElement;
 
             /** 现在看着的这个人；me = 是不是本人（只有本人有编辑区） */
@@ -200,7 +190,7 @@ const home = withBase('/liyutang/');
               postsFact.textContent = `${postCount} 篇`;
               drawFace(face, alias, String(mine.avatar || ''));
               card.hidden = false;
-              rule.hidden = false;
+              if (rule) rule.hidden = false;
             };
 
             /** 资料读完：画出来；本人再把编辑区建上（**只有本人**） */
@@ -326,8 +316,7 @@ const home = withBase('/liyutang/');
 
               box.append(
                 avatarRow,
-                aliasRow,
-                el('p', 'ltuser__editNote', '用户名（上面那个 @）改不了 —— 它是登录用的；昵称随时能改。')
+                aliasRow
               );
               editHost.append(box);
             };
@@ -338,7 +327,7 @@ const home = withBase('/liyutang/');
             const guest = (text: string) => {
               editHost.textContent = '';
               card.hidden = true;
-              rule.hidden = true;
+              if (rule) rule.hidden = true;
               head.textContent = '用户页';
               /*
                 顶上那条常驻栏也要跟着换成"未登录"的样子 —— 它自己不知道这里的令牌刚被删了
@@ -357,7 +346,7 @@ const home = withBase('/liyutang/');
             const trouble = (text: string) => {
               editHost.textContent = '';
               card.hidden = true;
-              rule.hidden = true;
+              if (rule) rule.hidden = true;
               head.textContent = '用户页';
               const btn = el('button', 'ltuser__cta', '再试一次');
               btn.type = 'button';
@@ -492,44 +481,10 @@ const home = withBase('/liyutang/');
     color: #fff3dc;
   }
 
-  /* 以后那三块的位置：虚线框 + 说明，明确"这里现在是空的" */
-  .ltuser__later {
-    margin-top: 2rem;
-    padding: 1rem 1.1rem;
-    border: 1px dashed rgba(255, 120, 190, 0.3);
-    border-radius: var(--r-lg);
-  }
-  .ltuser__laterHead {
-    margin: 0 0 0.6rem;
-    font-size: 0.95rem;
-    letter-spacing: 0.12em;
-    color: rgba(214, 201, 238, 0.85);
-  }
-  .ltuser__laterList {
-    display: grid;
-    gap: 0.45rem;
-    margin: 0;
-    padding: 0;
-    list-style: none;
-    font-size: 0.84rem;
-    color: rgba(214, 201, 238, 0.72);
-  }
-  .ltuser__laterList b {
-    display: inline-block;
-    min-width: 6.5rem;
-    color: #ffc76b;
-  }
-  .ltuser__laterNote {
-    margin: 0.8rem 0 0;
-    font-size: 0.8rem;
-    color: rgba(214, 201, 238, 0.6);
-  }
-  .ltuser__later code {
-    padding: 0 0.25rem;
-    border-radius: var(--r-sm);
-    background: rgba(255, 255, 255, 0.08);
-    font-size: 0.95em;
-  }
+  /*
+    （原来这里还有 .ltuser__later* 几条样式，配的是页面上那段「以后会长在这里」的说明。
+     2026-10-09 那段从页面上删掉了，样式跟着一起走 —— 没有的东西不留样式。）
+  */
 
   /* `hidden` 是脚本切的显示/隐藏，别被上面那几条 display 覆盖掉 */
   .ltuser__card[hidden],
@@ -582,11 +537,6 @@ const home = withBase('/liyutang/');
   :global(.ltuser__input:focus) {
     outline: none;
     border-color: rgba(255, 181, 71, 0.8);
-  }
-  :global(.ltuser__editNote) {
-    margin: 0.2rem 0 0;
-    font-size: 0.8rem;
-    color: rgba(214, 201, 238, 0.6);
   }
   /* 状态行里那两颗现建的入口（去登录 / 再试一次）：跟页面上的链接一个样子 */
   :global(.ltuser__cta) {

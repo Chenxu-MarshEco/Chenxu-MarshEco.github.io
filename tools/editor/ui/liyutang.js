@@ -10,8 +10,10 @@
  *   ④ 帖子管理（2026-10-07）：用户发的帖子在这儿隐藏 / 置顶 / 挪版块 / 删
  *   ⑤ 保存带指纹（2026-10-09 加）：盘上那份在你打开这一页之后被别处改过，
  *      这一次保存**不写盘**，页面明说原因 + 给一颗「重新载入这一页」
+ *   ⑥ 页面文案（2026-10-09 加）：站点上那些"介绍 / 提示"文字（写 `copy` 区）——
+ *      页面代码里一个字都不写死了，全在这儿填；留空 = 那个位置不显示
  *
- * ① ② 写 src/data/liyutang.json；③ ④ 的数据**不在仓库里** —— 它们住在腾讯云函数 +
+ * ① ② ⑥ 写 src/data/liyutang.json；③ ④ 的数据**不在仓库里** —— 它们住在腾讯云函数 +
  * 外部 MongoDB（见 tools/liyutang-backend/index.js），这一页只通过编辑器服务那条转发口
  * （/api/liyutang/users、/api/liyutang/posts，见 server.mjs）问它、改它。
  *
@@ -152,6 +154,54 @@ const ADMIN_PW_KEY = 'lt_admin_pw';
 /** 有没有没保存的改动 */
 let dirty = false;
 
+/*
+  ---------------------------------------------------------------
+   「页面文案」面板的字段表（2026-10-09）
+
+  站点上那些"介绍 / 提示"文字在这里填（写 `src/data/liyutang.json` 的 `copy` 区）。
+  为什么非要有这一页（用户原话，语气很重）：「当前的黎语堂网站里充斥着过多你自己胡编乱造的
+  提示和简介 …… 请你全部删掉全部这一类你自己生造的句子 并且给对应的位置留下编辑器接口」。
+
+  ⚠ 这张表和两处必须**一一对应**，加键 / 改键名时四处一起改：
+    ① 这里（字段 + 中文标签）；
+    ② src/utils/liyutang.ts 的 SiteCopy / copy()（站点读的时候认得它）；
+    ③ tools/editor/server.mjs 的 COPY_SHAPE（保存时留得住它）；
+    ④ src/data/liyutang.json 的 copy 区（拼错一个字母就是"填了不显示"）。
+  验收脚本 tools/checks/editor-liyutang-copy-check.mjs 会断言这几处没脱节。
+
+  label 一律写"出现在哪一页的哪个位置" —— 站长照着这句话就知道自己填的那行字会落在哪儿。
+  留空 = 那个位置**什么都不显示**（站点那边见 utils/liyutang.ts 的 copy()：空串就不渲染那一块）。
+  ---------------------------------------------------------------
+*/
+const COPY_FIELDS = [
+  { group: 'board', key: 'lead', label: '茶绘画板页 · 顶部简介', where: '标题「久昭卿茶绘」下面那一句' },
+  { group: 'board', key: 'hint', label: '茶绘画板页 · 操作提示', where: '工具条下面那段（画笔 / 缩放 / 移动怎么用）' },
+  { group: 'board', key: 'note', label: '茶绘画板页 · 补充说明', where: '画板上的其它说明（留空就不显示）' },
+  { group: 'board', key: 'empty', label: '茶绘画板页 · 没人动笔时那句', where: '「今天画过画的人」那一栏空着时显示（留空就不显示）' },
+  { group: 'chat', key: 'lead', label: '聊天室页 · 顶部简介', where: '标题「聊天室」下面那一句（也用作搜索结果里那句描述）' },
+  { group: 'chat', key: 'hint', label: '聊天室搜历史页 · 顶部说明', where: '搜索框上面那一句（也用作搜索结果里那句描述）' },
+  { group: 'chat', key: 'note', label: '聊天室某一天的存档页 · 顶部说明', where: '「聊天室 · 2026-10-09」这类标题下面（也用作那一页的描述）' },
+  { group: 'calendar', key: 'lead', label: '画过的日子页 · 顶部简介', where: '标题「画过的日子」下面那一句（也用作搜索结果里那句描述）' },
+  { group: 'user', key: 'lead', label: '用户页 · 用户名 / 昵称说明', where: '资料卡下面那段（本人和别人都显示；也用作搜索结果里那句描述）' },
+  { group: 'home', key: 'lead', label: '黎语堂首页 · 顶部引导', where: '标题「黎语堂」下面那一句（也用作搜索结果里那句描述）' },
+  { group: 'home', key: 'note', label: '黎语堂首页 · 「发帖」旁边那行小字', where: '「发帖」按钮右边' },
+  { group: 'post', key: 'hint', label: '帖子页 · 作者那一行说明', where: '「改这贴 / 删掉」旁边（只有作者自己看得见）' },
+  { group: 'post', key: 'desc', label: '帖子页 · 搜索结果里那句描述', where: '搜索引擎 / 分享卡片上显示（页面正文里看不到；留空用站点总描述）' },
+  { group: 'new', key: 'hint', label: '发帖页 · 一个版块都没有时那句', where: '「发在」那一行下面' },
+  { group: 'new', key: 'desc', label: '发帖页 · 搜索结果里那句描述', where: '搜索引擎 / 分享卡片上显示（页面正文里看不到；留空用站点总描述）' },
+];
+
+/** 分组的中文名（面板里的小标题；分组本身 = 哪一页 / 哪一块功能） */
+const COPY_GROUPS = {
+  board: '茶绘画板页（久昭卿茶绘）',
+  chat: '聊天室（今天 / 搜历史 / 存档日）',
+  calendar: '画过的日子页',
+  user: '用户页',
+  home: '黎语堂首页',
+  post: '帖子页',
+  new: '发帖页',
+};
+
 async function load() {
   const res = await fetch('/api/liyutang');
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -174,6 +224,16 @@ async function load() {
   if (!Array.isArray(draft.boards)) draft.boards = [];
   /* 大厅同理：盘上没有这个键（老数据 / 刚清空过）就先给一个空数组，页面照样画得出来 */
   if (!Array.isArray(draft.halls)) draft.halls = [];
+  /*
+    页面文案：盘上可能还没有这个键（老数据），先把分组补成空对象 ——
+    真正缺的**键**由 renderCopy() 按 COPY_FIELDS 补齐（见那边的注释）。
+  */
+  if (!draft.copy || typeof draft.copy !== 'object') draft.copy = {};
+  for (const f of COPY_FIELDS) {
+    const g = draft.copy[f.group];
+    if (!g || typeof g !== 'object' || Array.isArray(g)) draft.copy[f.group] = {};
+    if (typeof draft.copy[f.group][f.key] !== 'string') draft.copy[f.group][f.key] = '';
+  }
   return draft;
 }
 
@@ -246,10 +306,14 @@ async function save() {
     if (d.hallsNoId) lost.push(`${d.hallsNoId} 个 id 不合法的大厅`);
     if (d.hallsDupId) lost.push(`${d.hallsDupId} 个重复的大厅 id`);
     if (d.hallsImage || d.hallsHref) lost.push('几条外站/不合法的地址（背景图和跳转地址只收站内路径）');
+    /* 文案是给人看的：截断了 / 被清空了都要说出来，别让站长以为自己填上了 */
+    if (d.copyTooLong) lost.push(`${d.copyTooLong} 条文案超过 200 字（截断了）`);
+    if (d.copyNotString) lost.push(`${d.copyNotString} 条文案不是文字（清空了）`);
     const n = (k) => data.counts?.[k] ?? 0;
     if (data.built) {
       setStatus(
-        `已保存并重新构建（${data.ms} ms）· ${n('halls')} 块大厅 · ${n('boards')} 个版块`
+        `已保存并重新构建（${data.ms} ms）· ${n('halls')} 块大厅 · ${n('boards')} 个版块` +
+          ` · 文案 ${n('copyFilled')}/${COPY_FIELDS.length} 条`
       );
       toast(`黎语堂已保存并重新构建（${data.ms} ms）${lost.length ? `；有 ${lost.join('、')} 被丢掉` : ''}`);
     } else {
@@ -354,6 +418,8 @@ function hallRow(hall, index) {
     hall.desc = v;
     markDirty();
   });
+  /* 类名是给验收脚本认的（title / image / href 那几个也有，这里原来漏了） */
+  desc.classList.add('lt-hall__desc');
   fields.append(desc);
 
   const image = input(
@@ -561,6 +627,76 @@ function boardRow(board, index) {
 
   row.append(fields);
   return row;
+}
+
+/* ---------------------------------------------------------------
+   版面：页面文案（2026-10-09 加）
+
+   站点上所有"介绍 / 提示"文字都在这儿填（`liyutang.json` 的 `copy` 区）。
+   字段表在文件上面（COPY_FIELDS）—— 这里只负责画：一组一条小标题，组里每个字段一行
+   （中文标签说明它出现在哪一页的哪个位置 + 一个 200 字的文本域）。
+   留空 = 站点上那个位置什么都不显示（不会留空行），底下会数"共几条 / 已填几条"。
+   --------------------------------------------------------------- */
+
+function renderCopy() {
+  const box = $('lt-copy-box');
+  if (!box) return;
+  box.textContent = '';
+
+  if (!draft.copy || typeof draft.copy !== 'object') draft.copy = {};
+
+  box.append(
+    el('h4', 'wbox__title', '页面文案'),
+    el(
+      'p',
+      'hint',
+      '站点上那些「介绍 / 提示」文字都在这儿填 —— 页面上写什么由你说了算。' +
+        '**留空 = 那个位置什么都不显示**（不会留空行、也不会用一句自动生成的废话顶上）。' +
+        '状态和报错（"还没有存档。"、"账号还在等站长审核"、"正在压图…"）不在这儿，' +
+        '那些是页面自己要说的事实。每条最多 200 字。'
+    )
+  );
+
+  const wrap = el('div', 'lt-board__fields');
+  let lastGroup = '';
+  for (const f of COPY_FIELDS) {
+    const g = draft.copy[f.group] && typeof draft.copy[f.group] === 'object' ? draft.copy[f.group] : (draft.copy[f.group] = {});
+    if (typeof g[f.key] !== 'string') g[f.key] = '';
+
+    if (f.group !== lastGroup) {
+      lastGroup = f.group;
+      wrap.append(el('h5', 'lt-copy__group', COPY_GROUPS[f.group] || f.group));
+    }
+
+    const area = textarea(g[f.key], f.where || '', (v) => {
+      g[f.key] = v;
+      markDirty();
+      /* 底下的"已填几条"跟着动（只在同一条上改，不整页重画 —— 重画会把光标顶掉） */
+      const line = $('lt-copy-count');
+      if (line) line.textContent = copyCountText();
+    }, 2);
+    area.maxLength = 200;
+    area.classList.add('lt-copy__field');
+    /* 验收脚本按这两个 data 找字段；键名也就是站点那边 copy 区的键名 */
+    area.dataset.copyGroup = f.group;
+    area.dataset.copyKey = f.key;
+    area.setAttribute('aria-label', f.label);
+
+    const row = field(f.label, area);
+    row.classList.add('lt-copy__row');
+    wrap.append(row);
+  }
+
+  const line = el('p', 'lt-sub lt-copy__count', copyCountText());
+  line.id = 'lt-copy-count';
+  box.append(wrap, line);
+}
+
+/** 「共 12 条，已填 0 条」——留空是合法的，所以这里只是提醒，不拦着保存 */
+function copyCountText() {
+  const total = COPY_FIELDS.length;
+  const filled = COPY_FIELDS.filter((f) => String(draft?.copy?.[f.group]?.[f.key] ?? '').trim()).length;
+  return `共 ${total} 条，已填 ${filled} 条。留空的那几条在站点上不显示 —— 填完点右上角「保存并重新构建」就生效（不用另外发布）。`;
 }
 
 /* ---------------------------------------------------------------
@@ -1326,14 +1462,18 @@ function render() {
   /* 大厅紧接着（页面上大厅就排在版块上面：论坛首页的顺序，2026-10-09） */
   renderHalls();
   renderBoards();
+  /* 页面文案也是配置（排在版块后面、帖子管理前面：配完版块顺手就能填文案，2026-10-09） */
+  renderCopy();
   /* 帖子管理夹在版块和评论系统中间（页面上也是这个位置，2026-10-07） */
   renderPosts();
   renderForum();
   if (!dirty) {
     const n = draft?.boards?.length ?? 0;
     const h = draft?.halls?.length ?? 0;
+    const filled = COPY_FIELDS.filter((f) => String(draft?.copy?.[f.group]?.[f.key] ?? '').trim()).length;
     setStatus(
       `读取完成：${draft?.forum?.provider ?? 'giscus'} · ${h} 块大厅 · ${n} 个版块` +
+        ` · 文案已填 ${filled}/${COPY_FIELDS.length} 条` +
         (draft?.updated ? ` · 上次改动 ${draft.updated}` : '')
     );
   }

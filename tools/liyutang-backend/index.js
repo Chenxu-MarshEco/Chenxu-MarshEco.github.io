@@ -61,11 +61,11 @@
  *     · 页面用**轮询 + 游标**（`after` = 已知最新那条的时间戳）增量拉，四秒一次，
  *       页面切到后台就停 —— 这套后端没有 WebSocket，论坛这个体量轮询足够且省额度。
  *
- * 五、**画板（久昭卿茶绘）**（2026-10-09 加）：一块大家共用的画板。
+ * 五、**画板（久昭卿茶绘）**（2026-10-09 加）。
  *   用户原话：「点进去以后是一个巨大的公共画板 有基本的画笔橡皮调色板等功能 所有注册后通过
  *   审核的用户都可以在上面画画 …… 每天保存一次画 …… 让画画的手感可以比较舒服丝滑」。
  *     · 一笔一个文档，存 lt_draw：`{tool: pen|eraser, color: #rrggbb, size, points: [[x,y],…]}`，
- *       坐标是**画板自己的坐标系**（2400×1500，和屏幕大小无关）；
+ *       坐标是**画板自己的坐标系**（`BOARD_W`×`BOARD_H` = 3600×2250，和屏幕大小无关）；
  *     · **矢量笔划**（不是位图）：谁也改不了别人的像素，逐人显隐、撤销、存档都只是"筛一堆笔划"；
  *     · `uk` = 账号 id 的短哈希 —— 逐人显隐要一个稳定的键，但不该把账号 id 发给所有人；
  *     · **过审才进得来**（和聊天室同一个门槛 chatWho），限速 80 毫秒一笔、一小时 4000 笔；
@@ -108,8 +108,11 @@ const CHAT_PER_HOUR = 120;
 /** 画板集合名 */
 const DRAW = 'lt_draw';
 /** 画板内部坐标系（笔划坐标以它为准，和屏幕大小无关） */
-const BOARD_W = 2400;
-const BOARD_H = 1500;
+/* 画板坐标系：2026-10-09 从 2400×1500 放大到 3600×2250（用户："画布现在太小了"）。
+   长宽都 ×1.5、比例不变，**原点仍在左上角** —— 所以老笔划的坐标不用动、位置也不变。
+   ⚠ 必须和 src/utils/liyutang-strokes.mjs 里的 BOARD_W/BOARD_H 一致，不然右下角画不上去。 */
+const BOARD_W = 3600;
+const BOARD_H = 2250;
 /** 一根笔划最多多少个点 */
 const DRAW_MAX_POINTS = 2000;
 /** 画笔 / 橡皮 */
@@ -474,7 +477,13 @@ async function adminCheck(password) {
  * @returns {string} yyyy-mm-dd
  */
 function dayKey(ts = Date.now()) {
-  return new Date(Number(ts) + 8 * 3600 * 1000).toISOString().slice(0, 10);
+  /*
+    切天点是**北京时间凌晨 4 点**，不是 0 点（2026-10-09 用户要求）：
+    "昨天凌晨四点到今天凌晨四点之间有没有人画过画/说过话" —— 所以"一天"= 04:00 到次日 04:00。
+    实现就是把北京日期整体往前推 4 小时：ts + 8h - 4h。
+    ⚠ 存档脚本的 yesterdayInBeijing 必须用同一个偏移，不然会漏掉/重复那四个小时。
+  */
+  return new Date(Number(ts) + 4 * 3600 * 1000).toISOString().slice(0, 10);
 }
 
 /**
@@ -707,7 +716,11 @@ function checkPrefs(input) {
     const c = drawColor(input.color);
     if (c) out.color = c;
   }
-  if (input.tool === 'pen' || input.tool === 'eraser' || input.tool === 'pan') out.tool = input.tool;
+  if (input.tool === 'pen' || input.tool === 'eraser' || input.tool === 'pan' || input.tool === 'move' || input.tool === 'pick') out.tool = input.tool;
+  /* 两个开关也存账号上（换设备也在）：网格线显示、橡皮是否擦所有人 */
+  for (const k of ["grid", "eraserAll"]) {
+    if (typeof input[k] === "boolean") out[k] = input[k];
+  }
   return out;
 }
 

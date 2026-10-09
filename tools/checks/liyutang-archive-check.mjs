@@ -18,6 +18,8 @@
  * ============================================================================
  */
 import fs from 'node:fs';
+/* 画板坐标系（尺寸会变，别再写死数字） */
+import { BOARD_W, BOARD_H } from '../../src/utils/liyutang-strokes.mjs';
 import os from 'node:os';
 import http from 'node:http';
 import path from 'node:path';
@@ -109,11 +111,21 @@ const drySum = writeArchive({ day, messages, root: tmp2, dry: true });
 check('--dry：算得出概要，但一个文件都不写',
   drySum.messages === 3 && !fs.existsSync(path.join(tmp2, 'src')), `messages=${drySum.messages}`);
 
-/* 北京时间切天：跨零点的边界 */
-check('★ "昨天"按北京时间切（23:30 与 00:30 分属不同天）',
-  yesterdayInBeijing(Date.UTC(2026, 9, 9, 15, 30)) === '2026-10-08' &&
-    yesterdayInBeijing(Date.UTC(2026, 9, 9, 16, 30)) === '2026-10-09',
-  `${yesterdayInBeijing(Date.UTC(2026, 9, 9, 15, 30))} / ${yesterdayInBeijing(Date.UTC(2026, 9, 9, 16, 30))}`);
+/*
+  北京时间切天：切点是**凌晨四点**（2026-10-09 用户要求："每天保存一次"挪到四点跑，覆盖 昨天04:00→今天04:00）。
+  ⚠ 这条断言原来是按**午夜**切写的（"23:30 与 00:30 分属不同天"）—— 四点切之后它是错的：
+    23:30 与次日 00:30 都还在同一个"四点日"里，属于**同一天**；真正翻页的是 03:59 / 04:01。
+  所以改成一对边界：跨零点的两刻同天，跨四点的两刻不同天。
+*/
+const bj = (h, m, d = 9) => Date.UTC(2026, 9, d, h - 8, m); // 北京时间 → UTC
+const y1 = yesterdayInBeijing(bj(23, 30));
+const y2 = yesterdayInBeijing(bj(0, 30, 10));
+const y3 = yesterdayInBeijing(bj(3, 59, 10));
+const y4 = yesterdayInBeijing(bj(4, 1, 10));
+const y5 = yesterdayInBeijing(bj(12, 0, 10));
+check('★ "昨天"按北京时间**凌晨四点**切：23:30 与次日 00:30 同一天，03:59 与 04:01 分属两天',
+  y1 === y2 && y3 !== y4 && y4 === y5 && y1 === '2026-10-08' && y4 === '2026-10-09',
+  `23:30=${y1} 00:30=${y2} 03:59=${y3} 04:01=${y4} 12:00=${y5}`);
 
 /* ============================================================ ②-b 画板存档（纯函数） */
 
@@ -142,7 +154,7 @@ check('笔划带着工具 / 颜色 / 点集（够画回一张图）',
 
 const svgText = fs.readFileSync(drawSvgFile, 'utf8');
 check('★ SVG 是合法的一张图（viewBox 就是画板尺寸、纸色底）',
-  svgText.startsWith('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2400 1500"') && svgText.includes('fill="#fbf6ee"'),
+  svgText.startsWith(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${BOARD_W} ${BOARD_H}"`) && svgText.includes('fill="#fbf6ee"'),
   svgText.slice(0, 80));
 check('★ SVG 里两条笔划（橡皮按纸色画）',
   (svgText.match(/<path /g) || []).length === 2 && svgText.includes('stroke="#fbf6ee"'),

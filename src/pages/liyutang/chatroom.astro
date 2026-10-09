@@ -22,10 +22,12 @@ import ForumLayout from '../../layouts/ForumLayout.astro';
 import LiyutangAccount from '../../components/LiyutangAccount.astro';
 import LiyutangChatRail from '../../components/LiyutangChatRail.astro';
 import { chatApex, chatTimeline } from '../../utils/chat-archive';
-import { forum } from '../../utils/liyutang';
+import { copy, forum } from '../../utils/liyutang';
 import { withBase } from '../../utils/url';
 
 const api = forum().twikoo.envId;
+/* 顶部那句简介由站长在编辑器里填（copy.chat.lead）；空着就整块不出现 */
+const c = copy();
 const home = withBase('/liyutang/');
 /*
   左栏那条「日子」轴：三页共用同一个组件（见 LiyutangChatRail.astro）。
@@ -35,15 +37,14 @@ const tl = chatTimeline();
 const apex = chatApex(tl);
 ---
 
-<ForumLayout title="聊天室" description="黎语堂的聊天室：一句一句地聊，能发图，每天存档。" noindex>
+{/* 搜索结果 / 分享卡片上那句描述也归站长写（copy.chat.lead）；留空就退回站点总描述 */}
+<ForumLayout title="聊天室" description={c.chat.lead || undefined} noindex>
   <div class="lyt-page">
     <p class="lyt-crumb">
       <a href={home}>← 黎语堂</a>
     </p>
     <h1 class="lyt-title">聊天室</h1>
-    <p class="lyt-lead">
-      一句一句地聊，像 QQ 那样。能发图，能翻旧账 —— 每天存档一份，左边的日子轴点一下就跳到那天。
-    </p>
+    {c.chat.lead && <p class="lyt-lead" data-lt-copy="chat.lead">{c.chat.lead}</p>}
 
     <LiyutangAccount />
 
@@ -63,7 +64,7 @@ const apex = chatApex(tl);
 
       <div class="lyt-chat__main">
         <div class="lyt-chat__log" data-lt-chat-log>
-          <p class="lyt-empty">登录之后这里就会长出今天的消息。</p>
+          <p class="lyt-empty">登录之后这里会显示今天的消息。</p>
         </div>
         <div class="lyt-chat__compose">
           <textarea class="lyt-textarea" data-lt-chat-text placeholder="说点什么…（回车发，Shift+回车换行）" rows="3" disabled></textarea>
@@ -138,7 +139,7 @@ const apex = chatApex(tl);
 
           /*
             ============================================================
-            粘贴板里有图 → 直接当成"选了那张图"发出去（2026-10-10 用户要求）
+            粘贴板里有图 → 直接当成"选了那张图"发出去（2026-10-09 用户要求）
             ============================================================
 
             为什么写在这一页、而不是 mountChat 里：

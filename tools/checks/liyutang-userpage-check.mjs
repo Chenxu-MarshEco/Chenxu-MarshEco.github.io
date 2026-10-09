@@ -97,9 +97,33 @@ const distUserHtml = fs.existsSync(distUserPage) ? fs.readFileSync(distUserPage,
 check('★ 编辑区在构建产物里是"0 个静态节点"（脚本现建，看别人时压根不出现）',
   distUserHtml.length > 0 && /data-lt-user-edit-host/.test(distUserHtml) && !/data-lt-user-edit=/.test(distUserHtml) && /ltUserEdit = ''/.test(page),
   `${Math.round(distUserHtml.length / 1024)}KB`);
-check('页面上写清了用户名 / 昵称的区别', /不能改/.test(page) && /昵称<\/b>随时能改/.test(page));
-check('留了背景图 / 他发过的贴 / 他画过的画 三块占位（没有假数据）',
-  /data-lt-user-later/.test(page) && /background 字段/.test(page) && /authorId/.test(page) && /data\/draw/.test(page));
+/*
+  2026-10-09 改（原来这两条盯的是页面里**写死**的那两句文案）：
+  用户要求「把你自己生造的提示和简介全部删掉，给对应的位置留下编辑器接口」——
+   · 「用户名 / 昵称的区别」那段 → 搬进 `src/data/liyutang.json` 的 `copy.user.lead`（留空就不渲染）；
+   · 「以后会长在这里」那块占位说明（里面写着 background 字段 / authorId / src/data/draw
+     这些内部术语）→ 整块从页面上删掉，TODO 留在代码注释里。
+  所以断言也跟着改成"新设计"的：源码里**不许**再有那句写死的解释，读的是 copy；
+  浏览器那两条改成"跟着 copy 走 / 占位块不存在"。条数不变（这个脚本一共 100 条）。
+*/
+const copyUserLead = (() => {
+  try {
+    return String(JSON.parse(read('src/data/liyutang.json'))?.copy?.user?.lead ?? '').trim();
+  } catch {
+    return '';
+  }
+})();
+check(
+  '★ 用户名 / 昵称那段说明搬进了 copy.user.lead（源码里不再写死那句话，空则不渲染）',
+  /copy\(\)/.test(page) && /c\.user\.lead/.test(page) && /c\.user\.lead &&/.test(page)
+    /* 判"页面上没有"要在**剥掉注释**的源码上判：那段历史（为什么删）本来就要写在注释里 */
+    && !/不能改/.test(page.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/<!--[\s\S]*?-->/g, ' '))
+);
+check(
+  '★ 用户页上不再有「以后会长在这里」那块占位说明（内部术语不上页面；TODO 留在代码注释里）',
+  !/data-lt-user-later/.test(page.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/<!--[\s\S]*?-->/g, ' '))
+    && /TODO/.test(page) && /background 字段/.test(page)
+);
 
 /* 显示名的口径：哪些地方还在用 nick 显示（这一段只打印，不断言 —— 有一半在别人正在改的文件里） */
 const nickSpots = [];
@@ -677,9 +701,20 @@ try {
   check('编辑区里有换头像的文件框 + 昵称输入框', self0.fileInputs === 1 && self0.inputCount >= 1, JSON.stringify({ file: self0.fileInputs, input: self0.inputCount }));
   check('用户名（@hoshi）和昵称（星野）**分开显示**', self0.nick === 'hoshi' && self0.alias === '星野' && self0.at === '@hoshi',
     JSON.stringify({ nick: self0.nick, alias: self0.alias, at: self0.at }));
-  check('写清了用户名不能改、昵称随时能改', /不能改/.test(await cdp.ev(`(document.querySelector('[data-lt-user-rule]')||{}).textContent||''`)));
+  /*
+    这段说明现在**跟着数据走**：`copy.user.lead` 填了就显示、空着就压根没这个节点。
+    所以断言也照数据判（写死"一定有 / 一定没有"会在站长填上文案那天变红）。
+  */
+  const ruleText = String(await cdp.ev(`(document.querySelector('[data-lt-user-rule]')||{}).textContent||''`)).trim();
+  const ruleMissing = (await cdp.ev(`document.querySelector('[data-lt-user-rule]') === null`)) === true;
+  check(
+    '★ 用户页那段说明跟着 copy.user.lead 走：填了才出现、空着就没有（代码里不再写死）',
+    copyUserLead ? ruleText.includes(copyUserLead) : ruleText === '' && ruleMissing,
+    copyUserLead ? `数据里填了「${copyUserLead.slice(0, 20)}…」· 页面「${ruleText.slice(0, 20)}…」` : '数据里是空的 → 节点不存在'
+  );
   check('注册时间 / 发过几篇都在', /^\d{4}-\d{2}-\d{2}$/.test(String(self0.since)) && self0.posts === '3 篇', `${self0.since} / ${self0.posts}`);
-  check('以后那三块占位在，而且没有假数据', self0.laterShown === true && (await cdp.ev(`document.querySelectorAll('[data-lt-user-later] li').length`)) === 3);
+  check('★ 用户页不再摆「以后会长在这里」的占位说明（要显示就直接显示真数据）',
+    self0.laterShown === false && (await cdp.ev(`document.querySelectorAll('[data-lt-user-later] li').length`)) === 0);
   await shot('liyutang-user-self.png');
 
   /* ---------------- ④ 改昵称：页面上立刻变 ---------------- */
@@ -737,7 +772,7 @@ try {
     JSON.stringify({ alias: other.alias, nick: other.nick }));
   check('看别人的时候也说了"只能看"', /只能看/.test(String(other.msg)), String(other.msg));
   check('看别人也看得到"发过 5 篇" / 注册时间', other.posts === '5 篇' && /^\d{4}-\d{2}-\d{2}$/.test(String(other.since)), `${other.posts} / ${other.since}`);
-  check('以后那三块占位在看别人时也在（结构一样）', other.laterShown === true);
+  check('★ 看别人的时候也不再摆那三块占位说明（和本人那一趟结构一样）', other.laterShown === false);
   check('看别人时没把邮箱发过来（契约里 LT_USER_GET 摘掉 mail）',
     !/hoshi@example\.com|arc@example\.com/.test(await cdp.ev('document.body.textContent')));
   await shot('liyutang-user-other.png');

@@ -19,19 +19,23 @@
 import ForumLayout from '../../../layouts/ForumLayout.astro';
 import LiyutangChatRail from '../../../components/LiyutangChatRail.astro';
 import { chatApex, chatDays, chatTimeline } from '../../../utils/chat-archive';
+import { copy } from '../../../utils/liyutang';
 import { withBase } from '../../../utils/url';
 
 const tl = chatTimeline();
 const apex = chatApex(tl);
 const home = withBase('/liyutang/');
 const today = withBase('/liyutang/chatroom/');
+/* 顶部那段说明由站长在编辑器里填（copy.chat.hint）；这里只剩"存了几天"这个事实 */
+const c = copy();
 /* 已有存档的天数：只用来在标题下面写一句人话（真正有没有东西可搜，以索引文件为准） */
 const dayCount = chatDays().length;
 ---
 
 <ForumLayout
   title="聊天室 · 搜历史"
-  description="搜黎语堂聊天室的历史记录：关键词在浏览器里过滤，不用登录，搜索不花云端额度。"
+  /* 描述也归站长写（copy.chat.hint）；留空就退回站点总描述 */
+  description={c.chat.hint || undefined}
   noindex
 >
   <div class="lyt-page">
@@ -39,12 +43,11 @@ const dayCount = chatDays().length;
       <a href={home}>← 黎语堂</a>
     </p>
     <h1 class="lyt-title">搜历史消息</h1>
-    <p class="lyt-lead">
-      翻一翻聊天室过去说过的话。打几个字就行，多个词用空格隔开（<b>每个词都要命中</b>），
-      结果按日子从新到旧排。索引是站点自己的静态文件、过滤在你自己的浏览器里 ——
-      <b>不用登录</b>，也不花云端额度。
-      {dayCount > 0 ? `现在存着 ${dayCount} 天的记录。` : ''}
-      想看今天在聊什么，<a href={today}>回聊天室</a>。
+    {/* 说明归站长写（copy.chat.hint）；留空时这里只剩"存了几天"这个事实和一条去路 */}
+    {c.chat.hint && <p class="lyt-lead" data-lt-copy="chat.hint">{c.chat.hint}</p>}
+    <p class="lyt-form__hint">
+      {dayCount > 0 && <span>现在存着 {dayCount} 天的记录。</span>}
+      <a href={today}>去今天的聊天室 ›</a>
     </p>
 
     <div class="lyt-chat">
@@ -63,7 +66,7 @@ const dayCount = chatDays().length;
             id="lyt-chat-q"
             class="lyt-search__input"
             type="search"
-            placeholder="打几个字，翻一翻过去说过什么…（按 / 聚焦）"
+            placeholder="搜聊天记录…（按 / 聚焦）"
             aria-label="搜索聊天室的历史记录"
             autocomplete="off"
           />
@@ -213,7 +216,7 @@ const dayCount = chatDays().length;
     hit.textContent = '';
 
     if (failed) {
-      say('索引没拉下来（可能是网络）。刷新一下再试试。');
+      say('索引没拉下来，刷新重试。');
       return;
     }
     if (!items) {
@@ -221,11 +224,11 @@ const dayCount = chatDays().length;
       return;
     }
     if (!items.length) {
-      say('还没有存档 —— 聊天记录每天定时搬进仓库，搬进来的日子就能在这儿翻。');
+      say('还没有存档。');
       return;
     }
     if (!terms.length) {
-      say('打几个字，翻一翻过去说过什么。');
+      say('输入关键词搜索。');
       return;
     }
 
@@ -242,11 +245,11 @@ const dayCount = chatDays().length;
     hit.textContent = `命中 ${found.length} 条`;
 
     if (!found.length) {
-      say('没翻到 —— 换个词，或者只打其中两个字试试。');
+      say('没翻到，换个词试试。');
       return;
     }
     if (found.length > rows.length) {
-      say(`只画了最新的 ${MAX_ROWS} 条，还有 ${found.length - rows.length} 条 —— 再打几个字缩小一点。`);
+      say(`只显示最新的 ${MAX_ROWS} 条，还有 ${found.length - rows.length} 条。`);
       return;
     }
     say('');

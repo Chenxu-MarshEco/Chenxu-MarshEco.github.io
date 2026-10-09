@@ -18,16 +18,19 @@
  */
 import ForumLayout from '../../layouts/ForumLayout.astro';
 import LiyutangAccount from '../../components/LiyutangAccount.astro';
-import { boards, forum } from '../../utils/liyutang';
+import { boards, copy, forum } from '../../utils/liyutang';
 import { withBase } from '../../utils/url';
 
 const list = boards();
 const api = forum().twikoo.envId;
+/* 文案归站长写（copy.new.hint）；留空时一个版块都没有的那句话就不显示 */
+const c = copy();
 const home = withBase('/liyutang/');
 const titles = Object.fromEntries(list.map((b) => [b.id, b.title]));
 ---
 
-<ForumLayout title="发帖" description="在黎语堂发帖。" noindex>
+{/* 搜索结果 / 分享卡片上那句描述归站长写（copy.new.desc）；留空就退回站点总描述 */}
+<ForumLayout title="发帖" description={c.new.desc || undefined} noindex>
   <div class="lyt-page">
     <p class="lyt-crumb">
       <a href={home}>← 黎语堂</a>
@@ -47,7 +50,7 @@ const titles = Object.fromEntries(list.map((b) => [b.id, b.title]));
             <option value={b.id}>{b.icon ? `${b.icon} ` : ''}{b.title}</option>
           ))}
         </select>
-        {list.length === 0 && <span class="lyt-form__msg">还没有版块 —— 先去「黎语堂管理」里建一个。</span>}
+        {list.length === 0 && c.new.hint && <span class="lyt-form__msg" data-lt-copy="new.hint">{c.new.hint}</span>}
       </div>
 
       <label class="lyt-form__label" for="lt-title">标题</label>
@@ -70,10 +73,11 @@ const titles = Object.fromEntries(list.map((b) => [b.id, b.title]));
         <button class="lyt-bar__btn" type="button" data-lt-cmd="code" title="行内代码">代码</button>
         <button class="lyt-bar__btn" type="button" data-lt-cmd="link" title="链接">链接</button>
         <button class="lyt-bar__btn" type="button" data-lt-cmd="hr" title="分割线">分割线</button>
-        <button class="lyt-bar__btn" type="button" data-lt-cmd="image" title="传图（压到 1600px 后内嵌）">
+        {/* 工具条上的悬停提示只留"这个词是什么"，不写"压到多少像素"这种内部细节（2026-10-09 收敛） */}
+        <button class="lyt-bar__btn" type="button" data-lt-cmd="image" title="传图">
           传图
         </button>
-        <button class="lyt-bar__btn" type="button" data-lt-cmd="preview" title="看一眼发出来长什么样">
+        <button class="lyt-bar__btn" type="button" data-lt-cmd="preview" title="预览">
           预览
         </button>
       </div>

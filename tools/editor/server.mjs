@@ -1765,6 +1765,8 @@ async function handleApi(req, res, url) {
         boards: data.file.boards.length,
         halls: data.file.halls.length,
         provider: data.file.forum.provider,
+        /* 页面文案填了几条（空串不算）——面板底下那行"已填 N 条"读的就是它 */
+        copyFilled: countCopyFilled(data.file.copy),
       },
       /* 写完之后的指纹：页面拿着它接着用，下一次保存才不会一上来就被自己的旧指纹挡住 */
       rev: liyutangRevOf(Buffer.from(text, 'utf8')),
@@ -3779,9 +3781,24 @@ function hallSitePath(value, max) {
   return s.slice(0, max);
 }
 
+/**
+ * 页面文案填了几条（空串不算）。
+ * 和 `cleanLiyutang` 里那份 COPY_SHAPE 是两回事：这里只数数（脏数据再怎么长也不该把它数崩），
+ * 所以只认"对象里那些非空字符串"，`_readme` 那种数组/说明键跳过。
+ */
+function countCopyFilled(copy) {
+  if (!copy || typeof copy !== 'object') return 0;
+  let n = 0;
+  for (const [group, gval] of Object.entries(copy)) {
+    if (group.startsWith('_') || !gval || typeof gval !== 'object' || Array.isArray(gval)) continue;
+    for (const v of Object.values(gval)) if (typeof v === 'string' && v.trim()) n++;
+  }
+  return n;
+}
+
 function cleanLiyutang(payload, current) {
   if (!payload || typeof payload !== 'object') {
-    throw httpError(400, '数据格式不对，需要 { forum, halls, boards }');
+    throw httpError(400, '数据格式不对，需要 { forum, halls, boards, copy }');
   }
   const dropped = {
     boards: 0,
@@ -3794,6 +3811,9 @@ function cleanLiyutang(payload, current) {
     hallsDupId: 0,
     hallsImage: 0,
     hallsHref: 0,
+    /* 页面文案那两个：超长被截断的条数 / 非字符串被规整成空串的条数 */
+    copyTooLong: 0,
+    copyNotString: 0,
   };
   const has = (k) => Object.prototype.hasOwnProperty.call(payload, k);
   const file = {};
@@ -3979,10 +3999,74 @@ function cleanLiyutang(payload, current) {
     file.boards.push(board);
   }
 
+  /*
+    ---- 页面文案（copy，2026-10-09 加）----
+
+    用户原话（语气很重）：「当前的黎语堂网站里充斥着过多你自己胡编乱造的提示和简介 ……
+      请你全部删掉全部这一类你自己生造的句子 并且给对应的位置留下编辑器接口
+      以方便我去填写介绍和简介」。
+    所以页面上那些"介绍 / 引导"文字全部搬进 `copy`，由**编辑器「页面文案」面板**填；
+    代码里一个字都不许写死（站点那边怎么读见 src/utils/liyutang.ts 的 copy()）。
+
+    清洗规矩和别的字段**故意不一样**，抄之前先读这三条：
+      · 值只收字符串、长度封顶 COPY_MAX（超了截断，记一笔 `dropped.copyTooLong`），
+        非字符串一律规整成空串（记 `dropped.copyNotString`）；
+      · **空串照留** —— 不像 halls 那样"洗不出来就丢掉整条"：文案是要显示给人看的东西，
+        丢一条站长就得重打一遍，很难受；留空串只是"那一块不渲染"，站点自己认；
+      · 请求里带了 `copy`（哪怕是个空对象）就用请求里的，没带才退回盘上那份 ——
+        老客户端读不懂这个键，一次保存不该把站长写好的文案抹掉（和 halls 一个兜底姿势）；
+      · ⚠ `copy._readme` 和顶层 `_readme` 同一条规矩：**永远取盘上那份**（它也是给手改 JSON 的人看的）。
+  */
+  const COPY_MAX = 200;
+  /* 认得的键（页面上真有这一处）。以后加了新页 / 新位置，两处一起加：这里 + liyutang.js 的面板。 */
+  const COPY_SHAPE = {
+    board: ['lead', 'hint', 'note', 'empty'],
+    chat: ['lead', 'hint', 'note'],
+    calendar: ['lead'],
+    user: ['lead'],
+    home: ['lead', 'note'],
+    post: ['hint', 'desc'],
+    new: ['hint', 'desc'],
+  };
+  const rawCopy =
+    payload.copy && typeof payload.copy === 'object'
+      ? payload.copy
+      : current.copy && typeof current.copy === 'object'
+        ? current.copy
+        : {};
+  file.copy = {};
+  /* 说明排在最前面：和手改 JSON 的人看到的顺序一致 */
+  if (current.copy && Array.isArray(current.copy._readme)) file.copy._readme = current.copy._readme;
+  for (const [group, keys] of Object.entries(COPY_SHAPE)) {
+    const gsrc = rawCopy[group] && typeof rawCopy[group] === 'object' ? rawCopy[group] : {};
+    const out = {};
+    for (const key of keys) {
+      const v = gsrc[key];
+      if (v != null && typeof v !== 'string') {
+        dropped.copyNotString++;
+        out[key] = '';
+        continue;
+      }
+      const s = String(v ?? '').trim();
+      if (s.length > COPY_MAX) dropped.copyTooLong++;
+      out[key] = s.slice(0, COPY_MAX);
+    }
+    file.copy[group] = out;
+  }
+  /* 以后页面加了新的组 / 键：只要是字符串就原样留着（别让旧版页面保存一次把它们抹掉） */
+  for (const [group, gval] of Object.entries(rawCopy)) {
+    if (group.startsWith('_') || !gval || typeof gval !== 'object' || Array.isArray(gval)) continue;
+    const out = file.copy[group] || (file.copy[group] = {});
+    for (const [key, v] of Object.entries(gval)) {
+      if (key.startsWith('_') || typeof v !== 'string' || key in out) continue;
+      if (v.length > COPY_MAX) dropped.copyTooLong++;
+      out[key] = v.trim().slice(0, COPY_MAX);
+    }
+  }
+
   file.updated = formatDateParts(new Date()).date;
   return { file, dropped };
 }
-
 /* ------------------------------------------------------------------
    Twikoo（腾讯云开发）自检
 

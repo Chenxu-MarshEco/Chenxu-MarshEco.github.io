@@ -7,7 +7,7 @@ name: 每日存档（聊天室 + 画板）
 # 例如保存在本地仓库？但是需要所有用户都能搜索」。
 #
 # 这一份干的就是"搬"：
-#   · 到点（北京时间 00:10）跑 tools/liyutang-archive.mjs --yesterday：
+#   · 到点（北京时间 04:00）跑 tools/liyutang-archive.mjs --yesterday：
 #     向云函数要昨天那一整天（LT_ADMIN_CHAT_DAY，要站长密码），
 #     文字写成 src/data/chat/<日>.json、图片解成 public/img/chat/<日>/*.webp、
 #     头像按内容去重放进 public/img/chat/avatars/，并更新 src/data/chat/index.json；
@@ -27,8 +27,11 @@ name: 每日存档（聊天室 + 画板）
 
 on:
   schedule:
-    # 北京时间 00:10（GitHub 的 cron 是 UTC）= 刚过零点就把"昨天"存下来
-    - cron: '10 16 * * *'
+    # 北京时间 04:00（GitHub 的 cron 是 UTC，20:00 UTC = 次日 04:00 北京）。
+    # 为什么是四点而不是零点：用户要求"每天保存一次"放在凌晨四点，
+    # 于是切天点是**北京时间 04:00** —— 04:00 这一跑，存下的正好是「昨天04:00 → 今天04:00」那一整天
+    # （深夜 23:30 和 00:30 属于同一天，不会把一夜的聊天拆成两栏）。
+    - cron: '0 20 * * *'
   # 也能手动点一下（补档、或者刚上线想马上试一次）
   workflow_dispatch:
     inputs:
@@ -91,4 +94,6 @@ jobs:
           # ⚠ 用站里那条统一的发布路径（tools/git/sync.mjs）：它会先探连通 → add/commit →
           #   pull --rebase --autostash → push，被拒会自动再拉再推，真撞车就原地停下、
           #   什么都不推。**别在这儿手写 git push，更别加 -f。**
-          node tools/git/sync.mjs publish --message "存档：聊天室 $(date -u +%F)"
+          # 提交信息里的时间用**北京时间**（runner 是 UTC；这一跑发生在北京 04:00，
+          # 用 date -u 会写成前一天 20:00，跟"存的是哪一天"对不上）。
+          node tools/git/sync.mjs publish --message "存档：聊天室 + 画板（北京时间 $(TZ=Asia/Shanghai date '+%F %H:%M')）"

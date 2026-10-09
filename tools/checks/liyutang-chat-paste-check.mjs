@@ -1,6 +1,6 @@
 /*
  * ============================================================================
- * 聊天室「粘贴板里有图 → 当成选图发出去」的验收（2026-10-10）
+ * 聊天室「粘贴板里有图 → 当成选图发出去」的验收（2026-10-09）
  * ----------------------------------------------------------------------------
  * 用户原话：
  *   「聊天室支持粘贴图片发送：粘贴板里有图 → 当成选图（paste 事件取 clipboardData.items
@@ -82,13 +82,13 @@ const fakeBackend = (body) => {
   }
   if (event === 'LT_CHAT_LIST') {
     seen.lists += 1;
-    return { code: 0, day: '2026-10-10', today: '2026-10-10', serverNow: Date.now(), messages: [...messages] };
+    return { code: 0, day: '2026-10-09', today: '2026-10-09', serverNow: Date.now(), messages: [...messages] };
   }
   if (event === 'LT_CHAT_SEND') {
     seen.sends.push(body);
     const m = {
       id: 'm' + messages.length,
-      day: '2026-10-10',
+      day: '2026-10-09',
       nick: '测试者',
       avatar: '',
       text: String(body.text || ''),

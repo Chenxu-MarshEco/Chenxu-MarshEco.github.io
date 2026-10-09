@@ -50,7 +50,12 @@ export const IMG_DIR = path.join(ROOT, 'public', 'img', 'chat');
  * @returns {string} yyyy-mm-dd
  */
 export function yesterdayInBeijing(now = Date.now()) {
-  return new Date(now + 8 * 3600 * 1000 - 86400 * 1000).toISOString().slice(0, 10);
+  /*
+    和后端 dayKey 用的是同一个"切天点"：**北京时间凌晨 4 点**（2026-10-09 用户要求）——
+    所以这里的偏移是 +4h（不是 +8h）。这样 04:00 跑的时候，"昨天"正好是
+    "昨天 04:00 → 今天 04:00"那个窗口，一天不多一天不少。
+  */
+  return new Date(now + 4 * 3600 * 1000 - 86400 * 1000).toISOString().slice(0, 10);
 }
 
 /** 内容哈希（前 8 位）—— 头像去重的键 */
@@ -262,7 +267,7 @@ export function writeDrawArchive({ day, strokes, root = ROOT, now = Date.now(), 
       '这一份是**机器写的**：tools/liyutang-archive.mjs 每天把云端那天画的笔划搬下来，',
       '同一批笔划还渲染成 public/img/draw/<日>.svg（日历和日页直接内联它）。',
       '笔划是矢量的：{ tool: pen|eraser, color: #rrggbb, size, points: [[x, y], …] }，',
-      '坐标是画板自己的坐标系（2400×1500，和屏幕无关）。',
+      `坐标是画板自己的坐标系（${BOARD_W}×${BOARD_H}，和屏幕无关）。`,
       '',
       '⚠ 别手改这个文件：下一次存档会覆盖它（要改的是页面，不是数据）。',
     ],

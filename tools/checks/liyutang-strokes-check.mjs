@@ -77,7 +77,7 @@ const strokes = [
 ];
 const svg = strokesToSvg(strokes);
 check('是合法的 SVG 开头（带 viewBox 和纸色底）',
-  svg.startsWith(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${BOARD_W} ${BOARD_H}"`) && svg.includes('<rect width="2400" height="1500" fill="#fbf6ee" />'),
+  svg.startsWith(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${BOARD_W} ${BOARD_H}"`) && svg.includes(`<rect width="${BOARD_W}" height="${BOARD_H}" fill="#fbf6ee" />`),
   svg.slice(0, 90));
 check('★ 有效笔划都画成了 path（2 条），被删的和脏数据都没进去',
   (svg.match(/<path /g) || []).length === 2, `${(svg.match(/<path /g) || []).length} 条`);

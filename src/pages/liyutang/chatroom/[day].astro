@@ -23,11 +23,11 @@ import {
   chatArchive,
   chatClock,
   chatDays,
-  chatSearchUrl,
   chatTimeline,
   chatTodayUrl,
 } from '../../../utils/chat-archive';
 import { withBase } from '../../../utils/url';
+import { copy } from '../../../utils/liyutang';
 
 /**
  * 有存档的日子才生成页面。
@@ -49,12 +49,13 @@ const tl = chatTimeline();
 const apex = chatApex(tl, day);
 const home = withBase('/liyutang/');
 const today = chatTodayUrl();
-const search = chatSearchUrl();
+/* 顶上那句说明归站长写（copy.chat.note）；留空就整块不出现 */
+const c = copy();
 ---
 
 <ForumLayout
   title={`聊天室 · ${day}`}
-  description={`黎语堂聊天室 ${day} 那一天的存档：${messages.length} 条消息、${images} 张图，一条一条都在这儿。`}
+  description={c.chat.note || undefined}
   noindex
 >
   <div class="lyt-page">
@@ -62,10 +63,7 @@ const search = chatSearchUrl();
       <a href={home}>← 黎语堂</a>
     </p>
     <h1 class="lyt-title">聊天室 · {day}</h1>
-    <p class="lyt-lead">
-      那一天说过的话，原样留在这儿 —— 不用登录也能翻。左边那条日子轴点一下就换一天，
-      想找某句话就去<a href={search}>搜索历史</a>。
-    </p>
+    {c.chat.note && <p class="lyt-lead" data-lt-copy="chat.note">{c.chat.note}</p>}
 
     <div class="lyt-chat">
       {/*

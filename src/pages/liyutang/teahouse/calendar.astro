@@ -10,13 +10,17 @@
  */
 import ForumLayout from '../../../layouts/ForumLayout.astro';
 import { withBase } from '../../../utils/url';
+import { copy } from '../../../utils/liyutang';
 import { drawDateText, drawDayUrl, drawDays, drawSvgUrl, boardUrl } from '../../../utils/draw-archive';
 
 const days = drawDays();
 const board = boardUrl();
+/* 顶部那句简介归站长写（copy.calendar.lead）；留空就整块不出现，这里只留"存了几天"这个事实 */
+const c = copy();
 ---
 
-<ForumLayout title="画过的日子" description="久昭卿茶绘：每一天的画。" noindex>
+{/* 搜索结果 / 分享卡片上那句描述也归站长写（copy.calendar.lead）；留空就退回站点总描述 */}
+<ForumLayout title="画过的日子" description={c.calendar.lead || undefined} noindex>
   <div class="lyt-page">
     <p class="lyt-crumb">
       <a href={withBase('/liyutang/')}>← 黎语堂</a>
@@ -24,10 +28,8 @@ const board = boardUrl();
       <a href={board}>久昭卿茶绘</a>
     </p>
     <h1 class="lyt-title">画过的日子</h1>
-    <p class="lyt-lead">
-      每天存档一张当天画完的样子。点一天，就能看那块画板当天被画成了什么样。
-      {days.length > 0 && <span>现在一共存了 {days.length} 天。</span>}
-    </p>
+    {c.calendar.lead && <p class="lyt-lead" data-lt-copy="calendar.lead">{c.calendar.lead}</p>}
+    {days.length > 0 && <p class="lyt-form__hint">现在一共存了 {days.length} 天。</p>}
 
     {
       days.length > 0 ? (
@@ -48,10 +50,7 @@ const board = boardUrl();
           ))}
         </ul>
       ) : (
-        <p class="lyt-empty">
-          还没有画过 —— 等这一天有人动笔、第二天存档跑过，这里就会长出那一天的画。
-          现在去 <a href={board}>画板</a> 上添两笔吧。
-        </p>
+        <p class="lyt-empty">还没有画过。</p>
       )
     }
 

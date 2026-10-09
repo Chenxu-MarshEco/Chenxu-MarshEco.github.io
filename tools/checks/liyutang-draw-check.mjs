@@ -28,6 +28,7 @@ import path from 'node:path';
 import Module, { createRequire } from 'node:module';
 import { createHash } from 'node:crypto';
 import { spawn, execSync } from 'node:child_process';
+import { pathToFileURL } from 'node:url';
 
 const SRC = String.raw`D:\曼沫砾总线\Chenxu-MarshEco.github.io`;
 const BACKEND = path.join(SRC, 'tools', 'liyutang-backend', 'index.js');
@@ -38,6 +39,13 @@ const CHROME = String.raw`C:\Users\煦\AppData\Local\ms-playwright\chromium-1243
 const DEBUG_PORT = 9403;
 const PAPER = '#fbf6ee';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+/*
+  画板坐标系和网格几何**从那份共用的模块里读**（src/utils/liyutang-strokes.mjs）——
+  验收里一个数字都不许写死：2026-10-09 板子从 2400×1500 放大到 3600×2250 时，
+  写死 2400 的那两条断言就假红过（红得毫无意义：功能是好的，是断言自己过期了）。
+*/
+const strokesMod = await import(pathToFileURL(path.join(SRC, 'src', 'utils', 'liyutang-strokes.mjs')).href);
+const { BOARD_W, BOARD_H, GRID_STEP, gridLines } = strokesMod;
 
 let pass = 0;
 let fail = 0;
@@ -81,9 +89,20 @@ check('采样过滤（画板坐标里 1.2px 以内不留点）', /< 1\.2/.test(e
 check('★ 逐人显隐（hidden 集合 + 重画）', /const hidden = new Set<string>\(\)/.test(engine) && /hidden\.has\(s\.uk\)/.test(engine));
 check('橡皮按纸色画（和服务端 / 存档 SVG 一个规矩）', /ERASER_COLOR = PAPER/.test(engine));
 check('页面接上了：工具条 + 画布 + 人表', /mountBoard\(/.test(read(path.join('src', 'pages', 'liyutang', 'teahouse.astro'))));
-check('画板尺寸是固定坐标系（2400×1500）', /BOARD_W = 2400/.test(read(path.join('src', 'utils', 'liyutang-strokes.mjs'))));
+/*
+  ⚠ 这一条 2026-10-09 改过（旧断言是 `/BOARD_W = 2400/`）：板子被用户要求放大到 3600×2250，
+  旧数字必然过期。现在**从模块里读**（BOARD_W/BOARD_H 已经在文件顶部 import），
+  并且要求两处（浏览器 + 云函数那份抄走的）一致 —— 不一致的后果是"右下角画不上去"。
+*/
+check('画板尺寸是固定坐标系（3600×2250，长宽都 ×1.5、原点仍在左上角）',
+  BOARD_W === 3600 && BOARD_H === 2250 && BOARD_W / BOARD_H === 2400 / 1500 &&
+    new RegExp(`BOARD_W = ${BOARD_W}`).test(read(path.join('src', 'utils', 'liyutang-strokes.mjs'))) &&
+    new RegExp(`BOARD_H = ${BOARD_H}`).test(read(path.join('src', 'utils', 'liyutang-strokes.mjs'))),
+  `模块里读到 ${BOARD_W}×${BOARD_H}`);
+check('★ 云函数里抄走的那两个常量也是同一对数（两边不一致右下角就画不上去）',
+  new RegExp(`const BOARD_W = ${BOARD_W}\\b`).test(backend) && new RegExp(`const BOARD_H = ${BOARD_H}\\b`).test(backend));
 
-/* ---- 2026-10-10 这一轮的新功能：先来一遍静态的（真跑的在那三段之后） ---- */
+/* ---- 2026-10-09 这一轮的新功能：先来一遍静态的（真跑的在那三段之后） ---- */
 const page = read(path.join('src', 'pages', 'liyutang', 'teahouse.astro'));
 check('★ 重做是"照原样再画一笔新的"（服务端软删，原来那条回不来）',
   /const doRedo = async/.test(engine) && /commit\(back/.test(engine) && /redoStack/.test(engine));
@@ -111,6 +130,62 @@ check('茶绘页面把新控件都接上了（移动/取色/＋收藏/粗细数�
 check('★ 新控件的样式写在茶绘自己的 <style> 里（没往 forum.css 加）',
   /<style is:global>/.test(page) && /lyt-draw__swatch-del/.test(page) &&
     !/lyt-draw__swatch-del/.test(read(path.join('src', 'styles', 'forum.css'))));
+
+/* ---- 2026-10-09 第二批（用户逐条要的）：光标圆 / 网格 / 快捷键 / 悬停卡片 / 橡皮两种模式 ---- */
+console.log('\n--- 静态：第二批那几件 ---');
+check('★ 网格线距是画板坐标里的 300，几何只有一份（gridLines 导出）',
+  GRID_STEP === 300 && typeof gridLines === 'function' && /export const GRID_STEP = 300/.test(read(path.join('src', 'utils', 'liyutang-strokes.mjs'))));
+const ggrid = gridLines(BOARD_W, BOARD_H, GRID_STEP);
+check('★ 格子数对得上：12 列整格（11 条内部竖线）、7 行整格 + 最下面半格 150（不补线到板底）',
+  ggrid.cols === 12 && ggrid.rows === 7 && ggrid.half === 150 &&
+    ggrid.xs.length === 11 && ggrid.ys.length === 7 &&
+    ggrid.xs[0] === 300 && ggrid.xs[10] === 3300 && ggrid.ys[6] === 2100,
+  JSON.stringify({ cols: ggrid.cols, rows: ggrid.rows, half: ggrid.half, xs: ggrid.xs.length, ys: ggrid.ys.length }));
+check('★ 网格画在画布**下面**那一层 div 上（不是画进画布：不然它会变成"画面上的像素"）',
+  /lyt-draw__grid/.test(engine) && /insertBefore\(gridLayer, canvas\)/.test(engine) &&
+    /lyt-draw__grid/.test(page) && /data-lt-grid-toggle/.test(page));
+check('★ 画布不再刷纸色（纸色来自 stage 的底色），透明处读像素按纸色合成',
+  /ctx\.clearRect\(0, 0, canvas\.width, canvas\.height\)/.test(engine) && /cctx\.clearRect\(0, 0, BOARD_W, BOARD_H\)/.test(engine) &&
+    /overPaper/.test(engine));
+check('★ 网格默认开着 + 状态存账号偏好（grid）', /let gridOn = true/.test(engine) && /grid: gridOn/.test(engine));
+check('★ 光标圆：直径 = 当前工具粗细 × 视野缩放（画笔读 penSize、橡皮读 eraserSize）',
+  /lyt-draw__ring/.test(engine) && /const ringSize = \(\) => sizeOf\(\) \* view\.scale/.test(engine));
+check('★ 画布上不用十字光标（画笔/橡皮 cursor: none），拖动画布 grab/grabbing、移动线条 move',
+  /cursor: none/.test(page) && /'grabbing'/.test(engine) && /'grab'/.test(engine) && /'move'/.test(engine));
+check("★ 触摸设备上不显示那个圆（pointerType === 'touch'）", /pointerType !== 'touch'/.test(engine));
+check('★ 快捷键：B 画笔 / E 橡皮 / 1~9 调色盘 / C 拖动画布 / T 移动线条 / Ctrl+Z 撤回 / Ctrl+R 重做',
+  /KeyB/.test(engine) && /KeyE/.test(engine) && /KeyC/.test(engine) && /KeyT/.test(engine) &&
+    /Digit\(\[1-9\]\)/.test(engine) && /KeyZ/.test(engine) && /KeyR/.test(engine));
+check('★ Ctrl+R 被 preventDefault（不然按一下变成刷新页面，没画完就白画）',
+  /ke\.code === 'KeyR'[\s\S]{0,120}?preventDefault/.test(engine));
+check('★ 焦点在输入框里时快捷键一律不认（输入框里打字不能切工具）',
+  /const typingIn = /.test(engine) && /isContentEditable/.test(engine) && /typingIn\(document\.activeElement\)/.test(engine));
+check('★ 工具条按钮的悬停卡片：功能名 + 快捷键，键盘 focus 也能弹（:focus-within）',
+  /lyt-tip/.test(page) && /role="tooltip"/.test(page) && /aria-describedby/.test(page) && /:focus-within/.test(page));
+check('★ 卡片的视觉照花涧堂时间轴那个浮层（同底色 / 同描边 / 同圆角字号，不另起一套）',
+  /rgba\(24, 3, 36, 0\.96\)/.test(page) && /rgba\(255, 120, 190, 0\.6\)/.test(page) && /border-radius: 7px/.test(page) &&
+    /rgba\(24, 3, 36, 0\.96\)/.test(read(path.join('src', 'components', 'Timeline.astro'))));
+check('★ 调色盘默认只剩黑白二色（其余靠用户自己收藏）', /PALETTE = \['#000000', '#ffffff'\]/.test(engine));
+check('★「抓手」这个叫法全没了（按钮文字 / 提示 / 注释都改成「拖动画布」）',
+  !/抓手/.test(engine) && !/抓手/.test(page) && /拖动画布/.test(page) && /data-lt-tool="pan"/.test(page));
+check('★ 橡皮两种模式：默认只擦自己的（软删 LT_DRAW_DELETE），「擦所有人」才画纸色笔划',
+  /let eraserAll = false/.test(engine) && /const softDelete = async/.test(engine) &&
+    /if \(!hit\.mine\) return;/.test(engine) && /data-lt-eraser-all/.test(page) &&
+    /eraserAll/.test(read(path.join('src', 'utils', 'liyutang-draw.ts'))));
+check('★ 两个开关跟着账号走（LT_PREFS_SET 带上 grid / eraserAll，applyPrefs 读回来）',
+  /if \(typeof p\.grid === 'boolean'\) gridOn = p\.grid/.test(engine) &&
+    /if \(typeof p\.eraserAll === 'boolean'\) eraserAll = p\.eraserAll/.test(engine) &&
+    /eraserAll,/.test(engine));
+check('★ 跨天自清：只认服务端回的 today，变了就把本地笔划全丢掉重拉（不自己算日期）',
+  /if \(today && day && today !== day\)/.test(engine) && /strokes = \[\];/.test(engine) && /let day = ''/.test(engine));
+check('★ 页面文案从 copy() 读（board.lead/hint/note），空的不渲染；生造的介绍句一个都没有',
+  /import \{ copy, forum \} from '\.\.\/\.\.\/utils\/liyutang'/.test(page) &&
+    /const cp = copy\(\)\.board/.test(page) && /const lead = cp\.lead/.test(page) &&
+    /\{lead && <p class="lyt-lead">\{lead\}<\/p>\}/.test(page) && /\{hint && /.test(page) && /\{note && /.test(page) &&
+    !/一块大家共用的画板/.test(page) && !/滚轮在画布上缩放（1×~4×）/.test(page));
+check('★ 第二批没往 forum.css 里加东西（新控件的样式都在茶绘自己的 <style> 里）',
+  /lyt-tip__wrap/.test(page) && !/lyt-tip/.test(read(path.join('src', 'styles', 'forum.css'))) &&
+    !/lyt-draw__ring/.test(read(path.join('src', 'styles', 'forum.css'))));
 
 /* ============================================================ ② 真跑 */
 
@@ -193,8 +268,9 @@ if (!MongoMemoryServer || !mongodBinary) {
   check('一个点都没有 → 被拒', (await call({ event: 'LT_DRAW_ADD', ltToken: tokHoshi, tool: 'pen', color: '#ffffff', size: 4, points: [] })).code !== 0);
   await sleep(150);
   const clamp = await call({ event: 'LT_DRAW_ADD', ltToken: tokHoshi, tool: 'pen', color: '#00ff00', size: 3, points: [[-999, -999], [99999, 99999]] });
-  check('★ 越界坐标被夹进画板（2400×1500）',
-    clamp.code === 0 && clamp.stroke.points[0][0] === 0 && clamp.stroke.points[1][0] === 2400 && clamp.stroke.points[1][1] === 1500,
+  /* ⚠ 这一条 2026-10-09 改过（旧断言写死 2400/1500）：数字一律从模块里取，别再写死 */
+  check(`★ 越界坐标被夹进画板（${BOARD_W}×${BOARD_H}）`,
+    clamp.code === 0 && clamp.stroke.points[0][0] === 0 && clamp.stroke.points[1][0] === BOARD_W && clamp.stroke.points[1][1] === BOARD_H,
     JSON.stringify(clamp.stroke?.points));
 
   const list = await call({ event: 'LT_DRAW_LIST', ltToken: tokHoshi });
@@ -292,6 +368,18 @@ const extra = [];
 const remoteStroke = (s) => ({ ...s, createdAt: Date.now() + 30000, updatedAt: Date.now() + 30000, mine: false });
 /* 账号里那份偏好（LT_ME 会带出去）——"重开页面收藏还在"那条就靠它 */
 let prefsState = {};
+/*
+  假云端说的"今天是哪天"（真后端按北京时间凌晨 4 点切天，页面**只认服务端回的这个值**）。
+  跨天自清那一条就是把它换掉、再让列表返回空的 —— 模拟"凌晨四点存档搬完 + 清空云端"。
+*/
+/*
+  ⚠ 这个值**故意跟今天不一样**：它就是"换天"那个夹具（下面第 6 段把它换掉、模拟凌晨四点存档搬完）。
+  别拿它当日期声明、也别在批量改日期时顺手把它改成今天 —— 2026-10-09 晚上就栽过一次：
+  一次盲改把这里和下面的期望值一起改成同一天，跨天自清那两条立刻假红（功能是好的）。
+*/
+const NEXT_DAY = '2026-10-11';
+let servedToday = '2026-10-09';
+let servedWiped = false;
 const OTHER = { id: 'other-stroke', uk: 'beef1234', nick: '虹星', avatar: '', tool: 'pen', color: '#3a86ff', size: 24, points: [[1750, 1050], [1850, 1100], [1950, 1150]], createdAt: 0, mine: false };
 const fakeBackend = (body) => {
   const event = String(body?.event || '');
@@ -306,11 +394,12 @@ const fakeBackend = (body) => {
     for (const s of extra) if (!all.some((x) => x.id === s.id)) all.push(s);
     return {
       code: 0,
-      day: '2026-10-09',
-      today: '2026-10-09',
+      day: servedToday,
+      today: servedToday,
       serverNow: Date.now(),
       more: false,
-      strokes: all.filter((s) => Number(s.updatedAt ?? s.createdAt) > after),
+      /* "今天这块板已经被存档搬空/换天了" → 一条都不给（客户端该照 today 自清） */
+      strokes: servedWiped ? [] : all.filter((s) => Number(s.updatedAt ?? s.createdAt) > after),
     };
   }
   if (event === 'LT_DRAW_ADD') {
@@ -345,8 +434,8 @@ const fakeBackend = (body) => {
     const dx = Number(body.dx) || 0;
     const dy = Number(body.dy) || 0;
     s.points = s.points.map(([x, y]) => [
-      Math.round(Math.min(2400, Math.max(0, x + dx)) * 10) / 10,
-      Math.round(Math.min(1500, Math.max(0, y + dy)) * 10) / 10,
+      Math.round(Math.min(BOARD_W, Math.max(0, x + dx)) * 10) / 10,
+      Math.round(Math.min(BOARD_H, Math.max(0, y + dy)) * 10) / 10,
     ]);
     s.updatedAt = Date.now();
     return { code: 0, stroke: { ...s, points: s.points.map(([x, y]) => [x, y]) }, serverNow: s.updatedAt };
@@ -415,6 +504,13 @@ class CDP {
       }
       if (m.method === 'Runtime.exceptionThrown') this.errors.push(String(m.params.exceptionDetails?.text).slice(0, 140));
       if (m.method === 'Runtime.consoleAPICalled' && m.params.type === 'error') this.errors.push(m.params.args.map((a) => a.value ?? a.description).join(' ').slice(0, 140));
+      /* 未捕获的异常也记下来（原来只记 console.error）：引擎挂载时炸掉就是这样暴露的 ——
+         页面上一片安静，只有 window.__ltBoard 不见了。 */
+      if (m.method === 'Runtime.exceptionThrown') {
+        const ex = m.params.exceptionDetails;
+        const d = String(ex.exception?.description || ex.text || '').split('\n').slice(0, 3).join(' | ');
+        this.errors.push(`未捕获异常: ${d.slice(0, 200)}`);
+      }
     });
   }
   static async attach(u) {
@@ -432,7 +528,14 @@ class CDP {
   }
   async ev(e) {
     const r = await this.send('Runtime.evaluate', { expression: e, returnByValue: true, awaitPromise: true });
-    if (r.exceptionDetails) throw new Error(r.exceptionDetails.text);
+    if (r.exceptionDetails) {
+      /* 2026-10-09：原来只抛 exceptionDetails.text（永远是一句"Uncaught"），
+         排查"引擎没挂上"时等于没说 —— 把页面里的异常描述和最近几条 console.error 一起带上。 */
+      const d = r.exceptionDetails;
+      const desc = String(d.exception?.description || d.exception?.value || '').split('\n').slice(0, 3).join(' | ');
+      const recent = this.errors.length ? `  ｜页面里最近报的错：${this.errors.slice(-3).join(' ;; ')}` : '';
+      throw new Error(`${d.text}${desc ? ` :: ${desc}` : ''}${recent}  ｜表达式：${String(e).replace(/\s+/g, ' ').slice(0, 120)}`);
+    }
     return r.result.value;
   }
   async wait(expr, ms = 15000) {
@@ -503,6 +606,27 @@ try {
     await sleep(400);
   };
 
+  /**
+   * 选一个颜色当画笔。
+   *
+   * ⚠ 2026-10-09 改的：调色盘**默认只剩黑白二色**（用户要求"其他都交给用户自己选上"），
+   * 所以旧写法"点那个内置色块"（`find(b => b.dataset.color === '#1d1430')`）会点空 ——
+   * 现在一律走「别的颜色」那个输入框（和用户自己调色走的是同一条路，语义没变）。
+   * 色块**存在**时仍旧点色块（顺带把"点色块能改颜色"这条也一起验了）。
+   */
+  const setInk = async (hex) => {
+    const hit = await cdp.ev(`(() => {
+        const b = [...document.querySelectorAll('.lyt-draw__swatch')].find((x) => x.dataset.color === '${hex}');
+        if (b) { b.click(); return 'swatch'; }
+        const el = document.querySelector('[data-lt-color]');
+        el.value = '${hex}';
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        return 'input';
+      })()`);
+    await sleep(120);
+    return hit;
+  };
+
   const drawOn = async (points) => {
     await showCanvas();
     const first = await cdp.ev(toScreen(points[0][0], points[0][1]));
@@ -545,14 +669,15 @@ try {
   await cdp.go(`${base}/liyutang/teahouse/`);
   const ready = await cdp.wait(`(() => {
       const b = document.querySelector('[data-lt-tool="pen"]');
-      return !!b && !b.disabled && document.querySelectorAll('.lyt-draw__swatch').length >= 6;
+      /* ⚠ 2026-10-09：内置调色盘只剩黑白两个（旧断言写的是 >= 6） */
+      return !!b && !b.disabled && document.querySelectorAll('.lyt-draw__swatch').length >= 2;
     })()`, 20000);
   check('★ 过审账号进来：工具条解锁 + 调色板画出来了', ready === true);
   const empty = await cdp.ev(pixelAt(600, 375));
   check('一开始画布是干净的（纸色）', empty === PAPER, empty);
 
   /* 画一笔：从左到右一条水平线，正好经过 (600,375) */
-  await cdp.ev(`[...document.querySelectorAll('.lyt-draw__swatch')].find((b) => b.dataset.color === '#1d1430').click()`);
+  await setInk('#1d1430');
   await drawOn([[400, 375], [500, 375], [600, 375], [700, 375]]);
   const myPix = await cdp.ev(pixelAt(600, 375));
   check('★ 画上去的墨色真的出现在画布那一点上（不是"看着像"）', myPix === '#1d1430', myPix);
@@ -646,7 +771,7 @@ try {
   /* 放大状态下画一笔：坐标要还是**画板坐标**（不能把屏幕像素当成画板坐标发上去） */
   const beforeZoomDraw = seen.add.length;
   await cdp.ev(`document.querySelector('[data-lt-tool="pan"]').classList.remove('is-on'); [...document.querySelectorAll('.lyt-draw__bar button')].find((b) => b.textContent.trim() === '画笔').click()`);
-  await cdp.ev(`[...document.querySelectorAll('.lyt-draw__swatch')].find((b) => b.dataset.color === '#8ac926').click()`);
+  await setInk('#8ac926');
   await drawOn([[500, 500], [560, 500], [620, 500]]);
   const zoomStroke = seen.add[seen.add.length - 1];
   check('★ 放大之后画的笔划，坐标依旧是画板坐标（不是屏幕像素）',
@@ -656,7 +781,7 @@ try {
   check('放大之后画上去的颜色也在画布上（那一点是新的绿色）',
     (await cdp.ev(pixelAt(560, 500))) === '#8ac926', await cdp.ev(pixelAt(560, 500)));
 
-  /* 「抓手」拖动：板子跟着走 */
+  /* 「拖动画布」拖动：板子跟着走 */
   await cdp.ev(`document.querySelector('[data-lt-tool="pan"]').click()`);
   const vBeforePan = await cdp.ev(viewOf);
   await showCanvas();
@@ -681,7 +806,7 @@ try {
   await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: p0.x - 120, y: p0.y - 60, button: 'left', clickCount: 1, buttons: 0 });
   await sleep(400);
   const vAfterPan = await cdp.ev(viewOf);
-  check('★ 抓手能把板子拖走（平移量 ≈ 拖动距离 / 缩放）',
+  check('★ 拖动画布能把板子拖走（平移量 ≈ 拖动距离 / 缩放）',
     vAfterPan.x > vBeforePan.x && vAfterPan.y > vBeforePan.y &&
       Math.abs(vAfterPan.x - vBeforePan.x - 120 / vBeforePan.scale) < 6,
     JSON.stringify({ before: vBeforePan, after: vAfterPan }));
@@ -736,13 +861,17 @@ try {
   const erased = await cdp.ev(pixelAt(600, 375));
   check('★ 橡皮擦过之后那一点变回纸色', erased === PAPER, erased);
   /*
-    ⚠ 别写死"第 2 笔"：缩放那一段插在橡皮之前，所以橡皮不一定是第几笔 ——
-    看**最后一笔**才对（2026-10-09 挪顺序时这条假红过一次）。
+    ⚠ 这一条 2026-10-09 改过（旧断言：`最后一笔 tool=eraser 且 color=纸色`，即"橡皮=画一条纸色笔划"）。
+    用户这一批把橡皮的**默认模式**换成了"只擦自己的"：碰到自己的笔划是**软删**
+    （LT_DRAW_DELETE，云端只允许删自己的），所以默认模式下不再发那条纸色笔划了 ——
+    旧断言测的是被推翻的那套契约。现在改成断言**新的契约**：像素变回纸色 + 发的是删除请求。
+    （"画一条纸色笔划盖住"这条老做法没丢，它变成了「擦所有人」那个模式，下面有专门的断言。）
   */
-  const lastStroke = seen.add[seen.add.length - 1];
-  check('橡皮那一笔也发上去了（最后一笔 tool=eraser、颜色是纸色）',
-    lastStroke?.tool === 'eraser' && lastStroke?.color === '#fbf6ee',
-    JSON.stringify({ tool: lastStroke?.tool, color: lastStroke?.color }));
+  const delAfterErase = seen.del[seen.del.length - 1];
+  check('★ 默认的橡皮（只擦自己的）：发的是软删自己的那一笔，而不是"画一条纸色笔划"',
+    delAfterErase?.event === 'LT_DRAW_DELETE' && delAfterErase?.ltToken === 'fake-token' &&
+      seen.add.filter((s) => s.tool === 'eraser').length === 0,
+    JSON.stringify({ del: delAfterErase?.event, eraserAdds: seen.add.filter((s) => s.tool === 'eraser').length }));
 
   /* ---- 撤销：删自己最后那一笔 ---- */
   await cdp.ev(`document.querySelector('[data-lt-undo]').click()`);
@@ -758,7 +887,7 @@ try {
   check('这一趟没有未捕获的 JS 异常', cdp.errors.length === 0, cdp.errors.slice(0, 2).join(' | '));
 
   /* ==================================================================
-     2026-10-10 这一轮：重做 / 移动 / 取色 / 调色盘 / 粗细 / 滚动 / 增量同步
+     2026-10-09 这一轮：重做 / 移动 / 取色 / 调色盘 / 粗细 / 滚动 / 增量同步
      （上面那 69 条一条都没改；这一段全在它们之后跑，同一套真浏览器 + 同一个假云端）
      ================================================================== */
   const errBefore = cdp.errors.length;
@@ -771,10 +900,11 @@ try {
     await cdp.ev(`document.querySelector('[data-lt-tool="${name}"]').click()`);
     await sleep(150);
   };
-  const useSwatch = async (hex) => {
-    await cdp.ev(`[...document.querySelectorAll('.lyt-draw__swatch')].find((b) => b.dataset.color === '${hex}').click()`);
-    await sleep(120);
-  };
+  /*
+    ⚠ 2026-10-09：`useSwatch` 改成走 setInk（内置色块只剩黑白两个了）——
+    名字留着是因为后面十几处都在用它，语义（"把画笔换成这个色"）一个字没变。
+  */
+  const useSwatch = (hex) => setInk(hex);
   /** 往"粗细"那个数字框里直接填一个数（用户要的就是这一条：精确回到某个值） */
   const setSizeNum = async (n) => {
     await cdp.ev(
@@ -813,7 +943,7 @@ try {
   };
   const waitBoard = async () =>
     cdp.wait(
-      `(() => { const b = document.querySelector('[data-lt-tool="pen"]'); return !!b && !b.disabled && document.querySelectorAll('.lyt-draw__swatch').length >= 6; })()`,
+      `(() => { const b = document.querySelector('[data-lt-tool="pen"]'); return !!b && !b.disabled && document.querySelectorAll('.lyt-draw__swatch').length >= 2; })()`,
       20000
     );
   /*
@@ -945,10 +1075,16 @@ try {
   await sleep(500);
   const afterDel = seen.prefs[seen.prefs.length - 1];
   const chips2 = await cdp.ev(`document.querySelectorAll('.lyt-draw__swatch[data-saved="1"]').length`);
-  check('★ 删得掉收藏的：palette 里没了，画面上也没了（内置色一个都没少）',
+  /*
+    ⚠ 2026-10-09 改过（旧断言是 `=== 8`，那时内置有 8 个颜色）：
+    现在内置调色盘**只有黑白两个**（用户要求），删掉收藏的之后板子上就该剩这两个 ——
+    顺手把"默认就是黑白"这条新契约钉在这里（值的顺序也要对：#000000 在前）。
+  */
+  const restColors = await cdp.ev(`[...document.querySelectorAll('.lyt-draw__swatch')].map((b) => b.dataset.color)`);
+  check('★ 删得掉收藏的：palette 里没了，画面上也没了；剩下的内置色正好是黑白两个',
     !afterDel?.prefs?.palette?.includes('#123456') && chips2 === 0 &&
-      (await cdp.ev(`document.querySelectorAll('.lyt-draw__swatch').length`)) === 8,
-    JSON.stringify({ palette: afterDel?.prefs?.palette ?? [], saved: chips2 }));
+      restColors.length === 2 && restColors[0] === '#000000' && restColors[1] === '#ffffff',
+    JSON.stringify({ palette: afterDel?.prefs?.palette ?? [], saved: chips2, rest: restColors }));
   /* 再加回去，给"重开页面还在"那条用 */
   await cdp.ev(`document.querySelector('[data-lt-color-add]').click()`);
   await sleep(500);
@@ -1143,6 +1279,461 @@ try {
   await drawOn([[2000, 1100], [2080, 1100], [2160, 1100]]);
   check('★ 引擎重挂之后画一笔只提交一次（stop() 把旧监听一起摘掉了）',
     remounted === true && seen.add.length === beforeRemount + 1, `${seen.add.length - beforeRemount} 次提交`);
+
+  /* ==================================================================
+     2026-10-09 第二批：光标圆 / 网格 / 快捷键 + 悬停卡片 / 橡皮两种模式 / 跨天自清
+     位置在"引擎重挂"那一段之后（它会把引擎重启、本地笔划清零），所以从一块干净的板子开始；
+     坐标都挑在没画过东西的地方（y=1600 以下、x=2600 往右是这一批新扩出来的区域）。
+     ================================================================== */
+  const errBefore2 = cdp.errors.length;
+  await envLine('第二批开始');
+  await cdp.ev(`document.querySelector('[data-lt-reset]').click()`);
+  await sleep(300);
+
+  /** 一个颜色和另一个颜色近不近（截图取色会有 ±1 的抖动，给个容差） */
+  const rgbOf = (hex) => [1, 3, 5].map((i) => parseInt(String(hex).slice(i, i + 2), 16));
+  const nearHex = (a, b, tol = 12) => rgbOf(a).every((v, i) => Math.abs(v - rgbOf(b)[i]) <= tol);
+  /** 把指针挪出画布（截图上不能出现那个光标圆） */
+  const hidePointer = async () => {
+    await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 640, y: 5, button: 'none' });
+    await sleep(140);
+  };
+  /**
+   * 截一小块屏、把每个像素的颜色读回来。
+   * 为什么要绕这么一圈：网格画在**画布下面的一层 div** 上（不进画布像素），
+   * 所以只有"真的截屏"才能证明"开关一按，屏幕上那一格真的出现了/消失了"。
+   * 做法是把 PNG 塞回页面里当 <img>、画进一个 canvas 再 getImageData —— 不引任何图像库。
+   */
+  const shotPixels = async (cssX, cssY, half = 3) => {
+    /*
+      ⚠ toScreen() 给的是**视口**坐标（getBoundingClientRect），CDP 的 clip 要的是**页面**坐标。
+      这一页为了验"画线时页面不许滚"被垫高过、而且真滚过（scrollY > 0），不加这一段就会截到别的地方 ——
+      2026-10-09 那两条"网格 / 墨色 截图级证据"就是这么假红的（功能是好的，是断言自己截错了地方）。
+    */
+    const sc = await cdp.ev(`(() => ({ x: window.scrollX, y: window.scrollY }))()`);
+    const clip = {
+      x: Math.max(0, Math.round(cssX + sc.x - half)),
+      y: Math.max(0, Math.round(cssY + sc.y - half)),
+      width: half * 2 + 1,
+      height: half * 2 + 1,
+      scale: 1,
+    };
+    const shot = await cdp.send('Page.captureScreenshot', { format: 'png', clip });
+    return cdp.ev(`(async () => {
+        const img = new Image();
+        img.src = 'data:image/png;base64,${shot.data}';
+        await img.decode();
+        const c = document.createElement('canvas');
+        c.width = img.width;
+        c.height = img.height;
+        const g = c.getContext('2d');
+        g.drawImage(img, 0, 0);
+        const d = g.getImageData(0, 0, c.width, c.height).data;
+        const out = [];
+        for (let i = 0; i < c.width * c.height; i += 1) {
+          out.push('#' + [d[i * 4], d[i * 4 + 1], d[i * 4 + 2]].map((v) => v.toString(16).padStart(2, '0')).join(''));
+        }
+        return { w: c.width, h: c.height, px: out };
+      })()`);
+  };
+
+  /* ---- 1. 光标 = 和粗细等大的圆 ---- */
+  await pickTool('pen');
+  await setSizeNum(30);
+  await showCanvas();
+  /** 把指针放到画布上某一点，读那个圆的**真实宽度**（getBoundingClientRect，不是引擎自报的） */
+  const ringAt = async (bx, by) => {
+    const s = await cdp.ev(toScreen(bx, by));
+    await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: s.x, y: s.y, button: 'none' });
+    await sleep(180);
+    return cdp.ev(`(() => {
+        const r = document.querySelector('[data-lt-ring]');
+        const v = window.__ltBoard.view;
+        const cs = getComputedStyle(r);
+        return {
+          d: Math.round(r.getBoundingClientRect().width * 100) / 100,
+          on: r.classList.contains('is-on'),
+          vis: cs.visibility,
+          size: window.__ltBoard.ring.size,
+          expect: Math.round(window.__ltBoard.ring.size * v.scale * 100) / 100,
+          scale: Math.round(v.scale * 10000) / 10000,
+        };
+      })()`);
+  };
+  const ringPen = await ringAt(900, 400);
+  info('光标圆（画笔 30）：' + JSON.stringify(ringPen));
+  check('★ 画笔粗细 30 → 那个圆直径 ≈ 30 × 视缩放（给数值：量的是 div 的真实外径）',
+    ringPen.on === true && ringPen.vis === 'visible' && Math.abs(ringPen.d - 30 * ringPen.scale) < 1 &&
+      Math.abs(ringPen.d - ringPen.expect) < 0.5,
+    `d=${ringPen.d} 期望=${(30 * ringPen.scale).toFixed(2)}（30 × ${ringPen.scale}）`);
+  const cursorPen = await cdp.ev(`getComputedStyle(document.querySelector('[data-lt-canvas]')).cursor`);
+  check('★ 画布上不再是十字光标（画笔/橡皮 cursor: none —— 改看那个圆）', cursorPen === 'none', cursorPen);
+
+  await pickTool('eraser');
+  await setSizeNum(8);
+  const ringEraser = await ringAt(900, 400);
+  info('光标圆（橡皮 8）：' + JSON.stringify(ringEraser));
+  check('★ 切到橡皮（设 8）→ 直径跟着变成 8 × 缩放（明显比画笔那个小）',
+    Math.abs(ringEraser.d - 8 * ringEraser.scale) < 1 && ringEraser.d < ringPen.d * 0.5,
+    `d=${ringEraser.d} 期望=${(8 * ringEraser.scale).toFixed(2)}（画笔那边 ${ringPen.d}）`);
+
+  /* 缩放之后直径要跟着变（钉住"乘的是 view.scale，不是写死的粗细值"） */
+  const zoomPt = await cdp.ev(toScreen(900, 400));
+  for (let i = 0; i < 4; i += 1) {
+    await cdp.send('Input.dispatchMouseEvent', { type: 'mouseWheel', x: zoomPt.x, y: zoomPt.y, deltaX: 0, deltaY: -120 });
+    await sleep(150);
+  }
+  const ringZoom = await ringAt(1500, 1200);
+  check('★ 缩放之后直径跟着缩放走（还是 8 × 缩放，数值变大了）',
+    Math.abs(ringZoom.d - 8 * ringZoom.scale) < 1.2 && ringZoom.scale > ringEraser.scale * 1.3,
+    `d=${ringZoom.d} 期望=${(8 * ringZoom.scale).toFixed(2)}；缩放 ${ringEraser.scale} → ${ringZoom.scale}`);
+  await cdp.ev(`document.querySelector('[data-lt-reset]').click()`);
+  await sleep(300);
+
+  /* 拖动画布 / 移动线条：不显示圆，而且光标变成 grab / grabbing / move */
+  await pickTool('pan');
+  const cursorPan = await cdp.ev(`getComputedStyle(document.querySelector('[data-lt-canvas]')).cursor`);
+  const panPt = await cdp.ev(toScreen(2200, 1400));
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: panPt.x, y: panPt.y, button: 'left', clickCount: 1, buttons: 1 });
+  await sleep(160);
+  const cursorPanning = await cdp.ev(`getComputedStyle(document.querySelector('[data-lt-canvas]')).cursor`);
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: panPt.x, y: panPt.y, button: 'left', clickCount: 1, buttons: 0 });
+  await sleep(200);
+  const cursorPanBack = await cdp.ev(`getComputedStyle(document.querySelector('[data-lt-canvas]')).cursor`);
+  check('★ 拖动画布：光标是 grab，按住那一瞬间 grabbing，松手回到 grab',
+    cursorPan === 'grab' && cursorPanning === 'grabbing' && cursorPanBack === 'grab',
+    JSON.stringify({ 平时: cursorPan, 按住: cursorPanning, 松手: cursorPanBack }));
+  await pickTool('move');
+  const cursorMove = await cdp.ev(`getComputedStyle(document.querySelector('[data-lt-canvas]')).cursor`);
+  const ringMove = await ringAt(900, 400);
+  check('★ 移动线条：光标是 move，而且那时候不显示那个圆', cursorMove === 'move' && ringMove.on === false,
+    JSON.stringify({ cursor: cursorMove, ring: ringMove.on }));
+
+  /* 指针离开画布 → 圆消失 */
+  await pickTool('pen');
+  await cdp.ev(`(() => { const r = document.querySelector('[data-lt-tool="pen"]').getBoundingClientRect(); window.__tipPt = { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) }; return true; })()`);
+  const tipPt = await cdp.ev('window.__tipPt');
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: tipPt.x, y: tipPt.y, button: 'none' });
+  await sleep(200);
+  const ringAway = await cdp.ev(`(() => { const r = document.querySelector('[data-lt-ring]'); return { on: r.classList.contains('is-on'), vis: getComputedStyle(r).visibility }; })()`);
+  check('★ 指针离开画布（挪到工具条上）→ 那个圆立刻消失', ringAway.on === false && ringAway.vis === 'hidden', JSON.stringify(ringAway));
+
+  /* 触摸设备：不许显示这个圆（手指没有"光标"） */
+  await pickTool('eraser');
+  await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
+  const touchAt = await cdp.ev(`(() => { const r = document.querySelector('[data-lt-canvas]').getBoundingClientRect(); return { x: Math.round(r.left + r.width * 0.78), y: Math.round(r.top + r.height * 0.82) }; })()`);
+  const addsBeforeTouch = seen.add.length;
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: touchAt.x, y: touchAt.y, id: 1 }] });
+  await sleep(100);
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: touchAt.x + 40, y: touchAt.y, id: 1 }] });
+  await sleep(200);
+  const ringTouch = await cdp.ev(`(() => { const r = document.querySelector('[data-lt-ring]'); return { on: r.classList.contains('is-on'), type: window.__ltBoard.ring.pointerType }; })()`);
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  await sleep(250);
+  await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: false });
+  check('★ 触摸（手指）不显示那个圆：pointerType 是 touch、圆关着',
+    ringTouch.type === 'touch' && ringTouch.on === false, JSON.stringify(ringTouch));
+  check('顺手：手指在空板上划过去，橡皮（默认只擦自己的）一条请求都不发',
+    seen.add.length === addsBeforeTouch, `add ${addsBeforeTouch} → ${seen.add.length}`);
+
+  /* ---- 2. 网格线：默认开着、300 一格、画在画布下面 ---- */
+  await cdp.ev(`document.querySelector('[data-lt-reset]').click()`);
+  await sleep(300);
+  const gridInfo = await cdp.ev(`(() => {
+      const g = window.__ltBoard.grid;
+      const layer = document.querySelector('[data-lt-grid]');
+      const c = document.querySelector('[data-lt-canvas]');
+      const v = window.__ltBoard.view;
+      const lr = layer.getBoundingClientRect();
+      const cr = c.getBoundingClientRect();
+      return {
+        on: g.on, step: g.step, cols: g.cols, rows: g.rows, half: g.half, color: g.color,
+        xs: g.xs.length, ys: g.ys.length, size: g.css.size, pos: g.css.pos,
+        display: getComputedStyle(layer).display,
+        /* 网格那一层的盒子必须和画布严丝合缝（不然格子会和画错位） */
+        sameBox: Math.abs(lr.left - cr.left) < 0.6 && Math.abs(lr.top - cr.top) < 0.6 &&
+                 Math.abs(lr.width - cr.width) < 0.6 && Math.abs(lr.height - cr.height) < 0.6,
+        /* DOM 顺序：网格在画布**前面** → 它在下层，永远盖不住画 */
+        before: !!(layer.compareDocumentPosition(c) & Node.DOCUMENT_POSITION_FOLLOWING),
+        wantSize: ${GRID_STEP} * v.scale,
+      };
+    })()`);
+  info('网格：' + JSON.stringify(gridInfo));
+  check('★ 网格默认开着，线距 300 画板像素，12 列 / 7 行 + 半格 150，颜色克制（不是墨色）',
+    gridInfo.on === true && gridInfo.display !== 'none' && gridInfo.step === GRID_STEP &&
+      gridInfo.cols === 12 && gridInfo.rows === 7 && gridInfo.half === 150 && gridInfo.xs === 11 && gridInfo.ys === 7 &&
+      gridInfo.color !== PAPER,
+    JSON.stringify({ on: gridInfo.on, step: gridInfo.step, cols: gridInfo.cols, rows: gridInfo.rows, half: gridInfo.half, color: gridInfo.color }));
+  check('★ 网格那一层贴着画布、而且在画布**下面**（DOM 顺序在前 → 盖不住用户的画）',
+    gridInfo.sameBox === true && gridInfo.before === true, JSON.stringify({ sameBox: gridInfo.sameBox, before: gridInfo.before }));
+  check('★ 网格对到视野上：背景格 = 300 × 缩放（缩放后跟着变）',
+    Math.abs(parseFloat(gridInfo.size) - gridInfo.wantSize) < 0.5 &&
+      Math.abs(parseFloat(gridInfo.pos) - 0) < 0.6,
+    JSON.stringify({ css: gridInfo.size, 期望: gridInfo.wantSize.toFixed(2) }));
+
+  /* 截真的屏：开 → 那一格看得见；关 → 看不见 */
+  await hidePointer();
+  const gridPt = await cdp.ev(toScreen(2700, 1650));
+  const shotOn = await shotPixels(gridPt.x, gridPt.y, 3);
+  /*
+    网格线只有 1 CSS 像素宽、而一格在屏幕上约 86 像素 —— 那条线是**亚像素**渲染，
+    屏幕上读到的是"纸色和网格色之间"的混色（实测 #f1eade），不是纯网格色。
+    所以判法不能是"等于网格色"（那是死板容差），而是：
+      · 至少有一个像素**比纸色暗**（网格真的画出来了）；
+      · 而且每个像素都落在"网格色 ≤ 像素 ≤ 纸色"这个区间里（只可能是那条线，不是别的东西）。
+    关掉网格那一趟仍然是"全等于纸色"（下面那条断言），一开一关对照，证据就闭合了。
+  */
+  const gridRgb = rgbOf(gridInfo.color);
+  const paperRgb = rgbOf(PAPER);
+  const darkened = shotOn.px.filter((h) => rgbOf(h).some((v, i) => v < paperRgb[i]));
+  const inRange = (h) => rgbOf(h).every((v, i) => v >= gridRgb[i] - 2 && v <= paperRgb[i] + 2);
+  check('★ 截图取色：网格开着的时候，那一格上真有"把纸色压暗"的网格像素（截图级证据）',
+    darkened.length >= 1 && darkened.every(inRange),
+    `${shotOn.w}x${shotOn.h} 里 ${darkened.length} 个像素比纸色暗（网格色 ${gridInfo.color}，纸色 ${PAPER}），样本 ${shotOn.px.slice(0, 6).join(' ')}`);
+  await cdp.ev(`document.querySelector('[data-lt-grid-toggle]').click()`);
+  await sleep(400);
+  await hidePointer();
+  const shotOff = await shotPixels(gridPt.x, gridPt.y, 3);
+  const gridHitOff = shotOff.px.filter((h) => nearHex(h, gridInfo.color, 14));
+  check('★ 关掉网格：同一格里一个网格色像素都没有了（全变回纸色）',
+    gridHitOff.length === 0 && shotOff.px.every((h) => nearHex(h, PAPER, 6)),
+    `命中 ${gridHitOff.length} 个；像素样本 ${[...new Set(shotOff.px)].slice(0, 4).join(' ')}`);
+  const gridPrefs = seen.prefs[seen.prefs.length - 1];
+  check('★ 网格开关跟着账号走（LT_PREFS_SET 里 grid=false）',
+    !!gridPrefs && gridPrefs.prefs.grid === false, JSON.stringify(gridPrefs?.prefs ?? {}));
+  /* 再开回来，并验"网格盖不住画" */
+  await cdp.ev(`document.querySelector('[data-lt-grid-toggle]').click()`);
+  await sleep(400);
+  const gridBack = await cdp.ev(`window.__ltBoard.grid.on`);
+  await pickTool('pen');
+  await setInk('#000000');
+  await setSizeNum(14);
+  /* 竖着画一条穿过 y=1200 那条横网格线的线 */
+  await drawOn([[2600, 1140], [2600, 1200], [2600, 1260]]);
+  const gridCrossCanvas = await cdp.ev(pixelAt(2600, 1200));
+  await hidePointer();
+  const crossPt = await cdp.ev(toScreen(2600, 1200));
+  const shotCross = await shotPixels(crossPt.x, crossPt.y, 2);
+  const crossHasInk = shotCross.px.some((h) => nearHex(h, '#000000', 40));
+  const crossHasGrid = shotCross.px.some((h) => nearHex(h, gridInfo.color, 10));
+  check('★ 网格盖不住用户的画：笔划正好压着一条网格线时，画布像素和**截图像素**都是墨色',
+    gridBack === true && gridCrossCanvas === '#000000' && crossHasInk === true,
+    JSON.stringify({ 画布: gridCrossCanvas, 截图里有墨色: crossHasInk, 截图里有网格色: crossHasGrid }));
+
+  /* ---- 3. 快捷键 ---- */
+  const VK = { b: 66, e: 69, c: 67, t: 84, z: 90, r: 82, 1: 49, 2: 50, 3: 51, 4: 52, 5: 53, 6: 54, 7: 55, 8: 56, 9: 57 };
+  const press = async (ch, modifiers = 0) => {
+    const code = /^[0-9]$/.test(ch) ? `Digit${ch}` : `Key${ch.toUpperCase()}`;
+    const p = { code, key: ch, windowsVirtualKeyCode: VK[ch], nativeVirtualKeyCode: VK[ch], modifiers };
+    await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', ...p });
+    await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', ...p });
+    await sleep(200);
+  };
+  /** 快捷键要打在"没聚焦在输入框"的状态上：先点到画布上（这也会把焦点从 input 上拿走） */
+  const clearFocus = async () => {
+    await cdp.ev(`document.activeElement && document.activeElement.blur && document.activeElement.blur()`);
+    await sleep(80);
+  };
+  await clearFocus();
+  await press('b');
+  const keyB = (await cdp.ev(stateOf)).tool;
+  await press('e');
+  const keyE = (await cdp.ev(stateOf)).tool;
+  await press('c');
+  const keyC = (await cdp.ev(stateOf)).tool;
+  await press('t');
+  const keyT = (await cdp.ev(stateOf)).tool;
+  await press('b');
+  check('★ 快捷键 B/E/C/T 真的切了工具（画笔 / 橡皮 / 拖动画布 / 移动线条）',
+    keyB === 'pen' && keyE === 'eraser' && keyC === 'pan' && keyT === 'move',
+    JSON.stringify({ B: keyB, E: keyE, C: keyC, T: keyT }));
+
+  /* 1~9 = 当前调色盘可见顺序（内置黑白在前，自己收藏的在后） */
+  const palNow = (await cdp.ev(stateOf)).palette;
+  const digitSeen = [];
+  for (const d of ['1', '2', '3']) {
+    await press(d);
+    digitSeen.push((await cdp.ev(stateOf)).color);
+  }
+  check('★ 数字键 1~9 选的是调色盘里的第 1~9 个（顺序：内置黑白 + 自己收藏的）',
+    digitSeen[0] === palNow[0] && digitSeen[1] === palNow[1] && digitSeen[2] === palNow[2] &&
+      palNow[0] === '#000000' && palNow[1] === '#ffffff',
+    JSON.stringify({ 调色盘: palNow, 按下123选到: digitSeen }));
+
+  /* Ctrl+Z / Ctrl+R：真的撤回 / 重做，而且服务端收到对应请求 */
+  await pickTool('pen');
+  await setInk('#8ac926');
+  await setSizeNum(18);
+  const kzPt = [2780, 1900];
+  const addsBeforeKz = seen.add.length;
+  await drawOn([[kzPt[0] - 80, kzPt[1]], [kzPt[0], kzPt[1]], [kzPt[0] + 80, kzPt[1]]]);
+  const kzPix = await cdp.ev(pixelAt(kzPt[0], kzPt[1]));
+  await clearFocus();
+  const delsBeforeKz = seen.del.length;
+  await press('z', 2);
+  await sleep(500);
+  const kzAfter = await cdp.ev(pixelAt(kzPt[0], kzPt[1]));
+  check('★ Ctrl+Z 真的撤回了那一笔（发的是 LT_DRAW_DELETE，画布上变回纸色）',
+    kzPix === '#8ac926' && seen.del.length === delsBeforeKz + 1 && kzAfter === PAPER &&
+      seen.del[seen.del.length - 1].id === `mine${addsBeforeKz + 1}`,
+    JSON.stringify({ 画之前: kzPix, 撤回后: kzAfter, 删的是: seen.del[seen.del.length - 1]?.id }));
+  const addsBeforeKr = seen.add.length;
+  await press('r', 2);
+  await sleep(700);
+  check('★ Ctrl+R 真的重做了（发的是 LT_DRAW_ADD，画布上那一点又回来了）—— 而且它没被浏览器当成刷新页面',
+    seen.add.length === addsBeforeKr + 1 && (await cdp.ev(pixelAt(kzPt[0], kzPt[1]))) === '#8ac926' &&
+      (await cdp.ev(`!!window.__ltBoard && window.__ltBoard.state.strokes > 0`)) === true,
+    JSON.stringify({ 重做后: await cdp.ev(pixelAt(kzPt[0], kzPt[1])), adds: seen.add.length - addsBeforeKr }));
+
+  /* 焦点在输入框里 → 快捷键一律不认 */
+  await clearFocus();
+  await pickTool('pen');
+  await cdp.ev(`document.querySelector('[data-lt-size-num]').focus()`);
+  await press('e');
+  const afterTypeE = await cdp.ev(stateOf);
+  check('★ 焦点在输入框里打字时快捷键不生效（按 E 不会切到橡皮）',
+    afterTypeE.tool === 'pen', JSON.stringify({ tool: afterTypeE.tool }));
+  await clearFocus();
+
+  /* ---- 4. 悬停卡片（功能名 + 快捷键）---- */
+  const tipOf = async (sel) =>
+    cdp.ev(`(() => {
+        const b = document.querySelector('${sel}');
+        const id = b.getAttribute('aria-describedby');
+        const t = id ? document.getElementById(id) : null;
+        if (!t) return null;
+        const cs = getComputedStyle(t);
+        return { id, role: t.getAttribute('role'), text: t.textContent.trim(), vis: cs.visibility, op: Number(cs.opacity), bg: cs.backgroundColor, border: cs.borderTopColor };
+      })()`);
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: tipPt.x, y: tipPt.y, button: 'none' });
+  await sleep(350);
+  const tipPen = await tipOf('[data-lt-tool="pen"]');
+  info('悬停画笔的卡片：' + JSON.stringify(tipPen));
+  check('★ 鼠标移到按钮上弹出卡片，卡片里有功能名和快捷键（画笔 + B）',
+    !!tipPen && tipPen.vis === 'visible' && tipPen.op > 0.9 && /画笔/.test(tipPen.text) && /B/.test(tipPen.text),
+    JSON.stringify(tipPen));
+  check('★ 卡片的视觉就是花涧堂时间轴那套浮层（同底色 / 同描边 / role=tooltip）',
+    tipPen?.role === 'tooltip' && tipPen?.bg === 'rgba(24, 3, 36, 0.96)' && tipPen?.border === 'rgba(255, 120, 190, 0.6)',
+    JSON.stringify({ bg: tipPen?.bg, border: tipPen?.border, role: tipPen?.role }));
+  const tipUndo = await tipOf('[data-lt-undo]');
+  check('★ 撤销那张卡片写的是 Ctrl+Z', /撤销/.test(tipUndo?.text ?? '') && /Ctrl\+Z/.test(tipUndo?.text ?? ''), tipUndo?.text);
+  /* 键盘 focus 也能弹（无障碍） */
+  await hidePointer();
+  await cdp.ev(`document.querySelector('[data-lt-tool="pen"]').focus()`);
+  await sleep(320);
+  const tipFocus = await tipOf('[data-lt-tool="pen"]');
+  check('★ 键盘 Tab 聚焦到按钮上，卡片一样会弹出来（:focus-within）',
+    tipFocus?.vis === 'visible' && tipFocus?.op > 0.9, JSON.stringify(tipFocus));
+  await clearFocus();
+  const tipAll = await cdp.ev(`(() => {
+      const btns = [...document.querySelectorAll('.lyt-draw__bar button')].filter((b) => !b.classList.contains('lyt-draw__swatch'));
+      const bad = [];
+      for (const b of btns) {
+        const id = b.getAttribute('aria-describedby');
+        const t = id ? document.getElementById(id) : null;
+        if (!t || t.getAttribute('role') !== 'tooltip') bad.push(b.textContent.trim() || '(无名)');
+      }
+      return { n: btns.length, bad };
+    })()`);
+  check('★ 工具条上每个按钮都挂了自己的卡片（aria-describedby → role=tooltip）',
+    tipAll.n >= 11 && tipAll.bad.length === 0, JSON.stringify(tipAll));
+
+  /* ---- 5. 橡皮两种模式 ---- */
+  /* (a) 先塞一条**别人的**笔划，默认模式下擦它：不许删、不许盖，像素必须还在 */
+  const otherInk = '#cc00aa';
+  const otherLine = remoteStroke({
+    id: 'other-for-eraser', uk: 'beefcafe', nick: '别人', avatar: '',
+    tool: 'pen', color: otherInk, size: 26, points: [[2600, 1600], [2700, 1600], [2800, 1600]],
+  });
+  extra.push(otherLine);
+  const otherThere = await cdp.wait(`(() => (window.__ltBoard ? window.__ltBoard.pixelAt(2700, 1600) : '') === '${otherInk}')()`, 15000);
+  check('（前置）别人的那条笔划已经拉下来画在画板上了', otherThere === true, await cdp.ev(pixelAt(2700, 1600)));
+  const mode0 = await cdp.ev(`window.__ltBoard.state.eraserAll`);
+  if (mode0) {
+    await cdp.ev(`document.querySelector('[data-lt-eraser-all]').click()`);
+    await sleep(300);
+  }
+  await pickTool('eraser');
+  await setSizeNum(30);
+  const beforeOther = { del: seen.del.length, add: seen.add.length };
+  await dragWithScroll([[2700, 1560], [2700, 1600], [2700, 1640]]);
+  await sleep(600);
+  check('★ 默认模式（只擦自己的）擦到**别人的**笔划：一个删除请求都不发，也不盖纸色',
+    seen.del.length === beforeOther.del && seen.add.length === beforeOther.add,
+    JSON.stringify({ del: seen.del.length - beforeOther.del, add: seen.add.length - beforeOther.add }));
+  check('★ 别人的笔划像素一点没动（还是那个颜色）',
+    (await cdp.ev(pixelAt(2700, 1600))) === otherInk, await cdp.ev(pixelAt(2700, 1600)));
+
+  /* (b) 打开「擦所有人」→ 擦过去变成"盖一条纸色笔划"（别人也看得见） */
+  await cdp.ev(`document.querySelector('[data-lt-eraser-all]').click()`);
+  await sleep(300);
+  const allOn = await cdp.ev(`(() => ({ s: window.__ltBoard.state.eraserAll, pressed: document.querySelector('[data-lt-eraser-all]').getAttribute('aria-pressed'), cls: document.querySelector('[data-lt-eraser-all]').classList.contains('is-on') }))()`);
+  check('★「擦所有人」按钮打开了（aria-pressed=true、状态进了引擎）', allOn.s === true && allOn.pressed === 'true' && allOn.cls === true, JSON.stringify(allOn));
+  const prefsAll = await cdp.wait(`(() => { const p = ${JSON.stringify(0)}; return window.__ltBoard.state.eraserAll === true; })()`, 1000);
+  void prefsAll;
+  const addsBeforeAll = seen.add.length;
+  await pickTool('eraser');
+  await dragWithScroll([[2700, 1560], [2700, 1600], [2700, 1640]]);
+  await sleep(600);
+  const eraserAdd = seen.add[seen.add.length - 1];
+  check('★ 擦所有人：发出去的是"纸色笔划"（tool=eraser / color=纸色），像素被盖成纸色',
+    seen.add.length === addsBeforeAll + 1 && eraserAdd?.tool === 'eraser' && eraserAdd?.color === PAPER &&
+      (await cdp.ev(pixelAt(2700, 1600))) === PAPER,
+    JSON.stringify({ tool: eraserAdd?.tool, color: eraserAdd?.color, 像素: await cdp.ev(pixelAt(2700, 1600)) }));
+  const prefsEraserAll = seen.prefs[seen.prefs.length - 1];
+  check('★ eraserAll 也存进了账号偏好（LT_PREFS_SET 里 eraserAll=true）',
+    !!prefsEraserAll && prefsEraserAll.prefs.eraserAll === true, JSON.stringify(prefsEraserAll?.prefs ?? {}));
+
+  /* (c) 回到默认模式，擦**自己的**笔划：必须发 LT_DRAW_DELETE、id 是自己的 */
+  await cdp.ev(`document.querySelector('[data-lt-eraser-all]').click()`);
+  await sleep(300);
+  await pickTool('pen');
+  await setInk('#000000');
+  await setSizeNum(18);
+  await drawOn([[3200, 1600], [3300, 1600], [3400, 1600]]);
+  const mineId = `mine${seen.add.length}`;
+  check('（前置）自己那条线画上去了', (await cdp.ev(pixelAt(3300, 1600))) === '#000000', await cdp.ev(pixelAt(3300, 1600)));
+  await pickTool('eraser');
+  await setSizeNum(30);
+  const beforeMine = { del: seen.del.length, add: seen.add.length };
+  await dragWithScroll([[3300, 1560], [3300, 1600], [3300, 1640]]);
+  await sleep(700);
+  check('★ 默认模式擦**自己的**笔划：发出 LT_DRAW_DELETE，而且删的就是自己那一笔的 id',
+    seen.del.length === beforeMine.del + 1 && seen.del[seen.del.length - 1].id === mineId &&
+      seen.add.length === beforeMine.add,
+    JSON.stringify({ 删的是: seen.del[seen.del.length - 1]?.id, 期望: mineId, add: seen.add.length - beforeMine.add }));
+  check('★ 擦掉之后画布上那一点变回纸色（软删 → 本地也真的没了）',
+    (await cdp.ev(pixelAt(3300, 1600))) === PAPER, await cdp.ev(pixelAt(3300, 1600)));
+
+  /* ---- 6. 跨天自清（凌晨四点存档搬完 / 换天，都不用刷新页面）---- */
+  await envLine('跨天自清之前');
+  const beforeWipe = await cdp.ev(stateOf);
+  servedToday = NEXT_DAY;
+  servedWiped = true;
+  const wiped = await cdp.wait(
+    `(() => { const b = window.__ltBoard; return !!b && b.state.strokes === 0 && b.state.day === '${NEXT_DAY}'; })()`,
+    20000
+  );
+  await sleep(400);
+  check('★ 服务端说换天了（today 变了）→ 本地笔划全部清掉、游标归零重拉（跨天自清）',
+    wiped === true && beforeWipe.strokes > 0 && beforeWipe.day !== NEXT_DAY,
+    JSON.stringify({ 之前: { strokes: beforeWipe.strokes, day: beforeWipe.day }, 清完: await cdp.ev(stateOf) }));
+  check('★ 清掉之后画布上那些笔划的像素回到纸色（不是"本地数变了、屏幕还留着"）',
+    (await cdp.ev(pixelAt(2700, 1600))) === PAPER && (await cdp.ev(pixelAt(2600, 1200))) === PAPER,
+    JSON.stringify({ 2700_1600: await cdp.ev(pixelAt(2700, 1600)), 2600_1200: await cdp.ev(pixelAt(2600, 1200)) }));
+  /* 换天之后新拉的笔划照常显示（游标归零之后这条路必须是通的） */
+  servedWiped = false;
+  const day2Ink = '#00a86b';
+  extra.push(remoteStroke({
+    id: 'after-new-day', uk: 'beef8888', nick: '第二天的人', avatar: '',
+    tool: 'pen', color: day2Ink, size: 26, points: [[2900, 1900], [3050, 1900], [3200, 1900]],
+  }));
+  const day2Shown = await cdp.wait(`(() => (window.__ltBoard ? window.__ltBoard.pixelAt(3050, 1900) : '') === '${day2Ink}')()`, 20000);
+  check('★ 换天之后新拉到的那一笔照常画出来（自清没有把轮询弄坏）',
+    day2Shown === true && (await cdp.ev(stateOf)).strokes > 0,
+    JSON.stringify({ 像素: await cdp.ev(pixelAt(3050, 1900)), 本地: (await cdp.ev(stateOf)).strokes }));
+
+  check('第二批这一整段没有未捕获的 JS 异常', cdp.errors.length === errBefore2, cdp.errors.slice(errBefore2, errBefore2 + 3).join(' | '));
 
   check('新增这一整段没有未捕获的 JS 异常', cdp.errors.length === errBefore, cdp.errors.slice(errBefore, errBefore + 2).join(' | '));
 

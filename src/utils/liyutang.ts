@@ -55,6 +55,8 @@ const cfg = raw as unknown as {
   boards?: unknown;
   /* 首页最上面那两块大的（聊天室 / 久昭卿茶绘），见下面 halls() */
   halls?: unknown;
+  /* 页面上那些「介绍 / 提示」文字，见下面 copy() */
+  copy?: unknown;
 };
 
 export function forum(): ForumConfig {
@@ -167,6 +169,71 @@ export function halls(): Hall[] {
 }
 
 export const hallById = (id: string): Hall | null => halls().find((h) => h.id === id) ?? null;
+
+/* ------------------------------------------------------------ 页面文案 */
+
+/**
+ * 页面上那些「介绍 / 提示」文字 —— **一律由站长在编辑器里填**（`liyutang.json` 的 `copy` 区）。
+ *
+ * 为什么要有这么一块（2026-10-09，用户原话，语气很重）：
+ *   「当前的黎语堂网站里充斥着过多你自己胡编乱造的提示和简介 …… 这些句子可读性极差！！！
+ *    对群友理解各个功能造成了极大的影响！！！！！请你全部删掉全部这一类你自己生造的句子
+ *    并且给对应的位置留下编辑器接口以方便我去填写介绍和简介」。
+ *
+ * 所以规矩是硬的，改这一块之前先读三遍：
+ *   · 页面代码里**一个字都不许写死**介绍 / 引导文字 —— 全从这个接口读；
+ *   · **缺字段、字段为空串 → 都返回空串**，页面上那一块就**整块不渲染**
+ *     （不留空 `<p>`、不留占位句子、也不许在代码里写兜底文案）；
+ *   · 状态与报错（"还没有存档。"、"账号还在等站长审核"那一类）**不走这里** ——
+ *     它们是"能不能做 / 出了什么事"，得由程序自己说，但要短、只讲事实。
+ *
+ * 键名和页面的对应关系（编辑器「页面文案」面板里的标签写的就是这个）：
+ *   board.lead/hint/note/empty → /liyutang/teahouse/ 茶绘画板页
+ *                                （empty = 「今天画过画的人」那一栏空着时那句）
+ *   chat.lead/hint/note   → 聊天室三页（今天 / 搜历史 / 某一天存档）
+ *   calendar.lead         → /liyutang/teahouse/calendar/ 画过的日子
+ *   user.lead             → /liyutang/u/ 用户页
+ *   home.lead/note        → /liyutang/ 首页（顶部引导 / 「发帖」旁边那行）
+ *   post.hint/desc        → /liyutang/post/ 帖子页（作者那一行 / 搜索结果里那句描述）
+ *   new.hint/desc         → /liyutang/new/ 发帖页（没有版块时那句 / 搜索结果里那句描述）
+ *
+ * ⚠ `*.desc` 是 `<meta name="description">` / `og:description`：页面正文里看不到，
+ *   但它会出现在搜索结果和分享卡片上 —— 同样是"被写死就没法改"的文案，一样归站长填；
+ *   留空就退回站点总描述（见 layouts/ForumLayout.astro 里 `description = site.description` 那个默认值）。
+ */
+export interface SiteCopy {
+  board: { lead: string; hint: string; note: string; empty: string };
+  chat: { lead: string; hint: string; note: string };
+  calendar: { lead: string };
+  user: { lead: string };
+  home: { lead: string; note: string };
+  post: { hint: string; desc: string };
+  new: { hint: string; desc: string };
+}
+
+/** 洗一个分组：不是对象的当空对象，值一律 trim 成字符串（`undefined` → 空串，绝不给默认文案） */
+function copyGroup(v: unknown, keys: string[]): Record<string, string> {
+  const src = v && typeof v === 'object' ? (v as Record<string, unknown>) : {};
+  const out: Record<string, string> = {};
+  for (const k of keys) out[k] = str(src[k]);
+  return out;
+}
+
+/** 页面文案表（写法和 boards() / halls() 一样：读进来、洗一遍、缺什么给空串） */
+export function copy(): SiteCopy {
+  const c = cfg.copy && typeof cfg.copy === 'object' ? (cfg.copy as Record<string, unknown>) : {};
+  const board = copyGroup(c.board, ['lead', 'hint', 'note', 'empty']);
+  const chat = copyGroup(c.chat, ['lead', 'hint', 'note']);
+  return {
+    board: board as SiteCopy['board'],
+    chat: chat as SiteCopy['chat'],
+    calendar: copyGroup(c.calendar, ['lead']) as SiteCopy['calendar'],
+    user: copyGroup(c.user, ['lead']) as SiteCopy['user'],
+    home: copyGroup(c.home, ['lead', 'note']) as SiteCopy['home'],
+    post: copyGroup(c.post, ['hint', 'desc']) as SiteCopy['post'],
+    new: copyGroup(c.new, ['hint', 'desc']) as SiteCopy['new'],
+  };
+}
 
 /** 版块页 / 帖子页的地址 */
 export const boardUrl = (id: string): string => withBase(`/liyutang/${id}/`);

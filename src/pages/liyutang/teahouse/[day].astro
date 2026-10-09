@@ -37,9 +37,9 @@ const painters = archive?.painters ?? (meta?.users ?? []).map((nick) => ({ uk: n
       <a href={calendar}>画过的日子</a>
     </p>
     <h1 class="lyt-title">{drawDateText(day)}</h1>
+    {/* 只留事实：这是哪一天的存档、多少笔、几个人画过（"想接着画"那种话下面有按钮，不重复写） */}
     <p class="lyt-lead">
       这是那一天的存档{meta ? `（${meta.count} 笔 · ${meta.painters} 个人画过）` : ''}。
-      想接着画就去 <a href={board}>今天的画板</a>。
     </p>
 
     <div class="lyt-day__board">

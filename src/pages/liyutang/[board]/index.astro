@@ -123,7 +123,7 @@ const noticeHtml = board.notice ? renderMarkdown(board.notice) : '';
               limit: 20,
               boardTitles,
               heading: '帖子',
-              empty: '这一版还没有人发帖 —— 点上面的按钮发第一贴。',
+              empty: '这一版还没有人发帖。',
             }).catch(() => {
               /* 云端抽风不该让整页变成报错 */
             });

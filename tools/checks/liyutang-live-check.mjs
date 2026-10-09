@@ -211,7 +211,7 @@ try {
 }
 
 
-/* ---- 2026-10-10 这一批的新接口：先看部署了没，再逐个走一遍 ---- */
+/* ---- 2026-10-09 这一批的新接口：先看部署了没，再逐个走一遍 ---- */
 const needDeploy = await call({ event: 'LT_ME', ltToken: 'garbage.token' });
 check('★ 线上已经是新代码（坏令牌回 401；回 1000 就说明函数还没部署）', Number(needDeploy.code) === 401, `code=${needDeploy.code}`);
 if (Number(needDeploy.code) === 401 && token) {

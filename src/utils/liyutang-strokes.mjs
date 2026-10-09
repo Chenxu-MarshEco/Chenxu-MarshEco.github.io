@@ -23,9 +23,59 @@
  * ============================================================================
  */
 
-/** 画板内部坐标系（笔划的坐标都以这个为准，跟屏幕大小无关） */
-export const BOARD_W = 2400;
-export const BOARD_H = 1500;
+/**
+ * 画板内部坐标系（笔划的坐标都以这个为准，跟屏幕大小无关）。
+ *
+ * 2026-10-09 从 2400×1500 放大到 3600×2250 —— 用户原话：「画布现在太小了 在保留今天绘画
+ * 内容的同时扩大画布」。**长宽都 ×1.5、比例还是 1.6，而且原点仍在左上角** —— 这是"今天
+ * 已经画上去的笔划位置一个都不变"的全部原因：老笔划的坐标没被改过，多出来的 1200×750
+ * 只是长在右边和下边（所以 stage 的 aspect-ratio 2400/1500 也不用动）。
+ * ⚠ 云端那份（tools/liyutang-backend/index.js 里的 BOARD_W/BOARD_H）是**抄过去的**
+ * （云函数单文件部署、import 不了这里），改这里必须同步改那边，否则右下角会被夹回来。
+ */
+export const BOARD_W = 3600;
+export const BOARD_H = 2250;
+
+/**
+ * 网格线间距（**画板坐标**里的 300）。
+ * 线本身是画在屏幕上的（见 liyutang-draw.ts 里那段"网格为什么画成一层 div"），
+ * 这个数只表示"每隔 300 画板像素一条线"，所以在任何缩放下格子对应的画板范围都一样。
+ */
+export const GRID_STEP = 300;
+
+/**
+ * 网格线落在画板的哪些坐标上（**纯几何**，给调试口和验收用）。
+ *
+ * 只算"板子内部"的线：0 和板子边缘那两条不算（边缘本身就是界线）。
+ *   · 3600 / 300 = 12 列 → 内部竖线 11 条（300…3300）；
+ *   · 2250 / 300 = 7.5   → 内部横线 7 条（300…2100），最下面剩**半格 150**。
+ * 那个半格**不补线到板底**：补一条刚好压在板子下边框上的线，既难看又和边框重叠，
+ * 而"最后一行只有半格高"本来就是这块板子的真实比例。半格有多高放在 `half` 里。
+ * @param {number} [w] 画板宽
+ * @param {number} [h] 画板高
+ * @param {number} [step] 线距
+ * @returns {{step: number, w: number, h: number, xs: number[], ys: number[], cols: number, rows: number, half: number}}
+ */
+export function gridLines(w = BOARD_W, h = BOARD_H, step = GRID_STEP) {
+  const s = Math.max(1, Number(step) || GRID_STEP);
+  const xs = [];
+  const ys = [];
+  for (let x = s; x < w; x += s) xs.push(Math.round(x * 10) / 10);
+  for (let y = s; y < h; y += s) ys.push(Math.round(y * 10) / 10);
+  return {
+    step: s,
+    w,
+    h,
+    xs,
+    ys,
+    /** 整格列数（3600/300 = 12） */
+    cols: Math.ceil(w / s),
+    /** 整格行数（2250/300 = 7，余一个半格） */
+    rows: Math.floor(h / s),
+    /** 最下面那一格剩下的高度（2250 % 300 = 150；整除时是 0） */
+    half: Math.round((h % s) * 10) / 10,
+  };
+}
 
 /** 允许的工具 */
 export const TOOLS = ['pen', 'eraser'];
@@ -188,7 +238,7 @@ export function strokesToSvg(strokes, opts = {}) {
     body.push(
       /*
         data-by 用**昵称 alias**（后端 publicStroke 会发），没设过昵称时后端已经兜底等于用户名 ——
-        这样"用户改了昵称，存档里的署名也跟着变"（2026-10-10 用户要求）。
+        这样"用户改了昵称，存档里的署名也跟着变"（2026-10-09 用户要求）。
       */
       `<path d="${esc(d)}" fill="none" stroke="${esc(color)}" stroke-width="${esc(got.stroke.size)}" ` +
         `stroke-linecap="round" stroke-linejoin="round" data-by="${esc(s.alias || s.nick || '')}" />`

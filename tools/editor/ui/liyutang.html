@@ -211,6 +211,31 @@
         color: var(--text-muted);
         line-height: 1.8;
       }
+
+      /* 页面文案：一组一条小标题（茶绘画板页 / 聊天室 …），组里每个字段一行（label 左、文本域右） */
+      .lt-copy__group {
+        margin: 10px 0 2px;
+        font-size: 12.5px;
+        letter-spacing: 0.08em;
+        color: var(--text-muted);
+      }
+      .lt-copy__group:first-child {
+        margin-top: 0;
+      }
+      .lt-copy__field {
+        min-height: 46px;
+        font-size: 12.5px;
+      }
+      /* 文案字段是"一段话"，label 顶对齐更好读（其余 .lt-field 仍然居中） */
+      .lt-copy__row {
+        align-items: start;
+      }
+      .lt-copy__row > label {
+        padding-top: 6px;
+      }
+      .lt-copy__count {
+        color: var(--text-muted);
+      }
       @media (max-width: 620px) {
         .lt-field {
           grid-template-columns: minmax(0, 1fr);
@@ -264,6 +289,16 @@
       -->
       <section class="wbox" id="lt-halls-box"></section>
       <section class="wbox" id="lt-boards-box"></section>
+      <!--
+        页面文案（2026-10-09 加）：站点上那些"介绍 / 提示"文字全在这里填（写 liyutang.json 的 copy 区）。
+
+        为什么要单开一块：用户原话「当前的黎语堂网站里充斥着过多你自己胡编乱造的提示和简介 ……
+        请你全部删掉全部这一类你自己生造的句子 并且给对应的位置留下编辑器接口」——
+        所以站点页面里一个字都不写死了，站长在这儿填什么，页面上就长什么样；留空 = 那个位置不显示。
+        位置排在「版块」后面：它和版块 / 大厅一样是配置，一年动不了几次，但比帖子管理更靠前
+        （帖子是天天要动手的日常，见下面那条注释）。
+      -->
+      <section class="wbox" id="lt-copy-box"></section>
       <!--
         帖子管理夹在「版块」和「评论系统」**中间**（2026-10-07 加）：
         上面那两块是配置（一年动不了几次），这一块是天天要动手的日常

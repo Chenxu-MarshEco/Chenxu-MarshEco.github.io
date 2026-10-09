@@ -186,7 +186,17 @@ if (noticeBoard) {
   check(`★ 版块公告在构建产物里渲染出来了（/liyutang/${noticeBoard.id}/ 里的 .lyt-notice）`,
     /class="lyt-notice"/.test(inDist(path.join('liyutang', noticeBoard.id, 'index.html'))), noticeBoard.id);
 } else {
-  skip('版块公告的渲染', '现在没有任何版块写了公告（不算错，只是没东西可验）');
+  /*
+    2026-10-09：站长把两处公告都清空了（生造的公告文案删掉、改成编辑器的接口），
+    于是"有公告的版块"一个都没有 —— 原来这里直接 skip，等于**悄悄少一条覆盖**。
+    改成断言另一半（空公告 = 页面上一个公告框都不留），加上上面第 171 行那条"源码里
+    仍然是 board.notice ? renderMarkdown : ''"的接线断言，渲染这条路照样盯得住。
+    想验"有公告时真的渲染"，就在 copy-roundtrip 那种**写夹具 → 真构建 → 断言 → 还原**的路子里做。
+  */
+  const builtBoards = (lytJson.boards ?? []).map((b) => path.join('liyutang', b.id, 'index.html')).filter((p) => fs.existsSync(path.join(SRC, 'dist', p)));
+  check('★ 公告全空时，构建产物里一个 .lyt-notice 都不许留（空就不画，不留空壳）',
+    builtBoards.length > 0 && builtBoards.every((p) => !/class="lyt-notice"/.test(inDist(p))),
+    `${builtBoards.length} 个版块页：${builtBoards.join(' ')}`);
 }
 check('★ 版块 id 没占用 new / post 这两条真路由（占了构建会报错）',
   !(lytJson.boards ?? []).some((b) => ['new', 'post'].includes(b.id)));
