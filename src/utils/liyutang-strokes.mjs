@@ -186,8 +186,12 @@ export function strokesToSvg(strokes, opts = {}) {
     if (!d) continue;
     const color = got.stroke.tool === 'eraser' ? bg : got.stroke.color;
     body.push(
+      /*
+        data-by 用**昵称 alias**（后端 publicStroke 会发），没设过昵称时后端已经兜底等于用户名 ——
+        这样"用户改了昵称，存档里的署名也跟着变"（2026-10-10 用户要求）。
+      */
       `<path d="${esc(d)}" fill="none" stroke="${esc(color)}" stroke-width="${esc(got.stroke.size)}" ` +
-        `stroke-linecap="round" stroke-linejoin="round" data-by="${esc(s.nick || '')}" />`
+        `stroke-linecap="round" stroke-linejoin="round" data-by="${esc(s.alias || s.nick || '')}" />`
     );
   }
   return (
@@ -222,7 +226,17 @@ export function paintersOf(strokes, box = {}) {
     */
     const key = String(s.uk || s.userId || s.nick || '');
     if (!key) continue;
-    const cur = map.get(key) ?? { key, nick: String(s.nick || ''), avatar: String(s.avatar || ''), count: 0 };
+    /*
+      显示名用**昵称 alias**（后端 publicStroke 里就是 `alias || nick`）——
+      键仍旧按 uk 算：昵称随时能改，改完不该把"这个人"变成另一个人
+      （不然他原来那些笔划会突然显不出来，人表里也会冒出两个他）。
+    */
+    const cur = map.get(key) ?? {
+      key,
+      nick: String(s.alias || s.nick || ''),
+      avatar: String(s.avatar || ''),
+      count: 0,
+    };
     cur.count += 1;
     if (!cur.avatar && s.avatar) cur.avatar = String(s.avatar);
     map.set(key, cur);

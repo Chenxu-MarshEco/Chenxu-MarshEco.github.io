@@ -26,12 +26,23 @@ export const TOKEN_KEY = 'lt_token';
 export type LtState = 'guest' | 'pending' | 'approved' | 'banned';
 
 export interface LtUser {
+  /** 用户名：注册时定的、用来登录、**不能改** */
   nick: string;
+  /** 昵称：随时能改，页面上到处显示的都是它（没设过时后端已经兜底等于用户名） */
+  alias?: string;
   mail: string;
   status: string;
   label?: string;
   avatar?: string;
   createdAt?: number;
+  /** 画板的个人偏好（调色盘收藏、画笔/橡皮各自粗细）—— 跟着账号走，换设备也还在 */
+  prefs?: {
+    palette?: string[];
+    penSize?: number;
+    eraserSize?: number;
+    color?: string;
+    tool?: string;
+  };
 }
 
 export interface LtPost {
@@ -41,6 +52,8 @@ export interface LtPost {
   excerpt: string;
   cover: string;
   authorNick: string;
+  /** 作者昵称（后端按当前昵称发的；改过名之后老帖子也是新昵称） */
+  authorAlias?: string;
   authorAvatar: string;
   createdAt: number;
   updatedAt: number;
@@ -92,6 +105,53 @@ export function clearToken(): void {
     localStorage.removeItem(TOKEN_KEY);
   } catch {
     /* 无所谓 */
+  }
+}
+
+/*
+  ============================================================================
+  「登录状态」为什么还要缓存一份（2026-10-09 晚上补）
+  ----------------------------------------------------------------------------
+  群友反馈过：刷新、重进站点、点进黎语堂的新页面时会"掉登录"。查出来的根因有两条，
+  两条都不是"令牌真过期了"：
+
+    ① 云函数**冷启动**时第一枪偶尔连不上数据库，回的是一句"临时连不上"，
+       而那时所有错误码都是同一个 1000 —— 页面分不出来，就一律当成"登录过期"，
+       **把令牌删掉了**（`clearToken()`）。网络抖一下 = 永久登出。
+       现在后端给了可区分的码：**401 才是"令牌无效/过期"**，其他码要保留令牌。
+    ② 就算令牌没删，那一瞬间页面也只能显示"未登录"：头像、名字、"以谁的身份"全空，
+       用户看到的就是"掉登录"。
+
+  所以这里做三件事：
+    · **只认 401**：只有后端明说令牌无效才清令牌；
+    · **缓存一份"上次确认过的身份"**（`lt_user`）：一进页面先拿它把头像/名字画出来，
+      再去后台核对 —— 刷新时不会再闪一下"未登录"；
+    · **失败自动重试**：临时失败不算数，几秒后自己再问一次，成功了悄悄换回真实状态
+      （所以网络恢复之后**不用刷新页面**）。
+  缓存里**不放令牌**（令牌单独存），也不放邮箱，够画面用就行。
+  ============================================================================
+*/
+const USER_KEY = 'lt_user';
+
+/** 记下"上次确认过的身份"（渲染用，不含敏感字段） */
+export function setCachedUser(u: LtUser | null): void {
+  try {
+    if (!u) localStorage.removeItem(USER_KEY);
+    else localStorage.setItem(USER_KEY, JSON.stringify({ nick: u.nick, alias: u.alias, avatar: u.avatar, status: u.status, label: u.label }));
+  } catch {
+    /* 无痕模式之类：忽略 */
+  }
+}
+
+/** @returns {Partial<LtUser>|null} 上次确认过的身份（没有就是 null） */
+export function getCachedUser(): Partial<LtUser> | null {
+  try {
+    const raw = localStorage.getItem(USER_KEY);
+    if (!raw) return null;
+    const v = JSON.parse(raw) as Partial<LtUser>;
+    return v && typeof v === 'object' && v.nick ? v : null;
+  } catch {
+    return null;
   }
 }
 
@@ -297,6 +357,8 @@ export function mountAccount(opts: AccountOpts): AccountHandle {
     out.type = 'button';
     out.addEventListener('click', () => {
       clearToken();
+      /* 主动退出要把缓存的身份也清掉，不然下次进页面会先"闪"出上一个身份 */
+      setCachedUser(null);
       location.reload();
     });
     return out;
@@ -348,9 +410,10 @@ export function mountAccount(opts: AccountOpts): AccountHandle {
       img.alt = '';
       pic.append(img);
     } else {
-      pic.textContent = (u.nick || '?').slice(0, 1).toUpperCase();
+      /* 显示名一律用昵称（alias）；没设过昵称时后端已经兜底等于用户名 */
+      pic.textContent = (u.alias || u.nick || '?').slice(0, 1).toUpperCase();
     }
-    bar.append(pic, el('span', 'tkc__me', `你以 ${u.nick} 的身份登录` + (u.label ? `（${u.label}）` : '')));
+    bar.append(pic, el('span', 'tkc__me', `你以 ${u.alias || u.nick} 的身份登录` + (u.label ? `（${u.label}）` : '')));
     if (u.status === 'approved') bar.append(avatarBtn());
     for (const node of opts.extraLinks?.(u) ?? []) bar.append(node);
     bar.append(logoutBtn());
@@ -456,6 +519,8 @@ export function mountAccount(opts: AccountOpts): AccountHandle {
         }
         setToken(String(r.token ?? ''));
         user = r.user as LtUser;
+        /* 登进来就顺手把身份缓存上：下次刷新能立刻画出头像和名字（也免得闪一下"未登录"） */
+        setCachedUser(user);
         paint(user.status === 'approved' ? 'approved' : user.status === 'banned' ? 'banned' : 'pending');
       } catch (err) {
         lMsg.textContent = '连不上服务器：' + String((err as Error)?.message ?? err);
@@ -508,23 +573,57 @@ export function mountAccount(opts: AccountOpts): AccountHandle {
     const t = getToken();
     if (!t) {
       user = null;
+      setCachedUser(null);
       paint('guest');
       return;
     }
-    try {
-      const r = await call(api, { event: 'LT_ME', ltToken: t });
-      if (r.code !== 0) {
-        clearToken();
-        user = null;
-        paint('guest', '登录状态过期了，重新登录一下。');
-        return;
-      }
-      user = r.user as LtUser;
-      paint(user.status === 'approved' ? 'approved' : user.status === 'banned' ? 'banned' : 'pending');
-    } catch (err) {
-      user = null;
-      paint('guest', '连不上服务器：' + String((err as Error)?.message ?? err));
+    /*
+      先拿缓存把"我是谁"画出来（头像/名字/状态），再去核 ——
+      这样刷新页面不会闪一下"未登录"，也不会因为一次网络抖动就被当成掉登录。
+    */
+    const cached = getCachedUser();
+    if (cached && !user) {
+      user = cached as LtUser;
+      paint(user.status === 'approved' ? 'approved' : user.status === 'banned' ? 'banned' : 'pending', '正在确认登录状态…');
     }
+    /* 临时失败要重试：最多 3 次，间隔 1.5s / 3s（冷启动那一枪大概要 6~10 秒才回得来） */
+    let lastWhy = '';
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      if (attempt) await new Promise((r) => setTimeout(r, attempt === 1 ? 1500 : 3000));
+      try {
+        const r = await call(api, { event: 'LT_ME', ltToken: t });
+        if (r.code === 0) {
+          user = r.user as LtUser;
+          setCachedUser(user);
+          paint(user.status === 'approved' ? 'approved' : user.status === 'banned' ? 'banned' : 'pending');
+          return;
+        }
+        /*
+          ★ 只有后端**明说令牌无效/过期（401）**才把它删掉。
+          其他非 0（服务器临时出问题、数据库连不上…）一个字都不动 ——
+          这正是群友那次"刷新就掉登录"的根因。
+        */
+        if (Number(r.code) === 401) {
+          clearToken();
+          setCachedUser(null);
+          user = null;
+          paint('guest', '登录状态过期了，重新登录一下。');
+          return;
+        }
+        lastWhy = String(r.message ?? '服务器那边这次没成');
+      } catch (err) {
+        lastWhy = String((err as Error)?.message ?? err);
+      }
+    }
+    /* 三次都没成：令牌留着，身份按缓存显示，并且**过一会儿自己再试**（不用刷新） */
+    user = cached ? (cached as LtUser) : null;
+    paint(
+      user ? (user.status === 'approved' ? 'approved' : user.status === 'banned' ? 'banned' : 'pending') : 'guest',
+      `暂时连不上服务器（${lastWhy.slice(0, 40)}）—— 你的登录没有掉，稍后会自动再试。`
+    );
+    window.setTimeout(() => {
+      if (getToken()) void handle.refresh();
+    }, 6000);
   };
 
   /* 站长的后门：地址后面加 #admin 就不管登录状态，直接按"过审"处理。
@@ -606,7 +705,7 @@ export async function mountPostList(opts: ListOpts): Promise<LtPost[]> {
       img.loading = 'lazy';
       face.append(img);
     } else {
-      face.textContent = (p.authorNick || '?').slice(0, 1).toUpperCase();
+      face.textContent = (p.authorAlias || p.authorNick || '?').slice(0, 1).toUpperCase();
     }
 
     const link = el('a', 'lyt-post__link');
@@ -630,7 +729,7 @@ export async function mountPostList(opts: ListOpts): Promise<LtPost[]> {
         'lyt-post__meta',
         [
           boardTitles[p.board] || p.board,
-          p.authorNick,
+          p.authorAlias || p.authorNick,
           formatTime(p.createdAt),
           p.images ? `${p.images} 图` : '',
           `${p.views} 浏览`,
@@ -813,11 +912,11 @@ export function mountChat(opts: ChatOpts): ChatHandle {
       img.loading = 'lazy';
       face.append(img);
     } else {
-      face.textContent = (m.nick || '?').slice(0, 1).toUpperCase();
+      face.textContent = (m.alias || m.nick || '?').slice(0, 1).toUpperCase();
     }
     const body = el('div', 'lyt-msg__body');
     const head = el('div', 'lyt-msg__head');
-    head.append(el('span', 'lyt-msg__nick', m.nick), el('span', '', formatTime(m.createdAt)));
+    head.append(el('span', 'lyt-msg__nick', m.alias || m.nick), el('span', '', formatTime(m.createdAt)));
     if (m.mine) {
       const del = el('button', 'tkc__link', '撤回');
       del.type = 'button';

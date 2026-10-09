@@ -1,0 +1,609 @@
+---
+/**
+ * 用户页 —— /liyutang/u/（2026-10-09 晚上）。
+ *
+ * 地址的两种含义（用户定的口径）：
+ *   · 不带参数 `/liyutang/u/`       = 看**自己**（用 LT_ME 问"我是谁"，可编辑）；
+ *   · 带参数   `/liyutang/u/?id=x`  = 看**别人**（用 LT_USER_GET 拿公开资料，只读）。
+ *     后端在 LT_USER_GET 里把邮箱摘掉了，页面拿到的就是能公开的那几样。
+ *
+ * 一条硬规矩：**看别人的时候没有编辑表单** —— 不是 disabled 灰着，是压根不建那几个节点
+ * （验收脚本数 `[data-lt-user-edit]` 的个数：本人 = 1，别人 = 0）。
+ *
+ * 「用户名」和「昵称」是两回事，这一页必须同时显示并说清楚：
+ *   · 用户名（nick）= 注册时定的、用来登录、**改不了**；
+ *   · 昵称（alias）= 随时能改，论坛里到处显示的都是它。
+ * 别的地方一律只显示昵称，只有这一页把用户名拿出来（带个 @）解释一遍。
+ *
+ * 数据和写法：
+ *   · 事件名、返回形状、错误码都照 tools/liyutang-backend/index.js 那份契约；
+ *   · 头像压缩用 liyutang-client.ts 里的 compressImage（160px 方图，和账号区那条路一模一样），
+ *     不另外写一份 —— 两份压缩参数迟早走岔；
+ *   · ⚠ 令牌只在 `code === 401`（令牌无效/过期）时才删。别的非 0（例如 1000）是
+ *     "服务器那边这次没成"：令牌留着，页面也不能把人显示成未登录。
+ */
+import ForumLayout from '../../../layouts/ForumLayout.astro';
+import { forum } from '../../../utils/liyutang';
+import { withBase } from '../../../utils/url';
+
+const api = forum().twikoo.envId;
+const home = withBase('/liyutang/');
+---
+
+<ForumLayout
+  title="用户页"
+  description="黎语堂的用户页：看自己的资料（能改昵称和头像），也能看别人的（只读）。"
+  noindex
+>
+  <div class="lyt-page ltuser" data-lt-user-page data-api={api}>
+    <p class="lyt-crumb">
+      <a href={home}>← 黎语堂</a>
+    </p>
+    <h1 class="lyt-title" data-lt-user-head>用户页</h1>
+
+    {/* 状态行：正在读 / 要先登录 / 服务器没成 / 改成功了，都走这一行 */}
+    <p class="lyt-form__msg" data-lt-user-msg>正在读资料…</p>
+
+    {/* 资料卡：读到之后由脚本填、并取消 hidden */}
+    <section class="ltuser__card" data-lt-user-card hidden>
+      <span class="lt-avatar ltuser__face" data-lt-user-face aria-hidden="true"></span>
+      <div class="ltuser__head">
+        <p class="ltuser__alias" data-lt-user-alias></p>
+        <p class="ltuser__nick" data-lt-user-at></p>
+      </div>
+
+      <dl class="ltuser__facts">
+        <div class="ltuser__fact">
+          <dt>用户名</dt>
+          <dd data-lt-user-nick></dd>
+        </div>
+        <div class="ltuser__fact">
+          <dt>昵称</dt>
+          <dd data-lt-user-alias2></dd>
+        </div>
+        <div class="ltuser__fact">
+          <dt>注册时间</dt>
+          <dd data-lt-user-since></dd>
+        </div>
+        <div class="ltuser__fact">
+          <dt>发过</dt>
+          <dd data-lt-user-posts></dd>
+        </div>
+      </dl>
+    </section>
+
+    {/* 两者的区别：本人和看别人时都显示 —— 这是这一页存在的理由之一 */}
+    <p class="ltuser__rule" data-lt-user-rule hidden>
+      <b>用户名</b>是注册时定下来的那个（上面带 @ 的那一串）：用来登录，<b>不能改</b>。
+      <b>昵称</b>随时能改，论坛里别的地方显示的都是昵称。
+    </p>
+
+    {/*
+      本人的编辑区在这里由脚本**现建**（改头像 / 改昵称，见下面的脚本）。
+      看别人的时候这一段永远是空的 —— 不是灰着禁用，是根本没有那几个节点。
+    */}
+    <div data-lt-user-edit-host></div>
+
+    {/*
+      ============================================================
+      TODO（以后填这三块，现在故意空着 —— 宁可不显示，也不拿假数据糊上去）：
+
+        · 背景图     —— 等后端给用户文档加一个 background 字段（和 avatar 一条路：前端压成
+                       data URL 上送、LT_AVATAR_SET 那样存），到时候这里放 <img> 当资料卡的底图。
+        · 他发过的贴 —— 等云函数能按人给回帖子列表：帖子里存着 authorId（见
+                       tools/liyutang-backend/index.js 的 publicPost），加一个 LT_USER_POSTS { id }
+                       或者让 LT_USER_GET 多带一份 posts 数组就行（现在只给了"发过几篇"这个数字）。
+        · 他画过的画 —— 等画板存档接上来：src/data/draw/<日期>.json 由
+                       .github/workflows/daily-archive.yml 搬进仓库，里面的笔划带着 uk / nick，
+                       按人捞就能列"他画过的那些天"（lt_draw 只留当天，旧的都在仓库里）。
+      ============================================================
+    */}
+    <section class="ltuser__later" data-lt-user-later>
+      <h2 class="ltuser__laterHead">以后会长在这里</h2>
+      <ul class="ltuser__laterList">
+        <li>
+          <b>背景图</b>
+          <span>等用户文档有了 background 字段（和头像同一条上传路），这一块放他的背景图。</span>
+        </li>
+        <li>
+          <b>他发过的贴</b>
+          <span>等云函数能按 authorId 给回这个人发的帖子（现在只知道"发过几篇"）。</span>
+        </li>
+        <li>
+          <b>他画过的画</b>
+          <span>等画板存档接上来（<code>src/data/draw/&lt;日期&gt;.json</code> 那些，按人捞）。</span>
+        </li>
+      </ul>
+      <p class="ltuser__laterNote">这三块现在空着是<b>故意的</b>：没有的东西就不画，先把位置留好。</p>
+    </section>
+
+    {
+      api && (
+        <script>
+          import { call, clearToken, compressImage, el, getToken, type LtUser } from '../../../utils/liyutang-client';
+          import { withBase } from '../../../utils/url';
+
+          /**
+           * 这一页要显示的就是 LtUser 那几样（nick = 用户名、alias = 昵称、createdAt = 注册时间）。
+           * 用 Partial：还没读回来的时候它是个空对象。
+           */
+          type PageUser = Partial<LtUser>;
+
+          const page = document.querySelector('[data-lt-user-page]') as HTMLElement | null;
+          const api = String(page?.dataset.api ?? '');
+          /** ?id= 有就是看别人；没有就是看自己（"不带参数 = 自己"是定下来的口径） */
+          const wantId = new URL(location.href).searchParams.get('id')?.trim() ?? '';
+
+          if (page && api) {
+            const msg = page.querySelector('[data-lt-user-msg]') as HTMLElement;
+            const head = page.querySelector('[data-lt-user-head]') as HTMLElement;
+            const card = page.querySelector('[data-lt-user-card]') as HTMLElement;
+            const face = page.querySelector('[data-lt-user-face]') as HTMLElement;
+            const aliasTop = page.querySelector('[data-lt-user-alias]') as HTMLElement;
+            const atNick = page.querySelector('[data-lt-user-at]') as HTMLElement;
+            const nickFact = page.querySelector('[data-lt-user-nick]') as HTMLElement;
+            const aliasFact = page.querySelector('[data-lt-user-alias2]') as HTMLElement;
+            const sinceFact = page.querySelector('[data-lt-user-since]') as HTMLElement;
+            const postsFact = page.querySelector('[data-lt-user-posts]') as HTMLElement;
+            const rule = page.querySelector('[data-lt-user-rule]') as HTMLElement;
+            const editHost = page.querySelector('[data-lt-user-edit-host]') as HTMLElement;
+
+            /** 现在看着的这个人；me = 是不是本人（只有本人有编辑区） */
+            let mine: PageUser = {};
+            let me = false;
+            let postCount = 0;
+            /** 编辑区里那个昵称输入框（改完之后要把新值写回去） */
+            let aliasInput: HTMLInputElement | null = null;
+
+            const say = (text: string, ok = false) => {
+              msg.textContent = text;
+              msg.classList.toggle('is-ok', ok);
+              msg.classList.toggle('is-bad', !ok);
+            };
+
+            /*
+              注册时间用**绝对日期**，不用 formatTime()。
+              那个函数是给"刚刚发的 / 3 分钟前"用的，套到"什么时候注册的"上会变成
+              "刚刚""昨天"，看着像刚注册。这一页要的是一个能记住的日子。
+            */
+            const dayOf = (ts: number): string => {
+              const t = Number(ts) || 0;
+              if (!t) return '不知道';
+              const d = new Date(t);
+              const p = (n: number) => String(n).padStart(2, '0');
+              return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+            };
+
+            const drawFace = (host: HTMLElement, alias: string, avatar: string) => {
+              host.textContent = '';
+              if (avatar) {
+                const img = el('img', 'lt-avatar__img');
+                img.src = avatar;
+                img.alt = '';
+                host.append(img);
+              } else {
+                /* 没传过头像就显示昵称首字（和论坛里其它头像一个规矩） */
+                host.textContent = (alias || '?').slice(0, 1).toUpperCase();
+              }
+            };
+
+            /** 只画"资料"那几块（编辑区另管，改昵称时不重建表单，免得输入框里刚打的字被冲掉） */
+            const paintProfile = () => {
+              const alias = String(mine.alias || mine.nick || '');
+              const nick = String(mine.nick || '');
+              head.textContent = me ? '你自己的资料' : `${alias} 的资料`;
+              aliasTop.textContent = alias;
+              atNick.textContent = nick ? `@${nick}` : '';
+              nickFact.textContent = nick || '（没有）';
+              aliasFact.textContent = alias || '（没有）';
+              sinceFact.textContent = dayOf(Number(mine.createdAt) || 0);
+              postsFact.textContent = `${postCount} 篇`;
+              drawFace(face, alias, String(mine.avatar || ''));
+              card.hidden = false;
+              rule.hidden = false;
+            };
+
+            /** 资料读完：画出来；本人再把编辑区建上（**只有本人**） */
+            const paint = (u: PageUser, isMe: boolean, posts: number) => {
+              mine = u;
+              me = isMe;
+              postCount = posts;
+              paintProfile();
+              if (isMe && !editHost.querySelector('[data-lt-user-edit]')) buildEdit();
+              if (!isMe) editHost.textContent = '';
+              say(isMe ? '这是你自己的资料，下面能改昵称和头像。' : '这是别人的资料，只能看。', isMe);
+            };
+
+            /* ---------------------------------------------------------- 编辑区（只为本人建） */
+
+            const buildEdit = () => {
+              editHost.textContent = '';
+              const box = el('section', 'ltuser__edit');
+              box.dataset.ltUserEdit = '';
+              box.append(el('h2', 'ltuser__editHead', '改自己的资料'));
+
+              /* ---- 换头像：和账号区同一条路（compressImage 压成 160px 方图 → LT_AVATAR_SET） ---- */
+              const avatarRow = el('div', 'ltuser__row');
+              const avatarBtn = el('button', 'lyt-btn', '换头像');
+              avatarBtn.type = 'button';
+              const file = el('input', 'ltuser__file');
+              file.type = 'file';
+              file.accept = 'image/png,image/jpeg,image/webp,image/gif';
+              /* 挂在 DOM 里（不是游离节点）：按钮点它，验收脚本也靠它喂文件 */
+              file.hidden = true;
+              file.dataset.ltUserAvatarFile = '';
+              file.addEventListener('change', async () => {
+                const picked = file.files?.[0];
+                if (!picked) return;
+                avatarBtn.disabled = true;
+                const was = avatarBtn.textContent;
+                avatarBtn.textContent = '处理中…';
+                try {
+                  const avatar = await compressImage(picked, {
+                    max: 160,
+                    square: true,
+                    quality: 0.85,
+                    maxBytes: 120_000,
+                  });
+                  const r = await call(api, { event: 'LT_AVATAR_SET', ltToken: getToken(), avatar });
+                  if (r.code !== 0) throw new Error(String(r.message ?? '换头像失败'));
+                  mine.avatar = String(r.avatar ?? avatar);
+                  drawFace(face, String(mine.alias || mine.nick || ''), mine.avatar);
+                  /* 顶上那条常驻栏的小头像立刻跟着变（同一页，不用再问一次后端） */
+                  document.dispatchEvent(new CustomEvent('lt-profile', { detail: { user: mine } }));
+                  say('头像换好了。', true);
+                } catch (err) {
+                  say('换头像失败：' + String((err as Error)?.message ?? err));
+                } finally {
+                  avatarBtn.disabled = false;
+                  avatarBtn.textContent = was;
+                  file.value = '';
+                }
+              });
+              avatarBtn.addEventListener('click', () => file.click());
+              avatarRow.append(
+                avatarBtn,
+                el('span', 'lyt-form__hint', '选一张图，页面自己压到 160px 再传。'),
+                file
+              );
+
+              /* ---- 改昵称：LT_PROFILE_SET（2~20 个字，服务端还会再验一次） ---- */
+              const aliasRow = el('div', 'ltuser__row');
+              aliasInput = el('input', 'ltuser__input');
+              aliasInput.type = 'text';
+              aliasInput.maxLength = 20;
+              aliasInput.value = String(mine.alias || '');
+              aliasInput.placeholder = '2~20 个字';
+              aliasInput.setAttribute('aria-label', '昵称');
+              const aliasBtn = el('button', 'lyt-btn', '保存昵称');
+              aliasBtn.type = 'button';
+              aliasBtn.addEventListener('click', async () => {
+                const next = aliasInput?.value.trim() ?? '';
+                if (!next) {
+                  say('昵称不能是空的。');
+                  return;
+                }
+                if (next === String(mine.alias || '')) {
+                  say('昵称没变。');
+                  return;
+                }
+                aliasBtn.disabled = true;
+                const was = aliasBtn.textContent;
+                aliasBtn.textContent = '保存中…';
+                try {
+                  const r = await call(api, { event: 'LT_PROFILE_SET', ltToken: getToken(), alias: next });
+                  /*
+                    ⚠ 401 是"令牌真过期"：**只有这一种**才删令牌、才改成未登录的样子。
+                    别的非 0（昵称不合规、服务器抽了一下…）都是"这次没成" —— 令牌留着，
+                    页面照旧显示着这个人，只把原因说出来。
+                  */
+                  if (r.code !== 0) {
+                    if (r.code === 401) {
+                      clearToken();
+                      guest('登录状态过期了，重新登录一下。');
+                      return;
+                    }
+                    say('昵称没改成：' + String(r.message ?? '服务器那边这次没成'));
+                    return;
+                  }
+                  mine = { ...mine, ...((r.user ?? {}) as PageUser) };
+                  paintProfile();
+                  if (aliasInput) aliasInput.value = String(mine.alias || '');
+                  document.dispatchEvent(new CustomEvent('lt-profile', { detail: { user: mine } }));
+                  say('昵称改好了 —— 论坛里别的地方也跟着变了。', true);
+                } catch (err) {
+                  /* 连不上也是"这次没成"，同样不删令牌 */
+                  say('昵称没改成：' + String((err as Error)?.message ?? err));
+                } finally {
+                  aliasBtn.disabled = false;
+                  aliasBtn.textContent = was;
+                }
+              });
+              aliasInput.addEventListener('keydown', (ev) => {
+                if (ev.key === 'Enter') aliasBtn.click();
+              });
+              aliasRow.append(el('span', 'ltuser__label', '昵称'), aliasInput, aliasBtn);
+
+              box.append(
+                avatarRow,
+                aliasRow,
+                el('p', 'ltuser__editNote', '用户名（上面那个 @）改不了 —— 它是登录用的；昵称随时能改。')
+              );
+              editHost.append(box);
+            };
+
+            /* ---------------------------------------------------- 两种"没资料可看"的样子 */
+
+            /** 没登录 / 令牌过期：说清楚原因，并给一个去登录的入口（**不建编辑区**） */
+            const guest = (text: string) => {
+              editHost.textContent = '';
+              card.hidden = true;
+              rule.hidden = true;
+              head.textContent = '用户页';
+              /*
+                顶上那条常驻栏也要跟着换成"未登录"的样子 —— 它自己不知道这里的令牌刚被删了
+                （比如换昵称的时候后端回 401，那一路是这一页在处理的）。
+              */
+              document.dispatchEvent(new CustomEvent('lt-profile', { detail: { guest: true } }));
+              const a = el('a', 'ltuser__cta', '去黎语堂首页登录');
+              a.href = withBase('/liyutang/');
+              msg.textContent = '';
+              msg.classList.remove('is-ok');
+              msg.classList.add('is-bad');
+              msg.append(text + ' ', a);
+            };
+
+            /** 服务器那边这次没成：令牌**不删**，原地给一个重试 */
+            const trouble = (text: string) => {
+              editHost.textContent = '';
+              card.hidden = true;
+              rule.hidden = true;
+              head.textContent = '用户页';
+              const btn = el('button', 'ltuser__cta', '再试一次');
+              btn.type = 'button';
+              btn.addEventListener('click', () => void load());
+              msg.textContent = '';
+              msg.classList.remove('is-ok', 'is-bad');
+              msg.append(text + ' ', btn);
+            };
+
+            /* ---------------------------------------------------------- 读资料 */
+
+            const load = async () => {
+              say('正在读资料…');
+              const token = getToken();
+              /* 不带 id 又没登录：看的是自己，可我们连"自己是谁"都不知道 —— 先去登录 */
+              if (!wantId && !token) {
+                guest('要先登录才能看自己的资料。');
+                return;
+              }
+              try {
+                const r = wantId
+                  ? await call(api, { event: 'LT_USER_GET', id: wantId, ltToken: token })
+                  : await call(api, { event: 'LT_ME', ltToken: token });
+                if (r.code !== 0) {
+                  if (r.code === 401) {
+                    /* 只有这一种才算"登录过期了" */
+                    clearToken();
+                    guest('登录状态过期了，重新登录一下。');
+                    return;
+                  }
+                  trouble('这个人的资料这次没读出来：' + String(r.message ?? '服务器那边没成'));
+                  return;
+                }
+                /*
+                  LT_ME 那条路回来的**必然是自己**（它就是拿令牌问"我是谁"），后端也没在返回体里
+                  带 `me` 字段 —— 所以不带 id 这一趟直接按本人算；带 id 那一趟才看后端的 me。
+                */
+                paint((r.user ?? {}) as PageUser, wantId ? !!r.me : true, Number(r.posts) || 0);
+              } catch (err) {
+                /* 网络抖了也是"这次没成"：令牌留着 */
+                trouble('连不上服务器：' + String((err as Error)?.message ?? err));
+              }
+            };
+
+            void load();
+          }
+        </script>
+      )
+    }
+  </div>
+</ForumLayout>
+
+<style>
+  /* 资料卡：皮的视觉语言跟花娅域名片 / 常驻栏那一套（粉边 + 深紫半透明底 + 毛玻璃） */
+  .ltuser__card {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    flex-wrap: wrap;
+    margin: 0 0 1rem;
+    padding: 1rem 1.1rem;
+    border: 1px solid rgba(255, 120, 190, 0.45);
+    border-radius: var(--r-lg);
+    background: rgba(24, 3, 36, 0.72);
+    backdrop-filter: blur(5px);
+  }
+  /* 头像：圆形 + 1px 粉描边（和 .mem__face 一个规矩），这一页放大到 64px */
+  .ltuser__face {
+    width: 64px;
+    height: 64px;
+    font-size: 1.5rem;
+    border-color: rgba(255, 120, 190, 0.5);
+  }
+  .ltuser__head {
+    min-width: 0;
+  }
+  .ltuser__alias {
+    margin: 0;
+    font-family: var(--font-display);
+    font-size: 1.35rem;
+    letter-spacing: 0.03em;
+    color: #fff;
+    text-shadow: 0 0 12px rgba(255, 79, 163, 0.55);
+  }
+  /* 用户名（@xxx）：压在昵称下面，小一号、暗一档 —— 它是"账本上的名字"，不是给人叫的 */
+  .ltuser__nick {
+    margin: 0.15rem 0 0;
+    font-size: 0.84rem;
+    letter-spacing: 0.06em;
+    color: rgba(214, 201, 238, 0.72);
+  }
+
+  .ltuser__facts {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 0.5rem 1rem;
+    width: 100%;
+    margin: 0.4rem 0 0;
+    padding-top: 0.8rem;
+    border-top: 1px dashed rgba(255, 120, 190, 0.25);
+    font-size: 0.86rem;
+  }
+  .ltuser__fact {
+    display: flex;
+    align-items: baseline;
+    gap: 0.5rem;
+    min-width: 0;
+  }
+  .ltuser__fact dt {
+    flex: none;
+    color: rgba(214, 201, 238, 0.65);
+    letter-spacing: 0.08em;
+  }
+  .ltuser__fact dd {
+    margin: 0;
+    color: #fff3dc;
+    overflow-wrap: anywhere;
+  }
+
+  /* 「用户名 ≠ 昵称」那段说明：这一页的重点，别让它看着像免责声明 */
+  .ltuser__rule {
+    margin: 0 0 1.4rem;
+    padding: 0.7rem 0.9rem;
+    border-left: 3px solid rgba(255, 181, 71, 0.7);
+    border-radius: 0 var(--r-md) var(--r-md) 0;
+    background: rgba(255, 181, 71, 0.08);
+    font-size: 0.86rem;
+    line-height: 1.9;
+    color: rgba(214, 201, 238, 0.92);
+  }
+  .ltuser__rule b {
+    color: #fff3dc;
+  }
+
+  /* 以后那三块的位置：虚线框 + 说明，明确"这里现在是空的" */
+  .ltuser__later {
+    margin-top: 2rem;
+    padding: 1rem 1.1rem;
+    border: 1px dashed rgba(255, 120, 190, 0.3);
+    border-radius: var(--r-lg);
+  }
+  .ltuser__laterHead {
+    margin: 0 0 0.6rem;
+    font-size: 0.95rem;
+    letter-spacing: 0.12em;
+    color: rgba(214, 201, 238, 0.85);
+  }
+  .ltuser__laterList {
+    display: grid;
+    gap: 0.45rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    font-size: 0.84rem;
+    color: rgba(214, 201, 238, 0.72);
+  }
+  .ltuser__laterList b {
+    display: inline-block;
+    min-width: 6.5rem;
+    color: #ffc76b;
+  }
+  .ltuser__laterNote {
+    margin: 0.8rem 0 0;
+    font-size: 0.8rem;
+    color: rgba(214, 201, 238, 0.6);
+  }
+  .ltuser__later code {
+    padding: 0 0.25rem;
+    border-radius: var(--r-sm);
+    background: rgba(255, 255, 255, 0.08);
+    font-size: 0.95em;
+  }
+
+  /* `hidden` 是脚本切的显示/隐藏，别被上面那几条 display 覆盖掉 */
+  .ltuser__card[hidden],
+  .ltuser__rule[hidden] {
+    display: none;
+  }
+
+  /*
+    下面是**脚本现建**的那几个节点（编辑区 + 状态行里的链接 / 按钮），
+    它们身上没有 Astro 那个 scoped 属性，所以这里走 :global()。
+    样式仍然只写在这个组件的 <style> 里，没往 forum.css 里加任何东西。
+  */
+  :global(.ltuser__edit) {
+    margin: 0 0 1.2rem;
+    padding: 1rem 1.1rem;
+    border: 1px solid rgba(255, 181, 71, 0.35);
+    border-radius: var(--r-lg);
+    background: rgba(255, 181, 71, 0.06);
+  }
+  :global(.ltuser__editHead) {
+    margin: 0 0 0.8rem;
+    font-size: 1rem;
+    letter-spacing: 0.12em;
+    color: #fff3dc;
+  }
+  :global(.ltuser__row) {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+    margin-bottom: 0.7rem;
+  }
+  :global(.ltuser__label) {
+    flex: none;
+    font-size: 0.86rem;
+    letter-spacing: 0.08em;
+    color: rgba(214, 201, 238, 0.8);
+  }
+  :global(.ltuser__input) {
+    flex: 1 1 12rem;
+    min-width: 0;
+    padding: 0.4rem 0.6rem;
+    border: 1px solid rgba(255, 181, 71, 0.35);
+    border-radius: var(--r-md);
+    background: rgba(12, 2, 20, 0.72);
+    color: #fff3dc;
+    font-family: inherit;
+    font-size: 0.92rem;
+  }
+  :global(.ltuser__input:focus) {
+    outline: none;
+    border-color: rgba(255, 181, 71, 0.8);
+  }
+  :global(.ltuser__editNote) {
+    margin: 0.2rem 0 0;
+    font-size: 0.8rem;
+    color: rgba(214, 201, 238, 0.6);
+  }
+  /* 状态行里那两颗现建的入口（去登录 / 再试一次）：跟页面上的链接一个样子 */
+  :global(.ltuser__cta) {
+    padding: 0;
+    border: none;
+    background: none;
+    color: #ffc76b;
+    font-family: inherit;
+    font-size: 0.86rem;
+    text-decoration: underline;
+    cursor: pointer;
+  }
+  :global(.ltuser__cta:hover) {
+    color: #ffeccd;
+  }
+  /* 失败的话：forum.css 只配了 .lyt-form__msg.is-ok，红色这一档在这一页自己补 */
+  :global(.lyt-form__msg.is-bad) {
+    color: #ff9db1;
+  }
+</style>

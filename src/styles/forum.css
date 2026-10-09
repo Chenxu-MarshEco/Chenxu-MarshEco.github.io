@@ -802,7 +802,12 @@ body.is-crt .twikoo .tk-loading-spinner .path {
   display: grid;
   grid-template-columns: 15rem minmax(0, 1fr);
   gap: 1rem;
-  align-items: start;
+  /*
+    ⚠ 2026-10-09：原来是 `align-items: start` —— 两栏各按自己内容高，
+    左边那条时间轴（--tl-panel-h ≈ 一屏高）比右边聊天区高一大截，右边底下空一块，
+    用户原话是"特别丑"。改成 stretch：两栏一样高，右边把剩下的地方填满。
+  */
+  align-items: stretch;
   margin-top: 1.2rem;
 }
 .lyt-chat__side {
@@ -837,7 +842,15 @@ body.is-crt .twikoo .tk-loading-spinner .path {
   flex-direction: column;
   gap: 0.6rem;
   min-height: 22rem;
-  max-height: 60vh;
+  /*
+    ⚠ 2026-10-09：原来这里是 `max-height: 60vh` —— 左边时间轴是一屏高，右边被压在 60vh，
+    于是"聊天框比时间轴矮一大截、底下空着"。现在让日志**撑满**主栏剩下的高度
+    （主栏高度由左栏那条轴决定，见 .lyt-chat 的 align-items: stretch），
+    消息多了在自己里面滚（overflow-y: auto 还在）。
+    窄屏例外：那时侧栏搬到上面去了，行高不再封顶，所以下面那条 media query 里仍旧限高。
+  */
+  flex: 1 1 auto;
+  max-height: none;
   overflow-y: auto;
   padding: 0.9rem 1rem;
   border: 1px solid rgba(255, 181, 71, 0.18);
@@ -1399,5 +1412,12 @@ body.is-crt .twikoo .tk-loading-spinner .path {
 @media (max-width: 880px) {
   .lyt-chat__tl {
     --tl-panel-h: min(58vh, 26rem);
+  }
+  /*
+    窄屏时侧栏是**在正文上面**的一层页首，行高不再由它封顶 ——
+    所以聊天记录要自己限个高，不然消息一多页面会被拉得很长。
+  */
+  .lyt-chat__log {
+    max-height: 60vh;
   }
 }

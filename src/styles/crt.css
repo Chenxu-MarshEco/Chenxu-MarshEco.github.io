@@ -100,7 +100,7 @@ body.is-crt .site-footer {
   pointer-events: none;
   /* 栅格线的一个条纹周期。贴图里暗线只占 1/4，线宽 = 周期 / 4 */
   --scan-period: 14px;
-  --scan-speed: 1.5s;
+  --scan-speed: 6s; /* 2026-10-09：原来 1.5s 太急，整屏像在闪（群友说瞎眼） */
 }
 .crt > * {
   position: absolute;
@@ -185,7 +185,7 @@ body.is-crt .site-footer {
     repeating-linear-gradient(90deg, rgba(255, 181, 71, 0.62) 0 1px, transparent 1px 84px),
     repeating-linear-gradient(0deg, rgba(255, 110, 199, 0.58) 0 1px, transparent 1px 62px);
   background-size: 84px 62px;
-  animation: crt-grid-run 6.4s linear infinite;
+  animation: crt-grid-run 11s linear infinite; /* 2026-10-09：6.4s 有点晕，放慢 */
 }
 
 /* 地平线：一条发亮的细线 + 它上下的辉光。y 与上面那个灭点对齐 */
@@ -223,8 +223,9 @@ body.is-crt .site-footer {
   background-image: url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyMjAiIGhlaWdodD0iMjIwIj48ZmlsdGVyIGlkPSJuIj48ZmVUdXJidWxlbmNlIHR5cGU9ImZyYWN0YWxOb2lzZSIgYmFzZUZyZXF1ZW5jeT0iMC44NSIgbnVtT2N0YXZlcz0iMiIgc3RpdGNoVGlsZXM9InN0aXRjaCIvPjxmZUNvbG9yTWF0cml4IHR5cGU9InNhdHVyYXRlIiB2YWx1ZXM9IjAiLz48L2ZpbHRlcj48cmVjdCB3aWR0aD0iMjIwIiBoZWlnaHQ9IjIyMCIgZmlsdGVyPSJ1cmwoI24pIiBvcGFjaXR5PSIwLjYiLz48L3N2Zz4=');
   background-size: 220px 220px;
   mix-blend-mode: screen;
-  opacity: 0.16;
-  animation: crt-snow-jitter 0.9s steps(6, end) infinite, crt-snow-burst 13s steps(1, end) infinite;
+  /* 2026-10-09：0.16 + 0.9s 抖 6 下 = 明显频闪；压到 0.07 并放慢 */
+  opacity: 0.07;
+  animation: crt-snow-jitter 3.6s steps(4, end) infinite, crt-snow-burst 13s steps(1, end) infinite;
 }
 
 /*
@@ -240,7 +241,8 @@ body.is-crt .site-footer {
   backdrop-filter: blur(2px) saturate(1.7) hue-rotate(10deg);
   background: linear-gradient(90deg, rgba(255, 0, 120, 0.1), rgba(255, 196, 90, 0.1));
   mix-blend-mode: screen;
-  animation: crt-tear-shake 0.44s steps(2, end) infinite, crt-tear-show 13s steps(1, end) infinite;
+  /* 2026-10-09：0.44s 抖一次太快（像抽搐）；放慢到 2.2s 继续"偶尔失真" */
+  animation: crt-tear-shake 2.2s steps(2, end) infinite, crt-tear-show 13s steps(1, end) infinite;
 }
 .crt__tear--a {
   top: 22%;
@@ -248,12 +250,12 @@ body.is-crt .site-footer {
 .crt__tear--b {
   top: 54%;
   height: 9px;
-  animation-duration: 0.33s, 19s;
+  animation-duration: 2.8s, 19s;
 }
 .crt__tear--c {
   top: 78%;
   height: 19px;
-  animation-duration: 0.58s, 29s;
+  animation-duration: 2.5s, 29s;
 }
 
 /* 往上滚的亮带（老电视那条 hum bar） */
@@ -261,7 +263,9 @@ body.is-crt .site-footer {
   inset: auto 0 auto 0;
   height: 20vh;
   background: linear-gradient(180deg, transparent, rgba(255, 255, 255, 0.05), transparent);
-  animation: crt-bar 7.3s linear infinite;
+  animation: crt-bar 12s linear infinite;
+  /* 2026-10-09：整层原来是 1，滚过来像一道白闪；压到 0.55 */
+  opacity: 0.55;
 }
 
 /* 偶发闪烁：整屏亮度抖一下，一次约 0.2 秒，9 秒一轮 */
@@ -329,28 +333,28 @@ body.is-crt .site-footer {
 @keyframes crt-snow-burst {
   0%,
   88% {
-    opacity: 0.16;
+    opacity: 0.07;
   }
   89% {
-    opacity: 0.46;
+    opacity: 0.2;
   }
   90% {
-    opacity: 0.22;
+    opacity: 0.1;
   }
   92% {
-    opacity: 0.4;
+    opacity: 0.17;
   }
   94%,
   100% {
-    opacity: 0.16;
+    opacity: 0.07;
   }
 }
 @keyframes crt-tear-shake {
   from {
-    transform: translate3d(-9px, 0, 0);
+    transform: translate3d(-5px, 0, 0);
   }
   to {
-    transform: translate3d(9px, 0, 0);
+    transform: translate3d(5px, 0, 0);
   }
 }
 @keyframes crt-tear-show {
@@ -359,10 +363,10 @@ body.is-crt .site-footer {
     opacity: 0;
   }
   94% {
-    opacity: 1;
+    opacity: 0.35;
   }
   97% {
-    opacity: 0.6;
+    opacity: 0.22;
   }
   98%,
   100% {
@@ -383,13 +387,14 @@ body.is-crt .site-footer {
     opacity: 0;
   }
   90.6% {
-    opacity: 1;
+    /* 2026-10-09：原来冲到 1（整屏白闪）—— 群友说瞎眼，压到 0.35 */
+    opacity: 0.35;
   }
   91% {
     opacity: 0.15;
   }
   91.6% {
-    opacity: 0.8;
+    opacity: 0.3;
   }
   92.2%,
   100% {

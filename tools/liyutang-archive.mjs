@@ -110,6 +110,8 @@ export function writeArchive({ day, messages, root = ROOT, now = Date.now(), dry
     const row = {
       id: String(m.id || ''),
       nick: String(m.nick || ''),
+      /* 昵称：存档当时的显示名（以后改了昵称，历史存档仍是当时的叫法 —— 那就是「当时的原话」） */
+      alias: String(m.alias || m.nick || ''),
       text: String(m.text || ''),
       createdAt: Number(m.createdAt) || 0,
       deleted: !!m.deleted,
@@ -186,7 +188,8 @@ export function writeArchive({ day, messages, root = ROOT, now = Date.now(), dry
     day,
     count: out.length,
     images,
-    users: [...new Set(out.map((r) => r.nick).filter(Boolean))],
+    /* 索引里的「都有谁」用昵称（页面直接用，不用再查一次后端） */
+    users: [...new Set(out.map((r) => r.alias || r.nick).filter(Boolean))],
   };
   index.days = [entry, ...(index.days ?? []).filter((d) => d && d.day !== day)].sort((a, b) =>
     String(b.day).localeCompare(String(a.day))

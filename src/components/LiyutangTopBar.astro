@@ -1,0 +1,341 @@
+---
+/**
+ * 黎语堂的常驻栏 —— 所有黎语堂页面顶上那一条（2026-10-09 晚上加）。
+ *
+ * 用户要的是三件事，一条一条对着做：
+ *   · **最左边**：花涧堂的徽记 + 「花涧堂」三个字，点它回主站首页。徽记和字**照抄主站页头**
+ *     （src/components/SiteHeader.astro：同一张 /img/home/logo.png、同一档 `clamp(30px, 3.2vw, 38px)`
+ *     的宽度）—— 两处得是同一条东西的两种排版，不然点回首页会像换了个站。
+ *   · **最右边**：当前登录的人（头像 + 昵称）。皮的视觉语言取自花娅域的成员名片
+ *     （见 global.css 的 `.mem__card`：粉描边 + 深紫半透明底 + 毛玻璃、头像 1px 粉圈、
+ *     名字白字带品红辉光、字距 0.03em），只是把它压扁成一颗横条上的圆片。点它进用户页。
+ *     没登录时那里是一颗「登录」入口，点了去黎语堂首页的账号区。
+ *   · 栏本身 **sticky** 常驻顶部；窄屏（≤700px）只留头像，名字收起来，免得挤成一团。
+ *
+ * 为什么它自己调一次 LT_ME，而不去听 LiyutangAccount 那个 `lt-account` 事件：
+ *   常驻栏要求**每一页**都长出来，而账号区（LiyutangAccount）只在首页 / 版块页 / 聊天室
+ *   那几页摆着 —— 用户页上就没有。靠事件的话用户页顶上这条栏会永远是空的。
+ *   代价只是每页多一个很小的 POST（问一次"我是谁"），这个体量完全值。
+ *
+ * ⚠ 1. 名字一律显示 **alias（昵称）**。nick 是用户名（注册时定的、用来登录、改不了），
+ *      只有用户页才把它拿出来解释，别处一律不拿它当显示名。
+ *   2. 令牌只在 **code === 401** 的时候删。别的非 0（例如 1000）是"服务器那边这次没成"，
+ *      删了就等于一次抽风把所有人踢下线（这条约定写在脚本里那道 if 上）。
+ */
+import Img from './Img.astro';
+import site from '../site.config';
+import { withBase } from '../utils/url';
+import { forum } from '../utils/liyutang';
+
+const home = withBase('/');
+/* 没登录时「登录」入口落在黎语堂首页 —— 注册 / 登录那两个页签就长在那一页的账号区里 */
+const login = withBase('/liyutang/');
+/* 后端地址只有一处配置（src/data/liyutang.json 的 forum.twikoo.envId），页面渲染时写进 data-api */
+const api = forum().twikoo.envId;
+---
+
+<header class="ltbar" data-lt-topbar data-api={api}>
+  {/*
+    左边这一坨**沿用 `.forum__brand` 这个名字**：tools/checks/announce-liyutang-check.mjs
+    认的就是它（"左上角那颗回首页的徽记"）。常驻栏取代了原来那颗固定定位的徽记，
+    所以名字接着用，那条验收不用改。
+    多出来的 `.ltbar__brand` 才是这条栏自己的排版。
+  */}
+  <a class="forum__brand ltbar__brand" href={home} title="回到花涧堂" aria-label="回到花涧堂">
+    <Img
+      class="ltbar__logo"
+      src="/img/home/logo.png"
+      alt=""
+      sizes="38px"
+      loading="eager"
+      decoding="async"
+    />
+    <span class="ltbar__title">{site.title}</span>
+  </a>
+
+  <div class="ltbar__me" data-lt-topbar-me>
+    {/* 没登录（默认就画这个）：点了去首页账号区登录 */}
+    <a class="ltbar__login" data-lt-topbar-login href={login} title="去黎语堂首页登录">登录</a>
+
+    {/* 登录之后：头像 + 昵称，整块是一颗链接，进用户页（自己） */}
+    <a class="ltbar__user" data-lt-topbar-user hidden>
+      <span class="lt-avatar ltbar__face" data-lt-topbar-face aria-hidden="true"></span>
+      <span class="ltbar__name" data-lt-topbar-name></span>
+    </a>
+
+    {/* 服务器那边这次没成（非 401）：不许显示成未登录，给一个原地重试的口子 */}
+    <button class="ltbar__retry" type="button" data-lt-topbar-retry hidden>
+      账号读不出来 · 点一下重试
+    </button>
+  </div>
+</header>
+
+<script>
+  import { call, clearToken, getToken, type LtUser } from '../utils/liyutang-client';
+  import { withBase } from '../utils/url';
+
+  /**
+   * LT_ME 回来的用户。就用 LtUser 那几样（alias = 昵称、nick = 用户名、avatar、status），
+   * 只多带一个"以后可能会有"的 id：现在后端的 publicUser 还不发 id，发了的话下面那颗链接
+   * 会自动变成 `?id=…`（用户页两条路都认）。
+   */
+  type TopUser = LtUser & { id?: string };
+
+  const bar = document.querySelector('[data-lt-topbar]') as HTMLElement | null;
+  const api = String(bar?.dataset.api ?? '');
+
+  if (bar && api) {
+    const loginBtn = bar.querySelector('[data-lt-topbar-login]') as HTMLElement;
+    const userLink = bar.querySelector('[data-lt-topbar-user]') as HTMLAnchorElement;
+    const face = bar.querySelector('[data-lt-topbar-face]') as HTMLElement;
+    const name = bar.querySelector('[data-lt-topbar-name]') as HTMLElement;
+    const retry = bar.querySelector('[data-lt-topbar-retry]') as HTMLButtonElement;
+    const meUrl = withBase('/liyutang/u/');
+
+    /* 三种样子只会出现一种：游客（登录入口）/ 登录的人（头像 + 昵称）/ 读不出来（重试） */
+    const paint = (which: 'guest' | 'user' | 'retry') => {
+      loginBtn.hidden = which !== 'guest';
+      userLink.hidden = which !== 'user';
+      retry.hidden = which !== 'retry';
+    };
+
+    const paintUser = (u: TopUser) => {
+      const alias = String(u.alias || u.nick || '');
+      name.textContent = alias;
+      face.textContent = '';
+      if (u.avatar) {
+        const img = document.createElement('img');
+        img.className = 'lt-avatar__img';
+        img.src = u.avatar;
+        img.alt = '';
+        face.append(img);
+      } else {
+        /* 没传头像就显示昵称首字（和论坛里其它头像一个规矩） */
+        face.textContent = (alias || '?').slice(0, 1).toUpperCase();
+      }
+      /*
+        id 目前后端不发，所以多数时候 href 就是 /liyutang/u/ —— 不带参数 = 看自己，
+        这正是用户页定下来的那条路；等以后 LT_ME 带上 id，这里自动变成 ?id=… ，
+        用户页两条路都认，不用改。
+      */
+      const id = String(u.id ?? '');
+      userLink.href = id ? `${meUrl}?id=${encodeURIComponent(id)}` : meUrl;
+      userLink.title = `${alias} 的用户页`;
+      paint('user');
+    };
+
+    const load = async () => {
+      const t = getToken();
+      if (!t) {
+        paint('guest');
+        return;
+      }
+      try {
+        const r = await call(api, { event: 'LT_ME', ltToken: t });
+        if (r.code === 0) {
+          paintUser((r.user ?? {}) as TopUser);
+          return;
+        }
+        /*
+          ⚠ 只有 401 才是"令牌真无效 / 过期"：**只有这一种**才准删令牌、才准把人显示成未登录。
+          别的非 0（例如 1000）是"服务器那边这次没成" —— 令牌留着、人也还当登录着，
+          否则服务器抽一下就把所有人踢下线（2026-10-09 定的约定）。
+        */
+        if (r.code === 401) {
+          clearToken();
+          paint('guest');
+          return;
+        }
+        paint('retry');
+      } catch {
+        /* 连不上也是"这次没成"：令牌不删，给人一个重试的口子 */
+        paint('retry');
+      }
+    };
+
+    retry.addEventListener('click', () => void load());
+
+    /*
+      用户页改完昵称 / 头像之后往 document 上喊一声（见 src/pages/liyutang/u/index.astro）——
+      同一页上这条栏立刻跟着变，不用再问一次后端，也不用刷新。
+      detail.guest 是"那边刚发现令牌过期、已经把令牌删了"：这时候这条栏也得跟着变回未登录。
+    */
+    document.addEventListener('lt-profile', (ev) => {
+      const d = (ev as CustomEvent).detail as { user?: TopUser; guest?: boolean } | undefined;
+      if (d?.guest) {
+        paint('guest');
+        return;
+      }
+      if (d?.user) paintUser(d.user);
+    });
+
+    void load();
+  }
+</script>
+
+<style>
+  /*
+    栏本身：常驻顶部。
+    ⚠ 它是 **sticky 而不是 fixed** —— sticky 在文档流里占一个位置，正文自然从它下面开始，
+      不用再像原来那颗固定徽记那样给 .forum__main 留一大块顶部内边距。
+    底色和边框跟着花娅域那套深紫 + 粉边走（和 .mem__card、右上角那排固定控件同一组值）。
+  */
+  .ltbar {
+    position: sticky;
+    top: 0;
+    z-index: 30;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--sp-4);
+    min-height: 3rem;
+    /* 左右边距和原来那颗徽记的位置对齐（clamp(0.7rem, 2vw, 1.4rem)），视觉上没挪窝 */
+    padding: 0.35rem clamp(0.7rem, 2vw, 1.4rem);
+    border-bottom: 1px solid rgba(255, 120, 190, 0.28);
+    background: rgba(24, 3, 36, 0.82);
+    backdrop-filter: blur(6px);
+  }
+
+  /* ---------- 左边：徽记 + 花涧堂 ---------- */
+  .ltbar__brand {
+    display: inline-flex;
+    align-items: center;
+    gap: clamp(0.5rem, 1.2vw, 0.85rem);
+    min-width: 0;
+    line-height: 0;
+    border-radius: 10px;
+    text-decoration: none;
+  }
+  .ltbar__brand:focus-visible {
+    outline: 2px solid var(--c-accent);
+    outline-offset: 4px;
+  }
+  /* 徽记：和主站页头同一个尺寸档（SiteHeader 的 .site-brand__logo） */
+  .ltbar__logo {
+    width: clamp(30px, 3.2vw, 38px);
+    height: auto;
+    flex: 0 0 auto;
+    filter: drop-shadow(0 0 10px rgba(255, 90, 170, 0.55));
+    transition: transform 0.18s ease, filter 0.18s ease;
+  }
+  .ltbar__brand:hover .ltbar__logo,
+  .ltbar__brand:focus-visible .ltbar__logo {
+    transform: translateY(-2px);
+    filter: drop-shadow(0 0 16px rgba(255, 130, 200, 0.85));
+  }
+  .ltbar__title {
+    font-family: var(--font-display);
+    font-size: var(--fs-lg);
+    font-weight: var(--fw-bold);
+    letter-spacing: var(--ls-tight);
+    line-height: 1.2;
+    color: #ffe6f6;
+    text-shadow: 0 0 10px rgba(255, 79, 163, 0.7);
+    white-space: nowrap;
+  }
+  .ltbar__brand:hover .ltbar__title,
+  .ltbar__brand:focus-visible .ltbar__title {
+    color: #fff;
+  }
+
+  /* ---------- 右边：登录入口 / 头像 + 昵称 / 重试 ---------- */
+  .ltbar__me {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex: 0 0 auto;
+  }
+  .ltbar__login,
+  .ltbar__retry {
+    padding: 0.28rem 0.85rem;
+    border: 1px solid rgba(255, 120, 190, 0.5);
+    border-radius: var(--r-full);
+    background: rgba(38, 4, 52, 0.72);
+    color: #ffd9ef;
+    font-size: 0.84rem;
+    letter-spacing: 0.08em;
+    text-decoration: none;
+    cursor: pointer;
+  }
+  .ltbar__login:hover,
+  .ltbar__login:focus-visible,
+  .ltbar__retry:hover,
+  .ltbar__retry:focus-visible {
+    border-color: rgba(255, 160, 210, 0.95);
+    color: #fff;
+  }
+  .ltbar__retry {
+    font-size: 0.78rem;
+    letter-spacing: 0.04em;
+  }
+
+  /* 登录的人那一块：皮的视觉语言抄花娅域名片（.mem__card），压成横条上的一颗 */
+  .ltbar__user {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    padding: 0.2rem 0.75rem 0.2rem 0.24rem;
+    border: 1px solid rgba(255, 120, 190, 0.55);
+    border-radius: 10px;
+    background: rgba(24, 3, 36, 0.97);
+    color: #ffd9ef;
+    font-size: 0.9rem;
+    letter-spacing: 0.03em;
+    text-decoration: none;
+    backdrop-filter: blur(5px);
+    box-shadow:
+      0 0 0 1px rgba(0, 0, 0, 0.4) inset,
+      0 14px 34px -14px rgb(0 0 0 / 0.9);
+  }
+  .ltbar__user:hover,
+  .ltbar__user:focus-visible {
+    border-color: rgba(255, 160, 210, 0.95);
+  }
+  .ltbar__user:hover .ltbar__name,
+  .ltbar__user:focus-visible .ltbar__name {
+    color: #fff;
+  }
+  /* 头像：圆形 + 1px 粉描边（.mem__face 那一条），这里只有 26px —— 它得塞进 3rem 高的栏里 */
+  .ltbar__face {
+    width: 26px;
+    height: 26px;
+    font-size: 0.78rem;
+    border-color: rgba(255, 120, 190, 0.5);
+  }
+  .ltbar__name {
+    color: #ffd9ef;
+    text-shadow: 0 0 10px rgba(255, 79, 163, 0.55);
+    white-space: nowrap;
+    max-width: 12rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /*
+    窄屏：名字收掉只留头像（用户说的「名字可以只留头像」）。
+    700px 是用户给的线，和下面验收脚本里的那条一致。
+  */
+  @media (max-width: 700px) {
+    .ltbar__name {
+      display: none;
+    }
+    .ltbar__user {
+      padding: 0.2rem;
+      border-radius: 50%;
+    }
+    .ltbar__title {
+      font-size: var(--fs-md);
+    }
+    .ltbar__retry {
+      font-size: 0.72rem;
+      padding: 0.28rem 0.6rem;
+    }
+  }
+
+  /* `hidden` 是我们自己切的显示/隐藏，别被上面那几条 display 覆盖掉 */
+  .ltbar__login[hidden],
+  .ltbar__user[hidden],
+  .ltbar__retry[hidden] {
+    display: none;
+  }
+</style>

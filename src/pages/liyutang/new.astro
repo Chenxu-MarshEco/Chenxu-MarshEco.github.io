@@ -160,7 +160,14 @@ const titles = Object.fromEntries(list.map((b) => [b.id, b.title]));
           };
 
           /* ---- 账号状态：没登录 / 没过审就不让写 ---- */
-          const applyState = (state: string, user: { nick?: string } | null, fake: boolean) => {
+          /*
+            这一行显示的也是**昵称 alias**（没设过时后端已经兜底等于用户名）；
+            nick 是用户名，只用来登录，别处不拿它当显示名。
+          */
+          type GateUser = { nick?: string; alias?: string };
+          const shownName = (u: GateUser): string => String(u.alias || u.nick || '');
+
+          const applyState = (state: string, user: GateUser | null, fake: boolean) => {
             if (fake || !user) {
               setEnabled(false);
               gate.textContent =
@@ -171,18 +178,18 @@ const titles = Object.fromEntries(list.map((b) => [b.id, b.title]));
             }
             if (state === 'approved') {
               setEnabled(true);
-              gate.textContent = `你以 ${user.nick ?? ''} 的身份发帖。`;
+              gate.textContent = `你以 ${shownName(user)} 的身份发帖。`;
               return;
             }
             setEnabled(false);
             gate.textContent = state === 'banned' ? '这个账号被停用了，发不了。' : '这个账号还不能发帖。';
           };
           document.addEventListener('lt-account', (ev) => {
-            const d = (ev as CustomEvent).detail as { state?: string; user?: { nick?: string } | null; fake?: boolean };
+            const d = (ev as CustomEvent).detail as { state?: string; user?: GateUser | null; fake?: boolean };
             applyState(String(d?.state ?? ''), d?.user ?? null, !!d?.fake);
           });
           const early = (window as unknown as {
-            __ltState?: { state?: string; user?: { nick?: string } | null; fake?: boolean };
+            __ltState?: { state?: string; user?: GateUser | null; fake?: boolean };
           }).__ltState;
           if (early?.state) applyState(early.state, early.user ?? null, !!early.fake);
 

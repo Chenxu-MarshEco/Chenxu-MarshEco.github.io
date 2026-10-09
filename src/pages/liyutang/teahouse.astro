@@ -55,16 +55,32 @@ const home = withBase('/liyutang/');
         <button class="lyt-bar__btn" type="button" data-lt-tool="pen" disabled>画笔</button>
         <button class="lyt-bar__btn" type="button" data-lt-tool="eraser" disabled>橡皮</button>
         <button class="lyt-bar__btn" type="button" data-lt-tool="pan" disabled title="拖着看：也可以按住空格、或者用鼠标中键">抓手</button>
+        {/*
+          「移动」和「取色」是 2026-10-10 按用户要求加的：
+            · 移动：单独拖一根线条（命中测试按笔划粗细给阈值，拖动时本地预览，松手才发一次 LT_DRAW_MOVE）；
+              只能挪自己画的（后端也会拒别人的，这里先说人话）。
+            · 取色：读**渲染出来的**画布像素当画笔颜色。
+        */}
+        <button class="lyt-bar__btn" type="button" data-lt-tool="move" disabled title="拖动一根线条：只能挪自己画的（点在墨迹近旁才算抓住）">移动</button>
+        <button class="lyt-bar__btn" type="button" data-lt-tool="pick" disabled title="点画布上任意一点，取那一点渲染出来的颜色">取色</button>
         <span class="lyt-draw__swatches" data-lt-swatches aria-label="调色板"></span>
         <label class="lyt-draw__mini">
           别的颜色
           <input type="color" value="#1d1430" data-lt-color disabled />
         </label>
+        <button class="lyt-bar__btn" type="button" data-lt-color-add disabled title="把当前颜色收进自己的调色盘（跟着账号走，换设备也在）">＋收藏</button>
         <label class="lyt-draw__mini">
           粗细
-          <input type="range" min="1" max="48" value="6" data-lt-size disabled />
+          {/*
+            粗细要能**看见具体数字**、也要能**直接填数字**（用户原话：
+            「用 input type=range 旁边（或上面）显示当前数值，并且允许直接输入数字，例如要精确回到 12」）。
+            滑块和数字框是同一份状态的两个入口：画笔用 penSize、橡皮用 eraserSize，各存各的。
+          */}
+          <input type="range" min="1" max="64" value="6" data-lt-size disabled aria-label="粗细（滑块）" />
+          <input class="lyt-draw__size-num" type="number" min="1" max="64" step="1" value="6" data-lt-size-num disabled aria-label="粗细（数字）" />
         </label>
         <button class="lyt-bar__btn" type="button" data-lt-undo disabled>撤销</button>
+        <button class="lyt-bar__btn" type="button" data-lt-redo disabled title="取消撤回：照原样重新画一笔（id 是新的）">重做</button>
         <button class="lyt-bar__btn" type="button" data-lt-reset disabled title="缩放回 1×、回到左上角">全览</button>
         <span class="lyt-draw__zoom" data-lt-zoom title="滚轮（或触控板）在画布上缩放">1.0×</span>
         <span class="lyt-form__msg" data-lt-draw-status></span>
@@ -73,6 +89,7 @@ const home = withBase('/liyutang/');
       <p class="lyt-form__hint">
         滚轮在画布上缩放（1×~4×）：光标底下那一点会被钉住不动；按住空格、或者用「抓手」/鼠标中键拖动看别处。
         <b>手机上用两根手指</b>捏合缩放、拖着平移（手机没有滚轮）。
+        「移动」按住一根自己画的线条拖走；「取色」点一下就把那一点的颜色拿来当画笔。
       </p>
 
       <div class="lyt-draw__stage">
@@ -93,8 +110,9 @@ const home = withBase('/liyutang/');
           /*
             闸门 + 引擎接线。
             闸门：没登录 / 没过审 → 工具条和画布都锁上并说明原因（服务端还会再验一次，绕不过去）。
-            引擎：过审之后 mountBoard() 接管 —— 画笔/橡皮/调色板/粗细/撤销、本地先画、
-            每 3 秒问一次别人画了什么、还有「今天画过画的人」那张表（点人头像 = 先不看他的）。
+            引擎：过审之后 mountBoard() 接管 —— 画笔/橡皮/抓手/移动/取色、调色盘（内置色 + 自己收藏的）、
+            画笔和橡皮各自一个粗细、撤销/重做、本地先画、每 3 秒问一次别人画了什么、
+            还有「今天画过画的人」那张表（点人头像 = 先不看他的）。
           */
           import { mountBoard, type BoardHandle } from '../../utils/liyutang-draw';
           import { type LtUser } from '../../utils/liyutang-client';
@@ -107,14 +125,23 @@ const home = withBase('/liyutang/');
           const pen = document.querySelector('[data-lt-tool="pen"]') as HTMLButtonElement;
           const eraser = document.querySelector('[data-lt-tool="eraser"]') as HTMLButtonElement;
           const pan = document.querySelector('[data-lt-tool="pan"]') as HTMLButtonElement;
+          const move = document.querySelector('[data-lt-tool="move"]') as HTMLButtonElement;
+          const pick = document.querySelector('[data-lt-tool="pick"]') as HTMLButtonElement;
           const swatches = document.querySelector('[data-lt-swatches]') as HTMLElement;
           const colorInput = document.querySelector('[data-lt-color]') as HTMLInputElement;
+          const colorAdd = document.querySelector('[data-lt-color-add]') as HTMLButtonElement;
           const sizeInput = document.querySelector('[data-lt-size]') as HTMLInputElement;
+          const sizeNumber = document.querySelector('[data-lt-size-num]') as HTMLInputElement;
           const undo = document.querySelector('[data-lt-undo]') as HTMLButtonElement;
+          const redo = document.querySelector('[data-lt-redo]') as HTMLButtonElement;
           const reset = document.querySelector('[data-lt-reset]') as HTMLButtonElement;
           const zoomText = document.querySelector('[data-lt-zoom]') as HTMLElement;
-          /** 开闸之后要解开的那些控件 */
-          const controls = [pen, eraser, pan, colorInput, sizeInput, undo, reset];
+          /*
+            ⚠ 开闸之后要解开的那些控件 —— **工具条里每一个 button / input 都得列进来**：
+            没登录的时候它们必须全是 disabled（验收里那一条就是挨个看 disabled 的），
+            漏一个就等于给访客留了个能点的按钮。
+          */
+          const controls = [pen, eraser, pan, move, pick, colorInput, colorAdd, sizeInput, sizeNumber, undo, redo, reset];
           let board: BoardHandle | null = null;
 
           const lock = (on: boolean) => {
@@ -124,11 +151,17 @@ const home = withBase('/liyutang/');
           };
           lock(true);
 
+          /*
+            显示名一律用**昵称 alias**（没设过时后端已经兜底等于用户名）；nick 是用户名，
+            只用来登录，别处不拿它当显示名。
+          */
+          const shownName = (u: LtUser): string => String(u.alias || u.nick || '');
+
           const apply = (state: string, user: LtUser | null, fake: boolean) => {
             const ok = !fake && !!user && state === 'approved';
             lock(!ok);
             if (ok && user) {
-              gate.textContent = `你以 ${user.nick} 的身份在这块板上画。`;
+              gate.textContent = `你以 ${shownName(user)} 的身份在这块板上画。`;
               /* 只挂一次（状态反复变化不该挂出第二个轮询） */
               if (!board && apiUrl) {
                 board = mountBoard({
@@ -139,11 +172,22 @@ const home = withBase('/liyutang/');
                   pen,
                   eraser,
                   pan,
+                  move,
+                  pick,
                   reset,
                   swatches,
                   colorInput,
+                  colorAdd,
                   sizeInput,
+                  sizeNumber,
                   undo,
+                  redo,
+                  /*
+                    账号里那份画板偏好（调色盘收藏 + 画笔/橡皮各自的粗细）直接递进去：
+                    引擎自己还会问一次 LT_ME 兜底（手上这份可能是缓存里翻出来的旧值）。
+                    LtUser 的类型里还没有 prefs 字段，就地补一下。
+                  */
+                  prefs: (user as LtUser & { prefs?: unknown }).prefs,
                   /* 缩放读数：画布上滚轮一动就更新 */
                   onView: (scale: number) => {
                     zoomText.textContent = scale.toFixed(1) + '×';
@@ -173,3 +217,61 @@ const home = withBase('/liyutang/');
     }
   </div>
 </ForumLayout>
+
+<!--
+  工具条上**新增控件**的样式（2026-10-10）—— 按用户要求写在茶绘这一页自己的 <style> 里，
+  不往 src/styles/forum.css 塞：那里的画板样式是全站共用的，而"收藏色右上角那个小×"
+  只有茶绘会出现。
+
+  ⚠ 为什么是 is:global 而不是 Astro 默认的作用域样式：
+  调色盘里的色块和那个小×是**引擎在运行时新建的**元素，Astro 只会给模板里写死的元素
+  盖作用域属性（data-astro-cid-…），运行时 createElement 出来的没有那个属性 →
+  作用域样式一条都命中不了（第一次写就踩了）。这里的类名都是 .lyt-draw__* 前缀，全局也不会串味。
+-->
+<style is:global>
+  /* 收藏来的颜色多一个小×：内置色没有这个（内置色删不掉，删了下次还得回来） */
+  .lyt-draw__chip {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+  }
+  .lyt-draw__swatch-del {
+    position: absolute;
+    top: -0.4rem;
+    right: -0.4rem;
+    width: 0.85rem;
+    height: 0.85rem;
+    padding: 0;
+    border: 1px solid rgba(255, 255, 255, 0.45);
+    border-radius: 999px;
+    background: rgba(18, 10, 32, 0.92);
+    color: #ffd7a1;
+    font-size: 0.66rem;
+    line-height: 1;
+    cursor: pointer;
+  }
+  .lyt-draw__swatch-del:hover {
+    background: #ff4d6d;
+    color: #fff;
+  }
+  /* 粗细的数字框：和滑块并排，数字要看得清（用户要的就是"能看见具体数字 + 能直接填"） */
+  .lyt-draw__size-num {
+    width: 3.2rem;
+    padding: 0.1rem 0.25rem;
+    border: 1px solid rgba(255, 181, 71, 0.3);
+    border-radius: 6px;
+    background: rgba(18, 10, 32, 0.8);
+    color: #ffe6bd;
+    font-variant-numeric: tabular-nums;
+  }
+  /*
+    画布：手指 / 压感笔落在它上面时，浏览器**不许**把它当成滚动或文本选中。
+    forum.css 里已经有 touch-action: none（主防线）；这里补一份是给拖动（画线 / 挪线条）用的双保险 ——
+    拖动时在页面上顺手选中一片文字、或者让页面滚一下，笔划看着就"歪"了。
+  */
+  .lyt-draw__canvas {
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+</style>

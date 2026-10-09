@@ -274,17 +274,51 @@ function verify(token) {
   }
 }
 
+/**
+ * 一批文档（聊天消息 / 帖子 / 笔划）→ userId → **当前**昵称 的映射。
+ *
+ * 为什么要"读的时候查一次"而不是只存快照：用户改了昵称之后，他以前说过的话、发过的贴
+ * 也该显示新昵称（用户原话是"在各种页面里那个用户都会显示昵称"）。一次 $in 查询就够
+ * （一屏最多几十个作者），比给每条消息烤一个名字便宜得多。
+ * @param {object[]} docs 带 userId 的文档
+ * @returns {Promise<Map<string,string>>} userId → 昵称
+ */
+async function aliasMapOf(docs) {
+  const ids = [...new Set((docs ?? []).map((d) => d && d.userId).filter(Boolean))];
+  const out = new Map();
+  if (!ids.length) return out;
+  const rows = await (await users()).find({ id: { $in: ids } }).project({ id: 1, nick: 1, alias: 1 }).toArray();
+  for (const u of rows) out.set(u.id, u.alias || u.nick);
+  return out;
+}
+
 /** 用户文档 → 给页面看的字段（不带密码/盐） */
 const publicUser = (u) =>
   u
     ? {
+        /*
+          id / uk：用户页和常驻栏需要一个"能放进 URL 的公开标识"。
+          uk 是账号 id 的短哈希（笔划里用的是同一个，不把原始 id 到处发）；
+          id 也一起发，方便直接写 /liyutang/u/?id=…。
+        */
+        id: u.id,
+        uk: drawUk(u.id),
         nick: u.nick,
+        /*
+          「用户名」和「昵称」是两回事（2026-10-09 晚上按用户要求加的）：
+            · nick   = 用户名：注册时定的、用来登录、**不能改**；
+            · alias  = 昵称：随时能改，页面上到处显示的都是它（没设过就等于用户名）。
+          所以对外一律发 `alias`（下面已经兜过底），页面不用自己判断。
+        */
+        alias: u.alias || u.nick,
         mail: u.mail,
         status: u.status,
         label: u.label || '',
         /* 头像是一张 data URL（前端压过的小图），页面直接塞进 <img src> */
         avatar: u.avatar || '',
         createdAt: u.createdAt,
+        /* 画板的个人偏好（调色盘里收藏的颜色、画笔/橡皮各自的粗细）—— 跟着账号走 */
+        prefs: u.prefs && typeof u.prefs === 'object' ? u.prefs : {},
       }
     : null;
 
@@ -344,6 +378,8 @@ function publicPost(doc, full = false) {
     excerpt: doc.excerpt || excerptOf(doc.md),
     cover: doc.cover || '',
     authorNick: doc.authorNick,
+    /* 帖子的显示名同理：优先当前昵称，其次建贴时烤进去的那个名字 */
+    authorAlias: doc.authorAlias || doc.authorNick,
     authorAvatar: doc.authorAvatar || '',
     createdAt: doc.createdAt,
     updatedAt: doc.updatedAt || doc.createdAt,
@@ -452,6 +488,11 @@ function publicMsg(d, meId = '') {
   return {
     id: d.id,
     day: d.day,
+    /*
+      显示名：优先"当前昵称"（列表查完按 userId 盖进来的），其次文档里那份快照。
+      这样改了昵称，他以前说过的话也跟着显示新昵称。
+    */
+    alias: d.alias || d.nick,
     nick: d.nick,
     avatar: d.avatar || '',
     text: d.text || '',
@@ -500,6 +541,12 @@ async function handleChatEvent(event, payload) {
     if (after) filter.createdAt = { $gt: after };
     const limit = Math.min(Math.max(Number(payload.limit) || 200, 1), 500);
     const docs = await col.find(filter).sort({ createdAt: 1 }).limit(limit).toArray();
+    /*
+      一屏消息的作者 → **当前**昵称（改了名，他以前说的话也跟着显示新昵称）。
+      一次 $in 查询，最多几十个作者，很便宜。
+    */
+    const amChat = await aliasMapOf(docs);
+    for (const d of docs) d.alias = amChat.get(d.userId) || d.alias;
     return ok({
       day,
       messages: docs.map((d) => publicMsg(d, me.id)),
@@ -611,14 +658,57 @@ function publicStroke(d, meUk = '') {
     id: d.id,
     uk: d.uk,
     nick: d.nick,
+    alias: d.alias || d.nick,
     avatar: d.avatar || '',
     tool: d.tool,
     color: d.color,
     size: d.size,
     points: d.points,
     createdAt: d.createdAt,
+    /*
+      updatedAt 是**增量同步的游标**（2026-10-09 晚上加）：线条被拖动/被改过之后，
+      别的客户端靠它才知道"这一笔变了"，不然拖完只有自己看得见。
+    */
+    updatedAt: d.updatedAt || d.createdAt,
     mine: !!meUk && d.uk === meUk,
   };
+}
+
+/**
+ * 画板偏好（跟着账号走的那种记忆）：只收认识的字段，非法值一律丢掉 ——
+ * 不让用户往自己的文档里塞任意东西。
+ *   · palette：收藏在调色盘里的颜色，最多 24 个 `#rrggbb`（去重）
+ *   · penSize / eraserSize：**画笔和橡皮各自的粗细**（1~64，不绑死）
+ *   · color / tool：上次用的颜色和工具（下次进来接着用）
+ * @param {unknown} input 前端传来的偏好
+ * @returns {object|null} 规整后的偏好；整个不是对象就 null
+ */
+function checkPrefs(input) {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return null;
+  const out = {};
+  if (Array.isArray(input.palette)) {
+    const seen = new Set();
+    out.palette = [];
+    for (const c of input.palette) {
+      const v = drawColor(c);
+      if (!v || seen.has(v)) continue;
+      seen.add(v);
+      out.palette.push(v);
+      if (out.palette.length >= 24) break;
+    }
+  }
+  for (const k of ['penSize', 'eraserSize']) {
+    if (input[k] === undefined || input[k] === null || input[k] === '') continue;
+    const n = Number(input[k]);
+    if (!Number.isFinite(n)) continue;
+    out[k] = Math.round(Math.min(64, Math.max(1, n)) * 10) / 10;
+  }
+  if (input.color !== undefined) {
+    const c = drawColor(input.color);
+    if (c) out.color = c;
+  }
+  if (input.tool === 'pen' || input.tool === 'eraser' || input.tool === 'pan') out.tool = input.tool;
+  return out;
 }
 
 /**
@@ -645,10 +735,14 @@ async function handleDrawEvent(event, payload) {
     const day = String(payload.day || '') || dayKey();
     const filter = { day, deleted: { $ne: true } };
     const after = Number(payload.after) || 0;
-    if (after) filter.createdAt = { $gt: after };
+    /* 游标用 updatedAt（不是 createdAt）：线条被拖动过之后，别的客户端也能收到那一笔的新位置 */
+    if (after) filter.updatedAt = { $gt: after };
     /* 上限给得比聊天室大：一小时的画作可能上千笔，页面轮询时会带游标只要新的 */
     const limit = Math.min(Math.max(Number(payload.limit) || 1500, 1), 2000);
-    const docs = await col.find(filter).sort({ createdAt: 1 }).limit(limit).toArray();
+    const docs = await col.find(filter).sort({ updatedAt: 1 }).limit(limit).toArray();
+    /* 作画者 → 当前昵称（改了名，之前画的笔划也显示新名） */
+    const amDraw = await aliasMapOf(docs);
+    for (const d of docs) d.alias = amDraw.get(d.userId) || d.alias;
     return ok({
       day,
       strokes: docs.map((d) => publicStroke(d, meUk)),
@@ -680,18 +774,40 @@ async function handleDrawEvent(event, payload) {
       day: dayKey(now),
       userId: me.id,
       uk: meUk,
-      /* 昵称 / 头像按账号写死（逐人显隐那张表要显示是谁画的） */
+      /* 昵称 / 头像按账号写死（逐人显隐那张表要显示是谁画的）—— 显示用的是昵称 alias */
       nick: me.nick,
+      alias: me.alias || me.nick,
       avatar: me.avatar || '',
       tool,
       color,
       size,
       points,
       createdAt: now,
+      updatedAt: now,
       deleted: false,
     };
     await col.insertOne(doc);
     return ok({ stroke: publicStroke(doc, meUk), serverNow: now });
+  }
+
+  /* ---- 拖动一根线条（只给"自己画的"）：整条平移，再整条夹回画板 ---- */
+  if (event === 'LT_DRAW_MOVE') {
+    const id = String(payload.id || '');
+    if (!id) return bad('没说是哪一笔。');
+    const dx = Number(payload.dx) || 0;
+    const dy = Number(payload.dy) || 0;
+    if (!dx && !dy) return bad('没说要挪多少。');
+    if (Math.abs(dx) > BOARD_W || Math.abs(dy) > BOARD_H) return bad('挪得太远了。');
+    const doc = await col.findOne({ id });
+    if (!doc) return bad('这一笔已经不在了。');
+    if (doc.userId !== me.id) return bad('只能挪自己画的。');
+    const points = (doc.points || []).map(([x, y]) => [
+      Math.round(Math.min(BOARD_W, Math.max(0, x + dx)) * 10) / 10,
+      Math.round(Math.min(BOARD_H, Math.max(0, y + dy)) * 10) / 10,
+    ]);
+    const updatedAt = Date.now();
+    await col.updateOne({ id }, { $set: { points, updatedAt } });
+    return ok({ stroke: publicStroke({ ...doc, points, updatedAt }, meUk), serverNow: updatedAt });
   }
 
   /* ---- 撤销：删自己最后画的那一笔（只给 id 也行，但要确认是你的） ---- */
@@ -744,6 +860,9 @@ async function handlePostEvent(event, payload) {
       .sort({ pinned: -1, createdAt: -1 })
       .limit(limit)
       .toArray();
+    /* 作者 → 当前昵称（改了名，他以前发的贴也跟着显示新昵称） */
+    const amPost = await aliasMapOf(docs);
+    for (const d of docs) d.authorAlias = amPost.get(d.authorId) || d.authorAlias;
     return ok({ posts: docs.map((d) => publicPost(d)), more: docs.length === limit });
   }
 
@@ -759,7 +878,10 @@ async function handlePostEvent(event, payload) {
     await col.updateOne({ id }, { $inc: { views: 1 } }).catch(() => {
       /* 浏览量加不上不是事 */
     });
-    return ok({ post: publicPost({ ...doc, views: (doc.views || 0) + 1 }, true), mine });
+    /* 作者名换成**当前**昵称（老帖子里烤进去的是用户名，这里盖掉） */
+    const amOne = await aliasMapOf([doc]);
+    const withAlias = { ...doc, views: (doc.views || 0) + 1, authorAlias: amOne.get(doc.authorId) || doc.authorAlias };
+    return ok({ post: publicPost(withAlias, true), mine });
   }
 
   /* ---- 发帖 ---- */
@@ -787,6 +909,7 @@ async function handlePostEvent(event, payload) {
       images: countImages(md),
       authorId: user.id,
       authorNick: user.nick,
+    authorAlias: user.alias || user.nick,
       /* 顺手把作者当下的头像抄一份进帖子：改头像之后旧帖不跟着变，但列表不用为每条帖再查一次账号 */
       authorAvatar: user.avatar || '',
       createdAt: now,
@@ -842,6 +965,15 @@ async function handlePostEvent(event, payload) {
 /* ============================================================ 账号：那几个事件 */
 
 const ok = (extra = {}) => ({ code: 0, ...extra });
+/*
+  ⚠ 错误码必须能区分「你没登录 / 令牌过期」和「服务器临时出问题」——
+  2026-10-09 群友那次"刷新、换页面就掉登录"就是因为分不出来：
+  那时所有错误都是默认的 1000，而云函数冷启动连不上数据库也回 1000，
+  页面只好一律当成"登录过期"，顺手把令牌删了 —— 网络抖一下就永久登出。
+  现在：**令牌无效/过期一律 401**（页面看到 401 才准删令牌），其他错误仍旧 1000
+  （页面要保留登录状态，只是"这一次操作没成功"）。
+*/
+const AUTH = 401;
 const bad = (message, code = 1000) => ({ code, message });
 
 /** 昵称/邮箱/密码的基本校验（返回错误文案或空串） */
@@ -901,9 +1033,60 @@ async function handleUserEvent(payload) {
   /* ---- 我是谁（拿令牌问状态，页面用来决定显示什么） ---- */
   if (event === 'LT_ME') {
     const user = await userByToken(payload.ltToken);
-    if (!user) return bad('登录状态过期了，重新登录一下');
+    /* 401 = 令牌真无效/过期（页面只有看到这个码才准删令牌）；没带令牌是另一回事 */
+    if (!user) return bad(String(payload.ltToken || '') ? '登录状态过期了，重新登录一下' : '还没登录', payload.ltToken ? AUTH : 1000);
     const mine = await (await posts()).countDocuments({ authorId: user.id });
     return ok({ user: publicUser(user), posts: mine });
+  }
+
+  /* ---- 看某个人的公开资料（2026-10-09 晚上加）：用户页要能看别人 ---- */
+  if (event === 'LT_USER_GET') {
+    const id = String(payload.id || '').trim();
+    if (!id) return bad('要看谁的资料？');
+    const u = await (await users()).findOne({ id });
+    if (!u) return bad('没有这个人');
+    const mine = await userByToken(payload.ltToken);
+    /*
+      ⚠ 变量别叫 `posts`：那个名字在这一层是**集合函数**，用同名局部变量会把它遮住，
+      于是 `await posts()` 直接抛 "Cannot access 'posts' before initialization"（TDZ）——
+      2026-10-09 晚上验收里逮住过一次（LT_ME 那边用的是 mine，所以它没这个问题）。
+    */
+    const postCount = await (await posts()).countDocuments({ authorId: u.id });
+    if (mine && mine.id === u.id) {
+      /* 看自己：连"我发了几篇"一起给，页面好显示 */
+      return ok({ user: publicUser(u), me: true, posts: postCount });
+    }
+    /*
+      看别人：只给公开字段 —— **邮箱不发**（那是账号隐私），
+      头像 / 用户名 / 昵称 / 标签 / 什么时候注册的，这些是公开的。
+      以后要展示"他发过的贴 / 画过的画 / 上传的背景"也挂在这里。
+    */
+    const pub = publicUser(u);
+    delete pub.mail;
+    return ok({ user: pub, me: false, posts: postCount });
+  }
+
+  /* ---- 改昵称（2026-10-09 晚上加）：昵称随时能改，用户名不动 ---- */
+  if (event === 'LT_PROFILE_SET') {
+    const user = await userByToken(payload.ltToken);
+    if (!user) return bad('请先登录', AUTH);
+    if (user.status === 'banned') return bad('这个账号被停用了');
+    const alias = String(payload.alias ?? '').trim().replace(/\s+/g, ' ');
+    /* 和注册同一个尺度：2~20 个字；用户名叫 nick，昵称叫 alias，两者可以不一样 */
+    if (!/^[\w\u4e00-\u9fa5.-]{2,20}$/.test(alias)) return bad('昵称要 2~20 个字（中英文数字 - _ . 都行）');
+    await (await users()).updateOne({ id: user.id }, { $set: { alias } });
+    return ok({ user: publicUser({ ...user, alias }) });
+  }
+
+  /* ---- 画板的个人偏好（调色盘收藏 + 画笔/橡皮各自粗细）—— 跟着账号走，换设备也还在 ---- */
+  if (event === 'LT_PREFS_SET') {
+    const user = await userByToken(payload.ltToken);
+    if (!user) return bad('请先登录', AUTH);
+    if (user.status === 'banned') return bad('这个账号被停用了');
+    const prefs = checkPrefs(payload.prefs);
+    if (!prefs) return bad('偏好数据看着不对');
+    await (await users()).updateOne({ id: user.id }, { $set: { prefs } });
+    return ok({ prefs });
   }
 
   /* ---- 换头像（登录了就能换，不用等过审 —— 头像不影响能不能发言） ---- */

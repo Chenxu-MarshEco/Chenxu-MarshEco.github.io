@@ -9,7 +9,10 @@
  * 所以这里**故意不是** BaseLayout：
  *   · 没有页头页脚、没有右上角那排控件、没有目录栏、没有歌单、没有时间轴、没有成员名片；
  *   · 只有文章 / 手记那一套 CRT 背景（CrtScreen，样式全在 src/styles/crt.css）
- *     和左上角一个回花涧堂的徽记。
+ *     和顶上那条黎语堂自己的常驻栏（LiyutangTopBar：回花涧堂 + 当前登录的人）。
+ *
+ * 常驻栏 2026-10-09 晚上接进来的，它接手了原来那颗固定定位在左上角的徽记 ——
+ * 徽记和「花涧堂」三个字现在住在栏的最左边（用户要求"所有黎语堂页面都有一条常驻栏"）。
  *
  * 为什么另起一个 Layout 而不是给 BaseLayout 加开关：黎语堂以后是一个**静态论坛**，
  * 它自己会长出一整套壳（版块列表、帖子页、评论挂载点、自己的搜索和分页），
@@ -24,7 +27,7 @@ import '../styles/global.css';
 /* 论坛自己的样式（版块卡、帖子列表、正文卡…），和主站分开一份 */
 import '../styles/forum.css';
 import CrtScreen from '../components/CrtScreen.astro';
-import Img from '../components/Img.astro';
+import LiyutangTopBar from '../components/LiyutangTopBar.astro';
 import site from '../site.config';
 import { absoluteUrl, withBase } from '../utils/url';
 
@@ -37,7 +40,6 @@ interface Props {
 const { title, description = site.description, noindex = false } = Astro.props;
 const pageTitle = title ? `${title} · ${site.title}` : site.title;
 const canonical = absoluteUrl(Astro.url.pathname, Astro.site);
-const home = withBase('/');
 ---
 
 <!doctype html>
@@ -80,20 +82,12 @@ const home = withBase('/');
     <CrtScreen />
 
     {/*
-      左上角**唯一**的东西：花涧堂徽记，点它回首页。
-      不写「花涧堂」三个字 —— 徽记本身就是那三个字的艺术字（见首页 .brand__logo），
-      用户要的是「只留 logo」。
+      常驻栏（2026-10-09 晚上）：徽记 + 「花涧堂」（点回首页）在最左，当前登录的人在最右。
+      ⚠ 它**取代**了原来那颗固定定位在左上角的徽记 —— 两个都在的话左上角会叠出两个 logo。
+      原来那颗的 `.forum__brand` 这个名字搬进了常驻栏（见 LiyutangTopBar.astro），
+      tools/checks/announce-liyutang-check.mjs 认的就是这个名字。
     */}
-    <a class="forum__brand" href={home} title="回到花涧堂" aria-label="回到花涧堂">
-      <Img
-        class="forum__logo"
-        src="/img/home/logo.png"
-        alt=""
-        sizes="(max-width: 760px) 64px, 82px"
-        loading="eager"
-        decoding="async"
-      />
-    </a>
+    <LiyutangTopBar />
 
     <main class="forum__main" id="main">
       <slot />
@@ -103,37 +97,9 @@ const home = withBase('/');
 
 <style>
   /*
-    徽记：固定贴在左上角。这一页没有页头，所以它是**固定定位**而不是 sticky ——
-    滚动时它一直看得见（回花涧堂的路任何时候都在）。
-  */
-  .forum__brand {
-    position: fixed;
-    top: clamp(0.6rem, 2vh, 1.2rem);
-    left: clamp(0.7rem, 2vw, 1.4rem);
-    z-index: 30;
-    display: block;
-    line-height: 0;
-    border-radius: 12px;
-  }
-  .forum__brand:focus-visible {
-    outline: 2px solid #ffb547;
-    outline-offset: 4px;
-  }
-  .forum__logo {
-    width: clamp(58px, 7vw, 82px);
-    height: auto;
-    filter: drop-shadow(0 0 16px rgba(255, 90, 170, 0.5));
-    transition: transform 0.18s ease, filter 0.18s ease;
-  }
-  .forum__brand:hover .forum__logo,
-  .forum__brand:focus-visible .forum__logo {
-    transform: translateY(-2px);
-    filter: drop-shadow(0 0 22px rgba(255, 130, 200, 0.8));
-  }
-
-  /*
-    正文区：和主站页面同一个最大宽度和左右内边距，只是顶部留出徽记那一块，
-    免得第一版里要写的东西压在 logo 下面。
+    正文区：和主站页面同一个最大宽度和左右内边距。
+    顶部内边距 2026-10-09 晚上调小了：常驻栏是 sticky 的，它自己占着文档流里那一段高度，
+    正文不用再为"固定定位的徽记"让出一整块（原来是 clamp(58px, 7vw, 82px) + 2.2rem）。
   */
   .forum__main {
     position: relative;
@@ -141,7 +107,7 @@ const home = withBase('/');
     width: 100%;
     max-width: var(--w-page);
     margin-inline: auto;
-    padding: calc(clamp(58px, 7vw, 82px) + 2.2rem) var(--sp-5) var(--sp-8);
+    padding: 1.8rem var(--sp-5) var(--sp-8);
     min-height: 100vh;
   }
 </style>

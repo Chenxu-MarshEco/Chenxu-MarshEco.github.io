@@ -83,8 +83,9 @@ const apex = chatApex(tl);
             聊天室的闸门 + 收发。
             闸门：没登录 / 没过审 → 输入区锁上并说明原因（服务端还会再验一次，绕不过去）。
             收发：过审之后 mountChat() 接管 —— 每几秒问一次有没有新消息、回车发、传图先压到 1000px。
+            粘贴图片：见文件末尾那段（走的是和「传图」同一套压缩 + 发送）。
           */
-          import { mountChat, type ChatHandle, type LtUser } from '../../utils/liyutang-client';
+          import { compressImage, mountChat, sendChat, type ChatHandle, type LtUser } from '../../utils/liyutang-client';
 
           const apiUrl = document.querySelector('[data-lt-account]')?.getAttribute('data-api') || '';
           const gate = document.querySelector('[data-lt-chat-gate]') as HTMLElement;
@@ -102,11 +103,17 @@ const apex = chatApex(tl);
           };
           lock(true);
 
+          /*
+            显示名一律用**昵称 alias**（没设过时后端已经兜底等于用户名，所以这里只认 alias 就够了）；
+            nick 是用户名（注册时定的、用来登录、改不了），不拿它当显示名。
+          */
+          const shownName = (u: LtUser): string => String(u.alias || u.nick || '');
+
           const apply = (state: string, user: LtUser | null, fake: boolean) => {
             const ok = !fake && !!user && state === 'approved';
             lock(!ok);
             if (ok && user) {
-              gate.textContent = `你以 ${user.nick} 的身份在这里。`;
+              gate.textContent = `你以 ${shownName(user)} 的身份在这里。`;
               /* 只挂一次：状态反复变化（比如过一会儿又刷了一次）不该挂出第二个轮询 */
               if (!chat && apiUrl) {
                 chat = mountChat({ api: apiUrl, log, input, send, image, status });
@@ -128,6 +135,67 @@ const apex = chatApex(tl);
           const early = (window as unknown as { __ltState?: { state?: string; user?: LtUser | null; fake?: boolean } })
             .__ltState;
           if (early?.state) apply(early.state, early.user ?? null, !!early.fake);
+
+          /*
+            ============================================================
+            粘贴板里有图 → 直接当成"选了那张图"发出去（2026-10-10 用户要求）
+            ============================================================
+
+            为什么写在这一页、而不是 mountChat 里：
+            用户正在改 src/utils/liyutang-client.ts，那文件不许动。而"拿到图以后那一段"
+            （压到 1000px 的 WebP → LT_CHAT_SEND）本来就在 mountChat 的 pickImage() 里。
+
+            ⚠ 说清这里为什么**没有**按原计划"构造一个 DataTransfer 塞给那个 file input"：
+            mountChat 里那个 file input 是**每次点「传图」现造一个、还不在 DOM 里**
+            （`const picker = document.createElement('input')` … `picker.click()`），
+            页面这边**根本拿不到它**（既没有引用、也没有挂到 DOM 上）。
+            所以改成走**同一套公开原语**：同一个 compressImage（同样压到 1000px / 300KB）
+            + 同一个 sendChat —— 和「传图」按钮出去的东西一模一样，只是省掉了那个原生选图框；
+            画进消息流仍旧交给 mountChat 自己那套 paint（调 chat.refresh() 让它去拉这一条），
+            这样游标、滚动、撤回按钮、昵称头像全都和平时一致。
+
+            如果要"真的复用那个 input"（可选、由改 client.ts 的人决定），改动是：
+              · 把 picker 的创建与 change 处理抽成一个 sendFile(file)（把现成的 change 体搬进去）；
+              · pickImage() 改成"造 input → change 时 sendFile(file)"；
+              · 再在 mountChat 里加一句
+                `input.addEventListener('paste', (ev) => { const f = [...(ev.clipboardData?.items ?? [])].find((i) => i.kind === 'file' && /^image\\//.test(i.type))?.getAsFile(); if (f) { ev.preventDefault(); void sendFile(f); } });`
+                —— 那时这一页的这段就可以删掉了（两边都留着也不会重复发：这里只在"没图"时完全不插手）。
+          */
+          const pasteImage = async (ev: ClipboardEvent) => {
+            const items = [...(ev.clipboardData?.items ?? [])];
+            const file = items.find((it) => it.kind === 'file' && /^image\//.test(it.type))?.getAsFile() ?? null;
+            /* 不是图就不插手：文字照常粘进输入框（这条最要紧，别把普通粘贴搞坏） */
+            if (!file) return;
+            const text = String(ev.clipboardData?.getData('text/plain') ?? '');
+            /* 只有图（截图就是这种）：别让浏览器再往输入框里塞别的东西 */
+            if (!text) ev.preventDefault();
+            if (!chat) {
+              status.textContent = '要登录并过审之后才能发图。';
+              return;
+            }
+            /* 正在发的时候（mountChat 会锁那个按钮）就别插队 */
+            if (image.disabled) return;
+            image.disabled = true;
+            status.textContent = '正在压图…（粘贴进来的图按 1000px 压）';
+            try {
+              const dataUrl = await compressImage(file, { max: 1000, maxBytes: 300_000 });
+              status.textContent = '正在发…';
+              const r = await sendChat(apiUrl, { image: dataUrl });
+              if ('error' in r) {
+                status.textContent = r.error;
+                return;
+              }
+              /* 交给 mountChat 自己把它画进消息流（游标/滚动/撤回按钮都在它手里） */
+              await chat.refresh();
+              status.textContent = `粘的图发出去了（${Math.round(dataUrl.length / 1024)} KB）。`;
+            } catch (err) {
+              status.textContent = '这张图没发出去：' + String((err as Error)?.message ?? err);
+            } finally {
+              /* 只在还是"已开闸"的状态下解锁，别把访客的锁给拆了 */
+              if (chat) image.disabled = false;
+            }
+          };
+          document.addEventListener('paste', (ev) => void pasteImage(ev as ClipboardEvent));
         </script>
       )
     }

@@ -26,6 +26,8 @@ import { withBase } from './url';
 export interface ChatMessage {
   id: string;
   nick: string;
+  /** 存档当时的昵称（没有就用用户名兜底） */
+  alias?: string;
   text: string;
   /** 站内静态路径，没图就是空串 */
   image: string;
@@ -77,6 +79,7 @@ function toMessage(raw: unknown): ChatMessage | null {
   return {
     id,
     nick: String(raw.nick ?? ''),
+    alias: String(raw.alias ?? raw.nick ?? ''),
     text: String(raw.text ?? ''),
     image: String(raw.image ?? ''),
     avatar: String(raw.avatar ?? ''),
@@ -152,7 +155,7 @@ export function chatDays(): ChatDayMeta[] {
         day: a.day,
         count: a.messages.length,
         images: a.messages.filter((x) => !!x.image).length,
-        users: [...new Set(a.messages.map((m) => m.nick).filter(Boolean))],
+        users: [...new Set(a.messages.map((m) => m.alias || m.nick).filter(Boolean))],
       });
     }
   }

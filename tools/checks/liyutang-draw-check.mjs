@@ -83,6 +83,35 @@ check('橡皮按纸色画（和服务端 / 存档 SVG 一个规矩）', /ERASER_
 check('页面接上了：工具条 + 画布 + 人表', /mountBoard\(/.test(read(path.join('src', 'pages', 'liyutang', 'teahouse.astro'))));
 check('画板尺寸是固定坐标系（2400×1500）', /BOARD_W = 2400/.test(read(path.join('src', 'utils', 'liyutang-strokes.mjs'))));
 
+/* ---- 2026-10-10 这一轮的新功能：先来一遍静态的（真跑的在那三段之后） ---- */
+const page = read(path.join('src', 'pages', 'liyutang', 'teahouse.astro'));
+check('★ 重做是"照原样再画一笔新的"（服务端软删，原来那条回不来）',
+  /const doRedo = async/.test(engine) && /commit\(back/.test(engine) && /redoStack/.test(engine));
+check('★ 拖动一根线条：命中测试按笔粗给阈值 + 松手才发一次 LT_DRAW_MOVE',
+  /HIT_SLACK/.test(engine) && /const hitTest = /.test(engine) && /LT_DRAW_MOVE/.test(engine) && /finishMove/.test(engine));
+check('★ 只能挪自己画的（本地先说人话，服务端还会再拒一次）', /只能挪自己画的/.test(engine));
+check('★ 取色读的是渲染出来的画布像素', /const readPixel = /.test(engine) && /getImageData/.test(engine));
+check('★ 调色盘跟着账号走（LT_PREFS_SET 存 / LT_ME 读 prefs）',
+  /LT_PREFS_SET/.test(engine) && /applyPrefs/.test(engine) && /MAX_SAVED/.test(engine));
+check('★ 画笔和橡皮各自的粗细（penSize / eraserSize 分开存，切工具各自取）',
+  /let penSize = PEN_SIZE_DEFAULT/.test(engine) && /let eraserSize = ERASER_SIZE_DEFAULT/.test(engine) && /const sizeOf/.test(engine));
+check('★ 粗细能直接填数字（数字框接进 setSize）', /sizeNumber/.test(engine) && /const setSize = /.test(engine));
+check('★ 画的过程中不做远端轮询带来的重画（记下来、抬笔之后补）',
+  /deferredRefresh/.test(engine) && /stats\.deferred/.test(engine));
+check('★ 新笔划增量画进缓存（只有集合变了才整块重建，重建次数可量）',
+  /const paintIntoCache = /.test(engine) && /const rebuildCache = /.test(engine) && /stats\.rebuilds/.test(engine));
+check('★ 画布上的滚轮一律 preventDefault（触控板的小数 delta 曾经把页面滚走）',
+  /on\(canvas, 'wheel'/.test(engine) && /e\.preventDefault\(\);/.test(engine) && !/Math\.abs\(e\.deltaY\) < 1/.test(engine));
+check('★ 指针 move/up 挂在 window 上（capture 失效也不丢笔）',
+  /on\(window, 'pointermove'/.test(engine) && /on\(window, 'pointerup'/.test(engine));
+check('★ 同步游标按 updatedAt（别人拖动过的线条才拉得到）', /s\.updatedAt \?\? s\.createdAt/.test(engine));
+check('★ stop() 会把监听一起摘掉（老版本只停轮询，重挂之后一笔提交两次）', /ac\.abort\(\)/.test(engine));
+check('茶绘页面把新控件都接上了（移动/取色/＋收藏/粗细数字/重做）',
+  ['data-lt-tool="move"', 'data-lt-tool="pick"', 'data-lt-color-add', 'data-lt-size-num', 'data-lt-redo'].every((k) => page.includes(k)));
+check('★ 新控件的样式写在茶绘自己的 <style> 里（没往 forum.css 加）',
+  /<style is:global>/.test(page) && /lyt-draw__swatch-del/.test(page) &&
+    !/lyt-draw__swatch-del/.test(read(path.join('src', 'styles', 'forum.css'))));
+
 /* ============================================================ ② 真跑 */
 
 console.log('\n=== ② 真跑：内存里的 MongoDB，把云函数整份跑一遍 ===');
@@ -248,28 +277,85 @@ const liveApi = (() => {
 })();
 
 /* 假后端：自己画的记下来；轮询时给一笔"别人画的"（在 1800,1100，蓝色） */
-const seen = { add: [], del: [], lists: 0 };
+const seen = { add: [], del: [], moves: [], prefs: [], lists: 0 };
+/*
+  假后端自己记一份"服务端那一条"：LT_DRAW_MOVE 要按 id 把这根找回来、算出新位置再发回去
+  （引擎会拿服务端返回的点去比"和本地算的一样不一样"，一样就不再重建缓存）。
+*/
+const created = new Map();
+/*
+  测试中途注入的"别人画的"笔划。updatedAt 故意给到很远的未来：
+  · 永远能过游标那一关（3 秒一轮的时序不会把测试弄脆）；
+  · 又比现有最新的那笔"新"，所以引擎应该**增量**画进缓存，而不是整块重建 —— 这正是要量的事。
+*/
+const extra = [];
+const remoteStroke = (s) => ({ ...s, createdAt: Date.now() + 30000, updatedAt: Date.now() + 30000, mine: false });
+/* 账号里那份偏好（LT_ME 会带出去）——"重开页面收藏还在"那条就靠它 */
+let prefsState = {};
 const OTHER = { id: 'other-stroke', uk: 'beef1234', nick: '虹星', avatar: '', tool: 'pen', color: '#3a86ff', size: 24, points: [[1750, 1050], [1850, 1100], [1950, 1150]], createdAt: 0, mine: false };
 const fakeBackend = (body) => {
   const event = String(body?.event || '');
-  if (event === 'LT_ME') return { code: 0, user: { nick: '测试者', mail: '', status: 'approved', avatar: '', label: '' }, posts: 0 };
+  if (event === 'LT_ME') {
+    return { code: 0, user: { nick: '测试者', alias: '测试者', mail: '', status: 'approved', avatar: '', label: '', prefs: { ...prefsState } }, posts: 0 };
+  }
   if (event === 'LT_DRAW_LIST') {
     seen.lists += 1;
     const after = Number(body?.after) || 0;
-    /* 第一趟（没有游标）给空的：板子上先是干净的；之后给"别人画的"那一笔 */
-    const all = after ? [{ ...OTHER, createdAt: after + 1 }] : [];
-    return { code: 0, day: '2026-10-09', today: '2026-10-09', serverNow: Date.now(), more: false, strokes: all.filter((s) => s.createdAt > after) };
+    /* 第一趟（没有游标）给空的：板子上先是干净的；之后给"别人画的"那一笔 + 注入的那些 */
+    const all = after ? [{ ...OTHER, createdAt: after + 1, updatedAt: after + 1 }] : [];
+    for (const s of extra) if (!all.some((x) => x.id === s.id)) all.push(s);
+    return {
+      code: 0,
+      day: '2026-10-09',
+      today: '2026-10-09',
+      serverNow: Date.now(),
+      more: false,
+      strokes: all.filter((s) => Number(s.updatedAt ?? s.createdAt) > after),
+    };
   }
   if (event === 'LT_DRAW_ADD') {
     seen.add.push(body);
-    return {
-      code: 0,
-      stroke: { id: 'mine' + seen.add.length, uk: 'aaaa1111', nick: '测试者', avatar: '', tool: body.tool, color: body.color, size: body.size, points: body.points, createdAt: Date.now(), mine: true },
+    const stroke = {
+      id: 'mine' + seen.add.length,
+      uk: 'aaaa1111',
+      nick: '测试者',
+      alias: '测试者',
+      avatar: '',
+      tool: body.tool,
+      color: body.color,
+      size: body.size,
+      points: body.points,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      mine: true,
     };
+    created.set(stroke.id, { ...stroke, points: stroke.points.map(([x, y]) => [x, y]) });
+    return { code: 0, stroke };
   }
   if (event === 'LT_DRAW_DELETE') {
     seen.del.push(body);
+    created.delete(String(body.id));
     return { code: 0, id: body.id };
+  }
+  /* 拖动一根线条：整条平移、逐点夹回画板（和云函数那份一个规矩） */
+  if (event === 'LT_DRAW_MOVE') {
+    seen.moves.push(body);
+    const s = created.get(String(body.id));
+    if (!s) return { code: 1000, message: '这一笔已经不在了。' };
+    const dx = Number(body.dx) || 0;
+    const dy = Number(body.dy) || 0;
+    s.points = s.points.map(([x, y]) => [
+      Math.round(Math.min(2400, Math.max(0, x + dx)) * 10) / 10,
+      Math.round(Math.min(1500, Math.max(0, y + dy)) * 10) / 10,
+    ]);
+    s.updatedAt = Date.now();
+    return { code: 0, stroke: { ...s, points: s.points.map(([x, y]) => [x, y]) }, serverNow: s.updatedAt };
+  }
+  /* 画板偏好：存下来，下次 LT_ME 带出去 */
+  if (event === 'LT_PREFS_SET') {
+    seen.prefs.push(body);
+    prefsState = { ...(body.prefs || {}) };
+    return { code: 0, prefs: prefsState };
   }
   return { code: 0 };
 };
@@ -445,7 +531,17 @@ try {
   check('访客：说明白了要先登录 / 过审', /登录/.test(guest.gate) && !/正在看登录状态/.test(guest.gate), guest.gate.slice(0, 40));
 
   /* ---- 过审的人 ---- */
-  await cdp.ev(`localStorage.setItem('lt_token','fake-token')`);
+  /*
+    ⚠ 除了令牌，还要把"上次确认过的身份"缓存（lt_user）一起写上 —— 真用户登录一次就有它。
+    为什么验收也必须有：账号组件在网络偶发抖动（连着三次 LT_ME 没成）时会退回缓存里的身份；
+    **没有缓存**就只能 paint('guest')，那一句会把引擎 stop 掉、恢复之后再挂一份新的 ——
+    于是"撤销 → 重做"这种跨几步的断言会莫名其妙地红一片（2026-10-09 那次就是栽在这上面，
+    排查了半天才发现不是画板的问题）。有缓存时它按过审画，引擎一动不动。
+  */
+  await cdp.ev(
+    `localStorage.setItem('lt_token','fake-token');` +
+      `localStorage.setItem('lt_user', JSON.stringify({ nick: '测试者', alias: '测试者', status: 'approved', avatar: '', label: '' }))`
+  );
   await cdp.go(`${base}/liyutang/teahouse/`);
   const ready = await cdp.wait(`(() => {
       const b = document.querySelector('[data-lt-tool="pen"]');
@@ -513,13 +609,17 @@ try {
   await showCanvas();
   const hold = await cdp.ev(toScreen(600, 375));
   await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: hold.x, y: hold.y, button: 'none' });
-  for (let i = 0; i < 4; i += 1) {
+  for (let i = 0; i < 6; i += 1) {
     await cdp.send('Input.dispatchMouseEvent', { type: 'mouseWheel', x: hold.x, y: hold.y, deltaX: 0, deltaY: -120 });
     await sleep(150);
   }
   await sleep(400);
   const v1 = await cdp.ev(viewOf);
-  check('★ 滚轮能放大（全览 → >1.5×）', v1 && v1.zoom > 1.5, JSON.stringify({ zoom: v1?.zoom, x: v1?.x, y: v1?.y }));
+  /*
+    ⚠ 门槛放宽到 1.4：滚轮一格放大多少是**实现细节**（现在是 1.15/格），
+    真正要钉住的是"滚轮确实能放大、而且光标底下那一点不跑"（下面那条）。写死 1.75 只会假红。
+  */
+  check('★ 滚轮能放大（全览 → >1.4×）', v1 && v1.zoom > 1.4, JSON.stringify({ zoom: v1?.zoom, x: v1?.x, y: v1?.y }));
   const underCursor = await cdp.ev(`(() => {
     const c = document.querySelector('[data-lt-canvas]');
     const r = c.getBoundingClientRect();
@@ -562,7 +662,21 @@ try {
   await showCanvas();
   const p0 = await cdp.ev(toScreen(1200, 750));
   await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: p0.x, y: p0.y, button: 'left', clickCount: 1, buttons: 1 });
-  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: p0.x - 120, y: p0.y - 60, button: 'left', buttons: 1 });
+  /*
+    ⚠ 拖动要**多步**发（真人拖是连续的）。
+    早先这里只发一次"从起点直接跳到终点"，结果两种实现会给出完全不同的结果：
+    有的实现在第一次 move 上只登记起点（防误触死区），那一下就被算成 0 —— 我的验收因此假红过一次。
+  */
+  for (let i = 1; i <= 8; i += 1) {
+    await cdp.send('Input.dispatchMouseEvent', {
+      type: 'mouseMoved',
+      x: Math.round(p0.x - (120 * i) / 8),
+      y: Math.round(p0.y - (60 * i) / 8),
+      button: 'left',
+      buttons: 1,
+    });
+    await sleep(20);
+  }
   await sleep(200);
   await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: p0.x - 120, y: p0.y - 60, button: 'left', clickCount: 1, buttons: 0 });
   await sleep(400);
@@ -634,9 +748,403 @@ try {
   await cdp.ev(`document.querySelector('[data-lt-undo]').click()`);
   await sleep(600);
   check('★ 撤销会真的请求删掉自己那一笔（LT_DRAW_DELETE）',
-    seen.del.length === 1 && seen.del[0].event === 'LT_DRAW_DELETE' && seen.del[0].ltToken === 'fake-token', JSON.stringify(seen.del[0] ?? {}));
+    /*
+      ⚠ 看**最后一条**删除请求，不数总数：下面那一大段（重做/拖动/取色…）也会发删除请求，
+      数"正好一条"就会假红 —— 这条要钉的是"点了撤销，确实发出了一次删除"。
+    */
+    seen.del.length >= 1 && seen.del[seen.del.length - 1].event === 'LT_DRAW_DELETE' && seen.del[seen.del.length - 1].ltToken === 'fake-token',
+    JSON.stringify(seen.del[seen.del.length - 1] ?? {}));
 
   check('这一趟没有未捕获的 JS 异常', cdp.errors.length === 0, cdp.errors.slice(0, 2).join(' | '));
+
+  /* ==================================================================
+     2026-10-10 这一轮：重做 / 移动 / 取色 / 调色盘 / 粗细 / 滚动 / 增量同步
+     （上面那 69 条一条都没改；这一段全在它们之后跑，同一套真浏览器 + 同一个假云端）
+     ================================================================== */
+  const errBefore = cdp.errors.length;
+  const stateOf = `(() => (window.__ltBoard ? window.__ltBoard.state : null))()`;
+  const statsOf = `(() => (window.__ltBoard ? window.__ltBoard.stats : null))()`;
+  const scrollOf = `(() => ({ x: window.scrollX, y: window.scrollY }))()`;
+  const zoomOf = `(() => (window.__ltBoard ? window.__ltBoard.view.zoom : 0))()`;
+  const statusText = `(() => String((document.querySelector('[data-lt-draw-status]') || {}).textContent || ''))()`;
+  const pickTool = async (name) => {
+    await cdp.ev(`document.querySelector('[data-lt-tool="${name}"]').click()`);
+    await sleep(150);
+  };
+  const useSwatch = async (hex) => {
+    await cdp.ev(`[...document.querySelectorAll('.lyt-draw__swatch')].find((b) => b.dataset.color === '${hex}').click()`);
+    await sleep(120);
+  };
+  /** 往"粗细"那个数字框里直接填一个数（用户要的就是这一条：精确回到某个值） */
+  const setSizeNum = async (n) => {
+    await cdp.ev(
+      `(() => { const el = document.querySelector('[data-lt-size-num]'); el.value = '${n}'; el.dispatchEvent(new Event('input', { bubbles: true })); return el.value; })()`
+    );
+    await sleep(150);
+  };
+  /** 真鼠标拖（和 drawOn 一样，但把每一步之后的滚动位置都记下来；可以让指针跑到画布外面） */
+  const dragWithScroll = async (points, opts = {}) => {
+    await showCanvas();
+    const s0 = await cdp.ev(scrollOf);
+    const first = await cdp.ev(toScreen(points[0][0], points[0][1]));
+    await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: first.x, y: first.y, button: 'left', clickCount: 1, buttons: 1 });
+    const scrolls = [];
+    let last = first;
+    for (const [bx, by] of points.slice(1)) {
+      const s = await cdp.ev(toScreen(bx, by));
+      last = opts.outside ? { x: s.x, y: opts.outside(s) } : s;
+      await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: last.x, y: last.y, button: 'left', buttons: 1 });
+      scrolls.push(await cdp.ev(scrollOf));
+      await sleep(opts.step ?? 25);
+    }
+    await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: last.x, y: last.y, button: 'left', clickCount: 1, buttons: 0 });
+    await sleep(opts.wait ?? 600);
+    const s1 = await cdp.ev(scrollOf);
+    return { s0, s1, scrolls };
+  };
+  /** 点一下（取色器用） */
+  const tapAt = async (bx, by) => {
+    await showCanvas();
+    const s = await cdp.ev(toScreen(bx, by));
+    await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: s.x, y: s.y, button: 'left', clickCount: 1, buttons: 1 });
+    await sleep(60);
+    await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: s.x, y: s.y, button: 'left', clickCount: 1, buttons: 0 });
+    await sleep(500);
+  };
+  const waitBoard = async () =>
+    cdp.wait(
+      `(() => { const b = document.querySelector('[data-lt-tool="pen"]'); return !!b && !b.disabled && document.querySelectorAll('.lyt-draw__swatch').length >= 6; })()`,
+      20000
+    );
+  /*
+    状态行那句话会被下一趟轮询（"今天这块板上已经有 N 笔"）盖掉 ——
+    所以不是"读完拉倒"，而是挂个 MutationObserver 把**每一句**都记下来再回头找。
+    （第一版直接读 textContent，赶上 3 秒一次的轮询就假红。）
+  */
+  await cdp.ev(`(() => {
+      const el = document.querySelector('[data-lt-draw-status]');
+      window.__statusLog = [el.textContent];
+      new MutationObserver(() => window.__statusLog.push(el.textContent)).observe(el, { childList: true, characterData: true, subtree: true });
+      return true;
+    })()`);
+  const statusSaid = async (re) => (await cdp.ev(`window.__statusLog`)).some((t) => re.test(String(t)));
+  /**
+   * 环境体检：账号还在过审、引擎还活着（这两条要是不成立，后面那些断言红得毫无意义）。
+   * 打印出来是为了"红的时候一眼看出是环境抖了还是功能坏了"。
+   */
+  const envLine = async (where) => {
+    const got = await cdp.ev(`(() => ({
+        state: (document.querySelector('[data-lt-account]') || {}).dataset?.state || '',
+        locked: (document.querySelector('[data-lt-tool="pen"]') || {}).disabled === true,
+        strokes: window.__ltBoard ? window.__ltBoard.state.strokes : -1,
+        pe: document.querySelector('[data-lt-canvas]') ? getComputedStyle(document.querySelector('[data-lt-canvas]')).pointerEvents : '',
+      }))()`);
+    info(`[${where}] 账号=${got.state} 工具条锁着=${got.locked} 画布 pointer-events=${got.pe} 本地笔划=${got.strokes}`);
+    return got;
+  };
+
+  /* ---- 1. 画笔和橡皮各自的粗细 + 数字直接输入 ---- */
+  await envLine('新功能段开始');
+  await pickTool('pen');
+  await setSizeNum(30);
+  await pickTool('eraser');
+  await setSizeNum(8);
+  let stSize = await cdp.ev(stateOf);
+  check('★ 画笔 30 / 橡皮 8：两份粗细分开记，切来切去各自保持',
+    stSize.penSize === 30 && stSize.eraserSize === 8, JSON.stringify({ pen: stSize.penSize, eraser: stSize.eraserSize }));
+  await pickTool('pen');
+  const shownPen = await cdp.ev(
+    `(() => ({ range: document.querySelector('[data-lt-size]').value, num: document.querySelector('[data-lt-size-num]').value }))()`
+  );
+  check('★ 粗细 UI 显示具体数字（切到画笔 → 滑块和数字框都是 30）',
+    shownPen.range === '30' && shownPen.num === '30', JSON.stringify(shownPen));
+  await pickTool('eraser');
+  const shownEraser = await cdp.ev(
+    `(() => ({ range: document.querySelector('[data-lt-size]').value, num: document.querySelector('[data-lt-size-num]').value }))()`
+  );
+  check('切到橡皮 → 那两个读数变成 8（互不干扰）', shownEraser.range === '8' && shownEraser.num === '8', JSON.stringify(shownEraser));
+  await pickTool('pen');
+  await sleep(900);
+  const prefsLatest = seen.prefs[seen.prefs.length - 1];
+  check('★ 两份粗细都发到了服务端（LT_PREFS_SET 的 penSize=30 / eraserSize=8）',
+    !!prefsLatest && prefsLatest.event === 'LT_PREFS_SET' && prefsLatest.ltToken === 'fake-token' &&
+      prefsLatest.prefs.penSize === 30 && prefsLatest.prefs.eraserSize === 8,
+    JSON.stringify(prefsLatest?.prefs ?? {}));
+  info(`LT_PREFS_SET 一共发了 ${seen.prefs.length} 次（粗细改动会攒 450 毫秒再发一次）`);
+
+  /* ---- 2. 取色：读渲染出来的像素 ---- */
+  await pickTool('pen');
+  await useSwatch('#ff4d6d');
+  await setSizeNum(16);
+  await drawOn([[900, 1200], [1000, 1200], [1100, 1200]]);
+  check('取色之前：那一笔的粉色真的在画布上', (await cdp.ev(pixelAt(1000, 1200))) === '#ff4d6d', await cdp.ev(pixelAt(1000, 1200)));
+  await useSwatch('#1d1430');
+  await pickTool('pick');
+  await tapAt(1000, 1200);
+  const stPick = await cdp.ev(stateOf);
+  check('★ 取色器点那一笔 → 当前画笔颜色变成 #ff4d6d（并且自动切回画笔）',
+    stPick.color === '#ff4d6d' && stPick.tool === 'pen', JSON.stringify({ color: stPick.color, tool: stPick.tool }));
+  check('「别的颜色」那个输入框也跟着变成取到的色',
+    (await cdp.ev(`document.querySelector('[data-lt-color]').value`)) === '#ff4d6d',
+    await cdp.ev(`document.querySelector('[data-lt-color]').value`));
+  const pickAdds = seen.add.length;
+  await drawOn([[1900, 300], [1980, 300], [2060, 300]]);
+  check('★ 取到的颜色真的用在了下一笔上（发出去的 color 就是 #ff4d6d）',
+    seen.add.length === pickAdds + 1 && seen.add[seen.add.length - 1].color === '#ff4d6d',
+    JSON.stringify({ color: seen.add[seen.add.length - 1]?.color }));
+
+  /* ---- 3. 移动：只能挪自己画的 + 像素真的动了 + 松手才发一次 ---- */
+  await pickTool('pen');
+  await useSwatch('#b5179e');
+  await setSizeNum(10);
+  await drawOn([[900, 1300], [1000, 1300], [1100, 1300]]);
+  const myMoveId = 'mine' + seen.add.length;
+  check('移动之前：那条线在 (1000,1300)', (await cdp.ev(pixelAt(1000, 1300))) === '#b5179e', await cdp.ev(pixelAt(1000, 1300)));
+  await pickTool('move');
+  const moves0 = seen.moves.length;
+  const dragOwn = await dragWithScroll([[1000, 1300], [1000, 1340], [1000, 1380]]);
+  await sleep(600);
+  const mv = seen.moves[seen.moves.length - 1];
+  check('★ 挪自己那一根：服务端正好收到一条 LT_DRAW_MOVE（id / dx / dy 都对）',
+    seen.moves.length === moves0 + 1 && mv.event === 'LT_DRAW_MOVE' && mv.id === myMoveId && Math.abs(mv.dx) <= 2 && Math.abs(mv.dy - 80) <= 3,
+    JSON.stringify(mv));
+  check('★ 像素上那条线真的移了：原位置变回纸色',
+    (await cdp.ev(pixelAt(1000, 1300))) === PAPER, await cdp.ev(pixelAt(1000, 1300)));
+  check('★ 新位置是那条线的颜色',
+    (await cdp.ev(pixelAt(1000, 1380))) === '#b5179e', await cdp.ev(pixelAt(1000, 1380)));
+  check('拖动的时候页面没有跟着滚（拖线也不该滚页面）',
+    dragOwn.s0.y === dragOwn.s1.y && dragOwn.scrolls.every((s) => s.y === dragOwn.s0.y),
+    JSON.stringify({ before: dragOwn.s0, after: dragOwn.s1 }));
+  /* 别人的那一根（虹星的蓝线）——本地就得说人话，而且一次网络都不发 */
+  const moves1 = seen.moves.length;
+  await pickTool('move');
+  await dragWithScroll([[1850, 1100], [1850, 1140], [1850, 1180]]);
+  const saidRefuse = await statusSaid(/只能挪自己画的/);
+  check('★ 挪别人的线条：被拒 + 人话提示（"只能挪自己画的"），没有发 LT_DRAW_MOVE',
+    seen.moves.length === moves1 && saidRefuse === true,
+    JSON.stringify({ moves: seen.moves.length - moves1, log: (await cdp.ev(`window.__statusLog`)).slice(-3) }));
+  check('别人的线条一点没动（像素还在原处）',
+    (await cdp.ev(pixelAt(1850, 1100))) === '#3a86ff', await cdp.ev(pixelAt(1850, 1100)));
+
+  /* ---- 4. 调色盘：收藏 / 删除 / 跟着账号走 ---- */
+  await pickTool('pen');
+  await cdp.ev(`(() => { const el = document.querySelector('[data-lt-color]'); el.value = '#123456'; el.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
+  await sleep(120);
+  const prefs0 = seen.prefs.length;
+  await cdp.ev(`document.querySelector('[data-lt-color-add]').click()`);
+  await sleep(500);
+  const addedPrefs = seen.prefs[seen.prefs.length - 1];
+  check('★ 点「＋收藏」→ 服务端收到 LT_PREFS_SET，palette 里有那个色',
+    seen.prefs.length > prefs0 && !!addedPrefs?.prefs?.palette?.includes('#123456'), JSON.stringify(addedPrefs?.prefs ?? {}));
+  const chips = await cdp.ev(
+    `(() => ({ saved: document.querySelectorAll('.lyt-draw__swatch[data-saved="1"]').length, del: document.querySelectorAll('.lyt-draw__swatch-del').length, color: (document.querySelector('.lyt-draw__swatch[data-saved="1"]') || {}).dataset?.color || '' }))()`
+  );
+  check('画面上多了一个"你收藏的"色块，而且带删除小×（内置色没有×）',
+    chips.saved === 1 && chips.del === 1 && chips.color === '#123456', JSON.stringify(chips));
+  await cdp.ev(`document.querySelector('.lyt-draw__swatch-del').click()`);
+  await sleep(500);
+  const afterDel = seen.prefs[seen.prefs.length - 1];
+  const chips2 = await cdp.ev(`document.querySelectorAll('.lyt-draw__swatch[data-saved="1"]').length`);
+  check('★ 删得掉收藏的：palette 里没了，画面上也没了（内置色一个都没少）',
+    !afterDel?.prefs?.palette?.includes('#123456') && chips2 === 0 &&
+      (await cdp.ev(`document.querySelectorAll('.lyt-draw__swatch').length`)) === 8,
+    JSON.stringify({ palette: afterDel?.prefs?.palette ?? [], saved: chips2 }));
+  /* 再加回去，给"重开页面还在"那条用 */
+  await cdp.ev(`document.querySelector('[data-lt-color-add]').click()`);
+  await sleep(500);
+  /*
+    模拟"云端那个账号里本来就有这些偏好"（另一台设备存的）：
+    prefsState 是假后端 LT_ME 会带出去的那一份。
+  */
+  prefsState = { palette: ['#123456'], penSize: 30, eraserSize: 8, color: '#123456', tool: 'pen' };
+  await cdp.go(`${base}/liyutang/teahouse/`);
+  /* 等"收藏色回来了 + 粗细也恢复了"：引擎进场后自己会再问一次 LT_ME，这里等的就是那一趟 */
+  const backReady = await cdp.wait(
+    `(() => {
+        const b = window.__ltBoard;
+        return !!b && b.state.penSize === 30 && b.state.eraserSize === 8 && !!document.querySelector('.lyt-draw__swatch[data-color="#123456"]');
+      })()`,
+    20000
+  );
+  const kept = await cdp.ev(`(() => {
+      const b = [...document.querySelectorAll('.lyt-draw__swatch')].find((x) => x.dataset.color === '#123456');
+      return { saved: b ? b.dataset.saved : '', num: document.querySelector('[data-lt-size-num]').value, state: window.__ltBoard.state };
+    })()`);
+  check('★ 重开页面：收藏的颜色还在（跟着账号走，不是只存在本机）',
+    backReady === true && kept.saved === '1', JSON.stringify({ ready: backReady, saved: kept.saved }));
+  check('★ 重开页面：两份粗细也照账号恢复（画笔 30 / 橡皮 8，数字框显示 30）',
+    kept.state.penSize === 30 && kept.state.eraserSize === 8 && kept.num === '30',
+    JSON.stringify({ pen: kept.state.penSize, eraser: kept.state.eraserSize, num: kept.num }));
+
+  /* ---- 5. 重做（取消撤回）：软删之后只能"照原样再画一笔新的" ---- */
+  await envLine('重做那一段之前');
+  await pickTool('pen');
+  await useSwatch('#2ec4b6');
+  await setSizeNum(12);
+  const nRedo0 = seen.add.length;
+  await drawOn([[600, 1000], [700, 1000], [800, 1000]]);
+  const redoOrig = seen.add[seen.add.length - 1];
+  const redoId1 = 'mine' + seen.add.length;
+  check('重做那一套之前：绿色那一笔在画布上，粗细是 12',
+    (await cdp.ev(pixelAt(700, 1000))) === '#2ec4b6' && redoOrig.size === 12,
+    JSON.stringify({ pix: await cdp.ev(pixelAt(700, 1000)), size: redoOrig.size }));
+  await cdp.ev(`document.querySelector('[data-lt-undo]').click()`);
+  await sleep(700);
+  check('★ 撤销之后那一点变回纸色（服务端是软删 LT_DRAW_DELETE）',
+    (await cdp.ev(pixelAt(700, 1000))) === PAPER && seen.del[seen.del.length - 1]?.id === redoId1,
+    JSON.stringify({ pix: await cdp.ev(pixelAt(700, 1000)), del: seen.del[seen.del.length - 1]?.id }));
+  check('撤完「重做」按钮亮了（有东西可以取消撤回）', (await cdp.ev(`!document.querySelector('[data-lt-redo]').disabled`)) === true);
+  const nRedoAdd = seen.add.length;
+  await cdp.ev(`document.querySelector('[data-lt-redo]').click()`);
+  await sleep(900);
+  const redoStroke = seen.add[seen.add.length - 1];
+  check('★ 重做之后画布像素上那一点的颜色回来了',
+    (await cdp.ev(pixelAt(700, 1000))) === '#2ec4b6', await cdp.ev(pixelAt(700, 1000)));
+  check('★ 重做走的是 LT_DRAW_ADD，而且是一个**新的 id**（软删之后原来那条回不来）',
+    seen.add.length === nRedoAdd + 1 && redoStroke.event === 'LT_DRAW_ADD' && ('mine' + seen.add.length) !== redoId1,
+    JSON.stringify({ id: 'mine' + seen.add.length, was: redoId1 }));
+  check('重做那一笔和原来一模一样（工具 / 颜色 / 粗细 / 点集都照原样）',
+    redoStroke.tool === redoOrig.tool && redoStroke.color === redoOrig.color && redoStroke.size === redoOrig.size &&
+      JSON.stringify(redoStroke.points) === JSON.stringify(redoOrig.points),
+    JSON.stringify({ tool: redoStroke.tool, color: redoStroke.color, size: redoStroke.size, n: redoStroke.points.length }));
+  /* 反复来回：再撤一次、再重做一次 */
+  await cdp.ev(`document.querySelector('[data-lt-undo]').click()`);
+  await sleep(700);
+  const goneAgain = await cdp.ev(pixelAt(700, 1000));
+  await cdp.ev(`document.querySelector('[data-lt-redo]').click()`);
+  await sleep(900);
+  const backAgain = await cdp.ev(pixelAt(700, 1000));
+  check('★ undo → redo 能反复来回（第二趟一样：撤掉变纸色、重做又回来）',
+    goneAgain === PAPER && backAgain === '#2ec4b6', JSON.stringify({ afterUndo: goneAgain, afterRedo: backAgain }));
+  check('重做栈用完就空了（按钮又变回不可点）',
+    (await cdp.ev(`document.querySelector('[data-lt-redo]').disabled`)) === true &&
+      (await cdp.ev(stateOf)).redo === 0, JSON.stringify({ redo: (await cdp.ev(stateOf)).redo }));
+
+  /* ---- 6. 电脑端画长线：页面不许滚 + 点集要跟指针轨迹一致 ---- */
+  /* 先把页面弄成真的滚得动（不然"scrollY 不变"这句话没有意义） */
+  await cdp.ev(`(() => { if (!document.querySelector('[data-lt-spacer]')) { const d = document.createElement('div'); d.setAttribute('data-lt-spacer', '1'); d.style.height = '3000px'; document.body.append(d); } return true; })()`);
+  await pickTool('pen');
+  await useSwatch('#8ac926');
+  await setSizeNum(8);
+  const traj = [];
+  for (let i = 0; i <= 24; i += 1) traj.push([300 + i * 50, 800]);
+  const nTraj = seen.add.length;
+  const trajRes = await dragWithScroll(traj);
+  const trajPts = seen.add[seen.add.length - 1]?.points ?? [];
+  const trajYs = trajPts.map((p) => p[1]);
+  check('★ 画长线的时候 window.scrollY 一动不动（每一帧都没动）',
+    trajRes.s0.y === trajRes.s1.y && trajRes.scrolls.every((s) => s.y === trajRes.s0.y) && trajRes.s0.y > 0,
+    JSON.stringify({ before: trajRes.s0, after: trajRes.s1, frames: trajRes.scrolls.length }));
+  check('★ 点集跟指针轨迹一致：24 段全落在 y=800 上、x 从头走到尾（没有中途跳/歪）',
+    seen.add.length === nTraj + 1 && trajPts.length >= 20 &&
+      Math.abs(Math.min(...trajYs) - 800) <= 2.5 && Math.abs(Math.max(...trajYs) - 800) <= 2.5 &&
+      Math.abs(trajPts[0][0] - 300) <= 3 && Math.abs(trajPts[trajPts.length - 1][0] - 1500) <= 3,
+    JSON.stringify({ n: trajPts.length, y: [Math.min(...trajYs), Math.max(...trajYs)], x: [trajPts[0]?.[0], trajPts[trajPts.length - 1]?.[0]] }));
+  /* 真原因那一条：触控板的小数滚轮曾经把页面滚走（老代码 |deltaY|<1 时直接 return、不 preventDefault） */
+  await cdp.ev(`document.querySelector('[data-lt-reset]').click()`);
+  await sleep(300);
+  await showCanvas();
+  const wheelBefore = { ...(await cdp.ev(scrollOf)), zoom: await cdp.ev(zoomOf) };
+  const wheelAt = await cdp.ev(toScreen(1200, 700));
+  for (let i = 0; i < 12; i += 1) {
+    await cdp.send('Input.dispatchMouseEvent', { type: 'mouseWheel', x: wheelAt.x, y: wheelAt.y, deltaX: 0, deltaY: 0.6 });
+    await sleep(60);
+  }
+  await sleep(400);
+  const wheelAfter = { ...(await cdp.ev(scrollOf)), zoom: await cdp.ev(zoomOf) };
+  check('★ 触控板的小数滚轮（deltaY=0.6 × 12）不再把页面滚走 —— "电脑端画线时页面乱滚"的真原因就是它',
+    wheelAfter.x === wheelBefore.x && wheelAfter.y === wheelBefore.y,
+    JSON.stringify({ before: wheelBefore, after: wheelAfter }));
+  check('小数滚轮也不会把缩放搞乱（全览状态还是 1.0×）',
+    Math.abs(wheelAfter.zoom - 1) < 0.02, JSON.stringify({ zoom: wheelAfter.zoom }));
+
+  /* ---- 7. 同步：画的过程中注入远端笔划 → 一次全量重建都不许有 ---- */
+  await envLine('同步那一段之前');
+  await cdp.ev(`document.querySelector('[data-lt-reset]').click()`);
+  await sleep(300);
+  await pickTool('pen');
+  await useSwatch('#3a86ff');
+  await setSizeNum(8);
+  const stStats0 = await cdp.ev(statsOf);
+  const injected = remoteStroke({
+    id: 'remote-1', uk: 'beef9999', nick: '远端的人', avatar: '',
+    tool: 'pen', color: '#ff9f1c', size: 20, points: [[1560, 600], [1700, 600], [1840, 600]],
+  });
+  await showCanvas();
+  const slowStart = await cdp.ev(toScreen(300, 600));
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: slowStart.x, y: slowStart.y, button: 'left', clickCount: 1, buttons: 1 });
+  for (let i = 1; i <= 50; i += 1) {
+    const s = await cdp.ev(toScreen(300 + i * 10, 600));
+    await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: s.x, y: s.y, button: 'left', buttons: 1 });
+    /* 画到一半，别人在板子上添了一笔（下一趟轮询就会拿到它） */
+    if (i === 10) extra.push(injected);
+    await sleep(100);
+  }
+  const stDuring = await cdp.ev(statsOf);
+  const remotePixDuring = await cdp.ev(pixelAt(1700, 600));
+  const slowEnd = await cdp.ev(toScreen(800, 600));
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: slowEnd.x, y: slowEnd.y, button: 'left', clickCount: 1, buttons: 0 });
+  await sleep(1600);
+  const stStats1 = await cdp.ev(statsOf);
+  const remotePixAfter = await cdp.ev(pixelAt(1700, 600));
+  check('★ 画的过程中轮询确实跑过、而且被推迟了（deferred 计数涨了 —— 这是"推迟"的直接证据）',
+    stDuring.deferred > stStats0.deferred, JSON.stringify({ before: stStats0.deferred, during: stDuring.deferred }));
+  check('★ 画的过程中注入远端笔划 → 一次全量重建都没有（rebuilds 不变）',
+    stDuring.rebuilds === stStats0.rebuilds, JSON.stringify({ before: stStats0.rebuilds, during: stDuring.rebuilds }));
+  check('★ 画的过程中远端那一笔也不许画上来（推迟到抬笔之后）',
+    remotePixDuring === PAPER, remotePixDuring);
+  check('★ 抬笔之后远端那一笔出现了，而且依旧是**增量**画进缓存的（rebuilds 还是没变）',
+    remotePixAfter === '#ff9f1c' && stStats1.rebuilds === stStats0.rebuilds,
+    JSON.stringify({ pix: remotePixAfter, rebuilds: stStats1.rebuilds }));
+  check('增量计数确实在涨（"只多描一条线"，不是把整块板重画一遍）',
+    stStats1.incremental > stStats0.incremental,
+    JSON.stringify({ before: stStats0.incremental, after: stStats1.incremental }));
+  info(`缓存全量重建共 ${stStats1.rebuilds} 次，最后一次 ${stStats1.lastRebuildMs.toFixed(1)} ms，累计 ${stStats1.rebuildMs.toFixed(1)} ms；增量描线 ${stStats1.incremental} 次`);
+
+  /* ---- 8. pointer capture 不生效 + 拖到画布外面：这一笔也不能丢 ---- */
+  await cdp.ev(`(() => { const c = document.querySelector('[data-lt-canvas]'); c.setPointerCapture = () => { throw new Error('这个环境不支持 pointer capture'); }; return true; })()`);
+  await pickTool('pen');
+  await useSwatch('#b5179e');
+  await setSizeNum(8);
+  const nCapture = seen.add.length;
+  await showCanvas();
+  const canvasBottom = await cdp.ev(`Math.round(document.querySelector('[data-lt-canvas]').getBoundingClientRect().bottom)`);
+  const outsideY = (pad) => Math.min(canvasBottom + pad, 985);
+  const capStart = await cdp.ev(toScreen(400, 400));
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: capStart.x, y: capStart.y, button: 'left', clickCount: 1, buttons: 1 });
+  for (let i = 1; i <= 8; i += 1) {
+    const s = await cdp.ev(toScreen(400 + i * 60, 400));
+    const y = i <= 4 ? s.y : outsideY(30 + i * 5);
+    await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: s.x, y, button: 'left', buttons: 1 });
+    await sleep(35);
+  }
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: capStart.x + 480, y: outsideY(70), button: 'left', clickCount: 1, buttons: 0 });
+  await sleep(800);
+  const capStroke = seen.add[seen.add.length - 1];
+  check('★ capture 不生效、指针还拖到画布外面松手：这一笔照样跟手、照样提交（老版本这一笔直接丢）',
+    seen.add.length === nCapture + 1 && (capStroke?.points?.length ?? 0) >= 7,
+    JSON.stringify({ added: seen.add.length - nCapture, pts: capStroke?.points?.length ?? 0 }));
+
+  /*
+    ---- 9. 引擎重挂之后不许"一笔提交两次" ----
+    页面在账号状态反复变化时会 stop() 再 mountBoard()。老版本的 stop() 只停了轮询，
+    上一份引擎的监听还挂在画布上 → 画一笔会提交两次（这是改这一块时读代码发现的）。
+    这里用页面自己的 lt-account 事件把它复现一遍：先退回访客（挂着的引擎被 stop），
+    再过审（挂第二份引擎），然后画一笔 —— 只准有一次 LT_DRAW_ADD。
+  */
+  const beforeRemount = seen.add.length;
+  await cdp.ev(`document.dispatchEvent(new CustomEvent('lt-account', { detail: { state: 'guest', user: null, fake: false } }))`);
+  await sleep(400);
+  await cdp.ev(`document.dispatchEvent(new CustomEvent('lt-account', { detail: { state: 'approved', user: { nick: '测试者', alias: '测试者', status: 'approved' }, fake: false } }))`);
+  const remounted = await waitBoard();
+  await pickTool('pen');
+  await useSwatch('#2ec4b6');
+  await setSizeNum(10);
+  await drawOn([[2000, 1100], [2080, 1100], [2160, 1100]]);
+  check('★ 引擎重挂之后画一笔只提交一次（stop() 把旧监听一起摘掉了）',
+    remounted === true && seen.add.length === beforeRemount + 1, `${seen.add.length - beforeRemount} 次提交`);
+
+  check('新增这一整段没有未捕获的 JS 异常', cdp.errors.length === errBefore, cdp.errors.slice(errBefore, errBefore + 2).join(' | '));
 
   /* 截图留一张（人眼看） */
   try {

@@ -210,5 +210,33 @@ try {
   }
 }
 
+
+/* ---- 2026-10-10 这一批的新接口：先看部署了没，再逐个走一遍 ---- */
+const needDeploy = await call({ event: 'LT_ME', ltToken: 'garbage.token' });
+check('★ 线上已经是新代码（坏令牌回 401；回 1000 就说明函数还没部署）', Number(needDeploy.code) === 401, `code=${needDeploy.code}`);
+if (Number(needDeploy.code) === 401 && token) {
+  const before = await call({ event: 'LT_ME', ltToken: token });
+  const wasAlias = String(before.user?.alias ?? '');
+  const renamed = await call({ event: 'LT_PROFILE_SET', ltToken: token, alias: '验收测试' });
+  check('★ 线上能改昵称（LT_PROFILE_SET）', renamed.code === 0 && renamed.user?.alias === '验收测试', String(renamed.user?.alias ?? renamed.message ?? '').slice(0, 40));
+  const meNow = await call({ event: 'LT_ME', ltToken: token });
+  check('改完再问一次，昵称确实是新的（不是只回了个 ok）', meNow.user?.alias === '验收测试', String(meNow.user?.alias ?? ''));
+  check('用户名没被改（nick 还是原来那个）', meNow.user?.nick === before.user?.nick, `${before.user?.nick} → ${meNow.user?.nick}`);
+  const prefs = await call({ event: 'LT_PREFS_SET', ltToken: token, prefs: { palette: ['#ff4d6d', '#FF4D6D', '乱写的'], penSize: 12, eraserSize: 8, 无关字段: 1 } });
+  check('★ 线上能存画板偏好：颜色去重、杂字段被丢',
+    prefs.code === 0 && prefs.prefs?.palette?.length === 1 && prefs.prefs?.penSize === 12 && !('无关字段' in (prefs.prefs ?? {})),
+    JSON.stringify(prefs.prefs ?? prefs.message));
+  const meWithPrefs = await call({ event: 'LT_ME', ltToken: token });
+  check('偏好跟着账号回来（换设备也在）', meWithPrefs.user?.prefs?.penSize === 12, JSON.stringify(meWithPrefs.user?.prefs ?? {}));
+  const peek = await call({ event: 'LT_USER_GET', id: meWithPrefs.user?.id, ltToken: token });
+  check('★ 线上能看某个人的公开资料（LT_USER_GET，看自己带 me:true）', peek.code === 0 && peek.me === true, String(peek.message ?? '').slice(0, 40));
+  const peekOther = await call({ event: 'LT_USER_GET', id: '不存在的id' });
+  check('看不存在的 id → 被拒', peekOther.code !== 0, String(peekOther.message ?? '').slice(0, 30));
+  /* 收尾：昵称改回原来的，别在站上留「验收测试」这种痕迹 */
+  if (wasAlias) {
+    const back = await call({ event: 'LT_PROFILE_SET', ltToken: token, alias: wasAlias });
+    info(`（收尾：昵称已改回 ${wasAlias}）` + (back.code === 0 ? '' : ' ⚠ 没改回去，手动改一下'));
+  }
+}
 console.log(`\n==== ${pass} passed, ${fail} failed ====`);
 process.exit(fail ? 1 : 0);
