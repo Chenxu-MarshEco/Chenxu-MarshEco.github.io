@@ -1,0 +1,147 @@
+---
+/**
+ * 聊天室的一天 —— `/liyutang/chatroom/<日>/`（存档日页）· 2026-10-09
+ *
+ * 用户原话：「每天保存一次聊天记录　侧边栏套用花涧堂的时间轴系统　可以点击时间轴
+ * 跳转到当日聊天记录　也可以搜索历史聊天记录……**需要所有用户都能搜索**」。
+ * 这一页就是「翻旧账」那条路的落点：那一天说过的话，一条一条摆出来。
+ *
+ * 几个刻意的决定：
+ *   · **整页服务端渲染**，一条消息都不靠 JS：静态站上不需要登录、不需要联网、
+ *     搜索引擎和读屏软件都读得到（这也是「所有用户都能搜索」这句话能成立的前提 ——
+ *     搜索页跳过来的 `…#<消息 id>` 必须落在一个已经存在的元素上）。
+ *   · 页面上的东西**只有两样是活的**：左栏那条时间轴（组件自己的脚本）和链接。
+ *   · 数据只读 `src/data/chat/<日>.json`（机器写的，见 utils/chat-archive.ts），
+ *     这里不碰云端、不碰 `_readme`，也不写回任何文件。
+ *   · 路径由 `src/data/chat/index.json` 生成：**一个存档都没有时一条路径都不生成**，
+ *     构建照常通过（那天这一页压根不存在，而不是构建报错）。
+ */
+import ForumLayout from '../../../layouts/ForumLayout.astro';
+import LiyutangChatRail from '../../../components/LiyutangChatRail.astro';
+import {
+  chatApex,
+  chatArchive,
+  chatClock,
+  chatDays,
+  chatSearchUrl,
+  chatTimeline,
+  chatTodayUrl,
+} from '../../../utils/chat-archive';
+import { withBase } from '../../../utils/url';
+
+/**
+ * 有存档的日子才生成页面。
+ * `chatDays()` 只给「索引里写了、而且那天的文件真在」的天（见 utils/chat-archive.ts），
+ * 所以这里不会出现「生成了一半、点进去 500」的页面。
+ */
+export function getStaticPaths() {
+  return chatDays().map((d) => ({ params: { day: d.day }, props: { day: d.day } }));
+}
+
+const { day } = Astro.props as { day: string };
+/* 按上面的规矩这里一定有；真没有（有人手删了文件）也只是这一天没有消息，不该让整站构建挂掉 */
+const archive = chatArchive(day);
+const messages = archive?.messages ?? [];
+const images = archive?.images ?? 0;
+
+const tl = chatTimeline();
+/* 一进这一页，弧顶就停在看的这一天（而不是停在今天），左边那栏才对得上右边在看什么 */
+const apex = chatApex(tl, day);
+const home = withBase('/liyutang/');
+const today = chatTodayUrl();
+const search = chatSearchUrl();
+---
+
+<ForumLayout
+  title={`聊天室 · ${day}`}
+  description={`黎语堂聊天室 ${day} 那一天的存档：${messages.length} 条消息、${images} 张图，一条一条都在这儿。`}
+  noindex
+>
+  <div class="lyt-page">
+    <p class="lyt-crumb">
+      <a href={home}>← 黎语堂</a>
+    </p>
+    <h1 class="lyt-title">聊天室 · {day}</h1>
+    <p class="lyt-lead">
+      那一天说过的话，原样留在这儿 —— 不用登录也能翻。左边那条日子轴点一下就换一天，
+      想找某句话就去<a href={search}>搜索历史</a>。
+    </p>
+
+    <div class="lyt-chat">
+      {/*
+        左栏和今天那一页、搜索页是同一栏（同一个组件）：搜索框 + 日子轴。
+        data-lyt-chat-days 三页都挂着 —— 它就是「日子那一列」这个位置的记号。
+      */}
+      <aside class="lyt-chat__side lyt-chat__side--tl" data-lyt-chat-days>
+        <LiyutangChatRail tl={tl} apex={apex} />
+      </aside>
+
+      <div class="lyt-chat__main">
+        {/*
+          说明那一行放在这里（原来输入区的位置）：这是哪一天的存档、一共多少条多少图，
+          再给一条回今天的路。数字一律从文件里来，不写死。
+        */}
+        <p class="lyt-chat__note" data-lyt-archive-note>
+          这是 <b>{day}</b> 的存档（共 {messages.length} 条 / {images} 张图）。
+          <a href={today}>回到今天的聊天室 ›</a>
+        </p>
+
+        {/*
+          消息流：**静态渲染**，不进内层滚动框（.lyt-chat__log--archive 把 max-height 放开），
+          这样整页跟着浏览器一起滚、深链接和 Ctrl+F 都是正常的。
+        */}
+        <div class="lyt-chat__log lyt-chat__log--archive" data-lyt-archive>
+          {
+            messages.length === 0 && <p class="lyt-empty">这一天没有留下消息。</p>
+          }
+          {
+            messages.map((m) => (
+              /*
+                ⚠ `data-nomem`：整条**跳过站点那个「成员名自动链接」的后处理**
+                （tools/memlink）。它会往正文里的名字上插一张悬停名片 —— 卡片里
+                把名字又写了一遍，于是这一条的 textContent 变成「虹星虹星…」、
+                复制一句话会把名片里的字一起带走、Ctrl+F 也会多命中一处。
+                存档是**原话**：聊天室的实时消息（客户端渲染）本来就没有名片，
+                这两边得长得一样，所以这里明确不要它。哪天想让聊天记录里也能点名字，
+                把这个属性去掉就行（那是这一条唯一的开关）。
+              */
+              <div class="lyt-msg" id={m.id} data-deleted={m.deleted ? '1' : undefined} data-nomem>
+                {/*
+                  头像：有图就用图，没有就用昵称首字 —— 和聊天室里那一条（.lt-avatar）一模一样，
+                  免得同一句话在两个地方长得不一样。
+                */}
+                <span class="lt-avatar" aria-hidden="true">
+                  {m.avatar ? (
+                    <img class="lt-avatar__img" src={m.avatar} alt="" loading="lazy" decoding="async" />
+                  ) : (
+                    (m.nick || '?').slice(0, 1).toUpperCase()
+                  )}
+                </span>
+                <div class="lyt-msg__body">
+                  <div class="lyt-msg__head">
+                    <span class="lyt-msg__nick">{m.nick}</span>
+                    {/* 时刻按北京时间印（和「哪一天」同一把尺子，见 chatClock 的注释） */}
+                    <time class="lyt-msg__time" datetime={new Date(m.createdAt).toISOString()}>
+                      {chatClock(m.createdAt)}
+                    </time>
+                  </div>
+                  {/*
+                    正文只走 {m.text}（Astro 这里就是 textContent）：用户可能打尖括号，
+                    一旦拼 HTML 就会变成标签 —— 这条规矩在聊天室那边也写着。
+                  */}
+                  {(m.text || m.deleted) && (
+                    <div class="lyt-msg__text">
+                      {m.text}
+                      {m.deleted && <span class="lyt-msg__gone">（撤回了）</span>}
+                    </div>
+                  )}
+                  {m.image && <img class="lyt-msg__pic" src={m.image} alt="" loading="lazy" decoding="async" />}
+                </div>
+              </div>
+            ))
+          }
+        </div>
+      </div>
+    </div>
+  </div>
+</ForumLayout>

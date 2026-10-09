@@ -165,9 +165,80 @@ const cases = [
     args: { actor: 'SSWTLZZ69', event: 'push', files: ['src/data/recent-edits.json'] },
     allow: true,
   },
+  /* ---- 聊天室每日存档（2026-10-09 加）：机器写的几个死格式路径放行 ---- */
   {
-    name: '一个谁都不是的账号碰首页版块数据（home-boards.json）→ **拦住**',
-    args: { actor: 'random-guest', event: 'push', files: ['src/data/home-boards.json'] },
+    name: '★ 每日存档提交：某一天的记录 → 放行（机器写的死格式）',
+    args: { actor: 'random-guest', event: 'push', files: ['src/data/chat/2026-10-08.json'] },
+    allow: true,
+  },
+  {
+    name: '★ 每日存档提交：索引 + 那天的图 + 头像一起 → 放行',
+    args: {
+      actor: 'random-guest',
+      event: 'push',
+      files: [
+        'src/data/chat/index.json',
+        'public/img/chat/2026-10-08/ab12cd34ef56.webp',
+        'public/img/chat/avatars/av-1c4fb4a0.png',
+      ],
+    },
+    allow: true,
+  },
+  {
+    name: '★ 存档目录里塞一个**不是日期**的 JSON（想混进来）→ 拦住',
+    args: { actor: 'random-guest', event: 'push', files: ['src/data/chat/随便写的.json'] },
+    allow: false,
+    badIncludes: 'src/data/chat/随便写的.json',
+  },
+  {
+    name: '★ 借着存档的名义改站点页面 → 拦住（同一次推送里只要有一个越界就整次都拦）',
+    args: {
+      actor: 'random-guest',
+      event: 'push',
+      files: ['src/data/chat/2026-10-08.json', 'src/pages/liyutang/chatroom.astro'],
+    },
+    allow: false,
+    badIncludes: 'src/pages/liyutang/chatroom.astro',
+  },
+  /* ---- 画板每日存档（2026-10-09 晚上补）：和聊天室一个工作流搬，形状不一样 ---- */
+  {
+    name: '★ 画板存档：那天的笔划 + 索引 → 放行',
+    args: {
+      actor: 'random-guest',
+      event: 'push',
+      files: ['src/data/draw/2026-10-08.json', 'src/data/draw/index.json'],
+    },
+    allow: true,
+  },
+  {
+    name: '★ 画板存档：那天画完的样子（脚本渲染的 SVG）→ 放行',
+    args: { actor: 'random-guest', event: 'push', files: ['public/img/draw/2026-10-08.svg'] },
+    allow: true,
+  },
+  {
+    name: '★ 画板存档目录里塞一个不是日期的文件名 → 拦住',
+    args: { actor: 'random-guest', event: 'push', files: ['src/data/draw/我自己写的.json'] },
+    allow: false,
+    badIncludes: 'src/data/draw/我自己写的.json',
+  },
+  {
+    name: '★ 画板存档目录里塞一个外来的 SVG（名字不是日期）→ 拦住',
+    args: { actor: 'random-guest', event: 'push', files: ['public/img/draw/evil.svg'] },
+    allow: false,
+    badIncludes: 'public/img/draw/evil.svg',
+  },
+  {
+    name: '★ 借着画板存档的名义改页面 → 拦住',
+    args: {
+      actor: 'random-guest',
+      event: 'push',
+      files: ['public/img/draw/2026-10-08.svg', 'src/pages/liyutang/teahouse.astro'],
+    },
+    allow: false,
+    badIncludes: 'src/pages/liyutang/teahouse.astro',
+  },
+  {
+    name: '一个谁都不是的账号碰首页版块数据（home-boards.json）→ **拦住**',    args: { actor: 'random-guest', event: 'push', files: ['src/data/home-boards.json'] },
     allow: false,
     badIncludes: 'src/data/home-boards.json',
   },

@@ -1,0 +1,175 @@
+---
+/**
+ * 久昭卿茶绘 —— /liyutang/teahouse/（2026-10-09 建壳，当天接上画板）
+ *
+ * 用户原话：
+ *   「右侧大板块：久昭卿茶绘　这个功能比较复杂 你可能需要参考一些在线绘画网站！
+ *     点进去以后是一个巨大的公共画板 有基本的画笔橡皮调色板等功能 所有注册后通过审核的
+ *     用户都可以在上面画画 并且有一个折叠栏可以打开今天所有画过画的用户列表
+ *     点击其他用户头像可以开关是否显示由他们画的笔划 每天保存一次画 也是一样走不要消耗
+ *     腾讯云额度的方法保存 但是其他用户以后也可以点开一个日历页面 查看每一天的画板上
+ *     都画了什么 最好参考一下网上比较成熟的在线画画网页 让画画的手感可以比较舒服丝滑」
+ *
+ * 这一页现在长成什么样、怎么分工：
+ *   · **画板**：一块固定 2400×1500 的画布（屏幕上按容器等比缩放，坐标跟屏幕无关），
+ *     矢量笔划（一笔一个点集），画布和存档 SVG 用**同一份平滑几何**
+ *     （src/utils/liyutang-strokes.mjs）—— 手感与"存档长得一样"是同一件事；
+ *   · **引擎**在 src/utils/liyutang-draw.ts 里（工具条、输入、两层画布、轮询、逐人显隐），
+ *     这一页只负责摆控件 + 按账号状态开闸；
+ *   · **当天**的笔划住在云端的 lt_draw 里（活的：谁都能看见刚画的）；
+ *   · **过完这一天**由 .github/workflows/chat-archive.yml 搬进仓库
+ *     （src/data/draw/<日>.json + public/img/draw/<日>.svg），搬完把云端那天的笔划删掉 ——
+ *     所以"日历里翻旧画"是**纯静态**的，不碰腾讯云额度。
+ */
+import ForumLayout from '../../layouts/ForumLayout.astro';
+import LiyutangAccount from '../../components/LiyutangAccount.astro';
+import { forum } from '../../utils/liyutang';
+import { withBase } from '../../utils/url';
+
+const api = forum().twikoo.envId;
+const home = withBase('/liyutang/');
+---
+
+<ForumLayout
+  title="久昭卿茶绘"
+  description="黎语堂的公共画板：谁都能添两笔，每天存档，日历里能翻回任何一天。"
+  noindex
+>
+  <div class="lyt-page">
+    <p class="lyt-crumb">
+      <a href={home}>← 黎语堂</a>
+      <span aria-hidden="true"> · </span>
+      <a href={withBase('/liyutang/teahouse/calendar/')}>画过的日子 ›</a>
+    </p>
+    <h1 class="lyt-title">久昭卿茶绘</h1>
+    <p class="lyt-lead">
+      一块大家共用的画板。画笔、橡皮、调色板都在，谁都能添两笔；每天存档，日历里能翻回任何一天看当时画成了什么样。
+    </p>
+
+    <LiyutangAccount />
+
+    <p class="lyt-form__msg" data-lt-draw-gate>正在看登录状态…</p>
+
+    <div class="lyt-draw">
+      <div class="lyt-draw__bar">
+        <button class="lyt-bar__btn" type="button" data-lt-tool="pen" disabled>画笔</button>
+        <button class="lyt-bar__btn" type="button" data-lt-tool="eraser" disabled>橡皮</button>
+        <button class="lyt-bar__btn" type="button" data-lt-tool="pan" disabled title="拖着看：也可以按住空格、或者用鼠标中键">抓手</button>
+        <span class="lyt-draw__swatches" data-lt-swatches aria-label="调色板"></span>
+        <label class="lyt-draw__mini">
+          别的颜色
+          <input type="color" value="#1d1430" data-lt-color disabled />
+        </label>
+        <label class="lyt-draw__mini">
+          粗细
+          <input type="range" min="1" max="48" value="6" data-lt-size disabled />
+        </label>
+        <button class="lyt-bar__btn" type="button" data-lt-undo disabled>撤销</button>
+        <button class="lyt-bar__btn" type="button" data-lt-reset disabled title="缩放回 1×、回到左上角">全览</button>
+        <span class="lyt-draw__zoom" data-lt-zoom title="滚轮（或触控板）在画布上缩放">1.0×</span>
+        <span class="lyt-form__msg" data-lt-draw-status></span>
+      </div>
+
+      <p class="lyt-form__hint">
+        滚轮在画布上缩放（1×~4×）：光标底下那一点会被钉住不动；按住空格、或者用「抓手」/鼠标中键拖动看别处。
+        <b>手机上用两根手指</b>捏合缩放、拖着平移（手机没有滚轮）。
+      </p>
+
+      <div class="lyt-draw__stage">
+        <canvas class="lyt-draw__canvas" width="2400" height="1500" data-lt-canvas></canvas>
+      </div>
+
+      <details class="lyt-draw__who" data-lt-draw-who open>
+        <summary>今天画过画的人（点一下就先不看他的）</summary>
+        <div class="lyt-draw__faces" data-lt-draw-faces>
+          <p class="lyt-form__hint">还没有人动笔 —— 你可以先画两笔。</p>
+        </div>
+      </details>
+    </div>
+
+    {
+      api && (
+        <script>
+          /*
+            闸门 + 引擎接线。
+            闸门：没登录 / 没过审 → 工具条和画布都锁上并说明原因（服务端还会再验一次，绕不过去）。
+            引擎：过审之后 mountBoard() 接管 —— 画笔/橡皮/调色板/粗细/撤销、本地先画、
+            每 3 秒问一次别人画了什么、还有「今天画过画的人」那张表（点人头像 = 先不看他的）。
+          */
+          import { mountBoard, type BoardHandle } from '../../utils/liyutang-draw';
+          import { type LtUser } from '../../utils/liyutang-client';
+
+          const apiUrl = document.querySelector('[data-lt-account]')?.getAttribute('data-api') || '';
+          const gate = document.querySelector('[data-lt-draw-gate]') as HTMLElement;
+          const canvas = document.querySelector('[data-lt-canvas]') as HTMLCanvasElement;
+          const status = document.querySelector('[data-lt-draw-status]') as HTMLElement;
+          const faces = document.querySelector('[data-lt-draw-faces]') as HTMLElement;
+          const pen = document.querySelector('[data-lt-tool="pen"]') as HTMLButtonElement;
+          const eraser = document.querySelector('[data-lt-tool="eraser"]') as HTMLButtonElement;
+          const pan = document.querySelector('[data-lt-tool="pan"]') as HTMLButtonElement;
+          const swatches = document.querySelector('[data-lt-swatches]') as HTMLElement;
+          const colorInput = document.querySelector('[data-lt-color]') as HTMLInputElement;
+          const sizeInput = document.querySelector('[data-lt-size]') as HTMLInputElement;
+          const undo = document.querySelector('[data-lt-undo]') as HTMLButtonElement;
+          const reset = document.querySelector('[data-lt-reset]') as HTMLButtonElement;
+          const zoomText = document.querySelector('[data-lt-zoom]') as HTMLElement;
+          /** 开闸之后要解开的那些控件 */
+          const controls = [pen, eraser, pan, colorInput, sizeInput, undo, reset];
+          let board: BoardHandle | null = null;
+
+          const lock = (on: boolean) => {
+            for (const c of controls) c.disabled = on;
+            canvas.style.pointerEvents = on ? 'none' : '';
+            canvas.style.opacity = on ? '0.55' : '1';
+          };
+          lock(true);
+
+          const apply = (state: string, user: LtUser | null, fake: boolean) => {
+            const ok = !fake && !!user && state === 'approved';
+            lock(!ok);
+            if (ok && user) {
+              gate.textContent = `你以 ${user.nick} 的身份在这块板上画。`;
+              /* 只挂一次（状态反复变化不该挂出第二个轮询） */
+              if (!board && apiUrl) {
+                board = mountBoard({
+                  api: apiUrl,
+                  canvas,
+                  faces,
+                  status,
+                  pen,
+                  eraser,
+                  pan,
+                  reset,
+                  swatches,
+                  colorInput,
+                  sizeInput,
+                  undo,
+                  /* 缩放读数：画布上滚轮一动就更新 */
+                  onView: (scale: number) => {
+                    zoomText.textContent = scale.toFixed(1) + '×';
+                  },
+                });
+              }
+              return;
+            }
+            board?.stop();
+            board = null;
+            gate.textContent =
+              state === 'pending'
+                ? '账号还在等站长审核 —— 通过之后就能上来画了。'
+                : '要登录才能画画（注册之后等站长过审）。';
+            status.textContent = '';
+          };
+
+          document.addEventListener('lt-account', (ev) => {
+            const d = (ev as CustomEvent).detail as { state?: string; user?: LtUser | null; fake?: boolean };
+            apply(String(d?.state ?? ''), d?.user ?? null, !!d?.fake);
+          });
+          const early = (window as unknown as { __ltState?: { state?: string; user?: LtUser | null; fake?: boolean } })
+            .__ltState;
+          if (early?.state) apply(early.state, early.user ?? null, !!early.fake);
+        </script>
+      )
+    }
+  </div>
+</ForumLayout>

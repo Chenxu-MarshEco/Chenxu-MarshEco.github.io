@@ -71,6 +71,10 @@ if (!API) {
 
 let token = '';
 let postId = '';
+/** 聊天室那条测试消息（撤不干净的话收尾要再撤一次） */
+let chatId = '';
+/** 画板上那一笔测试（撤不干净的话收尾要再撤一次） */
+let drawId = '';
 
 try {
   const ver = await call({ event: 'GET_FUNC_VERSION' });
@@ -128,19 +132,80 @@ try {
   const gone = await call({ event: 'LT_POST_GET', id: postId });
   check('删完就真没了', gone.code !== 0, String(gone.message ?? '').slice(0, 40));
   postId = '';
+
+  /* ---- 聊天室：发一条 → 列表里看得到 → 撤回（同样不留垃圾） ---- */
+  const heard = await call({ event: 'LT_CHAT_LIST', ltToken: token });
+  check('★ 线上聊天室读得到（LT_CHAT_LIST，读也要过审）', heard.code === 0, String(heard.message ?? '').slice(0, 60));
+  const say = await call({ event: 'LT_CHAT_SEND', ltToken: token, text: '连通性测试（会自动撤回）' });
+  check('★ 线上聊天室发得出去（LT_CHAT_SEND）', say.code === 0 && !!say.message?.id, String(say.message?.id ?? say.message ?? '').slice(0, 60));
+  if (say.code === 0) {
+    chatId = String(say.message.id);
+    check('消息带着"哪一天"（存档按它切）', /^\d{4}-\d{2}-\d{2}$/.test(String(say.message.day)), String(say.message.day));
+    const again = await call({ event: 'LT_CHAT_LIST', ltToken: token });
+    check('★ 刚发的那条在列表里', again.code === 0 && (again.messages ?? []).some((m) => m.id === chatId));
+    const away = await call({ event: 'LT_CHAT_DELETE', ltToken: token, id: chatId });
+    check('★ 测试消息撤得掉（不留垃圾）', away.code === 0, String(away.message ?? '').slice(0, 50));
+    const after = await call({ event: 'LT_CHAT_LIST', ltToken: token });
+    check('撤回之后列表里没有了', !(after.messages ?? []).some((m) => m.id === chatId));
+    chatId = '';
+  }
+  check('没登录读聊天室 → 被拒（会员聊天室）', (await call({ event: 'LT_CHAT_LIST' })).code !== 0);
+
+  /* ---- 画板：画一笔 → 列表里看得到 → 撤掉（同样不留垃圾） ---- */
+  const board = await call({ event: 'LT_DRAW_LIST', ltToken: token });
+  check('★ 线上画板拉得到（LT_DRAW_LIST，过审才进得来）', board.code === 0, String(board.message ?? '').slice(0, 60));
+  if (board.code === 0) {
+    const drew = await call({
+      event: 'LT_DRAW_ADD',
+      ltToken: token,
+      tool: 'pen',
+      color: '#1d1430',
+      size: 6,
+      points: [[100, 100], [160, 140], [220, 120]],
+    });
+    check('★ 线上画板上画得出一笔（LT_DRAW_ADD）', drew.code === 0 && !!drew.stroke?.id, String(drew.stroke?.id ?? drew.message ?? '').slice(0, 50));
+    if (drew.code === 0) {
+      drawId = String(drew.stroke.id);
+      check('笔划带着 uk（账号短哈希，不泄露账号 id）', /^[0-9a-f]{8}$/.test(String(drew.stroke.uk)), String(drew.stroke.uk));
+      const after = await call({ event: 'LT_DRAW_LIST', ltToken: token, after: Number(drew.stroke.createdAt) - 1 });
+      check('★ 刚画的那一笔在列表里', after.code === 0 && (after.strokes ?? []).some((s) => s.id === drawId));
+      const away = await call({ event: 'LT_DRAW_DELETE', ltToken: token, id: drawId });
+      check('★ 测试那一笔撤得掉（不留垃圾）', away.code === 0, String(away.message ?? '').slice(0, 50));
+      drawId = '';
+    }
+  }
+  check('没登录读画板 → 被拒（会员画板）', (await call({ event: 'LT_DRAW_LIST' })).code !== 0);
+  check('站长密码不对 → 取不到某天的笔划（存档那两个事件的闸门）',
+    (await call({ event: 'LT_ADMIN_DRAW_DAY', password: '乱猜的', day: '2026-10-09' })).code !== 0);
 } catch (err) {
   if (String(err?.message) !== 'stop') {
     fail++;
     console.log('FAIL  线上这一段异常：' + String(err?.message ?? err));
   }
 } finally {
-  /* 出了意外也要把测试帖删掉 */
+  /* 出了意外也要把测试帖和测试消息清掉 */
   if (postId && token) {
     try {
       await call({ event: 'LT_POST_DELETE', ltToken: token, id: postId });
       info('（收尾时把没删干净的测试帖删掉了）');
     } catch {
       info(`⚠ 测试帖 ${postId} 没删掉，去「黎语堂管理 → 帖子」里手动删一下`);
+    }
+  }
+  if (drawId && token) {
+    try {
+      await call({ event: 'LT_DRAW_DELETE', ltToken: token, id: drawId });
+      info('（收尾时把画板上那笔测试撤掉了）');
+    } catch {
+      info(`⚠ 画板上那一笔（${drawId}）没撤掉，手动撤一下`);
+    }
+  }
+  if (chatId && token) {
+    try {
+      await call({ event: 'LT_CHAT_DELETE', ltToken: token, id: chatId });
+      info('（收尾时把没撤干净的测试消息撤掉了）');
+    } catch {
+      info(`⚠ 聊天室里那条测试消息（${chatId}）没撤掉，手动撤一下`);
     }
   }
 }

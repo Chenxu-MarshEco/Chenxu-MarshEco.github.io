@@ -1,0 +1,311 @@
+---
+/**
+ * 聊天室历史搜索 —— `/liyutang/chatroom/search/` · 2026-10-09
+ *
+ * 用户原话：「也可以搜索历史聊天记录 …… 但是**需要所有用户都能搜索**」。
+ *
+ * 这一页就是那句话的落点，做法是静态站唯一走得通的那条：
+ *   · 构建期把存档摊成一份公开的小索引 `/chat-search.json`（见 src/pages/chat-search.json.ts）；
+ *   · 页面把它拉下来，**在浏览器里**过滤 —— 没有后端、不用登录、不碰云端，
+ *     谁也不花谁一分额度，匿名访客和站长搜到的是同一份东西。
+ *
+ * 几条规矩：
+ *   · 多词按 **AND**（每个词都要命中），大小写不敏感；结果新的在前（日期倒序）；
+ *   · 每条结果链到 `/liyutang/chatroom/<日>/#<消息 id>` —— 存档页上那条消息的 id
+ *     就是它自己的 id，所以点进去就落在那句话上；
+ *   · 用户正文一律**先转义、再插高亮标记**（见脚本里 mark 那段，顺序反了就是注入）；
+ *   · 从地址栏带 `?q=…` 进来就直接搜（左栏那个搜索框、以及别处分享的链接都走这条路）。
+ */
+import ForumLayout from '../../../layouts/ForumLayout.astro';
+import LiyutangChatRail from '../../../components/LiyutangChatRail.astro';
+import { chatApex, chatDays, chatTimeline } from '../../../utils/chat-archive';
+import { withBase } from '../../../utils/url';
+
+const tl = chatTimeline();
+const apex = chatApex(tl);
+const home = withBase('/liyutang/');
+const today = withBase('/liyutang/chatroom/');
+/* 已有存档的天数：只用来在标题下面写一句人话（真正有没有东西可搜，以索引文件为准） */
+const dayCount = chatDays().length;
+---
+
+<ForumLayout
+  title="聊天室 · 搜历史"
+  description="搜黎语堂聊天室的历史记录：关键词在浏览器里过滤，不用登录，搜索不花云端额度。"
+  noindex
+>
+  <div class="lyt-page">
+    <p class="lyt-crumb">
+      <a href={home}>← 黎语堂</a>
+    </p>
+    <h1 class="lyt-title">搜历史消息</h1>
+    <p class="lyt-lead">
+      翻一翻聊天室过去说过的话。打几个字就行，多个词用空格隔开（<b>每个词都要命中</b>），
+      结果按日子从新到旧排。索引是站点自己的静态文件、过滤在你自己的浏览器里 ——
+      <b>不用登录</b>，也不花云端额度。
+      {dayCount > 0 ? `现在存着 ${dayCount} 天的记录。` : ''}
+      想看今天在聊什么，<a href={today}>回聊天室</a>。
+    </p>
+
+    <div class="lyt-chat">
+      {/*
+        左栏和聊天室那两页是同一条轴；只有搜索框不重复放（search={false}）——
+        这一页右栏顶上那个大输入框就是搜索框，左边再来一个会让人不知道该打哪个。
+        is-nofind 是给样式的：没有搜索框，轴就不用给它让出那一行的高度了。
+      */}
+      <aside class="lyt-chat__side lyt-chat__side--tl is-nofind" data-lyt-chat-days>
+        <LiyutangChatRail tl={tl} apex={apex} search={false} />
+      </aside>
+
+      <div class="lyt-chat__main">
+        <div class="lyt-search">
+          <input
+            id="lyt-chat-q"
+            class="lyt-search__input"
+            type="search"
+            placeholder="打几个字，翻一翻过去说过什么…（按 / 聚焦）"
+            aria-label="搜索聊天室的历史记录"
+            autocomplete="off"
+          />
+          <span id="lyt-chat-hit" class="lyt-search__hit" aria-live="polite"></span>
+        </div>
+
+        {/* 状态那一句（正在翻 / 还没存档 / 没命中 / 空查询），结果列表在它下面 */}
+        <p class="lyt-form__hint" id="lyt-chat-tip" data-lyt-chat-tip>正在翻存档…</p>
+        <ul class="lyt-hits" id="lyt-chat-hits" data-lyt-chat-hits></ul>
+      </div>
+    </div>
+  </div>
+</ForumLayout>
+
+<script>
+  /*
+    静态站没有后端：索引是构建期生成的公开静态文件（/chat-search.json），
+    过滤全在浏览器本地。所以匿名访客也搜得了 —— 这正是用户要的那句「所有用户都能搜索」，
+    而且这条路不碰云端，一分额度都不花。
+  */
+  import { withBase } from '../../../utils/url';
+
+  /** 索引里的一条 */
+  type Hit = { d: string; id: string; nick: string; t: string };
+  /** 拉下来之后再补一个 lower（每个词都要在它上面找，预先把小写算好，敲字那一下就不用重算） */
+  type Item = Hit & { low: string };
+
+  const INDEX = withBase('/chat-search.json');
+  /*
+    一次最多画多少条。存档会一天天变长，一句「的」能命中几千条 ——
+    全画出来既没人看也拖慢页面，超过就提示"再打几个字缩小一点"。
+  */
+  const MAX_ROWS = 300;
+
+  const q = document.getElementById('lyt-chat-q') as HTMLInputElement | null;
+  const hit = document.getElementById('lyt-chat-hit');
+  const tip = document.getElementById('lyt-chat-tip');
+  const list = document.getElementById('lyt-chat-hits');
+
+  /** 状态那句人话 */
+  const say = (msg: string) => {
+    if (tip) tip.textContent = msg;
+  };
+
+  /** 查询词：小写、空白切开（多词是 AND，所以这里就是个数组） */
+  const termsOf = (s: string) => s.toLowerCase().split(/\s+/).filter(Boolean);
+
+  /** 转义。索引里的字和查询词**都要**过这一关 —— 它们是搜索页唯一会把字插进 DOM 的地方 */
+  const esc = (s: string) =>
+    s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+  /**
+   * 把命中的词包进 `<mark>`。
+   *
+   * ⚠ 顺序绝不能反：**先把整串字转义**，再把标记拼进那串已经转义好的字里。
+   * 反过来的话，正文里一个 `<img onerror=…>` 就会变成真的标签 —— 聊天内容是用户写的，
+   * 尖括号天天有。查询词本身只参与"找位置"，从来不进拼接。
+   *
+   * 命中区间先全部找出来、按位置合并好，最后一次性输出：一个词一个词地 replace，
+   * 两个挨着的词（或一个词是另一个的前缀）会套出嵌套的 `<mark>`，那串 HTML 就不合法了。
+   */
+  const mark = (text: string, terms: string[]): string => {
+    const low = text.toLowerCase();
+    const hits: Array<[number, number]> = [];
+    for (const t of terms) {
+      let from = 0;
+      let at = low.indexOf(t, from);
+      while (at >= 0) {
+        hits.push([at, at + t.length]);
+        from = at + t.length;
+        at = low.indexOf(t, from);
+      }
+    }
+    if (!hits.length) return esc(text);
+    hits.sort((a, b) => a[0] - b[0]);
+    let out = '';
+    let cur = 0;
+    for (const [a, b] of hits) {
+      if (a < cur) {
+        /* 和上一段重叠（同一个词连着出现两次、或两个词叠在一起）：并进去，别新开一个 mark */
+        if (b > cur) cur = b;
+        continue;
+      }
+      out += esc(text.slice(cur, a)) + '<mark>' + esc(text.slice(a, b)) + '</mark>';
+      cur = b;
+    }
+    return out + esc(text.slice(cur));
+  };
+
+  /** 命中位置前后各截一段（前 24 / 后 60 字，和站里搜索那一份取的数一样） */
+  const snippet = (text: string, terms: string[]): string => {
+    const low = text.toLowerCase();
+    let at = -1;
+    for (const t of terms) {
+      const i = low.indexOf(t);
+      if (i >= 0 && (at < 0 || i < at)) at = i;
+    }
+    if (at < 0) return esc(text.slice(0, 80).replace(/\s+/g, ' '));
+    const from = Math.max(0, at - 24);
+    const to = Math.min(text.length, at + 60);
+    /* 换行压成一个空格：结果卡是一行一行排的，原文里的空行会把卡片撑得老高 */
+    const body = text.slice(from, to).replace(/\s+/g, ' ');
+    return (from > 0 ? '…' : '') + mark(body, terms) + (to < text.length ? '…' : '');
+  };
+
+  /** 一条结果 */
+  const row = (it: Item, terms: string[]): HTMLLIElement => {
+    const li = document.createElement('li');
+    li.className = 'lyt-hit';
+
+    const link = document.createElement('a');
+    link.className = 'lyt-hit__link';
+    /* 深链接落到**那一条消息**上（存档页里每条消息的 id 就是它自己的 id） */
+    link.href = withBase(`/liyutang/chatroom/${it.d}/`) + '#' + encodeURIComponent(it.id);
+
+    const head = document.createElement('span');
+    head.className = 'lyt-hit__head';
+    const nick = document.createElement('b');
+    nick.className = 'lyt-hit__nick';
+    nick.textContent = it.nick; /* 用户写的名字：textContent */
+    const day = document.createElement('time');
+    day.className = 'lyt-hit__day';
+    day.textContent = it.d;
+    head.append(nick, day);
+
+    const text = document.createElement('span');
+    text.className = 'lyt-hit__text';
+    /*
+      整个页面**唯一**一处 innerHTML：内容是 snippet() 先转义好、只多出自己拼的
+      <mark> 标记的一串字（见上面 mark 的注释）。别处一律 createElement + textContent。
+    */
+    text.innerHTML = snippet(it.t, terms);
+
+    link.append(head, text);
+    li.append(link);
+    return li;
+  };
+
+  /** 索引拉回来了吗；`null` = 还在路上 */
+  let items: Item[] | null = null;
+  let failed = false;
+
+  const apply = () => {
+    if (!list || !hit) return;
+    const terms = termsOf(q?.value ?? '');
+    list.textContent = '';
+    hit.textContent = '';
+
+    if (failed) {
+      say('索引没拉下来（可能是网络）。刷新一下再试试。');
+      return;
+    }
+    if (!items) {
+      say('正在翻存档…');
+      return;
+    }
+    if (!items.length) {
+      say('还没有存档 —— 聊天记录每天定时搬进仓库，搬进来的日子就能在这儿翻。');
+      return;
+    }
+    if (!terms.length) {
+      say('打几个字，翻一翻过去说过什么。');
+      return;
+    }
+
+    /* 多词 AND：每个词都得出现在正文里（大小写不敏感 —— 正文和词都在 low 上比） */
+    const found = items.filter((it) => terms.every((t) => it.low.includes(t)));
+    /*
+      新的在前。索引本身就是按「日期倒序、同一天里也从后往前」写的，
+      这里再按日期排一次只是不依赖那份文件的写法（同一天里保持原序 = 旧的在前那一条靠后）。
+    */
+    found.sort((a, b) => (a.d < b.d ? 1 : a.d > b.d ? -1 : 0));
+
+    const rows = found.slice(0, MAX_ROWS);
+    for (const it of rows) list.append(row(it, terms));
+    hit.textContent = `命中 ${found.length} 条`;
+
+    if (!found.length) {
+      say('没翻到 —— 换个词，或者只打其中两个字试试。');
+      return;
+    }
+    if (found.length > rows.length) {
+      say(`只画了最新的 ${MAX_ROWS} 条，还有 ${found.length - rows.length} 条 —— 再打几个字缩小一点。`);
+      return;
+    }
+    say('');
+  };
+
+  /** 把当前的词写回地址栏：刷新一下还在、也能整条复制给别人 */
+  const syncUrl = () => {
+    const v = (q?.value ?? '').trim();
+    try {
+      history.replaceState(null, '', location.pathname + (v ? `?q=${encodeURIComponent(v)}` : '') + location.hash);
+    } catch {
+      /* 极老的浏览器不给改就算了，搜索本身不受影响 */
+    }
+  };
+
+  /* 带 ?q= 进来的（左栏那个搜索框、或者别人分享的链接）：先把词填上，拉到索引就搜 */
+  if (q) q.value = new URLSearchParams(location.search).get('q') ?? '';
+
+  fetch(INDEX, { credentials: 'same-origin' })
+    .then((r) => (r.ok ? r.json() : { items: [] }))
+    .then((j) => {
+      const raw = Array.isArray(j?.items) ? j.items : [];
+      items = raw.map((it: Hit) => ({
+        d: String(it?.d ?? ''),
+        id: String(it?.id ?? ''),
+        nick: String(it?.nick ?? ''),
+        t: String(it?.t ?? ''),
+        low: String(it?.t ?? '').toLowerCase(),
+      }));
+      apply();
+    })
+    .catch(() => {
+      failed = true;
+      apply();
+    });
+
+  q?.addEventListener('input', () => {
+    syncUrl();
+    apply();
+  });
+  /* 输入框自带那个小叉（type=search 的清除按钮）不发 input 事件，补一个 */
+  q?.addEventListener('search', apply);
+
+  document.addEventListener('keydown', (ev) => {
+    const t = ev.target as HTMLElement | null;
+    const typing = !!t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable);
+    /* 按 / 聚焦搜索框（正在打字时不抢） */
+    if (ev.key === '/' && !typing) {
+      ev.preventDefault();
+      q?.focus();
+      q?.select();
+    }
+    if (ev.key === 'Escape' && document.activeElement === q && q?.value) {
+      q.value = '';
+      syncUrl();
+      apply();
+    }
+  });
+
+  /* 先摆出"正在翻存档…"，索引还没到之前敲字也不会空着页面 */
+  apply();
+</script>

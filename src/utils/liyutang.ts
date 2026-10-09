@@ -53,6 +53,8 @@ const SHOW_DRAFTS = import.meta.env.DEV;
 const cfg = raw as unknown as {
   forum?: Record<string, unknown>;
   boards?: unknown;
+  /* 首页最上面那两块大的（聊天室 / 久昭卿茶绘），见下面 halls() */
+  halls?: unknown;
 };
 
 export function forum(): ForumConfig {
@@ -112,6 +114,59 @@ export function boards(): Board[] {
 }
 
 export const boardById = (id: string): Board | null => boards().find((b) => b.id === id) ?? null;
+
+/* ---------------------------------------------------------------- 大厅 */
+
+/**
+ * 「大厅」= 论坛首页最上面那两块大的（2026-10-09 用户要求）。
+ *
+ * 用户原话：「在黎语堂首页增加两个大板块 板块大小类似于花涧堂的甬城晴雨和花娅陌域
+ * 剩下的可以自由添加的小版块全部都排列在它们下面 且每行排列四个」。
+ *
+ * 所以版式上分两层，数据也分两处：
+ *   · `halls`（这个）—— 固定两块大的：聊天室、久昭卿茶绘，**不是**版块，不发帖，
+ *     点进去是各自那个页面（聊天室 / 画板）；
+ *   · `boards`（上面那张表）—— 站长随手加的小版块，排在两块大的下面、一行四个。
+ *
+ * 和 boards 的区别不只是"大"：大厅有背景图和自己的一句话说明，而且它的 href 是
+ * **写死的站内路径**（不是 `<id>/`），因为聊天室和画板都是独立页面、不是版块页。
+ */
+export interface Hall {
+  id: string;
+  title: string;
+  desc: string;
+  icon: string;
+  /** 背景图（public 下的路径，例如 /img/uploads/xxx.webp）；留空就用皮肤自带的渐变 */
+  image: string;
+  href: string;
+}
+
+/** 大厅表（洗法和 boards 一样：没 id / 没标题 / id 不合法的丢掉） */
+export function halls(): Hall[] {
+  const list = Array.isArray(cfg.halls) ? cfg.halls : [];
+  const out: Hall[] = [];
+  const seen = new Set<string>();
+  for (const h of list) {
+    if (!h || typeof h !== 'object') continue;
+    const one = h as Record<string, unknown>;
+    const id = str(one.id);
+    const title = str(one.title);
+    if (!id || !title || !/^[a-z0-9][a-z0-9-]*$/.test(id) || seen.has(id)) continue;
+    seen.add(id);
+    out.push({
+      id,
+      title,
+      desc: str(one.desc),
+      icon: str(one.icon),
+      image: str(one.image),
+      /* 地址以 / 开头就补 base，写成整条网址就原样用 */
+      href: withBase(str(one.href) || `/liyutang/${id}/`),
+    });
+  }
+  return out;
+}
+
+export const hallById = (id: string): Hall | null => halls().find((h) => h.id === id) ?? null;
 
 /** 版块页 / 帖子页的地址 */
 export const boardUrl = (id: string): string => withBase(`/liyutang/${id}/`);

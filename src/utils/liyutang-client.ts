@@ -690,4 +690,285 @@ export function renderInto(box: HTMLElement, md: string): void {
   box.innerHTML = renderMarkdown(md);
 }
 
+/* ============================================================ 聊天室 */
+
+export interface LtMsg {
+  id: string;
+  day: string;
+  nick: string;
+  avatar: string;
+  text: string;
+  image: string;
+  createdAt: number;
+  mine: boolean;
+}
+
+/** 拉某一天的消息（不给 day 就是服务器那边的"今天"；after 是增量游标） */
+export async function listChat(
+  api: string,
+  opts: { day?: string; after?: number; limit?: number } = {}
+): Promise<{ messages: LtMsg[]; day: string; today: string; serverNow: number } | { error: string }> {
+  try {
+    const r = await call(api, { event: 'LT_CHAT_LIST', ltToken: getToken(), ...opts });
+    if (r.code !== 0) return { error: String(r.message ?? '读不到消息') };
+    return {
+      messages: (r.messages ?? []) as LtMsg[],
+      day: String(r.day ?? ''),
+      today: String(r.today ?? ''),
+      serverNow: Number(r.serverNow) || Date.now(),
+    };
+  } catch (err) {
+    return { error: '连不上服务器：' + String((err as Error)?.message ?? err) };
+  }
+}
+
+/** 发一条消息（文字和图片至少给一样） */
+export async function sendChat(
+  api: string,
+  data: { text?: string; image?: string }
+): Promise<{ message: LtMsg } | { error: string }> {
+  try {
+    const r = await call(api, { event: 'LT_CHAT_SEND', ltToken: getToken(), ...data });
+    if (r.code !== 0) return { error: String(r.message ?? '没发出去') };
+    return { message: r.message as LtMsg };
+  } catch (err) {
+    return { error: '连不上服务器：' + String((err as Error)?.message ?? err) };
+  }
+}
+
+/** 删自己刚发的那条 */
+export async function deleteChat(api: string, id: string): Promise<{ ok: true } | { error: string }> {
+  try {
+    const r = await call(api, { event: 'LT_CHAT_DELETE', ltToken: getToken(), id });
+    if (r.code !== 0) return { error: String(r.message ?? '没删掉') };
+    return { ok: true };
+  } catch (err) {
+    return { error: '连不上服务器：' + String((err as Error)?.message ?? err) };
+  }
+}
+
+export interface ChatOpts {
+  api: string;
+  /** 消息流容器 */
+  log: HTMLElement;
+  /** 输入框 */
+  input: HTMLTextAreaElement;
+  /** 「发出去」按钮 */
+  send: HTMLButtonElement;
+  /** 「传图」按钮（可选） */
+  image?: HTMLButtonElement;
+  /** 状态行（可选）：发送中 / 失败原因 */
+  status?: HTMLElement;
+  /** 每几秒问一次有没有新消息 */
+  pollMs?: number;
+}
+
+export interface ChatHandle {
+  /** 立刻拉一次（新消息进来） */
+  refresh(): Promise<void>;
+  stop(): void;
+}
+
+/**
+ * 聊天室那一套：画消息、发消息、发图、每几秒问一次新消息。
+ *
+ * 为什么要轮询而不是长连接：这套后端是"云函数 + HTTP 网关"，没有 WebSocket；
+ * 论坛这个体量（几个人）四秒问一次足够，量也小。等以后真嫌慢，再换。
+ *
+ * 两个讲究：
+ *   ① **只在自己这一条不发的时候轮询**，而且页面切到后台就停（`visibilitychange`）——
+ *      一个开着的后台标签页不该一直烧额度；
+ *   ② 图片走和帖子同一套压缩（1000px 的 WebP），**发出去之前先在本地显示**，
+ *      不然发完等一个来回才有反应，用起来像卡住了。
+ */
+export function mountChat(opts: ChatOpts): ChatHandle {
+  const { api, log, input, send, image: imageBtn, status } = opts;
+  const pollMs = opts.pollMs ?? 4000;
+  let cursor = 0;
+  let stop = false;
+  let sending = false;
+  let timer = 0;
+
+  const say = (text: string, ok = false) => {
+    if (!status) return;
+    status.textContent = text;
+    status.classList.toggle('is-ok', ok);
+  };
+
+  const atBottom = () => log.scrollHeight - log.scrollTop - log.clientHeight < 60;
+  const scrollDown = (force = false) => {
+    if (force || atBottom()) log.scrollTop = log.scrollHeight;
+  };
+
+  /** 画一条消息（用户内容一律 textContent / src=，绝不拼 HTML） */
+  const paint = (m: LtMsg, append = true) => {
+    const row = el('div', 'lyt-msg');
+    row.dataset.id = m.id;
+    const face = el('span', 'lt-avatar');
+    face.setAttribute('aria-hidden', 'true');
+    if (m.avatar) {
+      const img = el('img', 'lt-avatar__img');
+      img.src = m.avatar;
+      img.alt = '';
+      img.loading = 'lazy';
+      face.append(img);
+    } else {
+      face.textContent = (m.nick || '?').slice(0, 1).toUpperCase();
+    }
+    const body = el('div', 'lyt-msg__body');
+    const head = el('div', 'lyt-msg__head');
+    head.append(el('span', 'lyt-msg__nick', m.nick), el('span', '', formatTime(m.createdAt)));
+    if (m.mine) {
+      const del = el('button', 'tkc__link', '撤回');
+      del.type = 'button';
+      del.addEventListener('click', async () => {
+        del.disabled = true;
+        const r = await deleteChat(api, m.id);
+        if ('error' in r) {
+          say(r.error);
+          del.disabled = false;
+          return;
+        }
+        row.remove();
+        say('撤回了。', true);
+      });
+      head.append(del);
+    }
+    body.append(head);
+    if (m.text) body.append(el('div', 'lyt-msg__text', m.text));
+    if (m.image) {
+      const img = el('img', 'lyt-msg__pic');
+      img.src = m.image;
+      img.alt = '';
+      img.loading = 'lazy';
+      body.append(img);
+    }
+    row.append(face, body);
+    if (append) log.append(row);
+    return row;
+  };
+
+  const refresh = async () => {
+    const r = await listChat(api, cursor ? { after: cursor } : {});
+    if ('error' in r) {
+      /*
+        有一种错要翻译一下：云函数里那份代码比页面旧的时候，它不认识 LT_CHAT_*，
+        于是走到站长密码那道闸门上、回你一句"站长密码不对"。照着那句话去查密码会白查半天，
+        所以这里直接说清楚该怎么办。
+      */
+      say(
+        /站长密码/.test(r.error)
+          ? '聊天室还没开 —— 云函数那份代码要重新粘一次（见 tools/liyutang-backend/README.md）。'
+          : r.error
+      );
+      return;
+    }
+    if (!cursor) {
+      /* 第一趟：整页重画 */
+      log.textContent = '';
+      if (!r.messages.length) log.append(el('p', 'lyt-empty', '今天还没有人说话 —— 你可以先开个头。'));
+      for (const m of r.messages) paint(m);
+      scrollDown(true);
+    } else if (r.messages.length) {
+      const empty = log.querySelector('.lyt-empty');
+      if (empty) empty.remove();
+      const near = atBottom();
+      for (const m of r.messages) paint(m);
+      scrollDown(near);
+    }
+    if (r.messages.length) cursor = r.messages[r.messages.length - 1].createdAt;
+    /* 跨零点了：这一天的记录已经翻篇，重来一次（会走"第一趟"那条路，把新的一天画出来） */
+    if (r.today && r.day && r.today !== r.day) {
+      cursor = 0;
+      await refresh();
+    }
+  };
+
+  const doSend = async () => {
+    if (sending) return;
+    const text = input.value.trim();
+    if (!text) return;
+    sending = true;
+    send.disabled = true;
+    say('正在发…');
+    const r = await sendChat(api, { text });
+    sending = false;
+    send.disabled = false;
+    if ('error' in r) {
+      say(r.error);
+      return;
+    }
+    input.value = '';
+    const empty = log.querySelector('.lyt-empty');
+    if (empty) empty.remove();
+    paint(r.message);
+    scrollDown(true);
+    cursor = Math.max(cursor, r.message.createdAt);
+    say('', true);
+    input.focus();
+  };
+
+  /** 传图：压到 1000px → 直接发一条带图的消息 */
+  const pickImage = () => {
+    const picker = document.createElement('input');
+    picker.type = 'file';
+    picker.accept = 'image/png,image/jpeg,image/webp,image/gif';
+    picker.addEventListener('change', async () => {
+      const file = picker.files?.[0];
+      if (!file) return;
+      if (imageBtn) imageBtn.disabled = true;
+      say('正在压图…');
+      try {
+        const dataUrl = await compressImage(file, { max: 1000, maxBytes: 300_000 });
+        say('正在发…');
+        const r = await sendChat(api, { image: dataUrl });
+        if ('error' in r) {
+          say(r.error);
+          return;
+        }
+        const empty = log.querySelector('.lyt-empty');
+        if (empty) empty.remove();
+        paint(r.message);
+        scrollDown(true);
+        cursor = Math.max(cursor, r.message.createdAt);
+        say(`发出去了（${Math.round(dataUrl.length / 1024)} KB）。`, true);
+      } catch (err) {
+        say('这张图没发出去：' + String((err as Error)?.message ?? err));
+      } finally {
+        if (imageBtn) imageBtn.disabled = false;
+      }
+    });
+    picker.click();
+  };
+
+  send.addEventListener('click', () => void doSend());
+  input.addEventListener('keydown', (ev) => {
+    /* 回车发、Shift+回车换行 —— 和聊天软件一个手感 */
+    if (ev.key === 'Enter' && !ev.shiftKey) {
+      ev.preventDefault();
+      void doSend();
+    }
+  });
+  imageBtn?.addEventListener('click', pickImage);
+
+  const tick = async () => {
+    if (stop) return;
+    if (document.visibilityState === 'visible') await refresh();
+    timer = window.setTimeout(() => void tick(), pollMs);
+  };
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && !stop) void refresh();
+  });
+
+  void tick();
+
+  return {
+    refresh,
+    stop: () => {
+      stop = true;
+      window.clearTimeout(timer);
+    },
+  };
+}
+
 export { excerptOf, renderMarkdown };

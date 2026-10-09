@@ -1551,7 +1551,13 @@ async function handleApi(req, res, url) {
     这里再补一次 runBuild()（那时才需要）。
   */
   if (route === '/api/liyutang' && req.method === 'GET') {
-    return sendJson(res, 200, await readLiyutang());
+    /*
+      读数**连指纹一起**回给页面（2026-10-09 加，理由见 liyutangRevOf 那段）。
+      `rev` 和文件的几个键摆在同一层：老页面（读不懂 rev 的那些）照样只挑自己认识的键用，
+      而保存时它们把整份草稿 POST 回来 —— 草稿里那个 rev 我们当"没带"处理（见下面的取舍）。
+    */
+    const { file, rev } = await readLiyutangRaw();
+    return sendJson(res, 200, { ...file, rev });
   }
   /*
     ---- 评论服务连通性自检（2026-10-06 加）----
@@ -1695,14 +1701,49 @@ async function handleApi(req, res, url) {
 
   if (route === '/api/liyutang' && req.method === 'POST') {
     const payload = await readBody(req);
-    const current = await readLiyutang();
+    /* 读盘 + 指纹是同一次读：下面写盘的许可就是照着这一瞬间的字节判的 */
+    const { file: current, rev: diskRev } = await readLiyutangRaw();
+
+    /*
+      ---- 过时草稿的闸门（2026-10-09 加：这是那场事故的**根**）----
+
+      页面上的草稿是"打开那一刻"GET 到的快照。页面开着不刷新，这期间盘上被别处改过
+      （另一个窗口在改、启动器刚拉远端同步、机器人推了更新……），保存时拿旧草稿整份覆盖
+      就会把中间那些改动抹掉 —— 那天被抹掉的是 `halls` 和 `_readme` 的三段说明。
+
+      现在页面把 GET 拿到的 `rev` 存下来、保存时带回来；这里和盘上现在的 rev 一比：
+      不一样就是"你打开这一页之后盘上变过"，**一个字节都不写**，409 + 中文说明回给页面
+      （页面上会显示这段说明，并给一个「重新载入这一页」的按钮）。
+
+      ⚠ 没带 rev 的怎么办（老客户端 —— 用户浏览器里现成的那一页、验收脚本、手搓的请求）：
+        这里当"要覆盖"照写，**不拦**。取舍是这么定的：
+          · 拦的话，用户手里那一页会突然完全保存不了（他并不知道指纹是什么东西，
+            只会看到"保存失败"），而这一页正是出了事故的那一页 —— 得让他有办法自救；
+          · 拦不住的损失有 ② 兜着：`_readme` 永远取盘上那份（见 cleanLiyutang），
+            而"从草稿里丢掉整个 halls 键"这件事，新页面（认得 halls）也不会再犯。
+        所以老客户端的风险面只剩"它读不懂的那些新键"，比"整页保存不了"小得多。
+    */
+    const wantRev = typeof payload?.rev === 'string' ? payload.rev.trim() : '';
+    if (wantRev && wantRev !== diskRev) {
+      return sendJson(res, 409, {
+        ok: false,
+        stale: true,
+        /* 把盘上现在那份的指纹一起带回去：页面下次刷新就能拿到新的 */
+        rev: diskRev,
+        error:
+          '盘上的 liyutang.json 在你打开这一页之后被改过（可能是另一个窗口、或者刚刚同步下来的更新）。' +
+          '**这次保存没有写进去** —— 刷新这一页、确认一下新的内容，再改再存。',
+      });
+    }
+
     const data = cleanLiyutang(payload, current);
     try {
       await fs.copyFile(LIYUTANG_FILE, `${LIYUTANG_FILE}.bak`);
     } catch {
       /* 第一次还没有这个文件，正常 */
     }
-    await fs.writeFile(LIYUTANG_FILE, `${JSON.stringify(data.file, null, 2)}\n`, 'utf8');
+    const text = `${JSON.stringify(data.file, null, 2)}\n`;
+    await fs.writeFile(LIYUTANG_FILE, text, 'utf8');
     let built = false;
     let ms = 0;
     let output = '';
@@ -1720,7 +1761,13 @@ async function handleApi(req, res, url) {
       ms,
       output,
       updated: data.file.updated,
-      counts: { boards: data.file.boards.length, provider: data.file.forum.provider },
+      counts: {
+        boards: data.file.boards.length,
+        halls: data.file.halls.length,
+        provider: data.file.forum.provider,
+      },
+      /* 写完之后的指纹：页面拿着它接着用，下一次保存才不会一上来就被自己的旧指纹挡住 */
+      rev: liyutangRevOf(Buffer.from(text, 'utf8')),
       dropped: data.dropped,
     });
   }
@@ -3580,8 +3627,8 @@ function cleanAnnouncements(payload, current) {
    干干净净的读写口（GET / POST /api/liyutang），它自己的管理页面是另一个 HTML
    （tools/editor/ui/liyutang.html，地址 /liyutang-admin），和编辑器主体分开。
 
-   清洗只做这几件事：版块必须有标题、公告超两万字截断、评论系统只认那三种 provider、
-   _readme 原样留着。
+   清洗只做这几件事：版块必须有标题、大厅（halls）只收站内地址、公告超两万字截断、
+   评论系统只认那几种 provider、**`_readme` 一律以盘上那份为准**（见下面的注释）。
    ------------------------------------------------------------------ */
 const LIYUTANG_FILE = path.join(PROJECT_ROOT, 'src', 'data', 'liyutang.json');
 /*
@@ -3591,9 +3638,47 @@ const LIYUTANG_FILE = path.join(PROJECT_ROOT, 'src', 'data', 'liyutang.json');
 */
 const LIYUTANG_PROVIDERS = new Set(['twikoo', 'waline', 'giscus', 'none']);
 
-async function readLiyutang() {
-  const text = await fs.readFile(LIYUTANG_FILE, 'utf8');
-  return JSON.parse(text);
+/*
+  ---------------------------------------------------------------
+   「这一份还是我读到的那一份吗」—— liyutang.json 的指纹（2026-10-09 加）
+  ---------------------------------------------------------------
+
+  用户报的事故（2026-10-09 10:14:48，有据可查）：
+
+    黎语堂首页新加了两块「大厅」（`halls`：聊天室 / 久昭卿茶绘），`_readme` 里也新写了
+    三段说明。同一天站长在 /liyutang-admin 点了一次「保存并重新构建」，结果：
+
+      · `halls` 整个键被抹掉了 —— 首页那两块大厅直接消失；
+      · `_readme` 从 112 段退回 94 段 —— 当天新写的说明一起没了。
+
+    原因是这一页的保存姿势：`cleanLiyutang()` 只认 `forum` / `boards` 那几个键，
+    然后**从草稿重新拼一份 `file` 整份覆盖**，而草稿是页面**打开那一刻** GET 到的旧快照。
+    页面开着不刷新，这期间盘上被别处改过的东西（新键、新注释）就在保存时被旧快照盖掉了。
+    `_readme` 当时也是从草稿里取的，所以一起没的。
+
+  修法两条，缺一不可：
+    ① `_readme` 永远取盘上那份（见 cleanLiyutang 里那段）；
+    ② 下面这个指纹：GET 时把**整份文件字节**的 sha256 一起发给浏览器，POST 时带回来比对，
+       对不上（= 你打开这一页之后盘上被别处动过）就 409 拒写，什么都不改。
+
+  ⚠ 为什么用「内容哈希」而不是 `mtimeMs + size`：编辑器的内容大多是**同步下来的**
+  （启动器的「拉远端」、git pull、另一台电脑推上来的更新），这些动作会把文件重写一遍 ——
+  mtime 变了、内容却可能一模一样；反过来，把文件改回原样 mtime 也回不去。
+  按内容算：内容真变了才拦，内容没变就放行，和 /api/item 那条 `revOf()` 是同一个道理
+  （那条是 sha1 前 16 位；这份文件更大些，用 sha256 前 32 位，够用且省得和人眼较劲）。
+*/
+function liyutangRevOf(buf) {
+  return createHash('sha256').update(buf).digest('hex').slice(0, 32);
+}
+
+/**
+ * 读盘 + 顺手算指纹。
+ * 一次读进来（Buffer）就同时得到「内容」和「这一份的指纹」——
+ * 比对和取值用的是**同一个瞬间**的字节，中间没有第二个读的口子。
+ */
+async function readLiyutangRaw() {
+  const buf = await fs.readFile(LIYUTANG_FILE);
+  return { file: JSON.parse(buf.toString('utf8')), rev: liyutangRevOf(buf) };
 }
 
 /* ------------------------------------------------------------------
@@ -3661,16 +3746,70 @@ function newBoardId(used) {
   return `bd-${Date.now().toString(36)}`;
 }
 
+/* ------------------------------------------------------------------
+   大厅（halls）字段的清洗 —— 2026-10-09 加
+
+   首页最上面那两块大的（聊天室 / 久昭卿茶绘）不是版块：它们不发帖，点进去是
+   各自那个独立页面。所以字段比版块多两个：`image` 和 `href`。
+
+   · id：规矩和版块**一样**（小写字母数字和连字符，见上面那段版块 id 的注释）。
+     ⚠ 但**空 id / 洗不出东西的 id / 撞车的 id 一律丢掉这条大厅**，不像版块那样
+       兜底生成 `bd-xxxx` —— 版块 id 自动生成也总能点到一页；而大厅是"固定几条、
+       挂在写死的路由上"（`/liyutang/chatroom/`、`/liyutang/teahouse/`），凭空生成
+       一个 id 只会换来一张点进去 404 的大卡片。丢掉的条数记在 `dropped` 里报给页面。
+   · image：**只收站内路径**（`/` 开头）或空串。这是一张背景图，外站地址（`https://…`
+     或协议相对的 `//evil.com`）不收 —— 数据里存一条外站图，页面上就是一次跨站请求，
+     哪天对方把图换成别的东西站里也没人察觉。空串 = 用皮肤自带的落日渐变。
+   · href：同样只收站内路径或空串；**空着合法**，客户端按 `/liyutang/<id>/` 兜底
+     （src/utils/liyutang.ts 的 halls() 就是这么兜的，两边对齐）。
+   · 长度都封顶：标题 / 说明 / 图标 / 图地址 / 跳转地址各有一个上限。图标按**码点**
+     截 8 个（emoji 常常是好几个码位拼的，比如带变体选择符的那些），再长就不是"一个图标"了。
+   ------------------------------------------------------------------ */
+const HALL_MAX = { title: 80, desc: 200, icon: 8, image: 300, href: 300 };
+
+/** 大厅的图片 / 跳转地址：只认站内路径（`/xxx`），空串照收，别的（含 `//host/x`）一律丢成空串 */
+function hallSitePath(value, max) {
+  const s = String(value ?? '').trim();
+  if (!s) return '';
+  if (!s.startsWith('/')) return '';
+  /* `//evil.com/x` 是协议相对地址 —— 看着以 / 开头，其实是外站 */
+  if (s.startsWith('//')) return '';
+  /* 空格 / 反斜杠 / 控制字符：这种地址在页面上不是断图就是跳错地方，不收 */
+  if (/[\\\u0000-\u001f\u007f\s]/.test(s)) return '';
+  return s.slice(0, max);
+}
+
 function cleanLiyutang(payload, current) {
   if (!payload || typeof payload !== 'object') {
-    throw httpError(400, '数据格式不对，需要 { forum, boards }');
+    throw httpError(400, '数据格式不对，需要 { forum, halls, boards }');
   }
-  const dropped = { boards: 0, noTitle: 0, dupId: 0 };
+  const dropped = {
+    boards: 0,
+    noTitle: 0,
+    dupId: 0,
+    /* 大厅那几个：和版块分开数，页面上才能说清是哪一块丢了东西 */
+    halls: 0,
+    hallsNoTitle: 0,
+    hallsNoId: 0,
+    hallsDupId: 0,
+    hallsImage: 0,
+    hallsHref: 0,
+  };
   const has = (k) => Object.prototype.hasOwnProperty.call(payload, k);
   const file = {};
 
-  const readme = Array.isArray(payload._readme) ? payload._readme : current._readme;
-  if (Array.isArray(readme)) file._readme = readme;
+  /*
+    ---- _readme：**永远以盘上那份为准**（2026-10-09 的事故）----
+
+    以前这里是 ` Array.isArray(payload._readme) ? payload._readme : current._readme ` ——
+    页面上传什么就用什么。于是那天的事故里，`_readme` 跟着旧草稿一起把盘上新写的三段说明
+    盖回成了旧的（112 段 → 94 段）。
+
+    `_readme` 是**给手改 JSON 的人看的说明书**：编辑器页面上根本没有编辑它的入口，
+    上传上来的那份必然是页面打开那一刻的旧快照 —— 所以它对"该写什么"没有发言权，
+    一律取 `current`（刚读盘的那一份）。想改说明就直接改文件，那本来也是它的用法。
+  */
+  if (Array.isArray(current._readme)) file._readme = current._readme;
 
   /*
     ---- 评论系统 ----
@@ -3724,6 +3863,69 @@ function cleanLiyutang(payload, current) {
     },
     waline: { serverURL: text(rawWaline.serverURL) },
   };
+
+  /*
+    ---- 大厅（2026-10-09 加；和 forum / boards 平级，不是 forum 里的东西）----
+
+    ⚠ 这一块是**事故的现场**：2026-10-09 那天 `halls` 明明在盘上，编辑器保存一次就把它
+    整个键抹掉了 —— 因为当时 `cleanLiyutang()` 只认 `forum` / `boards`，从草稿拼出来的
+    `file` 里没有 `halls` 这个键，整份覆盖就把盘上的它连同 `_readme` 一起盖没了。
+    所以这里的第一件事是**先认识它**（洗法和上限见上面那段 hallSitePath 的注释）。
+
+    兜底取值的规矩和 boards 一样：请求里带了 `halls`（哪怕是空数组 = 用户就是要清空）
+    就用请求里的，没带才退回盘上那一份 —— 老客户端读不懂这个键，一次保存不该把两块大厅弄丢。
+  */
+  const usedHalls = new Set();
+  file.halls = [];
+  const rawHalls = Array.isArray(payload.halls)
+    ? payload.halls
+    : Array.isArray(current.halls)
+      ? current.halls
+      : [];
+  for (const h of rawHalls) {
+    if (!h || typeof h !== 'object') {
+      dropped.halls++;
+      continue;
+    }
+    const title = String(h.title ?? '').trim().slice(0, HALL_MAX.title);
+    if (!title) {
+      dropped.hallsNoTitle++;
+      continue;
+    }
+    /* id 就是网址里那一段（/liyutang/<id>/）：洗法照版块那套，洗不出来就丢掉这条 */
+    const id = String(h.id ?? '')
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9-]/g, '')
+      .replace(/^-+|-+$/g, '');
+    if (!id) {
+      dropped.hallsNoId++;
+      continue;
+    }
+    if (usedHalls.has(id)) {
+      dropped.hallsDupId++;
+      continue;
+    }
+    usedHalls.add(id);
+
+    const rawImage = String(h.image ?? '').trim();
+    const image = hallSitePath(rawImage, HALL_MAX.image);
+    if (rawImage && !image) dropped.hallsImage++;
+
+    const rawHref = String(h.href ?? '').trim();
+    const href = hallSitePath(rawHref, HALL_MAX.href);
+    if (rawHref && !href) dropped.hallsHref++;
+
+    file.halls.push({
+      id,
+      title,
+      desc: String(h.desc ?? '').trim().slice(0, HALL_MAX.desc),
+      /* 图标按码点截，别把 emoji 的变体选择符切掉（切了会变成两个乱码方块） */
+      icon: [...String(h.icon ?? '').trim()].slice(0, HALL_MAX.icon).join(''),
+      image,
+      href,
+    });
+  }
 
   /* ---- 版块（和 forum 平级，不是 forum 里的东西） ---- */
   const used = new Set();

@@ -135,6 +135,27 @@
         font-size: 12.5px;
       }
 
+      /*
+        「盘上那份被别处改过」那条提示（2026-10-09）：整条横在页面最上面那行状态下面，
+        一眼就能看见 —— 这条消息本身就是这次保存**没写进去**的原因，不能藏在角落。
+      */
+      .lt-stale {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+        padding: 10px 12px;
+        border: 1px solid var(--danger);
+        border-radius: 10px;
+        background: color-mix(in srgb, var(--danger) 10%, transparent);
+        font-size: 13px;
+        line-height: 1.7;
+      }
+      .lt-stale__text {
+        flex: 1 1 320px;
+        min-width: 0;
+      }
+
       /* 帖子管理：一条帖子一行，标题能点开、摘要只留一行（列表是给人扫的） */
       .lt-post__title {
         color: var(--accent);
@@ -202,7 +223,7 @@
       <div class="lytadmin__brand">
         <strong>黎语堂 · 管理</strong>
         <span class="hint">
-          黎语堂自己的管理系统，和花涧堂编辑器分开：版块和评论系统写 src/data/liyutang.json，
+          黎语堂自己的管理系统，和花涧堂编辑器分开：大厅、版块和评论系统写 src/data/liyutang.json，
           用户审核和帖子管理的数据在腾讯云函数里（这里只是转发 + 显示）。
           首页那张卡片的标题 / 副标题 / 背景图在花涧堂编辑器的「黎语堂」面板里。
         </span>
@@ -224,10 +245,24 @@
       <p class="lytadmin__status" id="lt-status">正在读取…</p>
 
       <!--
+        「盘上那份在你打开这一页之后被改过」时的那条提示（2026-10-09 加）。
+        平时是 hidden 的；保存被 409 拒掉时由 liyutang.js 的 showStale() 填上——
+        里面会有一句中文说明 + 一颗「重新载入这一页」（location.reload()）。
+        ⚠ 故意**不自动重载**：页面上还有用户刚写的东西，一 reload 就没了。
+      -->
+      <div class="lt-stale" id="lt-stale" hidden></div>
+
+      <!--
         用户审核放在**最上面**（2026-10-07）：站长进这一页最常干的事就是「谁注册了、要不要过」，
         放最底下会被评论系统那一大块埋掉（真被埋过一次，用户找不到）。
       -->
       <section class="wbox" id="lt-users-box"></section>
+      <!--
+        大厅排在「用户审核」之后、「版块」之前（2026-10-09 加）：
+        论坛首页最上面就是那两块大的（聊天室 / 久昭卿茶绘），版块排在它们下面 ——
+        页面上的顺序和站点上一致，改的时候不用在脑子里翻译一遍。
+      -->
+      <section class="wbox" id="lt-halls-box"></section>
       <section class="wbox" id="lt-boards-box"></section>
       <!--
         帖子管理夹在「版块」和「评论系统」**中间**（2026-10-07 加）：

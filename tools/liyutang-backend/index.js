@@ -47,6 +47,32 @@
  *     · 头像也是内嵌的 data URL（前端压成 160×160 的 WebP，几 KB），存在 lt_users.avatar 上；
  *       发评论时顺手写进那条评论文档（Twikoo 的 getAvatar() 第一条就是"评论自带 avatar 就用它"）。
  *
+ * 四、**聊天室**（2026-10-09 加）：一句话——"会员聊天室"，不是公开留言板。
+ *   用户原话：「点进去以后所有注册后通过审核的用户只能和QQ聊天一样发一条一条的消息
+ *   可以附带图片之类的 每天保存一次聊天记录」。
+ *     · 消息存 lt_chat，一条一个文档；`day` 字段是**按北京时间切出来的那一天**
+ *       （不是服务器时区 —— "每天保存一次"是按用户自己的自然日算的，见 dayKey()）；
+ *     · **读和写都要过审**（chatWho() 那道闸门）：没登录 / 没过审的人连消息都读不到。
+ *       这是刻意的：聊天室比帖子私密。要改成"路人也能读"只是一行的事；
+ *     · 三道上限都在服务端：一条 800 字、一张图 ≤400KB（data URL 内嵌，和帖子一套压法）、
+ *       同一个人 1.5 秒一条且一小时 ≤120 条；
+ *     · 昵称 / 头像按账号写死（防冒名），`mine` 是"问的人是不是作者"，不把 userId 发出去；
+ *     · **撤回**是软删（`deleted: true`，顺手把图清掉）：作者只能撤自己的；
+ *     · 页面用**轮询 + 游标**（`after` = 已知最新那条的时间戳）增量拉，四秒一次，
+ *       页面切到后台就停 —— 这套后端没有 WebSocket，论坛这个体量轮询足够且省额度。
+ *
+ * 五、**画板（久昭卿茶绘）**（2026-10-09 加）：一块大家共用的画板。
+ *   用户原话：「点进去以后是一个巨大的公共画板 有基本的画笔橡皮调色板等功能 所有注册后通过
+ *   审核的用户都可以在上面画画 …… 每天保存一次画 …… 让画画的手感可以比较舒服丝滑」。
+ *     · 一笔一个文档，存 lt_draw：`{tool: pen|eraser, color: #rrggbb, size, points: [[x,y],…]}`，
+ *       坐标是**画板自己的坐标系**（2400×1500，和屏幕大小无关）；
+ *     · **矢量笔划**（不是位图）：谁也改不了别人的像素，逐人显隐、撤销、存档都只是"筛一堆笔划"；
+ *     · `uk` = 账号 id 的短哈希 —— 逐人显隐要一个稳定的键，但不该把账号 id 发给所有人；
+ *     · **过审才进得来**（和聊天室同一个门槛 chatWho），限速 80 毫秒一笔、一小时 4000 笔；
+ *     · 撤销 = 软删自己画的某一笔（别人的删不掉）；
+ *     · 存档走 LT_ADMIN_DRAW_DAY + LT_ADMIN_DRAW_CLEAR：搬进仓库（JSON + 一张 SVG）之后
+ *       **把云端那天的笔划删掉** —— 笔划在仓库里已经是完整记录了，云端留着纯占地方。
+ *
  * 环境变量：MONGODB_URI（必填）、MONGODB_DB_NAME（可选，默认 twikoo）、
  *          LT_SECRET（可选，令牌签名密钥；不设就用 MONGODB_URI 派生一个）
  * ============================================================================
@@ -65,6 +91,32 @@ const DB_NAME = process.env.MONGODB_DB_NAME || 'twikoo';
 const USERS = 'lt_users';
 /** 帖子集合名（用户发的帖子；Twikoo 的评论在它自己的 comment 集合里，两边互不干涉） */
 const POSTS = 'lt_posts';
+/** 聊天室集合名（一条消息一个文档） */
+const CHAT = 'lt_chat';
+/** 一条消息的字数上限 */
+const CHAT_TEXT_MAX = 800;
+/** 一条消息里图片的上限（前端压到 1000px 的 WebP，通常 60~120KB，这里给到 400KB 余量） */
+const CHAT_IMAGE_MAX = 400 * 1024;
+/** 同一个人的两条之间至少隔这么久（毫秒），以及一小时的条数上限 —— 防手抖和刷屏 */
+const CHAT_GAP_MS = 1500;
+const CHAT_PER_HOUR = 120;
+
+/* ---- 画板（久昭卿茶绘）----
+   ⚠ 下面这几个常量和校验，和浏览器那份 src/utils/liyutang-strokes.mjs **是同一套规矩**，
+   但这里必须**抄一份**：云函数是单文件粘到控制台部署的，import 不了仓库里的模块。
+   改一边记得改另一边（浏览器那份有 26 条验收盯着，见 tools/checks/liyutang-strokes-check.mjs）。 */
+/** 画板集合名 */
+const DRAW = 'lt_draw';
+/** 画板内部坐标系（笔划坐标以它为准，和屏幕大小无关） */
+const BOARD_W = 2400;
+const BOARD_H = 1500;
+/** 一根笔划最多多少个点 */
+const DRAW_MAX_POINTS = 2000;
+/** 画笔 / 橡皮 */
+const DRAW_TOOLS = ['pen', 'eraser'];
+/** 画得再快也有个谱：两根之间至少 80 毫秒，一小时最多 4000 笔 */
+const DRAW_GAP_MS = 80;
+const DRAW_PER_HOUR = 4000;
 /**
  * 一条帖子的正文上限（字符数）。
  * 图片是内嵌进正文的 data URL，所以正文会随图片一起变胖；4MB 的正文 ≈ 3MB 的原图，
@@ -97,8 +149,17 @@ const FLAGS = {
 const capabilities =
   typeof common.defineCapabilities === 'function' ? common.defineCapabilities(FLAGS) : FLAGS;
 
-/** Twikoo 那条数据库（它自己管 comment / config / counter / cap_kv 四个集合） */
-const twikooDb = new MongoDatabase({ uri: URI, dbName: DB_NAME });
+/** Twikoo 那条数据库（它自己管 comment / config / counter / cap_kv 四个集合）
+ *  ⚠ 那两个超时是 2026-10-09 加上去的：默认 5 秒对**冷启动**太紧 ——
+ *  函数闲一阵之后第一枪要先跟 Atlas 建 TLS 连接，5 秒不够时会回一句
+ *  「Socket 'secureConnect' timed out」，用户看到的就是"评论/登录突然坏了"，
+ *  再点一次又好了。给到 12 秒（云函数执行超时是 30 秒，装得下）。 */
+const twikooDb = new MongoDatabase({
+  uri: URI,
+  dbName: DB_NAME,
+  serverSelectionTimeoutMS: 12000,
+  connectTimeoutMS: 12000,
+});
 
 /** 空实现占位（官方云开发适配器也这么占位） */
 const noop = async () => {};
@@ -120,8 +181,9 @@ function ourDb() {
     dbPromise = (async () => {
       const client = new MongoClient(URI, {
         maxPoolSize: 5,
-        serverSelectionTimeoutMS: 5000,
-        connectTimeoutMS: 5000,
+        /* 和 Twikoo 那条一样：冷启动建 TLS 连接有时要 6~10 秒，5 秒太紧（见上面那段注释） */
+        serverSelectionTimeoutMS: 12000,
+        connectTimeoutMS: 12000,
       });
       await client.connect();
       const db = client.db(DB_NAME);
@@ -131,6 +193,14 @@ function ourDb() {
         db.collection(POSTS).createIndex({ id: 1 }, { unique: true }),
         db.collection(POSTS).createIndex({ board: 1, createdAt: -1 }),
         db.collection(POSTS).createIndex({ authorId: 1, createdAt: -1 }),
+        /* 聊天室：按"哪一天 + 时间"查（翻某天的记录），以及按人查（限速用） */
+        db.collection(CHAT).createIndex({ id: 1 }, { unique: true }),
+        db.collection(CHAT).createIndex({ day: 1, createdAt: 1 }),
+        db.collection(CHAT).createIndex({ userId: 1, createdAt: -1 }),
+        /* 画板：按天拉笔划（今天那块板），以及按人查（限速 / 撤销） */
+        db.collection(DRAW).createIndex({ id: 1 }, { unique: true }),
+        db.collection(DRAW).createIndex({ day: 1, createdAt: 1 }),
+        db.collection(DRAW).createIndex({ userId: 1, createdAt: -1 }),
       ]).catch(() => {
         /* 索引建不上不该挡住正事（比如权限只给了读写没给建索引） */
       });
@@ -144,6 +214,10 @@ function ourDb() {
 const users = async () => (await ourDb()).collection(USERS);
 /** @returns {Promise<import('mongodb').Collection>} lt_posts 集合 */
 const posts = async () => (await ourDb()).collection(POSTS);
+/** @returns {Promise<import('mongodb').Collection>} lt_chat 集合（聊天室的消息） */
+const chat = async () => (await ourDb()).collection(CHAT);
+/** @returns {Promise<import('mongodb').Collection>} lt_draw 集合（画板的笔划） */
+const draw = async () => (await ourDb()).collection(DRAW);
 
 /* ============================================================ 账号：密码 / 令牌 */
 
@@ -350,6 +424,288 @@ async function adminCheck(password) {
   } catch (err) {
     return { ok: false, message: String(err?.message ?? err) };
   }
+}
+
+/* ============================================================ 聊天室：那几个事件 */
+
+/**
+ * 「这一天」是哪一天 —— **按北京时间切**（+8），不是按服务器时区。
+ *
+ * 为什么自己算：用户说的「每天保存一次聊天记录」是按他自己那个自然日算的，
+ * 而云函数跑在哪个时区不由我们定（现在这台在上海，但别指望这个）。
+ * 存进文档里的 `day` 就是"存档切哪一天"的依据，所以它必须是个写死的规矩。
+ * @param {number} [ts] 毫秒时间戳
+ * @returns {string} yyyy-mm-dd
+ */
+function dayKey(ts = Date.now()) {
+  return new Date(Number(ts) + 8 * 3600 * 1000).toISOString().slice(0, 10);
+}
+
+/**
+ * 一条消息的对外形状。
+ * `mine` 由调用方按"问的人是谁"补上（不把 userId 发出去 —— 那是账号的内部 id）。
+ * @param {object} d 数据库里那条
+ * @param {string} [meId] 提问者的账号 id
+ * @returns {object} 给页面看的
+ */
+function publicMsg(d, meId = '') {
+  return {
+    id: d.id,
+    day: d.day,
+    nick: d.nick,
+    avatar: d.avatar || '',
+    text: d.text || '',
+    image: d.image || '',
+    createdAt: d.createdAt,
+    mine: !!meId && d.userId === meId,
+  };
+}
+
+/**
+ * 聊天室那张桌子：**过审才进得来**（读也一样）。
+ *
+ * 用户原话：「点进去以后所有注册后通过审核的用户只能和QQ聊天一样发一条一条的消息」——
+ * 所以这里是"会员聊天室"，不是公开留言板：没登录 / 没过审的人看到的是"要过审才能看"。
+ * （要不要让路人也能读，是一句话的事，跟站长确认过口径再改。）
+ * @param {object} payload 请求体
+ * @returns {Promise<{user: object}|{error: object}>} 过审的账号，或者一个错误返回体
+ */
+async function chatWho(payload) {
+  const user = await userByToken(payload.ltToken);
+  if (!user) return { error: bad('聊天室要登录才能进 —— 注册之后等站长过审。') };
+  if (user.status === 'pending') return { error: bad('你的账号还在等站长审核，通过之后就能进来聊了。') };
+  if (user.status !== 'approved') return { error: bad('这个账号被停用了。') };
+  return { user };
+}
+
+/**
+ * 聊天室相关事件（LT_CHAT_*）。限速和字数都在这里，服务端说了算。
+ * @param {string} event 事件名
+ * @param {object} payload 请求体
+ * @returns {Promise<object>} 返回体
+ */
+async function handleChatEvent(event, payload) {
+  const who = await chatWho(payload);
+  if (who.error) return who.error;
+  const me = who.user;
+  const col = await chat();
+
+  /* ---- 读某一天的消息 ---- */
+  if (event === 'LT_CHAT_LIST') {
+    /* 不给 day 就默认"今天"：页面平时只拉今天，翻旧账时才会带 day（存档页是静态的，不走这儿） */
+    const day = String(payload.day || '') || dayKey();
+    const filter = { day, deleted: { $ne: true } };
+    /* 增量拉：只要比这个时间戳新的（页面每几秒问一次"有没有新的"） */
+    const after = Number(payload.after) || 0;
+    if (after) filter.createdAt = { $gt: after };
+    const limit = Math.min(Math.max(Number(payload.limit) || 200, 1), 500);
+    const docs = await col.find(filter).sort({ createdAt: 1 }).limit(limit).toArray();
+    return ok({
+      day,
+      messages: docs.map((d) => publicMsg(d, me.id)),
+      serverNow: Date.now(),
+      /* 云函数那边"今天"是哪天（页面用它判断是不是跨零点了） */
+      today: dayKey(),
+    });
+  }
+
+  /* ---- 发一条 ---- */
+  if (event === 'LT_CHAT_SEND') {
+    const text = String(payload.text || '').trim();
+    const image = String(payload.image || '');
+    if (!text && !image) return bad('空消息就不发了。');
+    if (text.length > CHAT_TEXT_MAX) return bad(`一条最多 ${CHAT_TEXT_MAX} 个字。`);
+    if (image) {
+      if (!imageDataUrl(image)) return bad('图片格式不对（要 PNG / JPEG / WebP / GIF）。');
+      if (image.length > CHAT_IMAGE_MAX) return bad('图片太大了 —— 页面会自动压到 1000px，再选一次试试。');
+    }
+    const now = Date.now();
+    /* 限速：先看这个人最后一条，再看这一小时发了多少 */
+    const last = await col.find({ userId: me.id }).sort({ createdAt: -1 }).limit(1).toArray();
+    if (last[0] && now - last[0].createdAt < CHAT_GAP_MS) {
+      return bad(`慢一点，${Math.ceil(CHAT_GAP_MS / 1000)} 秒一条。`);
+    }
+    const hourCount = await col.countDocuments({ userId: me.id, createdAt: { $gt: now - 3600 * 1000 } });
+    if (hourCount >= CHAT_PER_HOUR) return bad(`一小时最多 ${CHAT_PER_HOUR} 条，歇一会儿再聊。`);
+
+    const doc = {
+      id: crypto.randomUUID().replace(/-/g, '').slice(0, 12),
+      day: dayKey(now),
+      userId: me.id,
+      /* 昵称 / 头像按账号写死，防冒名（和评论、帖子一个规矩） */
+      nick: me.nick,
+      avatar: me.avatar || '',
+      text,
+      image,
+      createdAt: now,
+      deleted: false,
+    };
+    await col.insertOne(doc);
+    return ok({ message: publicMsg(doc, me.id), serverNow: now });
+  }
+
+  /* ---- 删自己刚发的那条（说错话、发错图的退路） ---- */
+  if (event === 'LT_CHAT_DELETE') {
+    const id = String(payload.id || '');
+    if (!id) return bad('没说是哪一条。');
+    const doc = await col.findOne({ id });
+    if (!doc) return bad('这条已经不在了。');
+    if (doc.userId !== me.id) return bad('只能删自己发的。');
+    await col.updateOne({ id }, { $set: { deleted: true, deletedAt: Date.now(), image: '' } });
+    return ok({ id });
+  }
+
+  return bad('不认识的聊天事件：' + event);
+}
+
+/* ============================================================ 画板：那几个事件 */
+
+/**
+ * 画板上的颜色只收 `#rrggbb`。
+ * 用户写的颜色最后会进 SVG 属性 —— 这条路必须堵死（和 src/utils/liyutang-strokes.mjs 同一套）。
+ * @param {unknown} c 待检颜色
+ * @returns {string} 规整后的颜色，或者空串
+ */
+function drawColor(c) {
+  const s = String(c ?? '').trim().toLowerCase();
+  if (/^#[0-9a-f]{6}$/.test(s)) return s;
+  if (/^#[0-9a-f]{3}$/.test(s)) return '#' + s.slice(1).split('').map((x) => x + x).join('');
+  return '';
+}
+
+/**
+ * 一根笔划的点：夹进画布、去掉重复、截到上限。
+ * @param {unknown} points 点集
+ * @returns {number[][]} 规整后的点（空数组 = 这根笔划不算数）
+ */
+function cleanDrawPoints(points) {
+  const out = [];
+  for (const p of Array.isArray(points) ? points : []) {
+    if (!Array.isArray(p) || p.length < 2) continue;
+    const x = Math.round(Math.min(BOARD_W, Math.max(0, Number(p[0]) || 0)) * 10) / 10;
+    const y = Math.round(Math.min(BOARD_H, Math.max(0, Number(p[1]) || 0)) * 10) / 10;
+    const last = out[out.length - 1];
+    if (last && last[0] === x && last[1] === y) continue;
+    out.push([x, y]);
+    if (out.length >= DRAW_MAX_POINTS) break;
+  }
+  return out;
+}
+
+/**
+ * 一个人在这块板上的"笔名"：账号 id 的短哈希。
+ * 逐人显隐需要一个稳定的键，但**不该把账号 id 发给所有人** —— 所以发这个短哈希。
+ * @param {string} id 账号 id
+ * @returns {string} 8 位十六进制
+ */
+const drawUk = (id) => crypto.createHash('sha1').update(String(id)).digest('hex').slice(0, 8);
+
+/**
+ * 一根笔划的对外形状。
+ * @param {object} d 数据库里那条
+ * @param {string} [meUk] 提问者自己的 uk（用来标"这根是你的"）
+ * @returns {object} 给页面看的
+ */
+function publicStroke(d, meUk = '') {
+  return {
+    id: d.id,
+    uk: d.uk,
+    nick: d.nick,
+    avatar: d.avatar || '',
+    tool: d.tool,
+    color: d.color,
+    size: d.size,
+    points: d.points,
+    createdAt: d.createdAt,
+    mine: !!meUk && d.uk === meUk,
+  };
+}
+
+/**
+ * 画板的事件（LT_DRAW_*）。
+ *
+ * 规矩和聊天室一样：**过审才进得来、才能画**（同一个门槛 chatWho）。
+ * 但画板有它自己的两个讲究：
+ *   ① 一笔一个文档、**按天**存（和聊天室同一个"北京时间切天"），因为一天一块板；
+ *   ② 限速按"笔"算：80 毫秒一笔（画得再快也有个谱）、一小时 4000 笔 —— 挡的是脚本刷，
+ *      正常画画碰不到这个天花板。
+ * @param {string} event 事件名
+ * @param {object} payload 请求体
+ * @returns {Promise<object>} 返回体
+ */
+async function handleDrawEvent(event, payload) {
+  const who = await chatWho(payload);
+  if (who.error) return who.error;
+  const me = who.user;
+  const meUk = drawUk(me.id);
+  const col = await draw();
+
+  /* ---- 拉今天的板（增量：只要比游标新的） ---- */
+  if (event === 'LT_DRAW_LIST') {
+    const day = String(payload.day || '') || dayKey();
+    const filter = { day, deleted: { $ne: true } };
+    const after = Number(payload.after) || 0;
+    if (after) filter.createdAt = { $gt: after };
+    /* 上限给得比聊天室大：一小时的画作可能上千笔，页面轮询时会带游标只要新的 */
+    const limit = Math.min(Math.max(Number(payload.limit) || 1500, 1), 2000);
+    const docs = await col.find(filter).sort({ createdAt: 1 }).limit(limit).toArray();
+    return ok({
+      day,
+      strokes: docs.map((d) => publicStroke(d, meUk)),
+      serverNow: Date.now(),
+      today: dayKey(),
+      /* 还有更多（说明这一趟没拉完，页面下次带游标继续） */
+      more: docs.length === limit,
+    });
+  }
+
+  /* ---- 画一笔 ---- */
+  if (event === 'LT_DRAW_ADD') {
+    const tool = DRAW_TOOLS.includes(String(payload.tool)) ? String(payload.tool) : '';
+    if (!tool) return bad('工具只能是 pen / eraser。');
+    const color = drawColor(payload.color);
+    if (!color) return bad('颜色要是 #rrggbb。');
+    const size = Math.round(Math.min(64, Math.max(1, Number(payload.size) || 3)) * 10) / 10;
+    const points = cleanDrawPoints(payload.points);
+    if (!points.length) return bad('这根笔划一个点都没有。');
+
+    const now = Date.now();
+    const last = await col.find({ userId: me.id }).sort({ createdAt: -1 }).limit(1).toArray();
+    if (last[0] && now - last[0].createdAt < DRAW_GAP_MS) return bad('画太快了，慢一点。');
+    const hourCount = await col.countDocuments({ userId: me.id, createdAt: { $gt: now - 3600 * 1000 } });
+    if (hourCount >= DRAW_PER_HOUR) return bad(`一小时最多 ${DRAW_PER_HOUR} 笔，歇一会儿。`);
+
+    const doc = {
+      id: crypto.randomUUID().replace(/-/g, '').slice(0, 12),
+      day: dayKey(now),
+      userId: me.id,
+      uk: meUk,
+      /* 昵称 / 头像按账号写死（逐人显隐那张表要显示是谁画的） */
+      nick: me.nick,
+      avatar: me.avatar || '',
+      tool,
+      color,
+      size,
+      points,
+      createdAt: now,
+      deleted: false,
+    };
+    await col.insertOne(doc);
+    return ok({ stroke: publicStroke(doc, meUk), serverNow: now });
+  }
+
+  /* ---- 撤销：删自己最后画的那一笔（只给 id 也行，但要确认是你的） ---- */
+  if (event === 'LT_DRAW_DELETE') {
+    const id = String(payload.id || '');
+    if (!id) return bad('没说是哪一笔。');
+    const doc = await col.findOne({ id });
+    if (!doc) return bad('这一笔已经不在了。');
+    if (doc.userId !== me.id) return bad('只能撤自己画的。');
+    await col.updateOne({ id }, { $set: { deleted: true, deletedAt: Date.now() } });
+    return ok({ id });
+  }
+
+  return bad('不认识的画板事件：' + event);
 }
 
 /* ============================================================ 帖子：那几个事件 */
@@ -565,6 +921,12 @@ async function handleUserEvent(payload) {
   /* ---- 帖子：列 / 读 / 发 / 改 / 删（细节在下面那个函数里） ---- */
   if (event.startsWith('LT_POST_')) return handlePostEvent(event, payload);
 
+  /* ---- 聊天室：读某天 / 发一条 / 删自己那条（细节在那个函数里，读也要过审） ---- */
+  if (event.startsWith('LT_CHAT_')) return handleChatEvent(event, payload);
+
+  /* ---- 画板：拉今天的笔划 / 画一笔 / 撤销自己那笔（同一个门槛） ---- */
+  if (event.startsWith('LT_DRAW_')) return handleDrawEvent(event, payload);
+
   /* ---- 下面几个是站长专用的：先验密码（内部按 Twikoo 的规矩 md5 一下再问） ---- */
   const admin = await adminCheck(payload.password);
   if (!admin.ok) {
@@ -646,6 +1008,98 @@ async function handleUserEvent(payload) {
     const r = await (await posts()).deleteOne({ id: String(payload.id || '') });
     if (!r.deletedCount) return bad('没找到这条帖子');
     return ok({ id: payload.id });
+  }
+
+  /*
+    ---- 聊天室的每日存档（2026-10-09 加）----
+
+    用户要的「每天保存一次聊天记录」是这么落地的：**每天定时**由 GitHub Action
+    找这两个接口把前一天的话搬进仓库，搬完把云端的图片数据抹掉（换成静态路径）。
+    这样"历史浏览和搜索"就完全不碰云端额度了 —— 图和数据都在仓库里。
+
+    为什么要两个接口而不是一个：
+      · DAY   —— 取出那一天的全部消息（**含图片 data URL**，所以只有站长拿得到）；
+      · PRUNE —— 存好之后回来把云端那些 base64 抹掉，只留一条静态路径 `/img/chat/<日>/<id>.webp`。
+    两个都走站长密码那道闸门（上面的 adminCheck），不出现在任何前端页面上。
+  */
+  if (event === 'LT_ADMIN_CHAT_DAY') {
+    const day = String(payload.day || '');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return bad('要指定哪一天（yyyy-mm-dd）');
+    const docs = await (await chat()).find({ day }).sort({ createdAt: 1 }).toArray();
+    return ok({
+      day,
+      count: docs.length,
+      messages: docs.map((d) => ({
+        id: d.id,
+        nick: d.nick,
+        avatar: d.avatar || '',
+        text: d.text || '',
+        image: d.image || '',
+        createdAt: d.createdAt,
+        deleted: !!d.deleted,
+      })),
+    });
+  }
+
+  if (event === 'LT_ADMIN_CHAT_PRUNE') {
+    const day = String(payload.day || '');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return bad('要指定哪一天（yyyy-mm-dd）');
+    const col = await chat();
+    const docs = await col.find({ day, image: { $regex: '^data:' } }).toArray();
+    let pruned = 0;
+    for (const d of docs) {
+      /* 路径的规矩和存档脚本写文件时一模一样：/img/chat/<日>/<消息 id>.webp */
+      await col.updateOne({ id: d.id }, { $set: { image: `/img/chat/${day}/${d.id}.webp` } });
+      pruned += 1;
+    }
+    return ok({ day, pruned });
+  }
+
+  if (event === 'LT_ADMIN_CHAT_DELETE') {
+    const r = await (await chat()).updateOne(
+      { id: String(payload.id || '') },
+      { $set: { deleted: true, deletedAt: Date.now(), image: '' } }
+    );
+    if (!r.matchedCount) return bad('没找到这条消息');
+    return ok({ id: payload.id });
+  }
+
+  /*
+    ---- 画板的每日存档（2026-10-09 加）----
+
+    和聊天室是同一套路（DAY 取出 → 仓库里存成 JSON + SVG → CLEAR 清云端），
+    但画板多一步"清"：笔划在仓库里已经是完整的记录了，云端再留着纯占地方
+    （MongoDB 免费档 512MB，一笔一天几百上千条，很快就吃掉一大截）。
+    所以这里是 DAY + CLEAR，而不是聊天室那种"抹掉图片、留下文字"。
+    ⚠ CLEAR 之后云端就没有那天的笔划了 —— 想回看只能看仓库里那份存档（这正是设计意图）。
+  */
+  if (event === 'LT_ADMIN_DRAW_DAY') {
+    const day = String(payload.day || '');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return bad('要指定哪一天（yyyy-mm-dd）');
+    const docs = await (await draw()).find({ day }).sort({ createdAt: 1 }).toArray();
+    return ok({
+      day,
+      count: docs.length,
+      strokes: docs.map((d) => ({
+        id: d.id,
+        uk: d.uk,
+        nick: d.nick,
+        avatar: d.avatar || '',
+        tool: d.tool,
+        color: d.color,
+        size: d.size,
+        points: d.points,
+        createdAt: d.createdAt,
+        deleted: !!d.deleted,
+      })),
+    });
+  }
+
+  if (event === 'LT_ADMIN_DRAW_CLEAR') {
+    const day = String(payload.day || '');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return bad('要指定哪一天（yyyy-mm-dd）');
+    const r = await (await draw()).deleteMany({ day });
+    return ok({ day, cleared: r.deletedCount });
   }
 
   return bad('不认识的事件：' + event);

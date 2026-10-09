@@ -3,9 +3,13 @@
  *
  * 干这几件事：
  *   ① 论坛版块：增 / 删 / 改名 / 改说明 / 改版块公告 / 上下挪顺序
+ *   ①′ 大厅（2026-10-09 加）：首页最上面那两块大的（聊天室 / 久昭卿茶绘）——
+ *      图标 / 标题 / 一句话说明 / 背景图 / 跳转地址 + 上下挪 + 删
  *   ② 评论系统：Giscus 还是 Waline（还是先不挂），以及那几项配置
  *   ③ 用户审核（2026-10-07）：谁注册了、要不要放他进来发言
  *   ④ 帖子管理（2026-10-07）：用户发的帖子在这儿隐藏 / 置顶 / 挪版块 / 删
+ *   ⑤ 保存带指纹（2026-10-09 加）：盘上那份在你打开这一页之后被别处改过，
+ *      这一次保存**不写盘**，页面明说原因 + 给一颗「重新载入这一页」
  *
  * ① ② 写 src/data/liyutang.json；③ ④ 的数据**不在仓库里** —— 它们住在腾讯云函数 +
  * 外部 MongoDB（见 tools/liyutang-backend/index.js），这一页只通过编辑器服务那条转发口
@@ -134,6 +138,15 @@ function markDirty() {
 
 /** src/data/liyutang.json 的草稿（在本页里改，按保存才写盘） */
 let draft = null;
+/**
+ * 读盘那一刻的文件指纹（GET /api/liyutang 带回来的 `rev`）。
+ *
+ * 保存时原样带回去 —— 服务端拿它和盘上现在的比，对不上就 409 拒写。
+ * 为什么要有这个东西：草稿是"打开这一页那一刻"的快照，页面开着不刷新，
+ * 这期间盘上被别处改过的东西（新键、新注释）会在保存时被旧快照整份盖掉
+ * —— 2026-10-09 那场事故就是 `halls` 和 `_readme` 这么没的（见 server.mjs 那段注释）。
+ */
+let rev = '';
 /** 站长密码存在浏览器本地（就是你在评论区小齿轮里设的那个），只为省得每次重填 */
 const ADMIN_PW_KEY = 'lt_admin_pw';
 /** 有没有没保存的改动 */
@@ -144,6 +157,13 @@ async function load() {
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const data = await res.json();
   draft = data && typeof data === 'object' ? data : {};
+  /*
+    指纹单独收着，**不留在草稿里**：草稿是按"文件长什么样"整份回来的，
+    rev 不是文件内容（存进 JSON 就是脏数据）。老服务端不带 rev 时这里是空串，
+    保存照样发得出去（服务端那边把"没带指纹"当"要覆盖"处理）。
+  */
+  rev = typeof draft.rev === 'string' ? draft.rev : '';
+  delete draft.rev;
   if (!draft.forum || typeof draft.forum !== 'object') draft.forum = {};
   if (!draft.forum.giscus || typeof draft.forum.giscus !== 'object') draft.forum.giscus = {};
   if (!draft.forum.waline || typeof draft.forum.waline !== 'object') draft.forum.waline = {};
@@ -152,7 +172,38 @@ async function load() {
   /* 认不出来就是 twikoo（2026-10-06 晚上定的那条路，和 server.mjs 的 cleanLiyutang 一致） */
   if (typeof draft.forum.provider !== 'string') draft.forum.provider = 'twikoo';
   if (!Array.isArray(draft.boards)) draft.boards = [];
+  /* 大厅同理：盘上没有这个键（老数据 / 刚清空过）就先给一个空数组，页面照样画得出来 */
+  if (!Array.isArray(draft.halls)) draft.halls = [];
   return draft;
+}
+
+/* ---------------------------------------------------------------
+   「盘上那份被别处改过」时的那条提示（2026-10-09 加）
+
+   保存被 409 拒掉时，把服务端给的那句中文原话摆出来，再给一颗「重新载入这一页」——
+   reload 之后 get 到的是盘上现在那份（新指纹也一起回来了），想改哪就接着改。
+   ⚠ 这里**故意不自动重载**：页面上还有用户刚写的东西，一 reload 就没了。
+     要丢哪些、什么时候丢，让人自己按。
+   --------------------------------------------------------------- */
+
+function showStale(message) {
+  const box = $('lt-stale');
+  if (!box) return;
+  box.textContent = '';
+  box.append(
+    el('span', 'lt-stale__text', message),
+    button('重新载入这一页', '丢掉这一页上的改动，重新读一遍盘上的内容（新指纹也一起回来）', () => {
+      window.location.reload();
+    }, true)
+  );
+  box.hidden = false;
+}
+
+function hideStale() {
+  const box = $('lt-stale');
+  if (!box) return;
+  box.hidden = true;
+  box.textContent = '';
 }
 
 async function save() {
@@ -165,10 +216,24 @@ async function save() {
     const res = await fetch('/api/liyutang', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(draft),
+      /* 草稿 + 指纹：服务端拿指纹判断盘上那份还是不是我读到的那一份 */
+      body: JSON.stringify({ ...draft, rev }),
     });
-    const data = await res.json();
-    if (!res.ok || !data.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    const data = await res.json().catch(() => null);
+    /*
+      409 = 盘上那份在别处被改过，这次**什么都没写**。
+      这一条要单独处理：普通报错说"保存失败"就完了，而这一条得把
+      「没有写进去 + 怎么办」讲清楚，并给一颗重新载入的按钮。
+    */
+    if (res.status === 409 && data?.stale) {
+      const why = data.error || '盘上的 liyutang.json 在你打开这一页之后被改过。这一次保存没有写进去。';
+      showStale(why);
+      setStatus('这次保存没有写进去（盘上那份被别处改过）', true);
+      toast('盘上的文件在你打开这一页之后被改过，这次保存没有写进去', true);
+      return;
+    }
+    if (!res.ok || !data?.ok) throw new Error(data?.error || `HTTP ${res.status}`);
+    hideStale();
     dirty = false;
     /* 拿服务端那份重新来过：它补过 id、洗过字段，界面上看到的必须和落盘的一致 */
     await load();
@@ -177,8 +242,15 @@ async function save() {
     const lost = [];
     if (d.noTitle) lost.push(`${d.noTitle} 个没写名字的版块`);
     if (d.dupId) lost.push(`${d.dupId} 个重复的版块 id`);
+    if (d.hallsNoTitle) lost.push(`${d.hallsNoTitle} 个没写名字的大厅`);
+    if (d.hallsNoId) lost.push(`${d.hallsNoId} 个 id 不合法的大厅`);
+    if (d.hallsDupId) lost.push(`${d.hallsDupId} 个重复的大厅 id`);
+    if (d.hallsImage || d.hallsHref) lost.push('几条外站/不合法的地址（背景图和跳转地址只收站内路径）');
+    const n = (k) => data.counts?.[k] ?? 0;
     if (data.built) {
-      setStatus(`已保存并重新构建（${data.ms} ms）· ${data.counts?.boards ?? 0} 个版块`);
+      setStatus(
+        `已保存并重新构建（${data.ms} ms）· ${n('halls')} 块大厅 · ${n('boards')} 个版块`
+      );
       toast(`黎语堂已保存并重新构建（${data.ms} ms）${lost.length ? `；有 ${lost.join('、')} 被丢掉` : ''}`);
     } else {
       setStatus('已保存，但重新构建没成功');
@@ -194,8 +266,176 @@ async function save() {
 }
 
 /* ---------------------------------------------------------------
+   版面：大厅（2026-10-09 加）
+
+   黎语堂首页最上面那两块大的：聊天室、久昭卿茶绘。它们**不是版块** ——
+   不发帖、点进去是各自那个独立页面，所以比版块多两个字段：
+     · 背景图（`image`）：填**站内路径**（例如 /img/uploads/xxx.webp），留空 = 用皮肤自带的落日渐变；
+     · 跳转地址（`href`）：留空 = 按 /liyutang/<id>/ 兜底（和 src/utils/liyutang.ts 的 halls() 一致）。
+   ⚠ 服务端对这两样都只收站内路径：外站地址（https://… 或者 //evil.com）会被规整成空串，
+     所以这里两个框的提示都写明了"站内路径"。
+   --------------------------------------------------------------- */
+
+/** 新大厅的 id 先给一个 `hall-xxxx`（服务端对空 id 是**丢掉**这条，不留着让人踩空），站长想改就在行里改 */
+function newHallId() {
+  const used = new Set((draft?.halls ?? []).map((h) => String(h.id ?? '').trim()));
+  for (let i = 0; i < 50; i++) {
+    const id = `hall-${Math.random().toString(16).slice(2, 8)}`;
+    if (!used.has(id)) return id;
+  }
+  return `hall-${Date.now().toString(36)}`;
+}
+
+function renderHalls() {
+  const box = $('lt-halls-box');
+  if (!box) return;
+  box.textContent = '';
+
+  box.append(
+    el('h4', 'wbox__title', '大厅'),
+    el(
+      'p',
+      'hint',
+      '黎语堂首页最上面那两块大的（聊天室 / 久昭卿茶绘）—— 不是版块，不发帖，点进去是各自的页面。' +
+        '顺序就是页面上从左到右的顺序，用 ↑ ↓ 挪。背景图填**站内路径**（例如 /img/uploads/xxx.webp），' +
+        '留空就用皮肤自带的落日渐变；跳转地址留空 = 按 /liyutang/<id>/ 兜底。' +
+        'id 就是网址里那一段（小写字母数字和连字符），空着或者和别人撞了，这条大厅会在保存时被丢掉。'
+    )
+  );
+
+  const bar = el('div', 'lt-board__row');
+  bar.append(
+    button('＋ 新增大厅', '在最后加一块大厅，名字和跳转地址自己填', () => {
+      draft.halls.push({ id: newHallId(), title: '', desc: '', icon: '', image: '', href: '' });
+      markDirty();
+      render();
+      /* 光标落到新那一行的名字框上，省一次点击 */
+      const inputs = box.querySelectorAll('.lt-hall__title');
+      inputs[inputs.length - 1]?.focus();
+    }, true)
+  );
+  box.append(bar);
+
+  if (!draft.halls.length) {
+    box.append(
+      el(
+        'div',
+        'lt-empty',
+        '还没有大厅。加一块之后，黎语堂首页最上面才会出现那张大卡片 —— 现在首页只有下面那些版块。'
+      )
+    );
+    return;
+  }
+
+  draft.halls.forEach((h, i) => box.append(hallRow(h, i)));
+}
+
+function hallRow(hall, index) {
+  const row = el('div', 'lt-board');
+  row.dataset.hallId = hall.id || '';
+
+  const icon = input(hall.icon ?? '', '💬', (v) => {
+    hall.icon = v;
+    markDirty();
+  });
+  icon.classList.add('lt-board__icon');
+  row.append(icon);
+
+  const fields = el('div', 'lt-board__fields');
+
+  const title = input(hall.title ?? '', '大厅名字（必填）', (v) => {
+    hall.title = v;
+    markDirty();
+  });
+  title.classList.add('lt-hall__title');
+  fields.append(title);
+
+  const desc = input(hall.desc ?? '', '一句话说明这块大厅是干什么的（可空）', (v) => {
+    hall.desc = v;
+    markDirty();
+  });
+  fields.append(desc);
+
+  const image = input(
+    hall.image ?? '',
+    '背景图：站内路径，例如 /img/uploads/xxx.webp（留空 = 用皮肤自带的落日渐变）',
+    (v) => {
+      hall.image = v;
+      markDirty();
+    }
+  );
+  image.classList.add('lt-hall__image');
+  fields.append(image);
+
+  /* id 和跳转地址并排一行：它们是一件事的两半（id 是兜底地址里那一段） */
+  const linkRow = el('div', 'lt-board__row');
+  const idInput = input(hall.id ?? '', 'id：网址里那一段（小写字母数字和连字符）', (v) => {
+    hall.id = v.trim();
+    markDirty();
+  });
+  idInput.classList.add('lt-hall__id');
+  const hrefInput = input(hall.href ?? '', '跳转地址：留空 = /liyutang/<id>/', (v) => {
+    hall.href = v.trim();
+    markDirty();
+  });
+  hrefInput.classList.add('lt-hall__href');
+  linkRow.append(idInput, hrefInput);
+  fields.append(linkRow);
+
+  const ops = el('div', 'lt-board__ops');
+  ops.append(
+    button('↑', '往上挪一位', () => {
+      if (index === 0) return;
+      const list = draft.halls;
+      [list[index - 1], list[index]] = [list[index], list[index - 1]];
+      markDirty();
+      render();
+    }),
+    button('↓', '往下挪一位', () => {
+      const list = draft.halls;
+      if (index >= list.length - 1) return;
+      [list[index + 1], list[index]] = [list[index], list[index + 1]];
+      markDirty();
+      render();
+    }),
+    button('删除', '删掉这块大厅（按保存才真的写盘）', () => {
+      if (!window.confirm(`删掉大厅「${hall.title || hall.id || index + 1}」？`)) return;
+      draft.halls.splice(index, 1);
+      markDirty();
+      render();
+    })
+  );
+
+  /* 这一行"点进去会到哪儿"：填了地址就用它，没填就是按 id 兜的那条 */
+  const where = hall.href || (hall.id ? `/liyutang/${hall.id}/` : '（id 空着 → 保存时这条会被丢掉）');
+  const meta = el('span', 'hint', `跳到 ${where}`);
+  const foot = el('div', 'lt-board__row');
+  foot.append(meta, ops);
+  fields.append(foot);
+
+  row.append(fields);
+  return row;
+}
+
+/* ---------------------------------------------------------------
    版面：版块
    --------------------------------------------------------------- */
+
+/*
+  这四条 id 是**真路由**，不是版块：/liyutang/new/（发帖页）、/liyutang/post/（帖子页）、
+  /liyutang/chatroom/（聊天室）、/liyutang/teahouse/（久昭卿茶绘）。
+  版块 id 撞上它们，构建会直接报错（站点那边宁可报错也不悄悄吞掉一个版块）——
+  所以在版块列表里**提前红字提醒**（不阻断保存：站长可能就是想先存下来再改名）。
+*/
+const FIXED_BOARD_IDS = ['new', 'post', 'chatroom', 'teahouse'];
+
+/** 版块 id 撞固定路由时的红字；没撞就是空串 */
+function boardIdWarn(id) {
+  const key = String(id ?? '').trim().toLowerCase();
+  if (!FIXED_BOARD_IDS.includes(key)) return '';
+  const what = { new: '发帖页', post: '帖子页', chatroom: '聊天室', teahouse: '久昭卿茶绘' }[key];
+  return `⚠ id「${key}」被${what}那条固定路由占着（/liyutang/${key}/），换成别的 —— 撞了构建会直接报错`;
+}
 
 function renderBoards() {
   const box = $('lt-boards-box');
@@ -207,9 +447,10 @@ function renderBoards() {
     el(
       'p',
       'hint',
-      '黎语堂首页上的分区。顺序就是页面上从上往下的顺序 —— 用 ↑ ↓ 挪。' +
+      '黎语堂首页上的分区，排在上面那两块大厅的下面。顺序就是页面上从上往下的顺序 —— 用 ↑ ↓ 挪。' +
         '名字和说明都是纯文本，图标可以放一个 emoji。' +
-        '「版块公告」是给这个版块写的一段 Markdown，站点把它渲染在版块页**顶部**（可以放图片）—— 留空就是没有公告。'
+        '「版块公告」是给这个版块写的一段 Markdown，站点把它渲染在版块页**顶部**（可以放图片）—— 留空就是没有公告。' +
+        '⚠ id 不能叫 new / post / chatroom / teahouse —— 那四条是固定路由，撞了构建会直接报错。'
     )
   );
 
@@ -307,7 +548,15 @@ function boardRow(board, index) {
 
   const meta = el('span', 'hint', board.id ? `id：${board.id}` : 'id：保存时自动生成');
   const foot = el('div', 'lt-board__row');
-  foot.append(meta, ops);
+  foot.append(meta);
+  /* 撞上固定路由（new / post / chatroom / teahouse）就在这一行旁边红字提醒，见上面那段注释 */
+  const warn = boardIdWarn(board.id);
+  if (warn) {
+    const bad = el('span', 'hint', warn);
+    bad.style.color = 'var(--danger)';
+    foot.append(bad);
+  }
+  foot.append(ops);
   fields.append(foot);
 
   row.append(fields);
@@ -1074,14 +1323,17 @@ function postRow(post, ops) {
 function render() {
   /* 用户审核在最上面（页面上也是排第一的那个区块，2026-10-07） */
   renderUsers();
+  /* 大厅紧接着（页面上大厅就排在版块上面：论坛首页的顺序，2026-10-09） */
+  renderHalls();
   renderBoards();
   /* 帖子管理夹在版块和评论系统中间（页面上也是这个位置，2026-10-07） */
   renderPosts();
   renderForum();
   if (!dirty) {
     const n = draft?.boards?.length ?? 0;
+    const h = draft?.halls?.length ?? 0;
     setStatus(
-      `读取完成：${draft?.forum?.provider ?? 'giscus'} · ${n} 个版块` +
+      `读取完成：${draft?.forum?.provider ?? 'giscus'} · ${h} 块大厅 · ${n} 个版块` +
         (draft?.updated ? ` · 上次改动 ${draft.updated}` : '')
     );
   }

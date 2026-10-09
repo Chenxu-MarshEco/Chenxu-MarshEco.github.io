@@ -1,0 +1,135 @@
+---
+/**
+ * 聊天室 —— /liyutang/chatroom/（2026-10-09 建壳）
+ *
+ * 用户原话：
+ *   「左侧大板块：聊天室　点进去以后所有注册后通过审核的用户只能和QQ聊天一样发一条一条的
+ *     消息 可以附带图片之类的 每天保存一次聊天记录 侧边栏套用花涧堂的时间轴系统
+ *     可以点击时间轴跳转到当日聊天记录 也可以搜索历史聊天记录 保存的聊天记录最好可以不
+ *     调用腾讯云的额度 例如保存在本地仓库？但是需要所有用户都能搜索」
+ *
+ * 这一页分两层，别混：
+ *   · **当天**的消息 —— 一条一条存在云端（就是现在这套云函数 + MongoDB），所以它是"活的"：
+ *     谁都能看到刚发的那条。这部分必然要联网，也必然要用一点云端额度（用量极小）。
+ *   · **存档** —— 每天定时把当天的话搬进仓库（`src/data/chat/<日期>.json` + 图片压成 WebP
+ *     放进 `public/img/chat/<日期>/`），搬完把云端的图片数据抹掉。**历史浏览和搜索完全不碰云端**，
+ *     这也是用户那句"不调用腾讯云额度"真正能做到的部分。
+ *
+ * 现在的状态：**壳**（标题、账号闸门、时间轴侧栏的位子都留好了），消息收发在下一步接。
+ * 之所以先落壳：首页那两个大板块要先能点进来，不然点击是 404。
+ */
+import ForumLayout from '../../layouts/ForumLayout.astro';
+import LiyutangAccount from '../../components/LiyutangAccount.astro';
+import LiyutangChatRail from '../../components/LiyutangChatRail.astro';
+import { chatApex, chatTimeline } from '../../utils/chat-archive';
+import { forum } from '../../utils/liyutang';
+import { withBase } from '../../utils/url';
+
+const api = forum().twikoo.envId;
+const home = withBase('/liyutang/');
+/*
+  左栏那条「日子」轴：三页共用同一个组件（见 LiyutangChatRail.astro）。
+  这条轴不写在 src/data/timelines.json 里，而是按存档现算 —— 搬进来一天就多一个点。
+*/
+const tl = chatTimeline();
+const apex = chatApex(tl);
+---
+
+<ForumLayout title="聊天室" description="黎语堂的聊天室：一句一句地聊，能发图，每天存档。" noindex>
+  <div class="lyt-page">
+    <p class="lyt-crumb">
+      <a href={home}>← 黎语堂</a>
+    </p>
+    <h1 class="lyt-title">聊天室</h1>
+    <p class="lyt-lead">
+      一句一句地聊，像 QQ 那样。能发图，能翻旧账 —— 每天存档一份，左边的日子轴点一下就跳到那天。
+    </p>
+
+    <LiyutangAccount />
+
+    <p class="lyt-form__msg" data-lt-chat-gate>正在看登录状态…</p>
+
+    <div class="lyt-chat">
+      {/*
+        左栏：原来那一列「日子」（今天 + 一句说明），2026-10-09 换成**真的时间轴** ——
+        用户要的就是「侧边栏套用花涧堂的时间轴系统 可以点击时间轴跳转到当日聊天记录」。
+        有存档的日子、条数、以及「今天」，全是那条轴上的点；点一下就跳过去。
+        · data-lt-chat-days / data-lt-chat-side 两个标记留着：它们认的就是这一栏的位置
+          （验收脚本按前一个找这一列，聊天室的脚本按后一个认侧栏）。
+      */}
+      <aside class="lyt-chat__side lyt-chat__side--tl" data-lt-chat-side data-lt-chat-days>
+        <LiyutangChatRail tl={tl} apex={apex} />
+      </aside>
+
+      <div class="lyt-chat__main">
+        <div class="lyt-chat__log" data-lt-chat-log>
+          <p class="lyt-empty">登录之后这里就会长出今天的消息。</p>
+        </div>
+        <div class="lyt-chat__compose">
+          <textarea class="lyt-textarea" data-lt-chat-text placeholder="说点什么…（回车发，Shift+回车换行）" rows="3" disabled></textarea>
+          <div class="lyt-form__row">
+            <button class="lyt-btn" type="button" data-lt-chat-send disabled>发出去</button>
+            <button class="lyt-bar__btn" type="button" data-lt-chat-image disabled>传图</button>
+            <span class="lyt-form__msg" data-lt-chat-status></span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    {
+      api && (
+        <script>
+          /*
+            聊天室的闸门 + 收发。
+            闸门：没登录 / 没过审 → 输入区锁上并说明原因（服务端还会再验一次，绕不过去）。
+            收发：过审之后 mountChat() 接管 —— 每几秒问一次有没有新消息、回车发、传图先压到 1000px。
+          */
+          import { mountChat, type ChatHandle, type LtUser } from '../../utils/liyutang-client';
+
+          const apiUrl = document.querySelector('[data-lt-account]')?.getAttribute('data-api') || '';
+          const gate = document.querySelector('[data-lt-chat-gate]') as HTMLElement;
+          const input = document.querySelector('[data-lt-chat-text]') as HTMLTextAreaElement;
+          const send = document.querySelector('[data-lt-chat-send]') as HTMLButtonElement;
+          const image = document.querySelector('[data-lt-chat-image]') as HTMLButtonElement;
+          const log = document.querySelector('[data-lt-chat-log]') as HTMLElement;
+          const status = document.querySelector('[data-lt-chat-status]') as HTMLElement;
+          let chat: ChatHandle | null = null;
+
+          const lock = (on: boolean) => {
+            input.disabled = on;
+            send.disabled = on;
+            image.disabled = on;
+          };
+          lock(true);
+
+          const apply = (state: string, user: LtUser | null, fake: boolean) => {
+            const ok = !fake && !!user && state === 'approved';
+            lock(!ok);
+            if (ok && user) {
+              gate.textContent = `你以 ${user.nick} 的身份在这里。`;
+              /* 只挂一次：状态反复变化（比如过一会儿又刷了一次）不该挂出第二个轮询 */
+              if (!chat && apiUrl) {
+                chat = mountChat({ api: apiUrl, log, input, send, image, status });
+              }
+              return;
+            }
+            chat?.stop();
+            chat = null;
+            gate.textContent =
+              state === 'pending'
+                ? '账号还在等站长审核 —— 通过之后就能进来聊了。'
+                : '聊天室要登录才能进（注册之后等站长过审）。';
+          };
+
+          document.addEventListener('lt-account', (ev) => {
+            const d = (ev as CustomEvent).detail as { state?: string; user?: LtUser | null; fake?: boolean };
+            apply(String(d?.state ?? ''), d?.user ?? null, !!d?.fake);
+          });
+          const early = (window as unknown as { __ltState?: { state?: string; user?: LtUser | null; fake?: boolean } })
+            .__ltState;
+          if (early?.state) apply(early.state, early.user ?? null, !!early.fake);
+        </script>
+      )
+    }
+  </div>
+</ForumLayout>

@@ -1,0 +1,69 @@
+---
+/**
+ * 聊天室左侧那一栏：一个搜索框 + 花涧堂那条时间轴（「日子」轴）。
+ *
+ * 三个页面共用它：今天那一页 `/liyutang/chatroom/`、存档日页 `…/chatroom/<日>/`、
+ * 历史搜索页 `…/chatroom/search/`。用户原话是「侧边栏套用花涧堂的时间轴系统
+ * 可以点击时间轴跳转到当日聊天记录」——所以这一栏不是聊天室自己画的一条列表，
+ * 而是站里那条真时间轴（src/components/Timeline.astro），点和段的链接都是**真链接**：
+ * 点一下就跳那天，中键开新窗口、键盘 Tab 也都照常能用，不需要额外写 JS。
+ *
+ * 时间轴的数据由页面现算传进来（见 utils/chat-archive.ts 的 chatTimeline()），
+ * **不往 src/data/timelines.json 里塞** —— 那条轴上的点跟着存档自己长，一天一个。
+ *
+ * ⚠ 高度那件事（抄 /salon/ 那一页，注释在那一页写得更细）：
+ *   `Timeline` 的 `pinned + fill` 模式里，弧线的几何是按 `.tl__body` 的**实际高度**
+ *   算出来的（组件里 `measure()`：`H = body.clientHeight`），而这个高度读的是页面给的
+ *   CSS 变量 `--tl-panel-h`。不给它（或者给成 auto），H 就是 0，整条轴**塌成一个点**。
+ *   所以 `.lyt-chat__tl` 的高度写在 forum.css 末尾（那一栏一屏几乎占满的地方）。
+ */
+import Timeline from './Timeline.astro';
+import type { Timeline as TimelineData } from '../utils/timelines';
+import { chatSearchUrl } from '../utils/chat-archive';
+
+interface Props {
+  /** 那条轴（chatTimeline() 现算的） */
+  tl: TimelineData;
+  /** 打开时弧顶停在哪一点（chatApex() 给的 0~1） */
+  apex: number;
+  /**
+   * 要不要在这一栏顶上放搜索框。默认要。
+   * 只有**搜索页自己**传 false：那一页右栏顶上就是它的大输入框，
+   * 左边再来一个长得一样、指向同一个地方的框，人会不知道该打哪个。
+   */
+  search?: boolean;
+}
+
+const { tl, apex, search: showSearch = true } = Astro.props;
+const searchUrl = chatSearchUrl();
+---
+
+{/*
+  搜索框走一个最普通的 GET 表单，**不写 JS**：
+  静态站没有后端可以直接搜，回车把 q 带到搜索页、那一页在浏览器里过滤那份小索引。
+  这样没跑 JS 的浏览器（以及将来想直接贴地址的人）都还能用。
+*/}
+{
+  showSearch && (
+    <form class="lyt-chat__find" action={searchUrl} method="get" role="search">
+      <input
+        class="lyt-chat__findInput"
+        type="search"
+        name="q"
+        placeholder="搜历史消息…"
+        aria-label="搜索聊天室的历史记录"
+        autocomplete="off"
+      />
+      <button class="lyt-chat__findBtn" type="submit">搜</button>
+    </form>
+  )
+}
+
+<div class="lyt-chat__tl" data-lyt-tl>
+  {/*
+    原样放上去：pinned（常驻、不从右边滑出来、没法关掉）+ fill（高度由 --tl-panel-h 给）。
+    这里的 rail 刻意不传：那是「塞进屏幕边一条 60px 细栏」的模式（手机端的冰室精华页），
+    而这一栏里还放着搜索框，窄屏走的是「整块搬到正文上面」（见 forum.css 末尾那段）。
+  */}
+  <Timeline timeline={tl} pinned={true} fill={true} defaultParam={apex} />
+</div>

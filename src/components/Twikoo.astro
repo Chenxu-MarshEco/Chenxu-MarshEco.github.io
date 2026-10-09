@@ -182,7 +182,7 @@ const api = f.twikoo.envId;
 
 <style>
   /*
-    发言区：和文章页那个正文框（.crt-screen）一个味道 —— 半透明深底 + 青边 + 圆角。
+    发言区：和文章页那个正文框（.crt-screen）一个味道 —— 半透明深底 + 落日橙黄描边 + 圆角。
     ⚠ Twikoo 自己的 CSS 是全局的（它按 .twikoo / .tk-* 选），这里只管外面这层壳和账号那块。
     2026-10-07 晚上：账号那块（表单 / 头像 / 提示）的样式搬去了 src/styles/forum.css，
     因为发帖页不在这个组件里也要用同一套（.tkc__* 那些类名没变，页面自己 @import forum.css）。
@@ -190,7 +190,7 @@ const api = f.twikoo.envId;
   .tkc {
     margin: clamp(1.6rem, 4vh, 2.6rem) 0 0;
     padding: clamp(1rem, 2.4vw, 1.5rem);
-    border: 1px solid rgba(127, 233, 221, 0.22);
+    border: 1px solid rgba(255, 181, 71, 0.22);
     border-radius: 14px;
     background: rgba(18, 10, 32, 0.86);
     backdrop-filter: blur(6px);
@@ -200,8 +200,8 @@ const api = f.twikoo.envId;
     margin: 0 0 0.35rem;
     font-size: 1.15rem;
     letter-spacing: 0.1em;
-    color: #eafcff;
-    text-shadow: 0 0 12px rgba(127, 233, 221, 0.35);
+    color: #fff3dc;
+    text-shadow: 0 0 12px rgba(255, 181, 71, 0.35);
   }
   .tkc__hint {
     margin: 0 0 0.6rem;

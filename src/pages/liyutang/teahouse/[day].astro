@@ -1,0 +1,73 @@
+---
+/**
+ * 那一天的画板 —— /liyutang/teahouse/<日>/（2026-10-09）
+ *
+ * 只读的一页：把存档里那天的板（`public/img/draw/<日>.svg`）铺出来，
+ * 底下写明这一天多少笔、都是谁画的。地址由 `src/data/draw/index.json` 生成 ——
+ * **一份存档都没有时一条路径都不生成**（页面不会凭空出现）。
+ *
+ * 为什么是 SVG 而不是位图：笔划本身是矢量的，存档时就用同一套几何渲染成 SVG
+ * （src/utils/liyutang-strokes.mjs，和浏览器里画的是同一份），所以放大也清楚、
+ * 文件还小（一天几 KB 到几十 KB）。
+ */
+import ForumLayout from '../../../layouts/ForumLayout.astro';
+import { withBase } from '../../../utils/url';
+import { boardUrl, drawArchive, drawCalendarUrl, drawDateText, drawDays, drawSvgUrl } from '../../../utils/draw-archive';
+
+export function getStaticPaths() {
+  return drawDays().map((d) => ({ params: { day: d.day }, props: { day: d.day } }));
+}
+
+const { day } = Astro.props as { day: string };
+const meta = drawDays().find((d) => d.day === day);
+const archive = drawArchive(day);
+const board = boardUrl();
+const calendar = drawCalendarUrl();
+/* 谁画了多少：优先用存档里的（更准），没有就用索引里那个数 */
+const painters = archive?.painters ?? (meta?.users ?? []).map((nick) => ({ uk: nick, nick, count: 0 }));
+---
+
+<ForumLayout title={`${day} 的画板`} description={`久昭卿茶绘：${day} 那天的画。`} noindex>
+  <div class="lyt-page">
+    <p class="lyt-crumb">
+      <a href={withBase('/liyutang/')}>← 黎语堂</a>
+      <span aria-hidden="true"> · </span>
+      <a href={board}>久昭卿茶绘</a>
+      <span aria-hidden="true"> · </span>
+      <a href={calendar}>画过的日子</a>
+    </p>
+    <h1 class="lyt-title">{drawDateText(day)}</h1>
+    <p class="lyt-lead">
+      这是那一天的存档{meta ? `（${meta.count} 笔 · ${meta.painters} 个人画过）` : ''}。
+      想接着画就去 <a href={board}>今天的画板</a>。
+    </p>
+
+    <div class="lyt-day__board">
+      <img class="lyt-day__big" src={drawSvgUrl(day)} alt={`${drawDateText(day)} 那天的画板`} decoding="async" />
+    </div>
+
+    {
+      painters.length > 0 && (
+        <div class="lyt-draw__who">
+          <p class="lyt-chat__sideHead">这天动过笔的人</p>
+          <div class="lyt-draw__faces">
+            {painters.map((p) => (
+              <span class="lyt-draw__face is-plain">
+                <span class="lt-avatar" aria-hidden="true">
+                  {(p.nick || '?').slice(0, 1).toUpperCase()}
+                </span>
+                {p.nick}
+                {p.count ? ` · ${p.count} 笔` : ''}
+              </span>
+            ))}
+          </div>
+        </div>
+      )
+    }
+
+    <div class="lyt-actions">
+      <a class="lyt-btn" href={board}>回到画板</a>
+      <a class="lyt-btn lyt-btn--ghost" href={calendar}>画过的日子</a>
+    </div>
+  </div>
+</ForumLayout>

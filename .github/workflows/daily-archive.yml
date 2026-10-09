@@ -1,0 +1,94 @@
+name: 每日存档（聊天室 + 画板）
+
+# ============================================================================
+# 黎语堂：每天把"昨天"的聊天记录和画板搬进仓库（2026-10-09 建）
+# ----------------------------------------------------------------------------
+# 用户原话：「每天保存一次聊天记录 …… 保存的聊天记录最好可以不调用腾讯云的额度
+# 例如保存在本地仓库？但是需要所有用户都能搜索」。
+#
+# 这一份干的就是"搬"：
+#   · 到点（北京时间 00:10）跑 tools/liyutang-archive.mjs --yesterday：
+#     向云函数要昨天那一整天（LT_ADMIN_CHAT_DAY，要站长密码），
+#     文字写成 src/data/chat/<日>.json、图片解成 public/img/chat/<日>/*.webp、
+#     头像按内容去重放进 public/img/chat/avatars/，并更新 src/data/chat/index.json；
+#   · 搬完把云端那些 base64 抹掉（--prune）：数据库不再随历史长大，
+#     而"翻旧账 + 搜索"从此全是静态文件 —— 一个字节都不碰腾讯云额度；
+#   · 然后把新文件提交推送。推送会触发既有的部署工作流（deploy.yml），
+#     那边有发布门卫把关：**只放行存档那几个路径**（见 tools/publish/gate.mjs 的 ALLOW），
+#     所以这个机器人身份不会被误认为可以随便改站点。
+#
+# 为什么要自己提交（而不是让云函数去推）：云函数里不放任何 GitHub 凭据。
+#
+# ⚠ 两件必须先在仓库里配好的事（不然这个工作流会失败）：
+#   ① Settings → Secrets and variables → Actions → New repository secret：
+#      名字 `LT_ADMIN_PASSWORD`，值 = 你在评论区小齿轮里设的**站长密码原文**；
+#   ② 这个工作流的 `permissions: contents: write` —— 全仓唯一一处写权限，只给它。
+# ============================================================================
+
+on:
+  schedule:
+    # 北京时间 00:10（GitHub 的 cron 是 UTC）= 刚过零点就把"昨天"存下来
+    - cron: '10 16 * * *'
+  # 也能手动点一下（补档、或者刚上线想马上试一次）
+  workflow_dispatch:
+    inputs:
+      day:
+        description: '要补哪一天（yyyy-mm-dd；留空 = 北京时间昨天）'
+        required: false
+        default: ''
+
+permissions:
+  contents: write # 存档要往仓库写文件（全仓唯一一处写权限）
+
+# 同一条流水线一次只跑一个；存档不能被取消（跑到一半取消会留下半份文件）
+concurrency:
+  group: daily-archive
+  cancel-in-progress: false
+
+jobs:
+  archive:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 拉取代码
+        uses: actions/checkout@v4
+        with:
+          # 提交推送要能 rebase（浅克隆会让 pull --rebase 变成一场噩梦）
+          fetch-depth: 0
+
+      - name: 准备 Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: 把昨天的话搬进仓库
+        env:
+          LT_ADMIN_PASSWORD: ${{ secrets.LT_ADMIN_PASSWORD }}
+        run: |
+          if [ -n "${{ github.event.inputs.day }}" ]; then
+            node tools/liyutang-archive.mjs --day "${{ github.event.inputs.day }}" --prune
+          else
+            node tools/liyutang-archive.mjs --yesterday --prune
+          fi
+
+      - name: 看看有没有东西要提交
+        id: changed
+        run: |
+          if [ -z "$(git status --porcelain)" ]; then
+            echo "changed=0" >> "$GITHUB_OUTPUT"
+            echo "今天没有新东西可存（这一天没人说话，或者已经存过了）"
+          else
+            echo "changed=1" >> "$GITHUB_OUTPUT"
+            git status --porcelain | head -20
+          fi
+
+      - name: 提交并推送（先拉后推，永不强推）
+        if: steps.changed.outputs.changed == '1'
+        env:
+          GIT_TERMINAL_PROMPT: '0'
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          # ⚠ 用站里那条统一的发布路径（tools/git/sync.mjs）：它会先探连通 → add/commit →
+          #   pull --rebase --autostash → push，被拒会自动再拉再推，真撞车就原地停下、
+          #   什么都不推。**别在这儿手写 git push，更别加 -f。**
+          node tools/git/sync.mjs publish --message "存档：聊天室 $(date -u +%F)"

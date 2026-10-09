@@ -1,0 +1,62 @@
+---
+/**
+ * 画过的日子 —— /liyutang/teahouse/calendar/（2026-10-09 接上数据）
+ *
+ * 用户原话：「其他用户以后也可以点开一个日历页面 查看每一天的画板上都画了什么」。
+ *
+ * 这一页**全静态**：每天的画在存档时已经渲染成 `public/img/draw/<日>.svg`，
+ * 这里只是把索引读出来、把每张图铺上去 —— 翻旧画一个字节都不碰云端额度。
+ * 一张存档都没有时走"还没有画过"那条路（页面照样能开，不报错）。
+ */
+import ForumLayout from '../../../layouts/ForumLayout.astro';
+import { withBase } from '../../../utils/url';
+import { drawDateText, drawDayUrl, drawDays, drawSvgUrl, boardUrl } from '../../../utils/draw-archive';
+
+const days = drawDays();
+const board = boardUrl();
+---
+
+<ForumLayout title="画过的日子" description="久昭卿茶绘：每一天的画。" noindex>
+  <div class="lyt-page">
+    <p class="lyt-crumb">
+      <a href={withBase('/liyutang/')}>← 黎语堂</a>
+      <span aria-hidden="true"> · </span>
+      <a href={board}>久昭卿茶绘</a>
+    </p>
+    <h1 class="lyt-title">画过的日子</h1>
+    <p class="lyt-lead">
+      每天存档一张当天画完的样子。点一天，就能看那块画板当天被画成了什么样。
+      {days.length > 0 && <span>现在一共存了 {days.length} 天。</span>}
+    </p>
+
+    {
+      days.length > 0 ? (
+        <ul class="lyt-days">
+          {days.map((d) => (
+            <li class="lyt-day">
+              <a class="lyt-day__link" href={drawDayUrl(d.day)}>
+                <img class="lyt-day__pic" src={drawSvgUrl(d.day)} alt={`${drawDateText(d.day)} 的画板`} loading="lazy" decoding="async" />
+                <span class="lyt-day__text">
+                  <b>{drawDateText(d.day)}</b>
+                  <span>
+                    {d.count} 笔 · {d.painters} 个人画过
+                    {d.users && d.users.length > 0 ? `（${d.users.slice(0, 4).join(' / ')}${d.users.length > 4 ? ' …' : ''}）` : ''}
+                  </span>
+                </span>
+              </a>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p class="lyt-empty">
+          还没有画过 —— 等这一天有人动笔、第二天存档跑过，这里就会长出那一天的画。
+          现在去 <a href={board}>画板</a> 上添两笔吧。
+        </p>
+      )
+    }
+
+    <div class="lyt-actions">
+      <a class="lyt-btn" href={board}>回到画板</a>
+    </div>
+  </div>
+</ForumLayout>

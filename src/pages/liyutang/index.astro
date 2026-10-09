@@ -20,10 +20,11 @@
  */
 import ForumLayout from '../../layouts/ForumLayout.astro';
 import LiyutangAccount from '../../components/LiyutangAccount.astro';
-import { boardCounts, boards, boardUrl, forum } from '../../utils/liyutang';
+import { boardCounts, boards, boardUrl, forum, halls } from '../../utils/liyutang';
 import { withBase } from '../../utils/url';
 
 const list = boards();
+const bigList = halls();
 const counts = await boardCounts();
 const f = forum();
 /** 帖子那一套挂在评论服务同一个云函数上，所以它没配好 = 帖子也读不出来 */
@@ -46,6 +47,33 @@ const newUrl = withBase('/liyutang/new/');
     </div>
 
     <LiyutangAccount />
+
+    {
+      /*
+        两块大的「大厅」（聊天室 / 久昭卿茶绘）—— 2026-10-09 加。
+        数据在 liyutang.json 的 halls 里（编辑器「黎语堂管理」那块以后会加编辑口）。
+        ⚠ 它不是版块：不发帖、不数帖子数，点进去是各自那个页面。
+      */
+    }
+    {
+      bigList.length > 0 && (
+        <div class="lyt-halls">
+          {bigList.map((h) => (
+            <a class="lyt-hall" href={h.href} data-hall={h.id}>
+              {h.image && (
+                <span class="lyt-hall__bg" style={`background-image:url(${h.image})`} aria-hidden="true" />
+              )}
+              <span class="lyt-hall__text">
+                <span class="lyt-hall__icon" aria-hidden="true">{h.icon || '✦'}</span>
+                <span class="lyt-hall__title">{h.title}</span>
+                {h.desc && <span class="lyt-hall__desc">{h.desc}</span>}
+                <span class="lyt-hall__go">进去看看 →</span>
+              </span>
+            </a>
+          ))}
+        </div>
+      )
+    }
 
     {
       list.length > 0 ? (

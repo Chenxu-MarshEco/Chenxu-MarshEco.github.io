@@ -27,7 +27,7 @@
 /* ---------------------------------------------------------------------------
  *  1. 配色：把这几个令牌在 body 上改掉，页头页脚/目录/标签/正文全都跟着变
  * ------------------------------------------------------------------------
- *  原来的亮粉（--c-bg #e8d0dd 那一套）在这几页会被整组替换成深紫底 + 青，
+ *  原来的亮粉（--c-bg #e8d0dd 那一套）在这几页会被整组替换成深紫底 + **落日橙黄**，
  *  所以「不要亮粉色」不是去逐个选择器压颜色，而是换掉这一组令牌。
  *  代码块底色**故意留亮**：shiki 的配色是按浅底调的（只输出 --shiki-light），
  *  底色一深就有好几个 token 掉到 4.5:1 以下，与其逐个改不如把底留亮。
@@ -41,11 +41,11 @@ body.is-crt {
   --c-text-faint: #b3a5cd;
   --c-border: #3a2b55;
   --c-border-strong: #503c72;
-  --c-accent: #7fe9dd;
-  --c-accent-hover: #c4fff6;
-  --c-accent-soft: rgba(127, 233, 221, 0.12);
-  --c-link: #8ff0e5;
-  --c-link-hover: #dcfffb;
+  --c-accent: #ffb547;
+  --c-accent-hover: #ffd894;
+  --c-accent-soft: rgba(255, 181, 71, 0.12);
+  --c-link: #ffc76b;
+  --c-link-hover: #ffeccd;
   --c-selection: #3d2a63;
   --c-code-bg: #efe9f8;
   --c-code-text: #2b2038;
@@ -57,29 +57,29 @@ body.is-crt {
   color: var(--c-text);
 }
 
-/* 页头页脚：跟着深色走，但光晕用青，不用原来那条亮粉 */
+/* 页头页脚：跟着深色走，光晕用落日橙黄（2026-10-07 晚上由青改成橙黄），不用原来那条亮粉 */
 body.is-crt .site-header {
   background: color-mix(in srgb, #0c0616 72%, transparent);
-  border-bottom-color: rgba(127, 233, 221, 0.18);
+  border-bottom-color: rgba(255, 181, 71, 0.18);
 }
 body.is-crt .site-title,
 body.is-crt .site-nav__link {
-  color: #eafcff;
-  text-shadow: 0 0 10px rgba(127, 233, 221, 0.42);
+  color: #fff3dc;
+  text-shadow: 0 0 10px rgba(255, 181, 71, 0.42);
 }
 body.is-crt .site-nav__link:hover {
   color: #fff;
 }
 body.is-crt .site-nav__link[aria-current='page']::after {
-  background: #7fe9dd;
+  background: #ffb547;
 }
 body.is-crt .site-footer {
   background: linear-gradient(180deg, rgba(8, 3, 16, 0) 0%, rgba(8, 3, 16, 0.76) 45%);
-  border-top-color: rgba(127, 233, 221, 0.18);
-  color: rgba(226, 240, 255, 0.82);
+  border-top-color: rgba(255, 181, 71, 0.18);
+  color: rgba(255, 242, 220, 0.82);
 }
 body.is-crt .site-footer a {
-  color: #8ff0e5;
+  color: #ffc76b;
 }
 
 /* 正文和页脚站在背景层上面（那一层是 z-index:-1） */
@@ -135,7 +135,7 @@ body.is-crt .site-footer {
   background:
     radial-gradient(40% 32% at 16% 72%, rgba(255, 92, 190, 0.62), transparent 72%),
     radial-gradient(36% 28% at 80% 64%, rgba(126, 96, 255, 0.55), transparent 74%),
-    radial-gradient(32% 26% at 52% 90%, rgba(127, 233, 221, 0.4), transparent 72%);
+    radial-gradient(32% 26% at 52% 90%, rgba(255, 181, 71, 0.4), transparent 72%);
   animation: crt-haze 44s ease-in-out infinite alternate;
 }
 
@@ -182,7 +182,7 @@ body.is-crt .site-footer {
   filter: blur(1.1px);
   opacity: 0.8;
   background-image:
-    repeating-linear-gradient(90deg, rgba(127, 233, 221, 0.62) 0 1px, transparent 1px 84px),
+    repeating-linear-gradient(90deg, rgba(255, 181, 71, 0.62) 0 1px, transparent 1px 84px),
     repeating-linear-gradient(0deg, rgba(255, 110, 199, 0.58) 0 1px, transparent 1px 62px);
   background-size: 84px 62px;
   animation: crt-grid-run 6.4s linear infinite;
@@ -192,8 +192,8 @@ body.is-crt .site-footer {
 .crt__horizon {
   inset: 58% 0 auto 0;
   height: 2px;
-  background: linear-gradient(90deg, transparent, rgba(127, 233, 221, 0.85), rgba(255, 122, 192, 0.8), transparent);
-  box-shadow: 0 0 30px 8px rgba(255, 122, 192, 0.32), 0 0 70px 14px rgba(127, 233, 221, 0.18);
+  background: linear-gradient(90deg, transparent, rgba(255, 181, 71, 0.85), rgba(255, 122, 192, 0.8), transparent);
+  box-shadow: 0 0 30px 8px rgba(255, 122, 192, 0.32), 0 0 70px 14px rgba(255, 181, 71, 0.18);
   opacity: 0.85;
 }
 
@@ -238,7 +238,7 @@ body.is-crt .site-footer {
   height: 13px;
   opacity: 0;
   backdrop-filter: blur(2px) saturate(1.7) hue-rotate(10deg);
-  background: linear-gradient(90deg, rgba(255, 0, 120, 0.1), rgba(0, 255, 220, 0.1));
+  background: linear-gradient(90deg, rgba(255, 0, 120, 0.1), rgba(255, 196, 90, 0.1));
   mix-blend-mode: screen;
   animation: crt-tear-shake 0.44s steps(2, end) infinite, crt-tear-show 13s steps(1, end) infinite;
 }
@@ -410,13 +410,13 @@ body.is-crt .site-footer {
   padding: clamp(1.4rem, 3.4vw, 2.9rem) clamp(1.15rem, 3.6vw, 3rem);
   border-radius: 18px;
   background: rgba(15, 9, 26, 0.93);
-  border: 1px solid rgba(127, 233, 221, 0.24);
+  border: 1px solid rgba(255, 181, 71, 0.24);
   box-shadow:
     0 0 0 1px rgba(0, 0, 0, 0.55),
-    0 0 46px -8px rgba(127, 233, 221, 0.18),
+    0 0 46px -8px rgba(255, 181, 71, 0.18),
     0 30px 70px -30px rgba(0, 0, 0, 0.95),
     inset 0 0 0 6px rgba(34, 21, 57, 0.9),
-    inset 0 0 0 7px rgba(127, 233, 221, 0.09),
+    inset 0 0 0 7px rgba(255, 181, 71, 0.09),
     inset 0 0 70px rgba(8, 3, 16, 0.7);
   backdrop-filter: blur(9px) saturate(1.06);
 }
@@ -427,7 +427,7 @@ body.is-crt .site-footer {
   inset: 0 0 auto 0;
   height: 1px;
   border-radius: 18px 18px 0 0;
-  background: linear-gradient(90deg, transparent, rgba(190, 255, 247, 0.4), transparent);
+  background: linear-gradient(90deg, transparent, rgba(255, 228, 184, 0.4), transparent);
   pointer-events: none;
 }
 /* 玻璃：一层很淡的对角反光 + 内暗角。压到 0.05 以下，量过对比度不掉档 */
@@ -448,13 +448,13 @@ body.is-crt .site-footer {
   }
 }
 
-/* 正文细则：标题给一点点青光，链接/标签/引用换成青，配色不再是亮粉 */
+/* 正文细则：标题给一点点暖光，链接/标签/引用走落日橙黄，配色不再是亮粉 */
 body.is-crt .crt-screen .post-header {
-  border-bottom-color: rgba(127, 233, 221, 0.22);
+  border-bottom-color: rgba(255, 181, 71, 0.22);
 }
 body.is-crt .crt-screen .post-header__title {
   color: #f7f2ff;
-  text-shadow: 0 0 20px rgba(127, 233, 221, 0.22);
+  text-shadow: 0 0 20px rgba(255, 181, 71, 0.22);
 }
 body.is-crt .crt-screen .prose {
   color: var(--c-text);
@@ -464,20 +464,20 @@ body.is-crt .crt-screen .prose h3 {
   color: #f6f0ff;
 }
 body.is-crt .crt-screen .prose h2 {
-  border-bottom-color: rgba(127, 233, 221, 0.2);
+  border-bottom-color: rgba(255, 181, 71, 0.2);
 }
 body.is-crt .crt-screen .prose a {
   color: var(--c-link);
   text-decoration: underline;
-  text-decoration-color: rgba(143, 240, 229, 0.45);
+  text-decoration-color: rgba(255, 199, 107, 0.45);
 }
 body.is-crt .crt-screen .prose a:hover {
   color: var(--c-link-hover);
   text-decoration-color: currentColor;
 }
 body.is-crt .crt-screen .prose blockquote {
-  border-left-color: rgba(127, 233, 221, 0.75);
-  background: rgba(127, 233, 221, 0.08);
+  border-left-color: rgba(255, 181, 71, 0.75);
+  background: rgba(255, 181, 71, 0.08);
   color: var(--c-text-muted);
 }
 /*
@@ -501,32 +501,32 @@ body.is-crt .crt-screen .prose table td {
   border-color: var(--c-border);
 }
 body.is-crt .crt-screen .prose th {
-  background: rgba(127, 233, 221, 0.07);
+  background: rgba(255, 181, 71, 0.07);
 }
 body.is-crt .crt-screen .prose hr {
-  border-top-color: rgba(127, 233, 221, 0.18);
+  border-top-color: rgba(255, 181, 71, 0.18);
 }
 body.is-crt .crt-screen .prose img,
 body.is-crt .crt-screen .post-cover {
-  border-color: rgba(127, 233, 221, 0.22);
+  border-color: rgba(255, 181, 71, 0.22);
   box-shadow: 0 12px 34px -18px rgba(0, 0, 0, 0.9);
 }
 body.is-crt .crt-screen .tag {
-  color: #cdeee9;
-  background: rgba(127, 233, 221, 0.09);
-  border-color: rgba(127, 233, 221, 0.28);
+  color: #f6e3c4;
+  background: rgba(255, 181, 71, 0.09);
+  border-color: rgba(255, 181, 71, 0.28);
 }
 body.is-crt .crt-screen .tag:hover {
-  color: #eafffb;
-  background: rgba(127, 233, 221, 0.18);
-  border-color: rgba(127, 233, 221, 0.55);
+  color: #fff4e2;
+  background: rgba(255, 181, 71, 0.18);
+  border-color: rgba(255, 181, 71, 0.55);
 }
 body.is-crt .crt-screen .post-nav__link {
   background: rgba(10, 5, 20, 0.55);
-  border-color: rgba(127, 233, 221, 0.18);
+  border-color: rgba(255, 181, 71, 0.18);
 }
 body.is-crt .crt-screen .post-nav__link:hover {
-  border-color: rgba(127, 233, 221, 0.45);
+  border-color: rgba(255, 181, 71, 0.45);
 }
 
 /* 列表页（/posts/、/notes/）也在这个皮肤里：面板里放标题 + 列表 */

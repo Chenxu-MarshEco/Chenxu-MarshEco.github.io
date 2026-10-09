@@ -1,0 +1,51 @@
+# ============================================================================
+# 部署黎语堂后端云函数（2026-10-09 加）
+# ----------------------------------------------------------------------------
+# 以前每次改云函数都要人手复制粘贴到腾讯云控制台（还因为编码错过一次）；
+# 现在：**这几个文件一被推送，就自动把函数代码更新上去**。
+#
+# 需要仓库里配两个 Secret（Settings → Secrets and variables → Actions）：
+#   TENCENT_SECRET_ID   —— CAM 子用户的 SecretId（只需要 tcb:UpdateFunctionCode 这一个动作）
+#   TENCENT_SECRET_KEY  —— 对应的 SecretKey
+# 没配的话这个工作流会明确报"没给密钥"然后失败 —— 那是故意的，不配就不该假装成功。
+#
+# 它只做一件事：调云开发的 UpdateFunctionCode 更新**代码**。
+# 不碰环境变量、不碰触发器、不碰函数配置；也不写仓库（permissions 只给读）。
+# 部署完脚本自己会用公开网关验一遍新事件认不认（见 tools/liyutang-backend/deploy.mjs）。
+# ============================================================================
+name: 部署云函数（黎语堂后端）
+
+on:
+  push:
+    paths:
+      - 'tools/liyutang-backend/index.js'
+      - 'tools/liyutang-backend/package.json'
+      - 'tools/liyutang-backend/deploy.mjs'
+      - '.github/workflows/deploy-function.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-function
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: 先看看要发什么（打包 + 打印参数，不部署）
+        run: node tools/liyutang-backend/deploy.mjs --dry
+
+      - name: 部署（只更新代码）
+        env:
+          TENCENT_SECRET_ID: ${{ secrets.TENCENT_SECRET_ID }}
+          TENCENT_SECRET_KEY: ${{ secrets.TENCENT_SECRET_KEY }}
+        run: node tools/liyutang-backend/deploy.mjs
