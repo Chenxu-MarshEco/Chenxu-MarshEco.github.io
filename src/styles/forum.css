@@ -809,7 +809,33 @@ body.is-crt .twikoo .tk-loading-spinner .path {
   */
   align-items: stretch;
   margin-top: 1.2rem;
+  /*
+    ---------------- 高度这一套（2026-10-10 重写） ----------------
+    用户原话：「聊天框和时间轴等高，且高度不会因为聊天条数而变高；聊天条数多了应当在
+    聊天框内滚动滚轮阅览」。上一版只做到"两栏一样高"，靠的是 grid 的 stretch —— 那是
+    **跟着最高那一个走**：消息一多，聊天框把整行撑高，页面被拉长，左边那条轴底下空一大块。
+    所以这里改成**给死一个高度**：时间轴面板和聊天框读**同一个变量** --lyt-tl-panel-h，
+    两边自然恒等，而且不随内容变化（消息多了只在框里滚）。
+
+    ⚠ --lyt-tl-top / --lyt-tl-form-h 这两个数只在这里写一次（原来写在 .lyt-chat__side--tl 上）：
+      · --lyt-tl-top  这一栏粘在视口往下多少（sticky 的 top，也算进高度）；
+      · --lyt-tl-form-h 顶上那个搜索框占多高（含下边距），面板高度要减掉它。
+    搜索页没有搜索框，所以那一页给**外层**加 .lyt-chat--nofind 把这一项去掉 ——
+    ⚠ 必须是外层：--lyt-tl-panel-h 是在这里算好的，自定义属性一经计算就固定了，
+      在里层（原来那套 .is-nofind）再改 --lyt-tl-form-h 不会回头影响它。
+  */
+  --lyt-tl-top: 1rem;
+  --lyt-tl-form-h: 2.6rem;
+  /* 一屏（几乎）占满 = 视口 − 粘住时让开的那一段 − 搜索框那一行 − 底下一点余量 */
+  --lyt-tl-panel-h: calc(100vh - var(--lyt-tl-top) - var(--lyt-tl-form-h) - 0.6rem);
+  --lyt-tl-panel-h: calc(100dvh - var(--lyt-tl-top) - var(--lyt-tl-form-h) - 0.6rem);
 }
+/* 搜索页（/liyutang/chatroom/search/）：顶上没有搜索框，轴就能多占那一行 */
+.lyt-chat--nofind {
+  --lyt-tl-panel-h: calc(100vh - var(--lyt-tl-top) - 0.6rem);
+  --lyt-tl-panel-h: calc(100dvh - var(--lyt-tl-top) - 0.6rem);
+}
+
 .lyt-chat__side {
   position: sticky;
   top: 1rem;
@@ -844,10 +870,10 @@ body.is-crt .twikoo .tk-loading-spinner .path {
   min-height: 22rem;
   /*
     ⚠ 2026-10-09：原来这里是 `max-height: 60vh` —— 左边时间轴是一屏高，右边被压在 60vh，
-    于是"聊天框比时间轴矮一大截、底下空着"。现在让日志**撑满**主栏剩下的高度
-    （主栏高度由左栏那条轴决定，见 .lyt-chat 的 align-items: stretch），
-    消息多了在自己里面滚（overflow-y: auto 还在）。
-    窄屏例外：那时侧栏搬到上面去了，行高不再封顶，所以下面那条 media query 里仍旧限高。
+    于是"聊天框比时间轴矮一大截、底下空着"。
+    ⚠ 2026-10-10 又改了一次（用户说上一版理解错了）：不再靠 stretch 撑，改成给死高度 ——
+    见下面 .lyt-chat--live 那两条，今天的聊天框高度 = --lyt-tl-panel-h = 时间轴那个面板的高度。
+    这一条里的 max-height: none / flex 只是给**别的页**（存档日页那种整篇往下读的）用的。
   */
   flex: 1 1 auto;
   max-height: none;
@@ -856,6 +882,20 @@ body.is-crt .twikoo .tk-loading-spinner .path {
   border: 1px solid rgba(255, 181, 71, 0.18);
   border-radius: 12px;
   background: rgba(18, 10, 32, 0.72);
+}
+/*
+  今天那一页（/liyutang/chatroom/，页面给外层加了 .lyt-chat--live）：
+  **聊天框和时间轴面板等高**，而且这个高度只跟视口有关、跟消息条数无关 ——
+  消息多了在框里自己滚（overflow-y: auto 在上面那条里），页面不会被越拉越长。
+  输入区照旧排在它下面（自己那一块高度），不再参与"聊天框多高"这笔账。
+  ⚠ flex: 0 0 auto + 显式 height：不能留 flex-grow，不然高度又会跟着容器走。
+  ⚠ 窄屏（≤880px）那个 min(58vh,26rem) 在文件末尾的媒体查询里改成 --lyt-tl-panel-h，
+    这里一个字都不用动（它就是读那个变量的）。
+*/
+.lyt-chat--live .lyt-chat__log {
+  flex: 0 0 auto;
+  height: var(--lyt-tl-panel-h);
+  min-height: 0;
 }
 .lyt-chat__compose {
   display: flex;
@@ -1173,25 +1213,15 @@ body.is-crt .twikoo .tk-loading-spinner .path {
 /* ---------- 左栏：一个搜索框 + 一条会粘住的日子轴 ---------- */
 .lyt-chat__side--tl {
   /*
-    这一栏粘在哪儿**只在这里写一次**：面板高度要减掉它，两处用同一个变量，
-    免得哪天改了 top 忘了改高度（一忘，轴底那根比例尺就被顶出屏幕）。
-    1rem 和别的论坛页侧栏一致 —— 这套壳没有站点页头，顶上没什么要让的。
+    2026-10-10：原来这里自己写着 --lyt-tl-top / --lyt-tl-form-h，现在挪到外层 .lyt-chat 上
+    （今天的聊天框高度要跟这条轴用同一份数，两处分开写迟早会错开）。这一栏只负责"粘在哪儿"。
+    搜索页那个"没有搜索框"的例外也搬到了外层：.lyt-chat--nofind —— 因为高度是在外层算的。
   */
-  --lyt-tl-top: 1rem;
-  /*
-    搜索框那一行占多高（含下边距）。面板高度要减掉它，所以也算这一栏的一笔账。
-    搜索页把搜索框放在右栏（那边就是搜索框本身），给它 `.is-nofind` 把这一项清零。
-  */
-  --lyt-tl-form-h: 2.6rem;
-  top: var(--lyt-tl-top);
+  top: var(--lyt-tl-top, 1rem);
   /* 里面装的是时间轴面板（它自己有框），所以这一栏自己不再是那张带边线的卡片 */
   padding: 0;
   border: 0;
   background: none;
-}
-/* 这一栏顶上没有搜索框（搜索页）：不用给它让位，轴就能多占那一行 */
-.lyt-chat__side--tl.is-nofind {
-  --lyt-tl-form-h: 0rem;
 }
 
 /*
@@ -1240,13 +1270,12 @@ body.is-crt .twikoo .tk-loading-spinner .path {
 }
 
 /*
-  时间轴的框：高度**必须**在这里给死（见这一块开头那条 ⚠）。
-  一屏（几乎）占满 = 视口 − 粘住时让开的那一段 − 搜索框那一行（含下边距）− 底下一点余量。
-  两种写法是老规矩：先 vh 兜底，认识 dvh 的浏览器（手机地址栏收放时更准）用它。
+  时间轴的框：高度**必须**在这里给死（见这一块开头那条 ⚠）——
+  读的就是外层 .lyt-chat 上那个 --lyt-tl-panel-h（2026-10-10 起，今天的聊天框读同一个变量，
+  "聊天框和时间轴等高"就是这么来的；窄屏那一档在文件末尾换成 min(58vh,26rem)，也是同一个变量）。
 */
 .lyt-chat__tl {
-  --tl-panel-h: calc(100vh - var(--lyt-tl-top, 1rem) - var(--lyt-tl-form-h, 2.6rem) - 0.6rem);
-  --tl-panel-h: calc(100dvh - var(--lyt-tl-top, 1rem) - var(--lyt-tl-form-h, 2.6rem) - 0.6rem);
+  --tl-panel-h: var(--lyt-tl-panel-h, calc(100dvh - 1rem - 2.6rem - 0.6rem));
   width: 100%;
 }
 
@@ -1408,16 +1437,13 @@ body.is-crt .twikoo .tk-loading-spinner .path {
   一个搜索框，那么窄的输入框打不了字 —— 而「搜历史」是这一页的一半功能。
   改成整块搬到上面之后，搜索框是整宽的，轴按视口给一个够读的高度（不必撑满一屏：
   它现在是一层页首，不是钉在边上的栏）。
+  ⚠ 高度换在**外层那个变量**上（2026-10-10）：时间轴面板和今天的聊天框都是读它的，
+    一句话就把两边一起改了 —— 不必再单独给 .lyt-chat__log 限高（那一条已经删掉，
+    它原来限的 60vh 和轴这儿的 min(58vh,26rem) 本来也不一样，两个数看着就别扭）。
 */
 @media (max-width: 880px) {
-  .lyt-chat__tl {
-    --tl-panel-h: min(58vh, 26rem);
-  }
-  /*
-    窄屏时侧栏是**在正文上面**的一层页首，行高不再由它封顶 ——
-    所以聊天记录要自己限个高，不然消息一多页面会被拉得很长。
-  */
-  .lyt-chat__log {
-    max-height: 60vh;
+  .lyt-chat {
+    --lyt-tl-panel-h: min(58vh, 26rem);
   }
 }
+

@@ -77,8 +77,20 @@ export function gridLines(w = BOARD_W, h = BOARD_H, step = GRID_STEP) {
   };
 }
 
-/** 允许的工具 */
-export const TOOLS = ['pen', 'eraser'];
+/**
+ * 允许的工具。
+ *
+ *   · `pen`    画笔（正常的一笔）；
+ *   · `eraser` **橡皮的老写法**：一条**纸色**的笔划，画在别人的画上面把它盖住
+ *              （2026-10-09 的"擦所有人"就是这么实现的）。存档重放照样画纸色，
+ *              所以历史存档（10-09 / 10-10）一个像素都不会变；
+ *   · `erase`  **像素橡皮**（2026-10-10 加的第二种橡皮）：不是"画纸色"，而是
+ *             真的把**底下已经画上去的墨**去掉一片 ——
+ *               · 浏览器：`globalCompositeOperation = 'destination-out'`；
+ *               · 存档 SVG：用它做一层 `<mask>`（黑笔画过的地方挖掉）。
+ *              两边同一份几何、同一个先后顺序，所以"存档长得和当时一模一样"这条还成立。
+ */
+export const TOOLS = ['pen', 'eraser', 'erase'];
 
 /** 一根笔划最多多少个点（服务端也会拿这个数卡一道） */
 export const MAX_POINTS = 2000;
@@ -211,7 +223,7 @@ export function strokePath(points, opts = {}) {
 export function checkStroke(stroke, box = {}) {
   const s = stroke && typeof stroke === 'object' ? stroke : {};
   const tool = TOOLS.includes(String(s.tool)) ? String(s.tool) : '';
-  if (!tool) return { ok: false, why: '工具只能是 pen / eraser' };
+  if (!tool) return { ok: false, why: '工具只能是 pen / eraser / erase' };
   const color = safeColor(s.color);
   if (!color) return { ok: false, why: '颜色要是 #rrggbb' };
   const size = Math.round(clamp(s.size, 1, 64) * 10) / 10;
@@ -227,8 +239,15 @@ const esc = (s) =>
 /**
  * 一堆笔划 → 一张 SVG（存档和日历缩略图都用它）。
  *
- * 橡皮用 `stroke="#fbf6ee"`（画布的纸色）**照原样画一遍** —— 不搞 destination-out：
- * 存档要的是"按顺序重放一遍就能得到当时的画面"，而重放顺序天然被 JSON 的数组顺序保住了。
+ * 两种"擦"在存档里是两种写法（顺序天然被数组顺序保住，所以重放一遍就是当时的画面）：
+ *   · `eraser`（老写法）：`stroke="#fbf6ee"`（画布的纸色）照原样画一遍 —— 谁都会被它盖住；
+ *   · `erase`（像素橡皮，2026-10-10）：**一层 `<mask>`** —— 黑笔画过的地方被挖掉，
+ *     和画布上 `destination-out` 是一个意思。
+ *     ⚠ 方向别搞反（2026-10-10 在真浏览器里读像素逮住过一次）：它擦的是**已经画上去的**墨，
+ *     所以要把**它之前**攒下来的内容整块包进这一层遮罩，而**不是**包它后面的内容 ——
+ *     包后面的话，红线（在它之前画的）一点没少、而擦完又画的蓝线反倒被挖掉，正好反了。
+ *     包法：`parts = [<g mask>…之前那一坨…</g>]`，之后再画的笔划照常加在这层**外面**；
+ *     再往后的 erase 又把"到目前为止的所有东西"整个再包一层 —— 嵌套 = 顺序。
  * （画布纸色变了这里也要改；和 src/styles/forum.css 里 .lyt-draw__stage 的底色是同一个值。）
  * @param {Array<object>} strokes 笔划表（顺序 = 画上去的顺序）
  * @param {{w?: number, h?: number, background?: string}} [opts] 参数
@@ -238,22 +257,43 @@ export function strokesToSvg(strokes, opts = {}) {
   const w = opts.w ?? BOARD_W;
   const h = opts.h ?? BOARD_H;
   const bg = opts.background ?? '#fbf6ee';
-  const body = [];
+  const masks = [];
+  /** 到目前为止的内容（碰到一根 erase 就把这整个包进一层遮罩，见上面那段 ⚠） */
+  let parts = [];
   for (const s of Array.isArray(strokes) ? strokes : []) {
     if (!s || s.deleted) continue;
     const got = checkStroke(s, { w, h });
     if (!got.ok) continue;
     const d = strokePath(got.stroke.points);
     if (!d) continue;
+    const size = esc(got.stroke.size);
+    if (got.stroke.tool === 'erase') {
+      /*
+        像素橡皮：把它**之前**攒下来的内容整块包进一层遮罩（方向见文件头那段 ⚠）。
+        maskUnits="userSpaceOnUse" 是关键：遮罩里的坐标就是画板坐标，
+        默认的 objectBoundingBox 会按"被遮罩元素的外框"换算，白底矩形就对不上了。
+        白底 = 全都能看见，黑笔 = 划过的这一条挖掉（黑的那条自己也用圆头圆角，和画布一致）。
+      */
+      if (!parts.length) continue; /* 前面什么都没有：这一擦没有对象，不留空壳 */
+      const id = `lt-erase-${masks.length + 1}`;
+      masks.push(
+        `<mask id="${id}" maskUnits="userSpaceOnUse" x="0" y="0" width="${w}" height="${h}">` +
+          `<rect x="0" y="0" width="${w}" height="${h}" fill="#ffffff" />` +
+          `<path d="${esc(d)}" fill="none" stroke="#000000" stroke-width="${size}" stroke-linecap="round" stroke-linejoin="round" />` +
+          `</mask>`
+      );
+      parts = [`<g mask="url(#${id})">${parts.join('')}</g>`];
+      continue;
+    }
     const color = got.stroke.tool === 'eraser' ? bg : got.stroke.color;
-    body.push(
+    parts.push(
       /*
         data-by 用**昵称 alias**（后端 publicStroke 会发），没设过昵称时后端已经兜底等于用户名 ——
         这样"用户改了昵称，存档里的署名也跟着变"（2026-10-09 用户要求）。
         fill / stroke-linecap / stroke-linejoin 是**可继承**的，写到外层那个 <g> 上就够：
         一条笔划省 50 来个字节，一天一两千笔就是几十 KB（2026-10-10）。
       */
-      `<path d="${esc(d)}" stroke="${esc(color)}" stroke-width="${esc(got.stroke.size)}" ` +
+      `<path d="${esc(d)}" stroke="${esc(color)}" stroke-width="${size}" ` +
         `data-by="${esc(s.alias || s.nick || '')}" />`
     );
   }
@@ -261,7 +301,9 @@ export function strokesToSvg(strokes, opts = {}) {
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}">` +
     `<rect width="${w}" height="${h}" fill="${esc(bg)}" />` +
     /* 笔划共用的表现属性放这一层（可继承）：fill / 圆头圆角，省掉每条 path 上的重复 */
-    (body.length ? `<g fill="none" stroke-linecap="round" stroke-linejoin="round">${body.join('')}</g>` : '') +
+    (parts.length ? `<g fill="none" stroke-linecap="round" stroke-linejoin="round">${parts.join('')}</g>` : '') +
+    /* 遮罩定义放最后（SVG 里引用在定义之前是允许的），免得一天几百笔的 path 被 defs 隔开 */
+    (masks.length ? `<defs>${masks.join('')}</defs>` : '') +
     `</svg>`
   );
 }

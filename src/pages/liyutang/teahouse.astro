@@ -50,6 +50,7 @@ const empty = cp.empty;
   title="久昭卿茶绘"
   description={lead || undefined}
   noindex
+  wide
 >
   <div class="lyt-page">
     <p class="lyt-crumb">
@@ -64,6 +65,15 @@ const empty = cp.empty;
 
     <p class="lyt-form__msg" data-lt-draw-gate>正在看登录状态…</p>
 
+    {/*
+      两栏：**左边画画、右边聊天**（2026-10-10 用户要求）。
+      用户原话：「将茶绘当前UI全部向左挪一些 然后在右边接入聊天室的聊天框 下面也可以发送文字和图片
+      但是没有聊天室的时间轴和看往期等功能 仅方便群友一边画画一边聊天即可」。
+      所以右栏只有「消息流 + 输入区」这两块（复用聊天室那套 .lyt-chat__log / .lyt-chat__compose
+      的样子和 liyutang-client 的 mountChat）——**没有**时间轴、没有往期、没有搜索。
+      整页更宽这件事靠 ForumLayout 的 wide（见那个 Props 上的注释）。
+    */}
+    <div class="lyt-drawWrap">
     <div class="lyt-draw">
       {/*
         工具条。每个按钮都包在 `.lyt-tip__wrap` 里、后面跟一张 `.lyt-tip` 卡片：
@@ -84,13 +94,21 @@ const empty = cp.empty;
           <span class="lyt-tip" role="tooltip" id="lt-tip-eraser"><b>橡皮</b><em>E</em></span>
         </span>
         {/*
-          「擦所有人」= 橡皮的第二种模式（默认关着 = 只擦自己画的）。
-          关着的时候橡皮是**软删自己的笔划**（云端只认自己的，别人那边也真没了）；
-          打开之后才回到"画一条纸色笔划盖住"，别人也看得见。
+          橡皮那两颗（2026-10-10 换掉了原来的「擦所有人」）：
+
+          用户原话：「橡皮优化为两种 一种是擦除接触到的整根该笔画的线条 一种是仅去除划过的地方的
+                    像素 …… 两种下面都分别有个按钮开关控制能否擦别人的」。
+          所以这里是一颗**「橡皮方式」按钮**（整笔 ⇄ 像素，字由引擎写：data-lt-eraser-mode）
+          + 一颗**「擦别人的」开关**（两种方式各记各的，当前是哪种方式就显示它的状态）。
+          两种方式的差别、以及"擦别人的"打开之后各自会怎样，写在 liyutang-draw.ts 那一大段里。
         */}
         <span class="lyt-tip__wrap">
-          <button class="lyt-bar__btn" type="button" data-lt-eraser-all disabled aria-pressed="false" aria-describedby="lt-tip-eraser-all">擦所有人</button>
-          <span class="lyt-tip" role="tooltip" id="lt-tip-eraser-all"><b>擦所有人</b><em>橡皮的第二种模式</em></span>
+          <button class="lyt-bar__btn" type="button" data-lt-eraser-mode disabled aria-describedby="lt-tip-eraser-mode">整笔擦</button>
+          <span class="lyt-tip" role="tooltip" id="lt-tip-eraser-mode"><b>橡皮方式</b><em>整笔 ⇄ 像素</em></span>
+        </span>
+        <span class="lyt-tip__wrap">
+          <button class="lyt-bar__btn" type="button" data-lt-eraser-others disabled aria-pressed="false" aria-describedby="lt-tip-eraser-others">擦别人的</button>
+          <span class="lyt-tip" role="tooltip" id="lt-tip-eraser-others"><b>擦别人的</b><em>两种方式各记各的</em></span>
         </span>
         <span class="lyt-tip__wrap">
           <button class="lyt-bar__btn" type="button" data-lt-tool="pan" disabled aria-describedby="lt-tip-pan" aria-keyshortcuts="C">拖动画布</button>
@@ -170,19 +188,49 @@ const empty = cp.empty;
       </details>
     </div>
 
+      {/*
+        右栏：**聊天室那个聊天框**（2026-10-10 加）。
+        里面这一层是 position:absolute inset:0（见 forum.css 的 .lyt-draw__chatInner）：
+        消息再多也不会把这一行撑高 —— 它只在自己那个框里滚，这一行的高度由画板那栏说了算。
+        ⚠ 这里的类名和聊天室今天那一页**共用**（.lyt-chat__log / .lyt-chat__compose / .lyt-msg）：
+        一边改样子两边一起变，这是故意的（用户要的就是"接入聊天室的聊天框"）。
+        ⚠ 那块 .lyt-empty 只是"还没登录 / 还没拉下来"时候的占位，挂上 mountChat 之后由它接管
+        （第一趟拉完它会自己换成真正的消息；一条都没有时它自己会说"今天还没有人说话"）。
+      */}
+      <aside class="lyt-draw__chat" data-lt-board-chat>
+        <div class="lyt-draw__chatInner">
+          <div class="lyt-chat__log" data-lt-chat-log>
+            <p class="lyt-empty">登录之后这里会显示今天的消息。</p>
+          </div>
+          <div class="lyt-chat__compose">
+            <textarea class="lyt-textarea" data-lt-chat-text placeholder="说点什么…（回车发，Shift+回车换行）" rows="2" disabled></textarea>
+            <div class="lyt-form__row">
+              <button class="lyt-btn" type="button" data-lt-chat-send disabled>发出去</button>
+              <button class="lyt-bar__btn" type="button" data-lt-chat-image disabled>传图</button>
+              <span class="lyt-form__msg" data-lt-chat-status></span>
+            </div>
+          </div>
+        </div>
+      </aside>
+    </div>
+
     {
       api && (
         <script>
           /*
             闸门 + 引擎接线。
-            闸门：没登录 / 没过审 → 工具条和画布都锁上并说明原因（服务端还会再验一次，绕不过去）。
-            引擎：过审之后 mountBoard() 接管 —— 画笔/橡皮（两种模式）/拖动画布/移动/取色、
-            调色盘（默认黑白 + 自己收藏的）、画笔和橡皮各自一个粗细、撤销/重做、本地先画、
-            每 3 秒问一次别人画了什么、跨天自清、光标粗细圆、网格开关、快捷键、
-            还有「今天画过画的人」那张表（点人头像 = 先不看他的）。
+            闸门：没登录 / 没过审 → 工具条、画布和右边那个聊天框都锁上并说明原因
+                  （服务端还会再验一次，绕不过去）。
+            引擎：过审之后 mountBoard() 接管 —— 画笔/橡皮（整笔 / 像素两种方式，各带一颗
+                  「擦别人的」开关）/拖动画布/移动/取色、调色盘（默认黑白 + 自己收藏的）、
+                  画笔和橡皮各自一个粗细、撤销/重做、本地先画、每 3 秒问一次别人画了什么、
+                  跨天自清、光标粗细圆、网格开关、快捷键、
+                  还有「今天画过画的人」那张表（点人头像 = 先不看他的）。
+            聊天：同一道闸门后面挂的是**聊天室那一套**（mountChat：轮询 + 回车发 + 传图），
+                  只是这一页不摆时间轴、不摆往期 —— 用户要的就是"一边画一边聊"。
           */
           import { mountBoard, type BoardHandle } from '../../utils/liyutang-draw';
-          import { type LtUser } from '../../utils/liyutang-client';
+          import { mountChat, type ChatHandle, type LtUser } from '../../utils/liyutang-client';
 
           const apiUrl = document.querySelector('[data-lt-account]')?.getAttribute('data-api') || '';
           const gate = document.querySelector('[data-lt-draw-gate]') as HTMLElement;
@@ -191,7 +239,8 @@ const empty = cp.empty;
           const faces = document.querySelector('[data-lt-draw-faces]') as HTMLElement;
           const pen = document.querySelector('[data-lt-tool="pen"]') as HTMLButtonElement;
           const eraser = document.querySelector('[data-lt-tool="eraser"]') as HTMLButtonElement;
-          const eraserAll = document.querySelector('[data-lt-eraser-all]') as HTMLButtonElement;
+          const eraserMode = document.querySelector('[data-lt-eraser-mode]') as HTMLButtonElement;
+          const eraserOthers = document.querySelector('[data-lt-eraser-others]') as HTMLButtonElement;
           const pan = document.querySelector('[data-lt-tool="pan"]') as HTMLButtonElement;
           const move = document.querySelector('[data-lt-tool="move"]') as HTMLButtonElement;
           const pick = document.querySelector('[data-lt-tool="pick"]') as HTMLButtonElement;
@@ -205,13 +254,20 @@ const empty = cp.empty;
           const gridToggle = document.querySelector('[data-lt-grid-toggle]') as HTMLButtonElement;
           const reset = document.querySelector('[data-lt-reset]') as HTMLButtonElement;
           const zoomText = document.querySelector('[data-lt-zoom]') as HTMLElement;
+          /* 右边那个聊天框（和聊天室今天那一页同一套类名 + 同一个 mountChat） */
+          const chatLog = document.querySelector('[data-lt-chat-log]') as HTMLElement;
+          const chatInput = document.querySelector('[data-lt-chat-text]') as HTMLTextAreaElement;
+          const chatSend = document.querySelector('[data-lt-chat-send]') as HTMLButtonElement;
+          const chatImage = document.querySelector('[data-lt-chat-image]') as HTMLButtonElement;
+          const chatStatus = document.querySelector('[data-lt-chat-status]') as HTMLElement;
           /*
             ⚠ 开闸之后要解开的那些控件 —— **工具条里每一个 button / input 都得列进来**：
             没登录的时候它们必须全是 disabled（验收里那一条就是挨个看 disabled 的），
             漏一个就等于给访客留了个能点的按钮。
           */
-          const controls = [pen, eraser, eraserAll, pan, move, pick, colorInput, colorAdd, sizeInput, sizeNumber, undo, redo, gridToggle, reset];
+          const controls = [pen, eraser, eraserMode, eraserOthers, pan, move, pick, colorInput, colorAdd, sizeInput, sizeNumber, undo, redo, gridToggle, reset];
           let board: BoardHandle | null = null;
+          let chat: ChatHandle | null = null;
 
           const lock = (on: boolean) => {
             for (const c of controls) c.disabled = on;
@@ -219,6 +275,10 @@ const empty = cp.empty;
             canvas.style.opacity = on ? '0.55' : '1';
             /* 锁着的时候光标说明"这儿现在不能画"（没挂引擎，也就没人管 canvas 的光标） */
             canvas.style.cursor = on ? 'not-allowed' : '';
+            /* 聊天框那三件跟着同一道闸门走 */
+            chatInput.disabled = on;
+            chatSend.disabled = on;
+            chatImage.disabled = on;
           };
           lock(true);
 
@@ -242,7 +302,8 @@ const empty = cp.empty;
                   status,
                   pen,
                   eraser,
-                  eraserAll,
+                  eraserMode,
+                  eraserOthers,
                   pan,
                   move,
                   pick,
@@ -272,15 +333,29 @@ const empty = cp.empty;
                   },
                 });
               }
+              /* 聊天那一半：同一道闸门后面挂聊天室那一套（轮询 4 秒，和聊天室页一样） */
+              if (!chat) {
+                chat = mountChat({
+                  api: apiUrl,
+                  log: chatLog,
+                  input: chatInput,
+                  send: chatSend,
+                  image: chatImage,
+                  status: chatStatus,
+                });
+              }
               return;
             }
             board?.stop();
             board = null;
+            chat?.stop();
+            chat = null;
             gate.textContent =
               state === 'pending'
-                ? '账号还在等站长审核 —— 通过之后就能上来画了。'
-                : '要登录才能画画（注册之后等站长过审）。';
+                ? '账号还在等站长审核 —— 通过之后就能上来画了（右边也能一起聊）。'
+                : '要登录才能画画（注册之后等站长过审，右边那个聊天框也是同一道门）。';
             status.textContent = '';
+            chatStatus.textContent = '';
           };
 
           document.addEventListener('lt-account', (ev) => {
@@ -307,6 +382,66 @@ const empty = cp.empty;
   作用域样式一条都命中不了（第一次写就踩了）。这里的类名都是 .lyt-draw__* 前缀，全局也不会串味。
 -->
 <style is:global>
+  /* ==========================================================================
+     版式：**左边画画、右边聊天**（2026-10-10）
+     --------------------------------------------------------------------------
+     用户原话：「将茶绘当前UI全部向左挪一些 然后在右边接入聊天室的聊天框 下面也可以发送文字和图片
+               但是没有聊天室的时间轴和看往期等功能 仅方便群友一边画画一边聊天即可」。
+     两件事分开做：
+       · "整块向左挪" = **整页放宽**（外壳走 ForumLayout 的 wide，正文区 68rem → 104rem）：
+         画板那一栏因此从更靠左的地方开始，而不是被右栏挤窄；
+       · 右栏是聊天室那个聊天框（消息流 + 输入区，复用 .lyt-chat__log / .lyt-chat__compose）。
+     ⚠ 右栏**不参与这一行的高度**：里面那层是 position:absolute inset:0 ——
+       消息再多也不会把这一行撑高（和聊天室今天那一页同一条道理：高度不能跟着内容长），
+       它只在自己框里滚，行高由左边画板那栏说了算。
+     为什么这套规则写在这一页自己的 <style> 里（不往 forum.css 塞）：它是**这一页的版式**，
+     别的页面（聊天室那三页）用不到；forum.css 里放的是画板本身的样子（工具条 / 画布 / 人表）。
+     ========================================================================== */
+  .lyt-drawWrap {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 22rem;
+    gap: 1rem;
+    align-items: stretch;
+    margin-top: 1.2rem;
+  }
+  /* 上边距归外壳（.lyt-drawWrap），画板这一栏自己就别再来一份了 */
+  .lyt-drawWrap > .lyt-draw {
+    margin-top: 0;
+  }
+  .lyt-draw__chat {
+    position: relative;
+    min-width: 0;
+  }
+  .lyt-draw__chatInner {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.7rem;
+    /* 绝对定位那层自己就是"有高度"的：里面的消息流才有得滚（min-height: 0 是关键） */
+    min-height: 0;
+  }
+  .lyt-draw__chat .lyt-chat__log {
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+  @media (max-width: 980px) {
+    .lyt-drawWrap {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .lyt-draw__chat {
+      position: static;
+    }
+    .lyt-draw__chatInner {
+      position: static;
+    }
+    /* 窄屏时聊天框在画板下面：给它一个视口高度，别把页面拉得没边 */
+    .lyt-draw__chat .lyt-chat__log {
+      flex: 0 0 auto;
+      height: min(50vh, 22rem);
+    }
+  }
+
   /* 收藏来的颜色多一个小×：内置色没有这个（内置色删不掉，删了下次还得回来） */
   .lyt-draw__chip {
     position: relative;

@@ -168,14 +168,41 @@ check('★ 卡片的视觉照花涧堂时间轴那个浮层（同底色 / 同描
 check('★ 调色盘默认只剩黑白二色（其余靠用户自己收藏）', /PALETTE = \['#000000', '#ffffff'\]/.test(engine));
 check('★「抓手」这个叫法全没了（按钮文字 / 提示 / 注释都改成「拖动画布」）',
   !/抓手/.test(engine) && !/抓手/.test(page) && /拖动画布/.test(page) && /data-lt-tool="pan"/.test(page));
-check('★ 橡皮两种模式：默认只擦自己的（软删 LT_DRAW_DELETE），「擦所有人」才画纸色笔划',
-  /let eraserAll = false/.test(engine) && /const softDelete = async/.test(engine) &&
-    /if \(!hit\.mine\) return;/.test(engine) && /data-lt-eraser-all/.test(page) &&
-    /eraserAll/.test(read(path.join('src', 'utils', 'liyutang-draw.ts'))));
-check('★ 两个开关跟着账号走（LT_PREFS_SET 带上 grid / eraserAll，applyPrefs 读回来）',
-  /if \(typeof p\.grid === 'boolean'\) gridOn = p\.grid/.test(engine) &&
-    /if \(typeof p\.eraserAll === 'boolean'\) eraserAll = p\.eraserAll/.test(engine) &&
-    /eraserAll,/.test(engine));
+/*
+  ★★ 2026-10-10：橡皮改成"两种方式 × 一颗擦别人的开关"（用户原话：
+  「橡皮优化为两种 一种是擦除接触到的整根该笔画的线条 一种是仅去除划过的地方的像素
+    …… 两种下面都分别有个按钮开关控制能否擦别人的」）。
+  下面这几条钉的是**设计意图**（真浏览器那一段在 ③ 里一条条量像素）。
+*/
+check('★ 橡皮两种方式都在：整笔（stroke）/ 像素（pixel），各有自己的状态',
+  /type EraserMode = 'stroke' \| 'pixel'/.test(engine) && /let eraserMode: EraserMode = 'stroke'/.test(engine) &&
+    /let eraserStrokeOthers = false/.test(engine) && /let eraserPixelOthers = false/.test(engine) &&
+    /const othersAllowed = \(\) => \(eraserMode === 'stroke' \? eraserStrokeOthers : eraserPixelOthers\)/.test(engine));
+check('★「整笔」= 碰到哪根整根擦掉（软删 LT_DRAW_DELETE；别人的要显式 others: true）',
+  /const softDelete = async/.test(engine) && /others: true/.test(engine) &&
+    /if \(!hit\.mine && !othersAllowed\(\)\)/.test(engine));
+check('★「像素」+ 只擦自己 = 把自己那几笔**裁开**（LT_DRAW_REPLACE），不是挖别人的墨',
+  /const cutCircle = /.test(engine) && /const cutAt = /.test(engine) && /const commitCuts = async/.test(engine) &&
+    /event: 'LT_DRAW_REPLACE'/.test(engine) && /edits/.test(engine));
+check('★「像素」+ 擦别人的 = 一根 tool=erase 的笔划（画布 destination-out / 存档 SVG mask）',
+  /const liveTool = tool === 'eraser' \? 'erase' : tool/.test(engine) &&
+    /if \(s\.tool === 'erase'\) c\.globalCompositeOperation = 'destination-out'/.test(engine));
+check('★ 界面两颗按钮：橡皮方式（字由引擎写）+ 擦别人的（aria-pressed）',
+  /data-lt-eraser-mode/.test(page) && /data-lt-eraser-others/.test(page) &&
+    !/data-lt-eraser-all/.test(page) &&
+    /opts\.eraserMode\.textContent = eraserMode === 'pixel' \? '像素擦' : '整笔擦'/.test(engine) &&
+    /opts\.eraserOthers\.setAttribute\('aria-pressed'/.test(engine));
+check('★ 两种方式的"擦别人的"是各记各的，都跟着账号走（LT_PREFS_SET / applyPrefs 各读各写）',
+  /eraserStrokeOthers/.test(engine) && /eraserPixelOthers/.test(engine) &&
+    /if \(typeof p\.eraserStrokeOthers === 'boolean'\)/.test(engine) &&
+    /if \(typeof p\.eraserPixelOthers === 'boolean'\)/.test(engine) &&
+    /eraserMode,\n\s+eraserStrokeOthers,\n\s+eraserPixelOthers,/.test(engine));
+check('★ 老账号里的 eraserAll 映射成"像素 + 擦别人的"（升级不丢那颗开关）',
+  /p\.eraserAll === true &&/.test(engine) && /eraserPixelOthers = true;/.test(engine));
+check('★ 像素橡皮那一笔不是墨：命中测试 / 移动线条都跳过它（tool === \'erase\'）',
+  /if \(s\.tool === 'erase'\) continue;/.test(engine));
+check('★ 墓碑：别人撤销 / 被擦掉的笔划靠增量拉下来后就地删掉（absorb 认 deleted）',
+  /if \(s\.deleted\) \{/.test(engine) && /removed \+= 1;/.test(engine));
 check('★ 跨天自清：只认服务端回的 today，变了就把本地笔划全丢掉重拉（不自己算日期）',
   /if \(today && day && today !== day\)/.test(engine) && /strokes = \[\];/.test(engine) && /let day = ''/.test(engine));
 check('★ 页面文案从 copy() 读（board.lead/hint/note），空的不渲染；生造的介绍句一个都没有',
@@ -261,7 +288,7 @@ if (!MongoMemoryServer || !mongodBinary) {
   check('★ 画太快 → 被拒（80 毫秒一笔）', tooFast.code !== 0, String(tooFast.message));
   await sleep(150);
 
-  check('工具只能是 pen / eraser', (await call({ event: 'LT_DRAW_ADD', ltToken: tokHoshi, tool: 'spray', color: '#ffffff', size: 4, points: [[1, 1]] })).code !== 0);
+  check('工具只能是 pen / eraser / erase', (await call({ event: 'LT_DRAW_ADD', ltToken: tokHoshi, tool: 'spray', color: '#ffffff', size: 4, points: [[1, 1]] })).code !== 0);
   await sleep(150);
   check('★ 颜色不是 #rrggbb → 被拒', (await call({ event: 'LT_DRAW_ADD', ltToken: tokHoshi, tool: 'pen', color: 'red', size: 4, points: [[1, 1]] })).code !== 0);
   await sleep(150);
@@ -302,6 +329,112 @@ if (!MongoMemoryServer || !mongodBinary) {
     });
     return (await call({ event: 'LT_DRAW_DELETE', ltToken: tokHoshi, id: 'other1' })).code !== 0;
   })());
+
+  /* ==========================================================================
+     2026-10-10：像素橡皮 / 整笔擦别人的 —— 服务端这一半
+     ========================================================================== */
+  await sleep(150);
+  const eraseAdd = await call({ event: 'LT_DRAW_ADD', ltToken: tokHoshi, tool: 'erase', color: PAPER, size: 40, points: [[300, 300], [400, 300]] });
+  check('★ 像素橡皮那一笔（tool=erase）服务端收得下（它也是一种笔划）',
+    eraseAdd.code === 0 && eraseAdd.stroke?.tool === 'erase', JSON.stringify(eraseAdd.stroke ?? eraseAdd.message));
+
+  /*
+    「擦别人的」（整笔）：显式 others: true 才准，而且墓碑要带新的 updatedAt ——
+    客户端是按 updatedAt 增量拉的，不抬这个值，别人屏幕上那根线就删不掉。
+  */
+  const delOtherOk = await call({ event: 'LT_DRAW_DELETE', ltToken: tokHoshi, id: 'other1', others: true });
+  check('★ 整笔擦别人的：带 others: true → 允许（用户要的这颗开关）', delOtherOk.code === 0, String(delOtherOk.message));
+  const tomb = await raw.findOne({ id: 'other1' });
+  check('★ 擦掉别人那一笔之后留了墓碑，而且 updatedAt 抬到了删除那一刻（别人轮询才拉得到）',
+    tomb?.deleted === true && Number(tomb?.updatedAt) > 0 && Number(tomb.updatedAt) >= Number(tomb.createdAt),
+    JSON.stringify({ deleted: tomb?.deleted, updatedAt: tomb?.updatedAt, createdAt: tomb?.createdAt }));
+  const incTomb = await call({ event: 'LT_DRAW_LIST', ltToken: tokHoshi, after: 1 });
+  check('★ 增量那一趟**不过滤 deleted**（把墓碑发下来），而且带 deleted: true 标记',
+    incTomb.code === 0 && incTomb.strokes.some((s) => s.id === 'other1' && s.deleted === true),
+    JSON.stringify(incTomb.strokes?.filter((s) => s.id === 'other1')));
+  const fullList = await call({ event: 'LT_DRAW_LIST', ltToken: tokHoshi });
+  check('★ 第一趟（整块板）照旧**不给**墓碑（"整块板长什么样"里没有已经没了的笔划）',
+    fullList.code === 0 && !fullList.strokes.some((s) => s.id === 'other1'),
+    `${fullList.strokes?.length} 笔`);
+
+  /* 像素橡皮（只擦自己）：一根换成 0~n 段 —— 原子、只给自己、继承原来那一笔的时间 */
+  const mineForCut = await (async () => {
+    await sleep(150);
+    return call({ event: 'LT_DRAW_ADD', ltToken: tokHoshi, tool: 'pen', color: '#ff0000', size: 10, points: [[100, 100], [200, 100], [300, 100]] });
+  })();
+  /* ⚠ 每一次 REPLACE 之间都要让过 80 毫秒那道限速，否则测到的是"画太快了"，不是要测的那条规矩 */
+  await sleep(150);
+  const cut = await call({
+    event: 'LT_DRAW_REPLACE',
+    ltToken: tokHoshi,
+    edits: [{ id: mineForCut.stroke.id, parts: [
+      { tool: 'pen', color: '#ff0000', size: 10, points: [[100, 100], [180, 100]] },
+      { tool: 'pen', color: '#ff0000', size: 10, points: [[220, 100], [300, 100]] },
+    ] }],
+  });
+  check('★ 像素橡皮（只擦自己）：LT_DRAW_REPLACE 把一根换成两段，返回新的那两段',
+    cut.code === 0 && cut.strokes?.length === 2 && cut.deleted?.includes(mineForCut.stroke.id),
+    JSON.stringify({ code: cut.code, message: cut.message, n: cut.strokes?.length, deleted: cut.deleted }));
+  check('★ 裁出来的段**继承原来那一笔的时间**（z 序不能因为擦一下就跳到最后面）',
+    cut.strokes?.[0]?.createdAt === mineForCut.stroke.createdAt && cut.strokes?.[1]?.createdAt === mineForCut.stroke.createdAt,
+    JSON.stringify({ 原: mineForCut.stroke.createdAt, 新: cut.strokes?.map((s) => s.createdAt) }));
+  check('★ 被裁的那一根留了墓碑（它"没了"，别人也要跟着删掉它）',
+    (await raw.findOne({ id: mineForCut.stroke.id }))?.deleted === true);
+  check('★ 只准改自己画的（改别人的一根 → 被拒）', await (async () => {
+    await raw.insertOne({
+      id: 'other2',
+      day: new Date(Date.now() + 4 * 3600 * 1000).toISOString().slice(0, 10),
+      userId: 'someone-else',
+      uk: 'deadbeef',
+      nick: '别人',
+      avatar: '',
+      tool: 'pen',
+      color: '#000000',
+      size: 3,
+      points: [[1, 1], [2, 2]],
+      createdAt: Date.now(),
+      deleted: false,
+    });
+    await sleep(150);
+    const r = await call({ event: 'LT_DRAW_REPLACE', ltToken: tokHoshi, edits: [{ id: 'other2', parts: [] }] });
+    return r.code !== 0 && !/画太快/.test(String(r.message));
+  })());
+  const cutBefore = await raw.countDocuments({ deleted: { $ne: true }, userId: idHoshi });
+  await sleep(150);
+  const badPart = await call({
+    event: 'LT_DRAW_REPLACE',
+    ltToken: tokHoshi,
+    edits: [
+      { id: cut.strokes[0].id, parts: [{ tool: 'pen', color: '#00ff00', size: 4, points: [[1, 1], [2, 2]] }] },
+      { id: cut.strokes[1].id, parts: [{ tool: 'spray', color: '#00ff00', size: 4, points: [[1, 1]] }] },
+    ],
+  });
+  check('★ 一次改多根时**要么全成、要么一个都不动**（第二根不合法 → 第一根也没被改）',
+    badPart.code !== 0 && !/画太快/.test(String(badPart.message)) &&
+      (await raw.countDocuments({ deleted: { $ne: true }, userId: idHoshi })) === cutBefore,
+    JSON.stringify({ code: badPart.code, message: badPart.message, 笔数: cutBefore }));
+  await sleep(150);
+  const cutAll = await call({ event: 'LT_DRAW_REPLACE', ltToken: tokHoshi, edits: [{ id: cut.strokes[0].id, parts: [] }] });
+  check('★ parts 给空数组 = 整根擦掉（像素橡皮把那一小段全擦没了的情况）',
+    cutAll.code === 0 && cutAll.strokes?.length === 0 && (await raw.findOne({ id: cut.strokes[0].id }))?.deleted === true,
+    JSON.stringify({ code: cutAll.code, message: cutAll.message }));
+
+  /* 偏好：橡皮的方式 + 两份"擦别人的" */
+  await call({
+    event: 'LT_PREFS_SET',
+    ltToken: tokHoshi,
+    prefs: { eraserMode: 'pixel', eraserStrokeOthers: true, eraserPixelOthers: false, grid: false, penSize: 12 },
+  });
+  const prefDoc = await cli.db('twikoo').collection('lt_users').findOne({ nick: 'hoshi' });
+  check('★ 橡皮的方式 + 两份开关都存进了账号（服务端白名单认这三个字段）',
+    prefDoc?.prefs?.eraserMode === 'pixel' && prefDoc?.prefs?.eraserStrokeOthers === true && prefDoc?.prefs?.eraserPixelOthers === false,
+    JSON.stringify(prefDoc?.prefs ?? {}));
+  await call({ event: 'LT_PREFS_SET', ltToken: tokHoshi, prefs: { eraserMode: '喷枪', eraserStrokeOthers: 'yes' } });
+  const prefDoc2 = await cli.db('twikoo').collection('lt_users').findOne({ nick: 'hoshi' });
+  check('不认识的 eraserMode / 不是布尔的开关一律丢掉（不写坏数据）',
+    prefDoc2?.prefs?.eraserMode !== '喷枪' && prefDoc2?.prefs?.eraserStrokeOthers !== 'yes',
+    JSON.stringify(prefDoc2?.prefs ?? {}));
+
 
   /* 一小时上限：直接塞 4000 笔（接口造不出来，因为限速） */
   const now = Date.now();
@@ -559,7 +692,15 @@ const liveApi = (() => {
 })();
 
 /* 假后端：自己画的记下来；轮询时给一笔"别人画的"（在 1800,1100，蓝色） */
-const seen = { add: [], del: [], moves: [], prefs: [], lists: 0 };
+const seen = { add: [], del: [], moves: [], prefs: [], replace: [], chatSends: [], chatLists: 0, lists: 0 };
+/*
+  茶绘右栏那个聊天框（2026-10-10 加的）用的假聊天后端：一条历史消息 + 之后发进来的。
+  ⚠ 增量那一趟必须**按游标过滤**（mountChat 在带游标时是"追加"，不去重）——
+  不然每 4 秒轮询一次就会把同一条消息重画一遍，测试自己把自己搞乱。
+*/
+const chatMsgs = [
+  { id: 'chat0', day: '2026-10-09', nick: '虹星', alias: '虹星', avatar: '', text: '茶绘这边也能聊。', image: '', createdAt: Date.now() - 5000, mine: false },
+];
 /*
   假后端自己记一份"服务端那一条"：LT_DRAW_MOVE 要按 id 把这根找回来、算出新位置再发回去
   （引擎会拿服务端返回的点去比"和本地算的一样不一样"，一样就不再重建缓存）。
@@ -572,6 +713,12 @@ const created = new Map();
 */
 const extra = [];
 const remoteStroke = (s) => ({ ...s, createdAt: Date.now() + 30000, updatedAt: Date.now() + 30000, mine: false });
+/*
+  **墓碑**（2026-10-10）：真后端在增量那一趟会把"撤掉的 / 被擦掉的"也发下来（带 deleted: true），
+  客户端见到就把本地那一根删掉。这一段就是拿来量这条路的 ——
+  测试中途往这里塞一条，看画布上那一根是不是真的消失了（第 5 段 (g)）。
+*/
+const tombstones = [];
 /* 账号里那份偏好（LT_ME 会带出去）——"重开页面收藏还在"那条就靠它 */
 let prefsState = {};
 /*
@@ -606,6 +753,7 @@ const fakeBackend = (body) => {
     const all = [
       ...[...created.values()],
       ...extra,
+      ...tombstones,
       ...(after ? [{ ...OTHER, createdAt: after + 1, updatedAt: after + 1 }] : []),
     ];
     const strokes = servedWiped
@@ -651,6 +799,39 @@ const fakeBackend = (body) => {
     created.delete(String(body.id));
     return { code: 0, id: body.id };
   }
+  /*
+    像素橡皮（只擦自己）那一路（2026-10-10）：一根换成 0~n 段。
+    假后端照着真后端的样子做：原笔划从"盘上"拿掉，每段拿一个新 id 放进来，
+    返回**新的那几段**（客户端要用它们替换本地那些临时碎片）。
+  */
+  if (event === 'LT_DRAW_REPLACE') {
+    seen.replace.push(body);
+    const out = [];
+    for (const e of Array.isArray(body?.edits) ? body.edits : []) {
+      const s = created.get(String(e.id));
+      created.delete(String(e.id));
+      for (const part of Array.isArray(e.parts) ? e.parts : []) {
+        const stroke = {
+          id: 'cut' + seen.replace.length + '-' + out.length,
+          uk: 'aaaa1111',
+          nick: '测试者',
+          alias: '测试者',
+          avatar: '',
+          tool: part.tool,
+          color: part.color,
+          size: part.size,
+          points: part.points,
+          /* 继承原来那一笔的时间：z 序不能因为"擦了一下"就跳到最后面 */
+          createdAt: s ? Number(s.createdAt) || Date.now() : Date.now(),
+          updatedAt: Date.now(),
+          mine: true,
+        };
+        created.set(stroke.id, { ...stroke, points: stroke.points.map(([x, y]) => [x, y]) });
+        out.push(stroke);
+      }
+    }
+    return { code: 0, strokes: out, deleted: (body?.edits ?? []).map((e) => e.id), serverNow: Date.now() };
+  }
   /* 拖动一根线条：整条平移、逐点夹回画板（和云函数那份一个规矩） */
   if (event === 'LT_DRAW_MOVE') {
     seen.moves.push(body);
@@ -670,6 +851,29 @@ const fakeBackend = (body) => {
     seen.prefs.push(body);
     prefsState = { ...(body.prefs || {}) };
     return { code: 0, prefs: prefsState };
+  }
+  /* 茶绘右栏那个聊天框走的就是聊天室那一套事件（LT_CHAT_*），这里给个最小的假后端 */
+  if (event === 'LT_CHAT_LIST') {
+    seen.chatLists += 1;
+    const after = Number(body?.after) || 0;
+    const list = after ? chatMsgs.filter((m) => Number(m.createdAt) > after) : chatMsgs;
+    return { code: 0, day: servedToday, today: servedToday, serverNow: Date.now(), messages: list, more: false, next: null };
+  }
+  if (event === 'LT_CHAT_SEND') {
+    seen.chatSends.push(body);
+    const m = {
+      id: 'chatmine' + seen.chatSends.length,
+      day: servedToday,
+      nick: '测试者',
+      alias: '测试者',
+      avatar: '',
+      text: String(body.text ?? ''),
+      image: String(body.image ?? ''),
+      createdAt: Date.now(),
+      mine: true,
+    };
+    chatMsgs.push(m);
+    return { code: 0, message: m };
   }
   return { code: 0 };
 };
@@ -1080,23 +1284,37 @@ try {
     vReset && Math.abs(vReset.scale - vReset.fit) < 0.002 && vReset.x === 0 && vReset.y === 0 && Math.abs(vReset.zoom - 1) < 0.02,
     JSON.stringify(vReset));
 
-  /* 橡皮：擦过自己那条线 → 那点变回纸色 */
+  /*
+    橡皮（默认 = **整笔 + 只擦自己的**，2026-10-10 起是"两种方式"里的默认那种）：
+    先用画笔画一条线，再用橡皮擦过去 → 那一点变回纸色、发出去的是**软删**。
+    ⚠ 位置挑在 y=2050：上面那些检查在 (400..700, 375) 早就画过一条深色的线，
+      在那个位置"擦完变纸色"是不成立的（擦掉上面那条，底下那条会露出来）。
+  */
+  await cdp.ev(`document.querySelector('[data-lt-tool="pen"]').click()`);
+  await cdp.ev(`(() => { const el = document.querySelector('[data-lt-color]'); el.value = '#ff4d6d'; el.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
+  await sleep(120);
+  await drawOn([[400, 2050], [500, 2050], [600, 2050], [700, 2050]]);
+  const ownId = `mine${seen.add.length}`;
+  check('（前置）画笔那条线真的画上去了（橡皮那几条才有意义）',
+    (await cdp.ev(pixelAt(600, 2050))) === '#ff4d6d', await cdp.ev(pixelAt(600, 2050)));
   await cdp.ev(`document.querySelector('[data-lt-tool="eraser"]').click()`);
-  await drawOn([[400, 375], [500, 375], [600, 375], [700, 375]]);
-  const erased = await cdp.ev(pixelAt(600, 375));
+  await sleep(150);
+  await drawOn([[600, 1980], [600, 2050], [600, 2120]]);
+  const erased = await cdp.ev(pixelAt(600, 2050));
   check('★ 橡皮擦过之后那一点变回纸色', erased === PAPER, erased);
   /*
-    ⚠ 这一条 2026-10-09 改过（旧断言：`最后一笔 tool=eraser 且 color=纸色`，即"橡皮=画一条纸色笔划"）。
-    用户这一批把橡皮的**默认模式**换成了"只擦自己的"：碰到自己的笔划是**软删**
-    （LT_DRAW_DELETE，云端只允许删自己的），所以默认模式下不再发那条纸色笔划了 ——
-    旧断言测的是被推翻的那套契约。现在改成断言**新的契约**：像素变回纸色 + 发的是删除请求。
-    （"画一条纸色笔划盖住"这条老做法没丢，它变成了「擦所有人」那个模式，下面有专门的断言。）
+    ⚠ 这一条 2026-10-09 改过（旧断言：`最后一笔 tool=eraser 且 color=纸色`，即"橡皮=画一条纸色笔划"），
+    2026-10-10 又核对了一遍：默认那种（整笔 + 只擦自己）碰到自己的笔划是**软删**
+    （LT_DRAW_DELETE，云端只允许删自己的），所以它不画任何东西 ——
+    "画一条纸色笔划盖住"那套老做法只留给**存档里的老笔划**重放（新的界面不再产生它，
+    像素橡皮挖墨走的是 tool='erase'）。这里钉的仍旧是"软删 + 不画东西"这个契约。
   */
   const delAfterErase = seen.del[seen.del.length - 1];
-  check('★ 默认的橡皮（只擦自己的）：发的是软删自己的那一笔，而不是"画一条纸色笔划"',
+  check('★ 默认的橡皮（整笔 + 只擦自己的）：软删的正是刚画的那一笔，而不是"画一条纸色笔划"',
     delAfterErase?.event === 'LT_DRAW_DELETE' && delAfterErase?.ltToken === 'fake-token' &&
+      delAfterErase?.id === ownId && !delAfterErase?.others &&
       seen.add.filter((s) => s.tool === 'eraser').length === 0,
-    JSON.stringify({ del: delAfterErase?.event, eraserAdds: seen.add.filter((s) => s.tool === 'eraser').length }));
+    JSON.stringify({ del: delAfterErase, 期望: ownId, eraserAdds: seen.add.filter((s) => s.tool === 'eraser').length }));
 
   /* ---- 撤销：删自己最后那一笔 ---- */
   await cdp.ev(`document.querySelector('[data-lt-undo]').click()`);
@@ -1260,13 +1478,30 @@ try {
   const dragOwn = await dragWithScroll([[1000, 1300], [1000, 1340], [1000, 1380]]);
   await sleep(600);
   const mv = seen.moves[seen.moves.length - 1];
+  /*
+    ⚠ 容差按**缩放**算（2026-10-10）：合成鼠标事件的坐标是整数屏幕像素（`toScreen` 里 Math.round），
+    而画板坐标 = 屏幕像素 / 缩放 —— 2026-10-10 茶绘那一页变宽、画板那一栏窄了一些（右边接了聊天栏），
+    缩放从 0.29 掉到 ~0.24，于是"1 个屏幕像素"从 3.4 画板像素变成 4.2。
+    原来写死 ±3 就会被这点取整弄红（功能是好的）。给 2 个屏幕像素的余量。
+  */
+  const px = (await cdp.ev(viewOf))?.scale || 0.25;
+  const mvTol = Math.max(3, 2 / px);
   check('★ 挪自己那一根：服务端正好收到一条 LT_DRAW_MOVE（id / dx / dy 都对）',
-    seen.moves.length === moves0 + 1 && mv.event === 'LT_DRAW_MOVE' && mv.id === myMoveId && Math.abs(mv.dx) <= 2 && Math.abs(mv.dy - 80) <= 3,
-    JSON.stringify(mv));
+    seen.moves.length === moves0 + 1 && mv.event === 'LT_DRAW_MOVE' && mv.id === myMoveId && Math.abs(mv.dx) <= mvTol && Math.abs(mv.dy - 80) <= mvTol,
+    `${JSON.stringify(mv)}（容差 ±${mvTol.toFixed(1)} 画板像素）`);
   check('★ 像素上那条线真的移了：原位置变回纸色',
     (await cdp.ev(pixelAt(1000, 1300))) === PAPER, await cdp.ev(pixelAt(1000, 1300)));
-  check('★ 新位置是那条线的颜色',
-    (await cdp.ev(pixelAt(1000, 1380))) === '#b5179e', await cdp.ev(pixelAt(1000, 1380)));
+  /*
+    新位置也按"取整允许的误差"找：那条线现在落在 1300 + dy 处（dy 可能差几个画板像素），
+    所以在 1300 下面扫一小段，找到那条墨就算过（比"钉死读 1380"稳）。
+  */
+  const movedY = await cdp.ev(`(() => {
+      const b = window.__ltBoard;
+      for (let y = 1305; y <= 1400; y += 1) if (b.pixelAt(1000, y) === '#b5179e') return y;
+      return -1;
+    })()`);
+  check('★ 新位置是那条线的颜色（在 1300 下面找到了它，误差不超过取整那点）',
+    movedY > 0 && Math.abs(movedY - (1300 + (mv?.dy ?? 80))) <= 6, `找到 y=${movedY}，请求里 dy=${mv?.dy}`);
   check('拖动的时候页面没有跟着滚（拖线也不该滚页面）',
     dragOwn.s0.y === dragOwn.s1.y && dragOwn.scrolls.every((s) => s.y === dragOwn.s0.y),
     JSON.stringify({ before: dragOwn.s0, after: dragOwn.s1 }));
@@ -1863,72 +2098,182 @@ try {
   check('★ 工具条上每个按钮都挂了自己的卡片（aria-describedby → role=tooltip）',
     tipAll.n >= 11 && tipAll.bad.length === 0, JSON.stringify(tipAll));
 
-  /* ---- 5. 橡皮两种模式 ---- */
-  /* (a) 先塞一条**别人的**笔划，默认模式下擦它：不许删、不许盖，像素必须还在 */
+  /* ---- 5. 橡皮：两种方式 × 一颗"擦别人的"开关（2026-10-10） ----
+     用户原话：「橡皮优化为两种 一种是擦除接触到的整根该笔画的线条 一种是仅去除划过的地方的
+               像素 …… 两种下面都分别有个按钮开关控制能否擦别人的」。
+     这一段一条条量**像素**：四种组合各自"动了什么、没动什么"。 */
+  const eraserState = `(() => { const s = window.__ltBoard.state; return { mode: s.eraserMode, stroke: s.eraserStrokeOthers, pixel: s.eraserPixelOthers, others: s.eraserOthers }; })()`;
+  const clickEraserMode = async () => {
+    await cdp.ev(`document.querySelector('[data-lt-eraser-mode]').click()`);
+    await sleep(300);
+  };
+  const clickEraserOthers = async () => {
+    await cdp.ev(`document.querySelector('[data-lt-eraser-others]').click()`);
+    await sleep(300);
+  };
+  /** 把橡皮设成想要的那一档（方式 + 擦别人的），不管现在是什么状态 —— 后面每条都从确定的起点开始 */
+  const setEraser = async (mode, others) => {
+    for (let i = 0; i < 6; i += 1) {
+      const s = await cdp.ev(eraserState);
+      if (s.mode === mode && s.others === others) return s;
+      if (s.mode !== mode) await clickEraserMode();
+      else await clickEraserOthers();
+    }
+    return cdp.ev(eraserState);
+  };
+  const modeBtnText = `(() => String((document.querySelector('[data-lt-eraser-mode]') || {}).textContent || ''))()`;
+  const othersPressed = `(() => { const b = document.querySelector('[data-lt-eraser-others]'); return { pressed: b.getAttribute('aria-pressed'), cls: b.classList.contains('is-on') }; })()`;
+  /*
+    ⚠ 状态行那个观察器是**这一页刚打开时**挂的，中间那段"重开页面看偏好还在不在"把页面刷过一遍 ——
+    window.__statusLog 跟着没了，statusSaid 会抛 "Cannot read properties of undefined (reading 'some')"。
+    所以这一段自己重新挂一次（下面 (a) 要用它证明"别人的线条被拒时说了人话"）。
+  */
+  await cdp.ev(`(() => {
+      const el = document.querySelector('[data-lt-draw-status]');
+      window.__statusLog = [el.textContent];
+      new MutationObserver(() => window.__statusLog.push(el.textContent)).observe(el, { childList: true, characterData: true, subtree: true });
+      return true;
+    })()`);
+
+  /* (a) 整笔 + 只擦自己：擦到**别人的**笔划 → 一个请求都不发、像素一动不动 */
   const otherInk = '#cc00aa';
-  const otherLine = remoteStroke({
+  extra.push(remoteStroke({
     id: 'other-for-eraser', uk: 'beefcafe', nick: '别人', avatar: '',
     tool: 'pen', color: otherInk, size: 26, points: [[2600, 1600], [2700, 1600], [2800, 1600]],
-  });
-  extra.push(otherLine);
+  }));
   const otherThere = await cdp.wait(`(() => (window.__ltBoard ? window.__ltBoard.pixelAt(2700, 1600) : '') === '${otherInk}')()`, 15000);
   check('（前置）别人的那条笔划已经拉下来画在画板上了', otherThere === true, await cdp.ev(pixelAt(2700, 1600)));
-  const mode0 = await cdp.ev(`window.__ltBoard.state.eraserAll`);
-  if (mode0) {
-    await cdp.ev(`document.querySelector('[data-lt-eraser-all]').click()`);
-    await sleep(300);
-  }
+  const stA = await setEraser('stroke', false);
+  check('★ 默认档 = 整笔 + 只擦自己的（引擎状态和按钮文字都对得上）',
+    stA.mode === 'stroke' && stA.others === false && (await cdp.ev(modeBtnText)) === '整笔擦', JSON.stringify(stA));
   await pickTool('eraser');
   await setSizeNum(30);
   const beforeOther = { del: seen.del.length, add: seen.add.length };
   await dragWithScroll([[2700, 1560], [2700, 1600], [2700, 1640]]);
   await sleep(600);
-  check('★ 默认模式（只擦自己的）擦到**别人的**笔划：一个删除请求都不发，也不盖纸色',
+  check('★ 整笔 + 只擦自己：擦到**别人的**笔划 → 一个请求都不发，也不盖纸色',
     seen.del.length === beforeOther.del && seen.add.length === beforeOther.add,
     JSON.stringify({ del: seen.del.length - beforeOther.del, add: seen.add.length - beforeOther.add }));
   check('★ 别人的笔划像素一点没动（还是那个颜色）',
     (await cdp.ev(pixelAt(2700, 1600))) === otherInk, await cdp.ev(pixelAt(2700, 1600)));
+  check('顺手说明了原因（"先把「擦别人的」打开"）', await statusSaid(/擦别人的/));
 
-  /* (b) 打开「擦所有人」→ 擦过去变成"盖一条纸色笔划"（别人也看得见） */
-  await cdp.ev(`document.querySelector('[data-lt-eraser-all]').click()`);
-  await sleep(300);
-  const allOn = await cdp.ev(`(() => ({ s: window.__ltBoard.state.eraserAll, pressed: document.querySelector('[data-lt-eraser-all]').getAttribute('aria-pressed'), cls: document.querySelector('[data-lt-eraser-all]').classList.contains('is-on') }))()`);
-  check('★「擦所有人」按钮打开了（aria-pressed=true、状态进了引擎）', allOn.s === true && allOn.pressed === 'true' && allOn.cls === true, JSON.stringify(allOn));
-  const prefsAll = await cdp.wait(`(() => { const p = ${JSON.stringify(0)}; return window.__ltBoard.state.eraserAll === true; })()`, 1000);
-  void prefsAll;
-  const addsBeforeAll = seen.add.length;
+  /* (b) 整笔 + 擦别人的：同一笔 → 整根删掉（others: true），像素变纸色 */
+  const stB = await setEraser('stroke', true);
+  check('★「擦别人的」打开了（aria-pressed=true、状态进了引擎）',
+    stB.others === true && (await cdp.ev(othersPressed)).pressed === 'true' && (await cdp.ev(othersPressed)).cls === true,
+    JSON.stringify({ state: stB, btn: await cdp.ev(othersPressed) }));
+  const delBeforeAll = seen.del.length;
   await pickTool('eraser');
   await dragWithScroll([[2700, 1560], [2700, 1600], [2700, 1640]]);
-  await sleep(600);
-  const eraserAdd = seen.add[seen.add.length - 1];
-  check('★ 擦所有人：发出去的是"纸色笔划"（tool=eraser / color=纸色），像素被盖成纸色',
-    seen.add.length === addsBeforeAll + 1 && eraserAdd?.tool === 'eraser' && eraserAdd?.color === PAPER &&
-      (await cdp.ev(pixelAt(2700, 1600))) === PAPER,
-    JSON.stringify({ tool: eraserAdd?.tool, color: eraserAdd?.color, 像素: await cdp.ev(pixelAt(2700, 1600)) }));
-  const prefsEraserAll = seen.prefs[seen.prefs.length - 1];
-  check('★ eraserAll 也存进了账号偏好（LT_PREFS_SET 里 eraserAll=true）',
-    !!prefsEraserAll && prefsEraserAll.prefs.eraserAll === true, JSON.stringify(prefsEraserAll?.prefs ?? {}));
-
-  /* (c) 回到默认模式，擦**自己的**笔划：必须发 LT_DRAW_DELETE、id 是自己的 */
-  await cdp.ev(`document.querySelector('[data-lt-eraser-all]').click()`);
-  await sleep(300);
-  await pickTool('pen');
-  await setInk('#000000');
-  await setSizeNum(18);
-  await drawOn([[3200, 1600], [3300, 1600], [3400, 1600]]);
-  const mineId = `mine${seen.add.length}`;
-  check('（前置）自己那条线画上去了', (await cdp.ev(pixelAt(3300, 1600))) === '#000000', await cdp.ev(pixelAt(3300, 1600)));
-  await pickTool('eraser');
-  await setSizeNum(30);
-  const beforeMine = { del: seen.del.length, add: seen.add.length };
-  await dragWithScroll([[3300, 1560], [3300, 1600], [3300, 1640]]);
   await sleep(700);
-  check('★ 默认模式擦**自己的**笔划：发出 LT_DRAW_DELETE，而且删的就是自己那一笔的 id',
-    seen.del.length === beforeMine.del + 1 && seen.del[seen.del.length - 1].id === mineId &&
-      seen.add.length === beforeMine.add,
-    JSON.stringify({ 删的是: seen.del[seen.del.length - 1]?.id, 期望: mineId, add: seen.add.length - beforeMine.add }));
-  check('★ 擦掉之后画布上那一点变回纸色（软删 → 本地也真的没了）',
-    (await cdp.ev(pixelAt(3300, 1600))) === PAPER, await cdp.ev(pixelAt(3300, 1600)));
+  const delOther = seen.del[seen.del.length - 1];
+  check('★ 整笔 + 擦别人的：整根删掉，删的是**别人那一笔**的 id，而且带 others: true',
+    seen.del.length === delBeforeAll + 1 && delOther?.id === 'other-for-eraser' && delOther?.others === true,
+    JSON.stringify(delOther ?? {}));
+  check('★ 别人的那条线整根从画布上没了（像素变回纸色）',
+    (await cdp.ev(pixelAt(2700, 1600))) === PAPER && (await cdp.ev(pixelAt(2620, 1600))) === PAPER,
+    JSON.stringify({ 中: await cdp.ev(pixelAt(2700, 1600)), 旁: await cdp.ev(pixelAt(2620, 1600)) }));
+
+  /* (c) 像素 + 只擦自己：自己那几笔**被裁开**（LT_DRAW_REPLACE），别人的墨不动 */
+  await setEraser('pixel', false);
+  await pickTool('pen');
+  await setInk('#0044cc');
+  await setSizeNum(24);
+  /*
+    ⚠ 这条线要**画得够密**（每 20 画板像素一个点）：像素橡皮是"把落在橡皮圆里的**采样点**去掉"，
+    而画一笔时引擎按 1.2 画板像素过滤采样点 —— 只给 4 个点的话，40 号橡皮（半径 20）
+    在中间那一下根本碰不到任何点，什么都没裁（第一版就是这么假红的）。
+  */
+  const densePath = [];
+  for (let x = 2000; x <= 2600; x += 20) densePath.push([x, 400]);
+  await drawOn(densePath);
+  const myCutId = `mine${seen.add.length}`;
+  check('（前置）自己那条线画上去了', (await cdp.ev(pixelAt(2100, 400))) === '#0044cc', await cdp.ev(pixelAt(2100, 400)));
+  await pickTool('eraser');
+  await setSizeNum(40);
+  const beforeCut = { add: seen.add.length, replace: seen.replace.length, del: seen.del.length };
+  await dragWithScroll([[2300, 330], [2300, 400], [2300, 470]]);
+  await sleep(900);
+  const cutReq = seen.replace[seen.replace.length - 1];
+  check('★ 像素 + 只擦自己：发的是 LT_DRAW_REPLACE（一根换成几段），不是 ADD / DELETE',
+    seen.replace.length === beforeCut.replace + 1 && seen.add.length === beforeCut.add && seen.del.length === beforeCut.del,
+    JSON.stringify({ replace: seen.replace.length - beforeCut.replace, add: seen.add.length - beforeCut.add, del: seen.del.length - beforeCut.del }));
+  check('★ 换的正是自己那一笔，断开成两段（擦到的地方去掉，两头留下）',
+    cutReq?.edits?.length === 1 && cutReq.edits[0].id === myCutId && cutReq.edits[0].parts.length === 2 &&
+      cutReq.edits[0].parts.every((p) => p.tool === 'pen' && p.color === '#0044cc' && p.points.length >= 2),
+    JSON.stringify({ edits: cutReq?.edits?.map((e) => ({ id: e.id, parts: e.parts.length, pts: e.parts.map((p) => p.points.length) })) }));
+  check('★ 像素上：擦过的那一点变纸色，两头**还留着**（这就是"仅去除划过的地方"）',
+    (await cdp.ev(pixelAt(2300, 400))) === PAPER && (await cdp.ev(pixelAt(2100, 400))) === '#0044cc' &&
+      (await cdp.ev(pixelAt(2500, 400))) === '#0044cc',
+    JSON.stringify({ 擦过: await cdp.ev(pixelAt(2300, 400)), 左: await cdp.ev(pixelAt(2100, 400)), 右: await cdp.ev(pixelAt(2500, 400)) }));
+
+  /* (d) 像素 + 擦别人的：别人的线被**挖掉一块**（tool=erase），两头还在 */
+  const pixelInk = '#0a9396';
+  extra.push(remoteStroke({
+    id: 'other-for-pixel', uk: 'beefcafe', nick: '别人', avatar: '',
+    tool: 'pen', color: pixelInk, size: 26, points: [[1500, 1900], [1800, 1900], [2100, 1900]],
+  }));
+  const pixelThere = await cdp.wait(`(() => (window.__ltBoard ? window.__ltBoard.pixelAt(1800, 1900) : '') === '${pixelInk}')()`, 15000);
+  check('（前置）第二条别人的笔划也画上来了', pixelThere === true, await cdp.ev(pixelAt(1800, 1900)));
+  await setEraser('pixel', true);
+  const addsBeforePixel = seen.add.length;
+  await pickTool('eraser');
+  await setSizeNum(36);
+  await dragWithScroll([[1800, 1840], [1800, 1900], [1800, 1960]]);
+  await sleep(800);
+  const eraseAdd = seen.add[seen.add.length - 1];
+  check('★ 像素 + 擦别人的：发出去的是一根 tool=erase 的笔划（不是纸色笔划、也不是删别人的笔划）',
+    seen.add.length === addsBeforePixel + 1 && eraseAdd?.tool === 'erase' && eraseAdd?.color === PAPER,
+    JSON.stringify({ tool: eraseAdd?.tool, color: eraseAdd?.color }));
+  check('★ 别人的那条线**只少了划过的那一块**（中间变纸色，两头还是他的颜色）',
+    (await cdp.ev(pixelAt(1800, 1900))) === PAPER && (await cdp.ev(pixelAt(1560, 1900))) === pixelInk &&
+      (await cdp.ev(pixelAt(2050, 1900))) === pixelInk,
+    JSON.stringify({ 擦过: await cdp.ev(pixelAt(1800, 1900)), 左: await cdp.ev(pixelAt(1560, 1900)), 右: await cdp.ev(pixelAt(2050, 1900)) }));
+
+  /* (e) 两种方式的"擦别人的"是**各记各的**：切过去看的是那一种自己的值 */
+  const stE1 = await cdp.ev(eraserState);
+  await clickEraserMode();
+  const stE2 = await cdp.ev(eraserState);
+  check('★ 切到「整笔」→ 按钮显示的是**整笔**那一份设置（不是像素那一份）',
+    stE1.pixel === true && stE2.mode === 'stroke' && stE2.others === stE2.stroke && stE2.stroke === true,
+    JSON.stringify({ 像素档: stE1, 整笔档: stE2 }));
+  await clickEraserOthers();
+  const stE3 = await cdp.ev(eraserState);
+  await clickEraserMode();
+  const stE4 = await cdp.ev(eraserState);
+  check('★ 在「整笔」里关掉它，切回「像素」→ 像素那一份**没被动过**（两种各记各的）',
+    stE3.stroke === false && stE4.mode === 'pixel' && stE4.pixel === true && stE4.others === true,
+    JSON.stringify({ 关完整笔: stE3, 回到像素: stE4 }));
+  check('橡皮方式按钮上的字跟着切（像素擦 ⇄ 整笔擦）',
+    (await cdp.ev(modeBtnText)) === '像素擦', await cdp.ev(modeBtnText));
+
+  /* (f) 这四样都跟着账号走（LT_PREFS_SET 里有方式 + 两份开关） */
+  await sleep(900);
+  const prefsEr = seen.prefs[seen.prefs.length - 1];
+  check('★ 橡皮的方式和两份"擦别人的"都存进了账号偏好',
+    !!prefsEr && prefsEr.prefs.eraserMode === 'pixel' && prefsEr.prefs.eraserPixelOthers === true &&
+      prefsEr.prefs.eraserStrokeOthers === false,
+    JSON.stringify(prefsEr?.prefs ?? {}));
+
+  /* (g) 墓碑：别人撤掉 / 擦掉的那一笔，靠增量拉下来之后就地从画布上消失 */
+  await pickTool('pen');
+  await setInk('#8a2be2');
+  await setSizeNum(20);
+  await drawOn([[600, 1900], [800, 1900], [1000, 1900]]);
+  const tombId = `mine${seen.add.length}`;
+  check('（前置）待会儿要被"别人擦掉"的那一笔画上去了',
+    (await cdp.ev(pixelAt(800, 1900))) === '#8a2be2', await cdp.ev(pixelAt(800, 1900)));
+  const beforeTomb = await cdp.ev(stateOf);
+  tombstones.push({ id: tombId, deleted: true, updatedAt: Date.now() + 60000, createdAt: Date.now() + 60000 });
+  const tombGone = await cdp.wait(
+    `(() => { const b = window.__ltBoard; return !!b && b.pixelAt(800, 1900) === '${PAPER}' && b.state.strokes < ${beforeTomb.strokes}; })()`,
+    20000
+  );
+  check('★ 增量里带回来的墓碑（deleted: true）→ 本地那一笔被删掉、像素回到纸色',
+    tombGone === true,
+    JSON.stringify({ 之前: beforeTomb.strokes, 现在: (await cdp.ev(stateOf)).strokes, 像素: await cdp.ev(pixelAt(800, 1900)) }));
+  check('这一趟没有未捕获的 JS 异常', cdp.errors.length === errBefore, cdp.errors.slice(errBefore, errBefore + 2).join(' | '));
 
   /* ---- 6. 跨天自清（凌晨四点存档搬完 / 换天，都不用刷新页面）---- */
   await envLine('跨天自清之前');
@@ -1960,7 +2305,145 @@ try {
 
   check('第二批这一整段没有未捕获的 JS 异常', cdp.errors.length === errBefore2, cdp.errors.slice(errBefore2, errBefore2 + 3).join(' | '));
 
+  /* ==================================================================
+     7. 茶绘的版式：**左边画画、右边聊天**（2026-10-10）
+     用户原话：「将茶绘当前UI全部向左挪一些 然后在右边接入聊天室的聊天框 下面也可以发送文字和图片
+               但是没有聊天室的时间轴和看往期等功能 仅方便群友一边画画一边聊天即可」。
+     量四件事：① 整页放宽（"向左挪"的做法）+ 两栏并排；② 右栏**没有**时间轴/往期/搜索；
+     ③ 消息多了右栏不长高（只在自己框里滚）；④ 在茶绘这边能发一条（走聊天室那套事件）。
+     ================================================================== */
+  const layoutOf = `(() => {
+    const r = (s) => {
+      const el = document.querySelector(s);
+      if (!el) return null;
+      const b = el.getBoundingClientRect();
+      return { top: Math.round(b.top), left: Math.round(b.left), right: Math.round(b.right), bottom: Math.round(b.bottom), w: Math.round(b.width), h: Math.round(b.height) };
+    };
+    const log = document.querySelector('.lyt-draw__chat .lyt-chat__log');
+    const main = document.querySelector('main');
+    return {
+      draw: r('.lyt-draw'), chat: r('.lyt-draw__chat'), log: r('.lyt-draw__chat .lyt-chat__log'),
+      compose: r('.lyt-draw__chat .lyt-chat__compose'), stage: r('.lyt-draw__stage'),
+      cols: getComputedStyle(document.querySelector('.lyt-drawWrap')).gridTemplateColumns,
+      mainMax: getComputedStyle(main).maxWidth,
+      mainW: Math.round(main.getBoundingClientRect().width),
+      wide: main.classList.contains('forum__main--wide'),
+      hasTimeline: !!document.querySelector('.lyt-draw__chat .lyt-chat__tl'),
+      hasFind: !!document.querySelector('.lyt-draw__chat .lyt-chat__find'),
+      links: [...document.querySelectorAll('.lyt-draw__chat a')].map((a) => a.getAttribute('href')),
+      msgs: document.querySelectorAll('.lyt-draw__chat .lyt-msg').length,
+      logScroll: log ? { scroll: Math.round(log.scrollHeight), client: Math.round(log.clientHeight) } : null,
+      docScroll: Math.round(document.scrollingElement.scrollHeight),
+      overflowX: Math.max(0, document.documentElement.scrollWidth - window.innerWidth),
+    };
+  })()`;
+  await showCanvas();
+  const lay1 = await cdp.ev(layoutOf);
+  info('茶绘版式：' + JSON.stringify({ draw: lay1.draw, chat: lay1.chat, cols: lay1.cols, mainMax: lay1.mainMax }));
+  check('★ 整页放宽了（.forum__main--wide：正文区上限 68rem → 104rem=1664px）——"整块向左挪"就是这么做的',
+    lay1.wide === true && /1664px/.test(lay1.mainMax) && lay1.mainW > 1088,
+    JSON.stringify({ maxWidth: lay1.mainMax, 实际宽: lay1.mainW, wide: lay1.wide }));
+  check('★ 两栏并排：右栏在画板那一栏的**右边**',
+    !!lay1.chat && !!lay1.draw && lay1.chat.left >= lay1.draw.right - 2,
+    JSON.stringify({ drawRight: lay1.draw?.right, chatLeft: lay1.chat?.left }));
+  check('右栏宽度就是那个 22rem（352px ± 2）', !!lay1.chat && Math.abs(lay1.chat.w - 352) <= 2, String(lay1.chat?.w));
+  check('★ 右栏里只有聊天框：**没有**时间轴、没有搜索框、没有往期/日历链接',
+    lay1.hasTimeline === false && lay1.hasFind === false &&
+      !lay1.links.some((h) => /chatroom|calendar|teahouse\/\d/.test(String(h))),
+    JSON.stringify({ tl: lay1.hasTimeline, find: lay1.hasFind, links: lay1.links }));
+  check('聊天框 + 输入区都在右栏里（输入区在框下面）',
+    !!lay1.log && !!lay1.compose && lay1.log.w > 200 && lay1.compose.top >= lay1.log.bottom - 2,
+    JSON.stringify({ log: lay1.log, compose: lay1.compose }));
+  check('桌面端没有横向溢出', lay1.overflowX <= 1, `${lay1.overflowX}px`);
+  check('（前置）右栏已经把聊天室那条历史消息画出来了', lay1.msgs >= 1, `${lay1.msgs} 条`);
+
+  /* 消息多了：右栏不长高（框里自己滚），整页也不被拉长 —— 和聊天室今天那一页同一条规矩 */
+  chatMsgs.push(
+    ...Array.from({ length: 40 }, (_, i) => ({
+      id: 'bulkchat' + i,
+      day: servedToday,
+      nick: '虹星',
+      alias: '虹星',
+      avatar: '',
+      text: `第 ${i + 1} 条：这一条是拿来量右栏会不会被撑高的。`,
+      image: '',
+      createdAt: Date.now() + 1000 + i,
+      mine: false,
+    }))
+  );
+  const chatGrew = await cdp.wait(`document.querySelectorAll('.lyt-draw__chat .lyt-msg').length >= 40`, 20000);
+  await sleep(300);
+  const lay2 = await cdp.ev(layoutOf);
+  check('40 条消息都画进右栏了', chatGrew === true, `${lay2.msgs} 条`);
+  check('★ 消息变多了，聊天框**一点没长高**（差 ≤ 2px）',
+    Math.abs(lay2.log.h - lay1.log.h) <= 2, `${lay1.log.h} → ${lay2.log.h}`);
+  check('★ 整页也没被拉长（差 ≤ 2px）', Math.abs(lay2.docScroll - lay1.docScroll) <= 2, `${lay1.docScroll} → ${lay2.docScroll}`);
+  check('★ 消息多了在聊天框**里面**滚（内容比框高）',
+    !!lay2.logScroll && lay2.logScroll.scroll > lay2.logScroll.client + 50, JSON.stringify(lay2.logScroll));
+  const chatScrolled = await cdp.ev(`(() => { const l = document.querySelector('.lyt-draw__chat .lyt-chat__log'); l.scrollTop = 1e6; return Math.round(l.scrollTop); })()`);
+  check('滚到底能看见最后那一条（框里滚得动）', chatScrolled > 0, String(chatScrolled));
+
+  /* 在茶绘这边发一条：和聊天室是同一个消息流（同一套 LT_CHAT_* 事件） */
+  const sendsBefore = seen.chatSends.length;
+  await cdp.ev(`(() => {
+      const t = document.querySelector('.lyt-draw__chat [data-lt-chat-text]');
+      t.value = '茶绘这边发的';
+      t.dispatchEvent(new Event('input', { bubbles: true }));
+      t.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+      return true;
+    })()`);
+  await sleep(900);
+  const chatStats = await cdp.ev(`(() => ({
+      inDom: /茶绘这边发的/.test(String((document.querySelector('.lyt-draw__chat') || {}).textContent || '')),
+      msgs: document.querySelectorAll('.lyt-draw__chat .lyt-msg').length,
+      status: String((document.querySelector('.lyt-draw__chat [data-lt-chat-status]') || {}).textContent || ''),
+      input: String((document.querySelector('.lyt-draw__chat [data-lt-chat-text]') || {}).value || ''),
+    }))()`);
+  check('★ 在茶绘右栏回车就能发（走的是聊天室那套 LT_CHAT_SEND），而且立刻出现在框里',
+    seen.chatSends.length === sendsBefore + 1 && seen.chatSends[seen.chatSends.length - 1].text === '茶绘这边发的' &&
+      chatStats.inDom === true,
+    JSON.stringify({ 新发了几条: seen.chatSends.length - sendsBefore, ...chatStats }));
+
+  /* 截图留一张给人看：左边画板 + 右边聊天框（.tmp/shots/teahouse-chat.png） */
+  try {
+    const shot = await cdp.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
+    fs.mkdirSync(path.join(SRC, '.tmp', 'shots'), { recursive: true });
+    fs.writeFileSync(path.join(SRC, '.tmp', 'shots', 'teahouse-chat.png'), Buffer.from(shot.data, 'base64'));
+  } catch {
+    /* 截不到不影响验收 */
+  }
+
+  /* 这一段自己的异常账在这一步结（下面窄屏 / 访客要换页面，页面一换异常账就不干净了） */
   check('新增这一整段没有未捕获的 JS 异常', cdp.errors.length === errBefore, cdp.errors.slice(errBefore, errBefore + 2).join(' | '));
+
+  /* 窄屏：两栏塌成一列（聊天框搬到画板下面），别溢出 */
+  await cdp.send('Emulation.setDeviceMetricsOverride', { width: 700, height: 900, deviceScaleFactor: 1, mobile: false });
+  await sleep(600);
+  const lay3 = await cdp.ev(layoutOf);
+  info('窄屏 700：' + JSON.stringify({ draw: lay3.draw, chat: lay3.chat, cols: lay3.cols }));
+  check('★ 窄屏（700px）两栏塌成一列：聊天框搬到画板那一栏**下面**',
+    !!lay3.chat && !!lay3.draw && lay3.chat.top >= lay3.draw.bottom - 2,
+    JSON.stringify({ drawBottom: lay3.draw?.bottom, chatTop: lay3.chat?.top }));
+  check('窄屏也没有横向溢出', lay3.overflowX <= 1, `${lay3.overflowX}px`);
+  await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 1000, deviceScaleFactor: 1, mobile: false });
+  await sleep(500);
+
+  /* 访客（没登录）：右栏那三件和工具条一样是锁着的（同一道闸门） */
+  await cdp.ev(`localStorage.removeItem('lt_token'); localStorage.removeItem('lt_user');`);
+  await cdp.go(`${base}/liyutang/teahouse/`);
+  const guestChat = await cdp.wait(`(() => {
+      const t = document.querySelector('.lyt-draw__chat [data-lt-chat-text]');
+      const s = document.querySelector('[data-lt-draw-gate]');
+      return !!t && t.disabled === true && /登录|审核/.test(String(s && s.textContent));
+    })()`, 20000);
+  const guestState = await cdp.ev(`(() => ({
+      text: !!document.querySelector('.lyt-draw__chat [data-lt-chat-text]')?.disabled,
+      send: !!document.querySelector('.lyt-draw__chat [data-lt-chat-send]')?.disabled,
+      img: !!document.querySelector('.lyt-draw__chat [data-lt-chat-image]')?.disabled,
+      gate: String((document.querySelector('[data-lt-draw-gate]') || {}).textContent || ''),
+    }))()`);
+  check('★ 访客：右栏那三件（输入框 / 发出去 / 传图）全是锁着的，而且说明了要先登录过审',
+    guestChat === true && guestState.text && guestState.send && guestState.img, JSON.stringify(guestState));
 
   /* 截图留一张（人眼看） */
   try {

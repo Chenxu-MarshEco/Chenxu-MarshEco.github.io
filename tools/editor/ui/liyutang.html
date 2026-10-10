@@ -24,9 +24,47 @@
     -->
     <link rel="stylesheet" href="/style.css" />
     <style>
+      /*
+        ⚠⚠ 这一页要能滚（2026-10-10 修）。
+
+        用户原话：「黎语堂管理里很多地方根本无法进行编辑」——鼠标滚轮推不下去，
+        版块 / 页面文案 / 帖子管理 / 评论系统四块（全在下半截）根本够不着。
+
+        为什么会被滚不动：上面 <link> 那个共用的 /style.css 是给**三栏编辑器**
+        （ui/index.html）写的，它第 74-88 行把 html / body 钉成
+            html, body { height: 100% }        body { overflow: hidden }
+        —— 三栏编辑器每一栏是 .col（overflow: hidden）、栏里 .col__body（overflow: auto）
+        自己滚，所以外层**绝不能**滚，那两条是那套布局的地基，改不得。
+
+        可这一页**不是三栏**：它是一整篇往下排的文档（sticky 顶栏 + main 里依次
+        用户审核 / 大厅 / 版块 / 页面文案 / 帖子管理 / 评论系统六块 .wbox）。
+        套上那两条之后坏了两处（都是验收脚本实测出来的）：
+          · body 被钉成一屏高、多出来的内容被裁掉 → **滚轮推不动**（滚之前量到
+            body.overflow=hidden；打一次真滚轮，scrollY 纹丝不动还是 0）；
+          · sticky 顶栏跟着坏：粘性元素的约束矩形是它的**包含块**，body 只有一屏高，
+            顶栏粘到 816px（900 - 顶栏高）就被 body 的底边带走 —— 滚到底量到
+            .lytadmin__top 的 top = -2065，等于根本没粘住。
+
+        ⚠ 头一条特别容易测漏：overflow: hidden 的盒子**仍然是滚动容器**，
+        它挡的是滚轮 / 触摸 / 滚动条，脚本 window.scrollTo 照样能滚（这里实测
+        scrollTo(0, 99999) 在改之前也能滚到 2881）。所以"只断言 scrollTo"的验收
+        在改之前也会全绿、靠不住 —— 验收脚本
+        tools/checks/editor-liyutang-scroll-check.mjs 里是**打真滚轮**量的。
+
+        修法：这份内联样式只有这一页加载（天然碰不到三栏编辑器），并且**只挂在
+        body.lytadmin 上** —— 选择器比 style.css 的 body 更具体、又排在后面，稳赢，
+        于是只把这一页该有的两条还回来：
+          · height: auto    —— body 随内容长高，sticky 的包含块变成整篇文档，粘得住；
+          · overflow: visible —— 滚动交还给视口（滚轮 / 滚动条 / 触摸都回来）。
+        ⚠ html 不用动：style.css 给 html 的 height: 100% 不裁剪任何东西，body 长高后
+        文档照样滚（改后实测滚轮能一路推到底、顶栏 top 恒为 0）；坏事的只有 body 两条。
+        ⚠ 别把这两条写进共用 /style.css —— 三栏编辑器就靠那两条活着。
+      */
       body.lytadmin {
         margin: 0;
-        min-height: 100vh;
+        min-height: 100vh; /* 内容不够一屏时也别塌（原来那条，意思留着） */
+        height: auto;
+        overflow: visible;
         background: var(--bg);
         color: var(--text);
       }

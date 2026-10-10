@@ -64,12 +64,15 @@
  * 五、**画板（久昭卿茶绘）**（2026-10-09 加）。
  *   用户原话：「点进去以后是一个巨大的公共画板 有基本的画笔橡皮调色板等功能 所有注册后通过
  *   审核的用户都可以在上面画画 …… 每天保存一次画 …… 让画画的手感可以比较舒服丝滑」。
- *     · 一笔一个文档，存 lt_draw：`{tool: pen|eraser, color: #rrggbb, size, points: [[x,y],…]}`，
+ *     · 一笔一个文档，存 lt_draw：`{tool: pen|eraser|erase, color: #rrggbb, size, points: [[x,y],…]}`，
  *       坐标是**画板自己的坐标系**（`BOARD_W`×`BOARD_H` = 3600×2250，和屏幕大小无关）；
  *     · **矢量笔划**（不是位图）：谁也改不了别人的像素，逐人显隐、撤销、存档都只是"筛一堆笔划"；
  *     · `uk` = 账号 id 的短哈希 —— 逐人显隐要一个稳定的键，但不该把账号 id 发给所有人；
  *     · **过审才进得来**（和聊天室同一个门槛 chatWho），限速 80 毫秒一笔、一小时 4000 笔；
- *     · 撤销 = 软删自己画的某一笔（别人的删不掉）；
+ *     · 撤销 = 软删某一笔；**2026-10-10 起**擦别人的整根线条也可以（显式 `others: true`，
+ *       一小时最多 DELETE_OTHERS_PER_HOUR 根）；软删要**一起抬 updatedAt**，增量那一趟也
+ *       **不过滤 deleted** —— 那是"墓碑"，不然别人屏幕上那根线删不掉；
+ *     · `LT_DRAW_REPLACE`（2026-10-10）：像素橡皮只擦自己时把自己那几笔裁开（一根换 0~n 段）；
  *     · 存档走 LT_ADMIN_DRAW_DAY + LT_ADMIN_DRAW_CLEAR：搬进仓库（JSON + 一张 SVG）之后
  *       **把云端那天的笔划删掉** —— 笔划在仓库里已经是完整记录了，云端留着纯占地方。
  *
@@ -115,11 +118,28 @@ const BOARD_W = 3600;
 const BOARD_H = 2250;
 /** 一根笔划最多多少个点 */
 const DRAW_MAX_POINTS = 2000;
-/** 画笔 / 橡皮 */
-const DRAW_TOOLS = ['pen', 'eraser'];
+/**
+ * 画笔 / 橡皮 / **像素橡皮**（2026-10-10 加的第三种）：
+ *   · `pen`    正常的一笔；
+ *   · `eraser` 老写法（2026-10-09）：一条**纸色**的笔划，把别人的画盖住。存档里还有，
+ *              客户端也还画得出来（重放老存档必须一模一样），但界面上不再产生新的了；
+ *   · `erase`  像素橡皮：把**底下的墨**按这条路径去掉一片（画布 destination-out / SVG mask）。
+ */
+const DRAW_TOOLS = ['pen', 'eraser', 'erase'];
 /** 画得再快也有个谱：两根之间至少 80 毫秒，一小时最多 4000 笔 */
 const DRAW_GAP_MS = 80;
 const DRAW_PER_HOUR = 4000;
+/**
+ * 「擦别人的」那一路的闸门（2026-10-10 用户要求：整笔 / 像素两种橡皮各自可以打开"擦别人的"）。
+ * 服务端**拦不住**"他到底点的是哪一个开关"（那是界面上的事），所以只按结果算账：
+ *   · 删别人的笔划（LT_DRAW_DELETE + others）：一小时最多 DELETE_OTHERS_PER_HOUR 根，
+ *     整块板也就几千根 —— 这个数足够正常使用，又拦得住"一把全删了"；
+ *   · 像素橡皮挖别人的墨：走的是普通 LT_DRAW_ADD（一笔 erase），本来就受 DRAW_PER_HOUR 管；
+ *   · LT_DRAW_REPLACE（裁自己的笔划）：一次请求最多改 REPLACE_MAX_EDITS 根 / 留 REPLACE_MAX_PARTS 段。
+ */
+const DELETE_OTHERS_PER_HOUR = 800;
+const REPLACE_MAX_EDITS = 80;
+const REPLACE_MAX_PARTS = 240;
 /**
  * 一条帖子的正文上限（字符数）。
  * 图片是内嵌进正文的 data URL，所以正文会随图片一起变胖；4MB 的正文 ≈ 3MB 的原图，
@@ -713,6 +733,12 @@ function publicStroke(d, meUk = '') {
     */
     updatedAt: d.updatedAt || d.createdAt,
     mine: !!meUk && d.uk === meUk,
+    /*
+      **墓碑**（2026-10-10 加）：撤掉的 / 被擦掉的笔划也会发下去（带 deleted: true）。
+      老版本不发，于是别人撤销之后你这边那根线会一直挂着；现在"擦别人的"是明确要支持的功能，
+      必须让所有人同时看到它没了。客户端见到就把本地那根删掉（见 liyutang-draw.ts 的 absorb）。
+    */
+    deleted: !!d.deleted,
   };
 }
 
@@ -722,6 +748,9 @@ function publicStroke(d, meUk = '') {
  *   · palette：收藏在调色盘里的颜色，最多 24 个 `#rrggbb`（去重）
  *   · penSize / eraserSize：**画笔和橡皮各自的粗细**（1~64，不绑死）
  *   · color / tool：上次用的颜色和工具（下次进来接着用）
+ *   · eraserMode：橡皮的方式（'stroke' 整笔 / 'pixel' 像素，2026-10-10）
+ *   · eraserStrokeOthers / eraserPixelOthers：两种方式各自的"擦别人的"开关（2026-10-10）
+ *   · grid：网格线开关；eraserAll 是老字段（10-09 的「擦所有人」），留着只为兼容老客户端
  * @param {unknown} input 前端传来的偏好
  * @returns {object|null} 规整后的偏好；整个不是对象就 null
  */
@@ -750,11 +779,29 @@ function checkPrefs(input) {
     if (c) out.color = c;
   }
   if (input.tool === 'pen' || input.tool === 'eraser' || input.tool === 'pan' || input.tool === 'move' || input.tool === 'pick') out.tool = input.tool;
-  /* 两个开关也存账号上（换设备也在）：网格线显示、橡皮是否擦所有人 */
-  for (const k of ["grid", "eraserAll"]) {
-    if (typeof input[k] === "boolean") out[k] = input[k];
+  /* 橡皮的方式（2026-10-10）：只认这两个值 */
+  if (input.eraserMode === 'stroke' || input.eraserMode === 'pixel') out.eraserMode = input.eraserMode;
+  /* 开关也存账号上（换设备也在）：网格线、两种橡皮各自的"擦别人的"、老字段 eraserAll */
+  for (const k of ['grid', 'eraserAll', 'eraserStrokeOthers', 'eraserPixelOthers']) {
+    if (typeof input[k] === 'boolean') out[k] = input[k];
   }
   return out;
+}
+
+/**
+ * 校验一根"要写上去的"笔划（LT_DRAW_ADD 和 LT_DRAW_REPLACE 共用一份规矩）。
+ * @param {object} input 前端传来的那一条
+ * @returns {{part: object}|{error: string}}
+ */
+function checkDrawInput(input) {
+  const tool = DRAW_TOOLS.includes(String(input?.tool)) ? String(input.tool) : '';
+  if (!tool) return { error: '工具只能是 pen / eraser / erase。' };
+  const color = drawColor(input.color);
+  if (!color) return { error: '颜色要是 #rrggbb。' };
+  const size = Math.round(Math.min(64, Math.max(1, Number(input.size) || 3)) * 10) / 10;
+  const points = cleanDrawPoints(input.points);
+  if (!points.length) return { error: '这根笔划一个点都没有。' };
+  return { part: { tool, color, size, points } };
 }
 
 /**
@@ -765,6 +812,8 @@ function checkPrefs(input) {
  *   ① 一笔一个文档、**按天**存（和聊天室同一个"北京时间切天"），因为一天一块板；
  *   ② 限速按"笔"算：80 毫秒一笔（画得再快也有个谱）、一小时 4000 笔 —— 挡的是脚本刷，
  *      正常画画碰不到这个天花板。
+ * 2026-10-10 多了一个 LT_DRAW_REPLACE：像素橡皮（只擦自己）裁自己的笔划用 ——
+ * **一根换成 0~n 段**必须是一次原子操作，不然"删掉旧的、再一笔笔加回来"中途失败就毁了。
  * @param {string} event 事件名
  * @param {object} payload 请求体
  * @returns {Promise<object>} 返回体
@@ -795,9 +844,16 @@ async function handleDrawEvent(event, payload) {
           在"函数已更新、站点还没重新部署"那几分钟里，理论上会漏掉跨批的同毫秒笔划。
     */
     const day = String(payload.day || '') || dayKey();
-    const baseFilter = { day, deleted: { $ne: true } };
     const afterTs = Number(payload.after) || 0;
     const afterId = String(payload.afterId || '');
+    /*
+      ⚠ 2026-10-10：**带游标的那一趟不过滤 deleted**（第一趟照旧只给活着的）。
+      理由：撤销 / 被擦掉的笔划如果永远不出现在增量里，别人那边就一直留着那根线
+      （没有墓碑的增量同步，删除是传不过去的）。所以增量那一趟把墓碑也发下去 ——
+      publicStroke 里有 deleted 标记，客户端见到就把本地的删掉（absorb 里那一段）。
+      第一趟不过滤没有意义（墓碑只会白占字节）：那是"整块板长什么样"。
+    */
+    const baseFilter = afterTs ? { day } : { day, deleted: { $ne: true } };
     const limit = Math.min(Math.max(Number(payload.limit) || 500, 1), 2000);
     const budget = 2 * 1024 * 1024;
     /*
@@ -855,13 +911,9 @@ async function handleDrawEvent(event, payload) {
 
   /* ---- 画一笔 ---- */
   if (event === 'LT_DRAW_ADD') {
-    const tool = DRAW_TOOLS.includes(String(payload.tool)) ? String(payload.tool) : '';
-    if (!tool) return bad('工具只能是 pen / eraser。');
-    const color = drawColor(payload.color);
-    if (!color) return bad('颜色要是 #rrggbb。');
-    const size = Math.round(Math.min(64, Math.max(1, Number(payload.size) || 3)) * 10) / 10;
-    const points = cleanDrawPoints(payload.points);
-    if (!points.length) return bad('这根笔划一个点都没有。');
+    const got = checkDrawInput(payload);
+    if (got.error) return bad(got.error);
+    const { tool, color, size, points } = got.part;
 
     const now = Date.now();
     const last = await col.find({ userId: me.id }).sort({ createdAt: -1 }).limit(1).toArray();
@@ -910,15 +962,107 @@ async function handleDrawEvent(event, payload) {
     return ok({ stroke: publicStroke({ ...doc, points, updatedAt }, meUk), serverNow: updatedAt });
   }
 
-  /* ---- 撤销：删自己最后画的那一笔（只给 id 也行，但要确认是你的） ---- */
+  /*
+    ---- 像素橡皮（只擦自己）：把**自己的**笔划一根换成 0~n 段（2026-10-10）----
+    用户原话：「橡皮优化为两种 …… 一种是仅去除划过的地方的像素」，而"擦别人的"那颗开关
+    在像素这种方式下**关着**的时候，就要求"只动自己的墨" —— 挖墨那套（destination-out / mask）
+    分不清哪块墨是谁的，所以这一路走的是**改自己的数据**：擦到的那几个点从点集里去掉、断成几段。
+
+    为什么必须是一个新事件（不能"删掉旧的 + 一笔笔加回来"）：
+      · 中途失败会留下半个状态（原笔划没了、新的还没上来）；
+      · ADD 有 80 毫秒/笔的限速，一次裁出七八段会被自己人挡在门外。
+    规矩：
+      · **先全部校验再动**（任何一处不合法就一个都不改）；
+      · 一次最多 REPLACE_MAX_EDITS 根 / REPLACE_MAX_PARTS 段；
+      · 只准改自己的；限速和 ADD 同一把尺子（拿它当免费通道刷也不行）；
+      · 新笔划**继承原来那一笔的 createdAt**（z 序不能变：擦一下就把自己的线跳到最上层，
+        压住别人后画的线，那是另一回事了），updatedAt 用现在（别人靠它拉到"这一笔变了"）。
+  */
+  if (event === 'LT_DRAW_REPLACE') {
+    const edits = Array.isArray(payload.edits) ? payload.edits : [];
+    if (!edits.length) return bad('没说要改哪几笔。');
+    if (edits.length > REPLACE_MAX_EDITS) return bad(`一次最多改 ${REPLACE_MAX_EDITS} 笔。`);
+    const plan = [];
+    let partCount = 0;
+    for (const e of edits) {
+      const id = String((e && e.id) || '');
+      if (!id) return bad('有一笔没说是哪一根。');
+      const doc = await col.findOne({ id });
+      if (!doc) return bad('有一笔已经不在了。');
+      if (doc.userId !== me.id) return bad('只能改自己画的。');
+      const parts = [];
+      for (const p of Array.isArray(e.parts) ? e.parts : []) {
+        const got = checkDrawInput(p);
+        if (got.error) return bad(got.error);
+        parts.push(got.part);
+        partCount += 1;
+        if (partCount > REPLACE_MAX_PARTS) return bad(`一次最多留下 ${REPLACE_MAX_PARTS} 段。`);
+      }
+      plan.push({ id, doc, parts });
+    }
+    const now = Date.now();
+    const last = await col.find({ userId: me.id }).sort({ createdAt: -1 }).limit(1).toArray();
+    if (last[0] && now - last[0].createdAt < DRAW_GAP_MS) return bad('画太快了，慢一点。');
+    const hourCount = await col.countDocuments({ userId: me.id, createdAt: { $gt: now - 3600 * 1000 } });
+    if (hourCount + partCount > DRAW_PER_HOUR) return bad(`一小时最多 ${DRAW_PER_HOUR} 笔，歇一会儿。`);
+
+    const out = [];
+    const gone = [];
+    for (const { id, doc, parts } of plan) {
+      /* 原笔划留墓碑（updatedAt 一起抬，别人轮询才拉得到"它没了"） */
+      await col.updateOne({ id }, { $set: { deleted: true, deletedAt: now, updatedAt: now, deletedBy: me.id } });
+      gone.push(id);
+      for (const part of parts) {
+        const nd = {
+          id: crypto.randomUUID().replace(/-/g, '').slice(0, 12),
+          day: doc.day || dayKey(now),
+          userId: me.id,
+          uk: meUk,
+          nick: me.nick,
+          alias: me.alias || me.nick,
+          avatar: me.avatar || '',
+          tool: part.tool,
+          color: part.color,
+          size: part.size,
+          points: part.points,
+          createdAt: Number(doc.createdAt) || now,
+          updatedAt: now,
+          deleted: false,
+        };
+        await col.insertOne(nd);
+        out.push(publicStroke(nd, meUk));
+      }
+    }
+    return ok({ strokes: out, deleted: gone, serverNow: now });
+  }
+
+  /* ---- 撤销 / 整笔橡皮：删一笔（默认只给"自己画的"；擦别人的要显式 others: true） ---- */
   if (event === 'LT_DRAW_DELETE') {
     const id = String(payload.id || '');
     if (!id) return bad('没说是哪一笔。');
     const doc = await col.findOne({ id });
     if (!doc) return bad('这一笔已经不在了。');
-    if (doc.userId !== me.id) return bad('只能撤自己画的。');
-    await col.updateOne({ id }, { $set: { deleted: true, deletedAt: Date.now() } });
-    return ok({ id });
+    const now = Date.now();
+    const other = doc.userId !== me.id;
+    if (other) {
+      /*
+        「擦别人的」那颗开关打开之后，整笔橡皮可以擦掉别人画的整根线条（2026-10-10 用户要求）。
+        服务端看不到"他点的是哪个开关"，所以这里只认**显式的 others: true** + 一道按小时的上限：
+        正常使用根本碰不到 800 根，但"脚本一把全删了"会被挡下来。
+      */
+      if (payload.others !== true) return bad('只能撤自己画的。');
+      const wiped = await col.countDocuments({ deletedBy: me.id, deletedAt: { $gt: now - 3600 * 1000 } });
+      if (wiped >= DELETE_OTHERS_PER_HOUR) return bad(`一小时最多擦掉别人 ${DELETE_OTHERS_PER_HOUR} 笔，歇一会儿。`);
+    }
+    /*
+      ⚠ updatedAt 必须一起抬：客户端是**按 updatedAt 增量拉**的，不抬的话这一笔的"墓碑"
+      永远不出现在增量里 —— 别人屏幕上那根线会一直留到他刷新（2026-10-10 补的）。
+    */
+    await col.updateOne(
+      { id },
+      { $set: { deleted: true, deletedAt: now, updatedAt: now, ...(other ? { deletedBy: me.id } : {}) } }
+    );
+    return ok({ id, others: other });
   }
 
   return bad('不认识的画板事件：' + event);

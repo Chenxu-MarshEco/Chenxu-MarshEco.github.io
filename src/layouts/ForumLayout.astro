@@ -35,9 +35,16 @@ interface Props {
   title?: string;
   description?: string;
   noindex?: boolean;
+  /**
+   * 这一页要更宽的外壳（2026-10-10 加，给茶绘用）。
+   * 茶绘右边接了一个聊天栏之后，按原来的 --w-page（68rem）算，画板那一栏会被挤掉 22rem ——
+   * 用户要的是「将茶绘当前UI全部向左挪一些」，也就是"整页更宽、画板从左边缘开始"，
+   * 不是把画板压小。所以那一页传 wide，正文区放宽到 104rem（其它页一个字都不动）。
+   */
+  wide?: boolean;
 }
 
-const { title, description = site.description, noindex = false } = Astro.props;
+const { title, description = site.description, noindex = false, wide = false } = Astro.props;
 const pageTitle = title ? `${title} · ${site.title}` : site.title;
 const canonical = absoluteUrl(Astro.url.pathname, Astro.site);
 ---
@@ -89,7 +96,7 @@ const canonical = absoluteUrl(Astro.url.pathname, Astro.site);
     */}
     <LiyutangTopBar />
 
-    <main class="forum__main" id="main">
+    <main class:list={['forum__main', wide && 'forum__main--wide']} id="main">
       <slot />
     </main>
   </body>
@@ -109,5 +116,9 @@ const canonical = absoluteUrl(Astro.url.pathname, Astro.site);
     margin-inline: auto;
     padding: 1.8rem var(--sp-5) var(--sp-8);
     min-height: 100vh;
+  }
+  /* 宽版：给茶绘那种"左边画、右边聊"的页面（见 Props 里 wide 那段） */
+  .forum__main--wide {
+    max-width: min(100%, 104rem);
   }
 </style>

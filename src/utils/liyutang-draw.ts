@@ -62,6 +62,21 @@
  *     云端只认自己的，所以别人那边也真的没了）；打开「擦所有人」才回到"画一条纸色笔划盖住"
  *     （见 doErase 那段：为什么默认不能是"盖住"，以及为什么不是 destination-out）。
  *
+ * 2026-10-10（用户原话：「橡皮优化为两种 一种是擦除接触到的整根该笔画的线条 一种是仅
+ * 去除划过的地方的像素 …… 两种下面都分别有个按钮开关控制能否擦别人的」）：
+ *   · **整笔**（eraserMode = 'stroke'）：碰到哪根就整根擦掉 —— 自己的走 LT_DRAW_DELETE，
+ *     别人的要那颗「擦别人的」开关打开（发 `others: true`，服务端另有一道上限）；
+ *   · **像素**（eraserMode = 'pixel'）：只去掉划过的地方 ——
+ *       - 只擦自己：**把自己那几笔按擦到的位置裁开**（LT_DRAW_REPLACE：一根换成 0~n 段），
+ *         所以它真的动的是自己的数据，不需要"按人裁剪"的遮罩魔法；
+ *       - 擦别人的：这一趟走的是**一根 `tool='erase'` 的笔划**（画布上 destination-out、
+ *         存档 SVG 上是一层 `<mask>`），谁画的墨都会被它去掉 —— 也就是老「擦所有人」的位置。
+ *     ⚠ 为什么两种模式的"擦别人"是两套机制：整笔本来就是删一根（服务端一句话），
+ *       像素要"去掉一片"，而那一片**不可能只属于某个人**（一根线常常是几个人叠着画的，
+ *       见下面 doErase 那段的老注释）—— 所以像素擦别人的是"挖掉那一块墨"，不是"删某人的笔划"。
+ *     ⚠ 老偏好 `eraserAll`（10-09 那套"画纸色盖住"）照旧认：读到时映射成"像素 + 擦别人的"，
+ *       旧账号进来不会觉得开关丢了。
+ *
  * ⚠ 这里**不做**的事（想加的时候先想清楚）：压感（协议是一笔一个粗细）、
  *   旋转、图层、清除整块板（一天一块板，存档之后再清 —— 见存档脚本）。
  * ============================================================================
@@ -122,6 +137,13 @@ export interface LtStroke {
   /** 增量同步的游标（服务端按它算 after）—— 线条被拖动过之后它也变 */
   updatedAt?: number;
   mine: boolean;
+  /**
+   * 像素橡皮（只擦自己）裁出来的**临时碎片**才有：它原来是哪一笔（原始 id）。
+   * 抬笔时按它分组发 LT_DRAW_REPLACE；服务端回来的真笔划没有这个字段。
+   */
+  cutFrom?: string;
+  /** 服务端回的**墓碑**（撤销/擦除掉的）：客户端看到就把本地那一根删掉，别画 */
+  deleted?: boolean;
 }
 
 /** 一根"要画上去的笔划"（还没进服务端，或者要重做的一根） */
@@ -132,6 +154,9 @@ interface Drawn {
   points: number[][];
 }
 
+/** 橡皮的两种方式（2026-10-10） */
+export type EraserMode = 'stroke' | 'pixel';
+
 /** 账号里存的那份画板偏好（形状见云函数 checkPrefs） */
 export interface LtPrefs {
   palette?: string[];
@@ -141,8 +166,17 @@ export interface LtPrefs {
   tool?: string;
   /** 网格线开着没有（切换按钮的状态跟着账号走） */
   grid?: boolean;
-  /** 橡皮是不是"擦所有人"（默认 false = 只擦自己的） */
+  /**
+   * 老字段（2026-10-09 的「擦所有人」：画一条纸色笔划盖住）。
+   * 现在不再有这颗按钮了，但旧账号里存着它 —— 读进来映射成"像素 + 擦别人的"（见 applyPrefs）。
+   */
   eraserAll?: boolean;
+  /** 橡皮的方式：整笔 / 像素 */
+  eraserMode?: string;
+  /** 橡皮**整笔**那种方式：能不能擦别人画的（默认不能） */
+  eraserStrokeOthers?: boolean;
+  /** 橡皮**像素**那种方式：能不能擦别人画的（默认不能） */
+  eraserPixelOthers?: boolean;
 }
 
 export interface BoardOpts {
@@ -164,8 +198,17 @@ export interface BoardOpts {
   reset?: HTMLButtonElement;
   /** 「网格」：网格线开关（默认开着） */
   gridToggle?: HTMLButtonElement;
-  /** 「擦所有人」：橡皮的第二种模式（默认关着 = 只擦自己的） */
-  eraserAll?: HTMLButtonElement;
+  /**
+   * 「橡皮方式」按钮（2026-10-10）：点一下在**整笔 / 像素**之间切。
+   * 按钮上的字由引擎写（`整笔擦` / `像素擦`），所以页面那边不用管文案。
+   */
+  eraserMode?: HTMLButtonElement;
+  /**
+   * 「擦别人的」开关（2026-10-10）：橡皮**当前这种方式**能不能擦别人画的。
+   * 两种方式各记各的（用户原话：「两种下面都分别有个按钮开关控制能否擦别人的」），
+   * 切换方式时这颗按钮显示的就是那一种方式自己的状态。
+   */
+  eraserOthers?: HTMLButtonElement;
   swatches?: HTMLElement;
   colorInput?: HTMLInputElement;
   /** 「＋ 收进调色盘」：把当前颜色存进账号的调色盘 */
@@ -303,18 +346,33 @@ export function mountBoard(opts: BoardOpts): BoardHandle {
   /** 橡皮的粗细（和画笔**分开记** —— 用户要的就是"切到橡皮用橡皮那个粗细"） */
   let eraserSize = ERASER_SIZE_DEFAULT;
   /**
-   * 橡皮是不是"擦所有人"（2026-10-09 用户要求）。
-   * 默认 **false = 只擦自己画的**：碰到自己的笔划就**软删**它（LT_DRAW_DELETE，云端只认自己的，
-   * 所以别人那边也是真的没了）。打开这个开关才回到"画一条纸色笔划盖住"的老做法 ——
-   * 为什么默认不能是"盖住"，见 doErase 那一段。
+   * 橡皮的方式（2026-10-10 用户要求，两种）：
+   *   · `stroke` **整笔**：碰到哪根线就整根擦掉；
+   *   · `pixel`  **像素**：只去掉划过的地方（划过哪块墨就少哪块）。
+   * 两种方式**各有一颗「擦别人的」开关**（见下面两个 booleans），互不影响。
    */
-  let eraserAll = false;
+  let eraserMode: EraserMode = 'stroke';
+  /** 整笔橡皮能不能擦别人画的（默认不能：碰到别人的线条只说一句，不动它） */
+  let eraserStrokeOthers = false;
+  /** 像素橡皮能不能擦别人画的（默认不能：这时它只把自己那几笔裁开） */
+  let eraserPixelOthers = false;
+  /** 当前这种方式允不允许擦别人的 —— 界面上那颗按钮显示的就是它 */
+  const othersAllowed = () => (eraserMode === 'stroke' ? eraserStrokeOthers : eraserPixelOthers);
   /**
    * 正在"擦（只擦自己的）"这一趟：记下这一趟已经删过谁（同一根笔划别连点着删好几次）。
    * 默认模式下橡皮**不画东西**，它只是在指针底下找自己的笔划然后软删 ——
    * 所以它既没有 live 笔划、也没有要提交的东西。
+   * `kind` 分两种：`stroke` = 整笔软删；`pixel` = 把自己那几笔按擦到的位置**裁开**
+   * （裁的结果先在本地当预览，抬笔时一次性发 LT_DRAW_REPLACE）。
    */
-  let erasing: { done: Set<string>; last: number[] } | null = null;
+  let erasing: { kind: 'stroke' | 'pixel'; done: Set<string>; last: number[] } | null = null;
+  /**
+   * 像素橡皮（只擦自己）这一趟动了哪几根：原笔划 id → 原来的样子（发失败要还原）。
+   * ⚠ 只按**原笔划**记账：裁出来的碎片挂在原笔划名下（`cutFrom`），下一刀接着裁它们。
+   */
+  const cutJobs = new Map<string, LtStroke>();
+  /** 这一趟"擦到别人的墨但没动手"提示过没有（一趟一句，见 cutAt 末尾） */
+  let hintedOtherPixel = false;
   /** 已经发出、还没回来的删除请求（防止同一根笔划被连发两次） */
   const deleting = new Set<string>();
   /** 用户自己收藏进调色盘的颜色（跟着账号走，最多 MAX_SAVED 个） */
@@ -364,6 +422,15 @@ export function mountBoard(opts: BoardOpts): BoardHandle {
     c.lineCap = 'round';
     c.lineJoin = 'round';
     c.lineWidth = s.size;
+    /*
+      像素橡皮（tool = 'erase'）走 **destination-out**：不是往画上添颜色，而是把
+      **底下已经有的墨**按这条路径去掉一片（去掉之后透出纸色和网格 —— 画布本身是透明的）。
+      这和老橡皮（'eraser'：画一条纸色笔划盖住）是两回事，两种都要留着：
+        · 老存档里那些 'eraser' 笔划重放出来必须还是当年的样子（纸色覆盖）；
+        · 'erase' 是 2026-10-10 新加的，存档 SVG 那边用一层 <mask> 做同一件事。
+      ⚠ save/restore 一定包着：不然这个 composite operation 会漏给后面画的每一根笔划。
+    */
+    if (s.tool === 'erase') c.globalCompositeOperation = 'destination-out';
     c.strokeStyle = s.tool === 'eraser' ? PAPER : s.color;
     c.beginPath();
     if (pts.length === 1) {
@@ -472,6 +539,30 @@ export function mountBoard(opts: BoardOpts): BoardHandle {
       raf = 0;
       redraw();
     });
+  };
+
+  /**
+   * **节流**的重建（2026-10-10 加的，只给"像素橡皮 · 只擦自己"用）：
+   * 裁点是跟着指针每一帧来的，每一帧都整块重建缓存谁也受不了 ——
+   * 这里保证两次重建之间至少隔 PREVIEW_MS（默认 120ms ≈ 8 帧一次），
+   * 抬笔时会再调一次不节流的 schedule()，所以最后落定的画面一定是准的。
+   */
+  const PREVIEW_MS = 120;
+  let lastPreviewAt = 0;
+  let previewTimer = 0;
+  const scheduleThrottled = () => {
+    const since = performance.now() - lastPreviewAt;
+    if (since >= PREVIEW_MS) {
+      lastPreviewAt = performance.now();
+      schedule();
+      return;
+    }
+    if (previewTimer) return;
+    previewTimer = window.setTimeout(() => {
+      previewTimer = 0;
+      lastPreviewAt = performance.now();
+      schedule();
+    }, PREVIEW_MS - since);
   };
 
   /* ------------------------------------------------------------ 网格线（画布下面那一层） */
@@ -650,11 +741,26 @@ export function mountBoard(opts: BoardOpts): BoardHandle {
    */
   const absorb = (list: LtStroke[]) => {
     let added = 0;
+    let removed = 0;
     let needFull = false;
     const newest = strokes.reduce((m, s) => Math.max(m, Number(s.createdAt) || 0), 0);
     for (const s of list) {
       if (!s || !s.id) continue;
       const i = strokes.findIndex((x) => x.id === s.id);
+      /*
+        **墓碑**（2026-10-10 加）：服务端把"撤掉的 / 被擦掉的"笔划也发下来了（带 deleted: true），
+        谁撤的都能传到所有人屏幕上 —— 老版本不发墓碑，于是别人撤销/擦掉之后，
+        你这边那根线会一直挂到刷新为止（那时只擦自己的，问题不明显；现在能擦别人的了，
+        不补这一条，"擦了别人的画他却还看得见"就太怪了）。
+      */
+      if (s.deleted) {
+        if (i >= 0) {
+          strokes.splice(i, 1);
+          removed += 1;
+          needFull = true;
+        }
+        continue;
+      }
       if (i >= 0) {
         if (!sameShape(strokes[i], s)) {
           strokes[i] = s;
@@ -668,12 +774,12 @@ export function mountBoard(opts: BoardOpts): BoardHandle {
       if ((Number(s.createdAt) || 0) < newest) needFull = true;
       else paintIntoCache(s);
     }
-    if (added) {
+    if (added || removed) {
       strokes.sort((a, b) => a.createdAt - b.createdAt);
       paintFaces();
     }
     if (needFull) cacheDirty = true;
-    if (added || needFull) schedule();
+    if (added || removed || needFull) schedule();
     return added;
   };
 
@@ -683,7 +789,7 @@ export function mountBoard(opts: BoardOpts): BoardHandle {
       拉回来的新笔划要重画缓存 —— 老版本一律整块重建，网络一抖就正好卡在笔尖上。
       记个记号，抬手（finish）之后补一次，笔划一条都不会少。
     */
-    if (drawing || moving) {
+    if (drawing || moving || erasing) {
       stats.deferred += 1;
       deferredRefresh = true;
       return;
@@ -858,9 +964,25 @@ export function mountBoard(opts: BoardOpts): BoardHandle {
     if (Number.isFinite(Number(p.eraserSize))) eraserSize = clampSize(p.eraserSize);
     if (/^#[0-9a-f]{6}$/i.test(String(p.color ?? ''))) color = String(p.color).toLowerCase();
     if (p.tool === 'pen' || p.tool === 'eraser' || p.tool === 'pan') tool = p.tool;
-    /* 两个开关也照账号恢复（换设备也在）：网格线、橡皮是否擦所有人 */
+    /* 开关也照账号恢复（换设备也在）：网格线、橡皮的方式、两种方式各自"擦别人的" */
     if (typeof p.grid === 'boolean') gridOn = p.grid;
-    if (typeof p.eraserAll === 'boolean') eraserAll = p.eraserAll;
+    if (p.eraserMode === 'pixel' || p.eraserMode === 'stroke') eraserMode = p.eraserMode;
+    if (typeof p.eraserStrokeOthers === 'boolean') eraserStrokeOthers = p.eraserStrokeOthers;
+    if (typeof p.eraserPixelOthers === 'boolean') eraserPixelOthers = p.eraserPixelOthers;
+    /*
+      老账号里那个 `eraserAll`（2026-10-09 的「擦所有人」= 画一条纸色笔划盖住）：
+      它和今天这套里的"**像素 + 擦别人的**"是同一件事（都是"连别人的墨一起弄掉"），
+      所以读到 true 就把它打开 —— 用户升级之后不会觉得那颗开关莫名其妙丢了。
+      ⚠ 只在**新字段一个都没有**的时候才这么映射，免得把人家新存的设置盖回去。
+    */
+    if (
+      p.eraserAll === true &&
+      p.eraserStrokeOthers === undefined &&
+      p.eraserPixelOthers === undefined &&
+      p.eraserMode === undefined
+    ) {
+      eraserPixelOthers = true;
+    }
   };
 
   /** 把偏好存回账号（拖动粗细会连发很多次 input，所以攒一下再发） */
@@ -876,9 +998,11 @@ export function mountBoard(opts: BoardOpts): BoardHandle {
           color,
           /* 服务端只认 pen / eraser / pan：移动和取色是纯本地工具，存的时候归到画笔 */
           tool: tool === 'move' || tool === 'pick' ? 'pen' : tool,
-          /* 两个开关（服务端 checkPrefs 放行了这两个字段） */
+          /* 开关们（服务端 checkPrefs 放行了这些字段） */
           grid: gridOn,
-          eraserAll,
+          eraserMode,
+          eraserStrokeOthers,
+          eraserPixelOthers,
         };
         try {
           const r = await call(api, { event: 'LT_PREFS_SET', ltToken: getToken(), prefs });
@@ -984,21 +1108,40 @@ export function mountBoard(opts: BoardOpts): BoardHandle {
     }
   };
 
-  /** 工具条上的选中态 / 颜色 / 粗细数字 / 重做能不能点 / 两个开关 / 光标 */
+  /** 工具条上的选中态 / 颜色 / 粗细数字 / 重做能不能点 / 那几个开关 / 光标 */
   const paintBar = () => {
     opts.pen?.classList.toggle('is-on', tool === 'pen');
     opts.eraser?.classList.toggle('is-on', tool === 'eraser');
     opts.pan?.classList.toggle('is-on', tool === 'pan');
     opts.move?.classList.toggle('is-on', tool === 'move');
     opts.pick?.classList.toggle('is-on', tool === 'pick');
-    /* 两个开关：网格线、橡皮「擦所有人」 */
+    /* 网格线开关 */
     if (opts.gridToggle) {
       opts.gridToggle.classList.toggle('is-on', gridOn);
       opts.gridToggle.setAttribute('aria-pressed', gridOn ? 'true' : 'false');
     }
-    if (opts.eraserAll) {
-      opts.eraserAll.classList.toggle('is-on', eraserAll);
-      opts.eraserAll.setAttribute('aria-pressed', eraserAll ? 'true' : 'false');
+    /*
+      橡皮那两颗（2026-10-10）：
+        · 「橡皮方式」按钮上写**当前是哪种**（整笔擦 / 像素擦）——
+          用户原话要的是"两种"，一颗按钮切比两颗按钮省地方，也让"现在到底是哪种"一眼看得见；
+        · 「擦别人的」开关显示的是**当前这种方式自己**记着的那个值（两种各记各的），
+          关着的时候按钮上那句说明也跟着换（整笔 = 碰谁的整根都擦；像素 = 只挖划过的那块墨）。
+    */
+    if (opts.eraserMode) {
+      opts.eraserMode.textContent = eraserMode === 'pixel' ? '像素擦' : '整笔擦';
+      opts.eraserMode.dataset.ltEraserMode = eraserMode;
+      opts.eraserMode.setAttribute('aria-label', eraserMode === 'pixel' ? '橡皮方式：像素（只去掉划过的地方）' : '橡皮方式：整笔（碰到哪根就整根擦掉）');
+      opts.eraserMode.title = eraserMode === 'pixel' ? '橡皮方式：像素 —— 点一下切成「整笔」' : '橡皮方式：整笔 —— 点一下切成「像素」';
+    }
+    if (opts.eraserOthers) {
+      const on = othersAllowed();
+      opts.eraserOthers.classList.toggle('is-on', on);
+      opts.eraserOthers.setAttribute('aria-pressed', on ? 'true' : 'false');
+      opts.eraserOthers.title = on
+        ? '现在连别人画的也能擦 —— 点一下关掉（只管当前这种橡皮方式）'
+        : eraserMode === 'pixel'
+          ? '现在只擦自己画的 —— 点一下连别人的墨也挖掉'
+          : '现在只擦自己画的 —— 点一下连别人的整根线条也擦掉';
     }
     if (opts.colorInput && /^#[0-9a-f]{6}$/i.test(color)) opts.colorInput.value = color;
     for (const b of opts.swatches?.querySelectorAll<HTMLElement>('[data-color]') ?? []) {
@@ -1039,12 +1182,25 @@ export function mountBoard(opts: BoardOpts): BoardHandle {
   if (opts.pick) {
     on(opts.pick, 'click', () => useTool('pick'));
   }
-  /* 「擦所有人」：橡皮的第二种模式（默认关着 = 只擦自己的） */
-  if (opts.eraserAll) {
-    on(opts.eraserAll, 'click', () => {
-      eraserAll = !eraserAll;
+  /* 「橡皮方式」：整笔 ⇄ 像素（两颗开关各记各的，切回来还是刚才那个状态） */
+  if (opts.eraserMode) {
+    on(opts.eraserMode, 'click', () => {
+      eraserMode = eraserMode === 'pixel' ? 'stroke' : 'pixel';
+      /* 切过去就顺手把橡皮选上：点这颗按钮的人一定是想擦东西 */
+      tool = 'eraser';
       paintBar();
       savePrefs(0);
+      say(eraserMode === 'pixel' ? '橡皮：像素 —— 只去掉划过的地方。' : '橡皮：整笔 —— 碰到哪根就整根擦掉。', true);
+    });
+  }
+  /* 「擦别人的」：只改**当前这种方式**那个值（用户要的就是两种各一个开关） */
+  if (opts.eraserOthers) {
+    on(opts.eraserOthers, 'click', () => {
+      if (eraserMode === 'stroke') eraserStrokeOthers = !eraserStrokeOthers;
+      else eraserPixelOthers = !eraserPixelOthers;
+      paintBar();
+      savePrefs(0);
+      say(othersAllowed() ? '现在连别人画的也能擦了（再点一下关掉）。' : '现在只擦自己画的。', true);
     });
   }
   /*
@@ -1194,6 +1350,8 @@ export function mountBoard(opts: BoardOpts): BoardHandle {
     for (let i = strokes.length - 1; i >= 0; i -= 1) {
       const s = strokes[i];
       if (hidden.has(s.uk)) continue;
+      /* 像素橡皮那一笔没有墨（它只会把别人的墨挖掉）：抓它 / 挪它都没有意义，跳过 */
+      if (s.tool === 'erase') continue;
       const pts = s.points;
       if (!pts || !pts.length) continue;
       const r = Number(s.size) / 2 + pad;
@@ -1244,19 +1402,25 @@ export function mountBoard(opts: BoardOpts): BoardHandle {
   };
 
   /*
-    ---- 橡皮（两种模式）----
+    ---- 橡皮（2026-10-10 起是"两种方式 × 一颗擦别人的开关"）----
 
-    默认（eraserAll = false）**只擦自己画的**：指针底下碰到自己的笔划就把它**软删**
-    （LT_DRAW_DELETE；云端只允许删自己的，所以别人那边也是真的没了 —— 这正是用户要的
-    "只擦掉自己的笔画"）。碰到别人的笔划**一动不动**：
-    它既不删、也不盖纸色 —— 盖纸色就是"把别人的画涂掉"，那正是这一条要禁止的事。
+    用户原话：「橡皮优化为两种 一种是擦除接触到的整根该笔画的线条 一种是仅去除划过的地方的
+    像素 …… 两种下面都分别有个按钮开关控制能否擦别人的」。
 
-    另一个（eraserAll = true）才回到老做法：画一条纸色笔划盖住，谁看都是被盖掉了。
+      ┌ 方式 ─┬ 擦别人的关着 ─────────────────┬ 擦别人的打开 ────────────────────┐
+      │ 整笔  │ 碰到自己的整根 → 软删自己的      │ 碰到谁的整根都软删（others: true）│
+      │ 像素  │ 只把自己那几笔按擦到的位置裁开   │ 挖掉划过的那一块墨（别人的也没了）│
+      └──────┴────────────────────────────────┴─────────────────────────────────┘
 
-    为什么"只擦自己的"不能用"盖纸色"实现（这是 2026-10-09 想清楚的一条）：
+    为什么"只擦自己的"不能用"盖纸色"实现（这是 2026-10-09 想清楚的一条，今天仍然成立）：
     自己那根和别人的那根经常交叉，笔尖落在交叉点上时，"盖纸色"会连别人的线条一起盖掉 ——
-    看起来就像擦了别人的画；而软删只动自己那一条，别人的线条从底下露出来，干干净净。
-    顺带：软删之后**连纸也干净**（没有多余的笔划留在板上），而不是在别人板上留一道纸色。
+    看起来就像擦了别人的画；而整笔软删只动自己那一条，别人的线条从底下露出来，干干净净。
+
+    为什么像素橡皮"只擦自己"要**裁点**（LT_DRAW_REPLACE）而不是挖一块墨：
+    挖墨（destination-out / SVG mask）是"面向像素"的，它分不清哪一块墨是谁画的 ——
+    两个人叠着画的地方，挖一下就把别人的也挖掉了。而"只擦自己"的语义必须精确到自己的笔划，
+    所以那一路走的是**改自己的数据**：把擦到的那几个点从笔划里去掉、断成几段，一根换成几段。
+    好处还有两个：① 存档里不会多出一堆 mask；② 撤销/重做那条路和别的改动一样。
   */
 
   /** 把画布上一个像素合成到纸色上（画布透明，纸色在 stage 上） */
@@ -1268,18 +1432,24 @@ export function mountBoard(opts: BoardOpts): BoardHandle {
     return '#' + mix.map((v) => v.toString(16).padStart(2, '0')).join('');
   };
 
-  /** 软删自己的一笔（橡皮"只擦自己的"用；和撤销不同：不进重做栈） */
+  /** 软删一笔（整笔橡皮用；和撤销不同：不进重做栈）。擦别人的要带 others: true（服务端另有限制） */
   const softDelete = async (s: LtStroke) => {
+    const other = !s.mine;
     deleting.add(s.id);
     try {
-      const r = await call(api, { event: 'LT_DRAW_DELETE', ltToken: getToken(), id: s.id });
+      const r = await call(api, {
+        event: 'LT_DRAW_DELETE',
+        ltToken: getToken(),
+        id: s.id,
+        ...(other ? { others: true } : {}),
+      });
       if (r.code !== 0) throw new Error(String(r.message ?? '擦不掉'));
       strokes = strokes.filter((x) => x.id !== s.id);
       /* 少了一根 = 集合变了：只能整块重建（缓存上没法"擦掉一根"） */
       cacheDirty = true;
       paintFaces();
       schedule();
-      say('擦掉了自己的一笔。', true);
+      say(other ? '擦掉了别人的一笔。' : '擦掉了自己的一笔。', true);
     } catch (err) {
       say('擦不掉：' + String((err as Error)?.message ?? err));
     } finally {
@@ -1291,13 +1461,163 @@ export function mountBoard(opts: BoardOpts): BoardHandle {
   const eraseUnder = (bx: number, by: number) => {
     const hit = hitTest(bx, by, eraserSize / 2);
     if (!hit) return;
-    /* 别人的笔划：不动（这是默认模式的核心） */
-    if (!hit.mine) return;
+    /* 别人的笔划：开关关着就不动（这是"只擦自己的"的核心） */
+    if (!hit.mine && !othersAllowed()) {
+      say('这是别人画的 —— 想擦别人的，先把「擦别人的」打开（像素橡皮也能只擦划过的那一点）。');
+      return;
+    }
     /* 还没落到服务端的那一笔（本地临时 id）删不了 —— 等它拿到 id 再说 */
     if (String(hit.id).startsWith('local-')) return;
     if (erasing?.done.has(hit.id) || deleting.has(hit.id)) return;
     erasing?.done.add(hit.id);
     void softDelete(hit);
+  };
+
+  /**
+   * 像素橡皮（只擦自己）：把一笔的点里、落在橡皮圆内的那些去掉，断成几段。
+   * @param pts 这一笔的点（画板坐标）
+   * @param cx 橡皮圆心 x
+   * @param cy 橡皮圆心 y
+   * @param r 橡皮半径（= eraserSize / 2）
+   * @returns `runs` 剩下的一段段点（每段自己就是一笔），`hit` 有没有真的擦到
+   */
+  const cutCircle = (pts: number[][], cx: number, cy: number, r: number) => {
+    const runs: number[][][] = [];
+    let cur: number[][] = [];
+    let hit = false;
+    for (const p of pts) {
+      if (Math.hypot(p[0] - cx, p[1] - cy) <= r) {
+        hit = true;
+        if (cur.length) {
+          runs.push(cur);
+          cur = [];
+        }
+        continue;
+      }
+      cur.push([p[0], p[1]]);
+    }
+    if (cur.length) runs.push(cur);
+    return { runs, hit };
+  };
+
+  /**
+   * 像素橡皮（只擦自己）擦到的一点：把指针底下**自己**的笔划裁开。
+   *
+   * 裁的结果**先在本地当预览**（把原来的那一笔换成几段临时笔划，集合变了就重建一次缓存）;
+   * 抬笔时按原笔划分组、一次性发 LT_DRAW_REPLACE（一根换成几段），失败再还原。
+   * ⚠ 重建是节流的（见 previewTick）：裁点是跟着指针每帧来的，一分钟重建六十次谁也受不了 ——
+   *   反正橡皮那个圆一直在提示"擦到哪儿了"。
+   */
+  const cutAt = (cx: number, cy: number) => {
+    const r = eraserSize / 2;
+    let touched = false;
+    /* 这一趟擦到**别人的**没有（只擦自己那一档：说一句"想擦别人的得先打开那颗开关" ，一次就够） */
+    let metOther = false;
+    for (const s of [...strokes]) {
+      if (hidden.has(s.uk)) continue;
+      /* 橡皮自己画出来的东西（纸色笔划 / 挖墨的笔划）不裁：裁它没有意义，还会把老存档弄乱 */
+      if (s.tool === 'eraser' || s.tool === 'erase') continue;
+      /* 还没拿到服务端 id 的临时笔划（正在提交）先不碰 */
+      if (String(s.id).startsWith('local-') && !s.cutFrom) continue;
+      if (!s.mine) {
+        /* 别人的墨：这一档（像素 + 只擦自己）不碰它 —— 但擦到了就提示一下，别让人以为橡皮坏了 */
+        if (!metOther && cutCircle(s.points, cx, cy, r).hit) metOther = true;
+        continue;
+      }
+      const { runs, hit } = cutCircle(s.points, cx, cy, r);
+      if (!hit) continue;
+      touched = true;
+      const key = String(s.cutFrom || s.id);
+      if (!cutJobs.has(key)) {
+        /*
+          第一次动到这一根：把**原来的样子**记下来（还原用）。
+          碎片身上带着 cutFrom，所以第二刀、第三刀都还挂在同一笔名下 ——
+          抬手时拿到的就是"这一笔最后剩成什么样"，一次请求发出去。
+        */
+        const orig = s.cutFrom ? cutJobs.get(String(s.cutFrom)) : undefined;
+        cutJobs.set(key, {
+          ...(orig ?? s),
+          id: key,
+          points: (orig?.points ?? s.points).map(([x, y]) => [x, y]),
+        });
+      }
+      const i = strokes.indexOf(s);
+      const pieces: LtStroke[] = runs.map((run, k) => ({
+        id: `local-cut-${key}-${k}`,
+        cutFrom: key,
+        uk: s.uk,
+        nick: s.nick,
+        alias: s.alias,
+        avatar: s.avatar,
+        tool: s.tool,
+        color: s.color,
+        size: s.size,
+        points: run,
+        createdAt: s.createdAt,
+        updatedAt: Date.now(),
+        mine: true,
+      }));
+      strokes.splice(i, 1, ...pieces);
+    }
+    if (touched) {
+      cacheDirty = true;
+      /* ⚠ 这里**不**刷「今天画过画的人」那张表：它每次都重建一串按钮，而裁点是跟着指针来的
+         （一秒几十下）。表上的"笔数"在抬笔 commitCuts 里会一次性对齐 —— 差那几百毫秒没人在意。 */
+      scheduleThrottled();
+    } else if (metOther && !hintedOtherPixel) {
+      /*
+        这一档只动自己的墨：擦到别人的线条时**什么都不做**（连数据都不发）——
+        不说一句的话，用户会以为橡皮坏了。一趟只说一次（hintedOtherPixel 在 pointerdown 里清零）。
+      */
+      hintedOtherPixel = true;
+      say('这是别人画的 —— 想擦别人的，先把「擦别人的」打开（像素橡皮也能只擦划过的那一点）。');
+    }
+  };
+
+  /** 像素橡皮（只擦自己）抬笔：把这一趟裁过的那几根一次性换掉 */
+  const commitCuts = async () => {
+    if (!cutJobs.size) return;
+    const edits: { id: string; parts: { tool: string; color: string; size: number; points: number[][] }[] }[] = [];
+    const byKey = new Map<string, LtStroke[]>();
+    for (const s of strokes) {
+      const key = String(s.cutFrom || '');
+      if (!key || !cutJobs.has(key)) continue;
+      const list = byKey.get(key) ?? [];
+      list.push(s);
+      byKey.set(key, list);
+    }
+    for (const [key] of cutJobs) {
+      const parts = (byKey.get(key) ?? []).map((s) => ({ tool: s.tool, color: s.color, size: s.size, points: s.points }));
+      edits.push({ id: key, parts });
+    }
+    const backup = [...cutJobs.entries()];
+    cutJobs.clear();
+    if (!edits.length) return;
+    try {
+      const r = await call(api, { event: 'LT_DRAW_REPLACE', ltToken: getToken(), edits });
+      if (r.code !== 0) throw new Error(String(r.message ?? '擦不掉'));
+      /* 服务端回来的才是真的：按 cutFrom 把本地那些临时碎片换成它给的几段 */
+      const got = (r.strokes ?? []) as LtStroke[];
+      const keys = new Set(edits.map((e) => e.id));
+      strokes = strokes.filter((s) => !(s.cutFrom && keys.has(String(s.cutFrom))));
+      strokes.push(...got);
+      strokes.sort((a, b) => a.createdAt - b.createdAt);
+      cacheDirty = true;
+      paintFaces();
+      schedule();
+      const cut = edits.reduce((n, e) => n + e.parts.length, 0);
+      say(`像素橡皮擦掉了 ${edits.length} 处（剩下 ${cut} 段）。`, true);
+    } catch (err) {
+      /* 没成：把原样放回去，别让人以为擦掉了 */
+      const keys = new Set(edits.map((e) => e.id));
+      strokes = strokes.filter((s) => !(s.cutFrom && keys.has(String(s.cutFrom))));
+      for (const [, orig] of backup) strokes.push(orig);
+      strokes.sort((a, b) => a.createdAt - b.createdAt);
+      cacheDirty = true;
+      paintFaces();
+      schedule();
+      say('没擦成：' + String((err as Error)?.message ?? err));
+    }
   };
 
   /** 橡皮拖过去的一整条路径：按 4 个画板像素采样着擦（太密没意义，太疏会漏） */
@@ -1307,7 +1627,8 @@ export function mountBoard(opts: BoardOpts): BoardHandle {
     const last = erasing.last;
     if (last && Math.hypot(bx - last[0], by - last[1]) < 4) return;
     erasing.last = [bx, by];
-    eraseUnder(bx, by);
+    if (erasing.kind === 'pixel') cutAt(bx, by);
+    else eraseUnder(bx, by);
   };
 
   let drawing = false;
@@ -1398,7 +1719,12 @@ export function mountBoard(opts: BoardOpts): BoardHandle {
     if (drawing || live || erasing) {
       drawing = false;
       live = null;
-      /* 双指一上来，"只擦自己的"那一趟也算作废（不然捏合时手指划过去会连删好几根） */
+      /*
+        双指一上来，"擦"那一趟也算作废（不然捏合时手指划过去会连删好几根）。
+        ⚠ 像素橡皮（只擦自己）那种要**先把已经裁过的发出去**：它的改动已经落在本地
+        （strokes 里现在是几段临时碎片），不发就是把板子留在"只有我看得见"的状态。
+      */
+      if (erasing?.kind === 'pixel') void commitCuts();
       erasing = null;
       strokeCancelled = true;
       schedule();
@@ -1551,13 +1877,21 @@ export function mountBoard(opts: BoardOpts): BoardHandle {
       return;
     }
     /*
-      橡皮的**默认模式**（只擦自己的）：不画东西，只在指针底下找自己的笔划、软删它。
-      所以这里不起 live 笔划（也就不需要"抬笔提交"那一套），只是记下这一趟已经删过谁。
+      橡皮的两种"不画东西"的路（见上面那段表）：
+        · **整笔**：在指针底下找笔划、软删它 —— 没有 live 笔划，也没有要提交的东西；
+        · **像素 + 只擦自己**：把自己那几笔按擦到的位置裁开（本地先当预览，抬笔才发 REPLACE）。
+      只有"像素 + 擦别人的"才继续往下走，当成一笔 tool='erase' 来画（挖墨）。
     */
-    if (tool === 'eraser' && !eraserAll) {
+    if (tool === 'eraser' && (eraserMode === 'stroke' || !othersAllowed())) {
       const [bx, by] = toBoard(e);
-      erasing = { done: new Set<string>(), last: [bx, by] };
-      eraseUnder(bx, by);
+      if (eraserMode === 'pixel') {
+        erasing = { kind: 'pixel', done: new Set<string>(), last: [bx, by] };
+        cutJobs.clear();
+        cutAt(bx, by);
+      } else {
+        erasing = { kind: 'stroke', done: new Set<string>(), last: [bx, by] };
+        eraseUnder(bx, by);
+      }
       return;
     }
     if (tool === 'move') {
@@ -1581,7 +1915,15 @@ export function mountBoard(opts: BoardOpts): BoardHandle {
       return;
     }
     drawing = true;
-    live = { tool, color: tool === 'eraser' ? ERASER_COLOR : color, size: sizeOf(), points: [toBoard(e)] };
+    /*
+      像素橡皮（擦别人的那一档）在这里变成**一根 tool='erase' 的笔划**：
+      redraw 每帧把它以 destination-out 叠在画面上 = 实时看着墨被挖掉；
+      抬笔 commit() 把它送上去，别人那边重放同一根笔划，看到的也一模一样。
+      老橡皮（'eraser' = 画一条纸色笔划）不再由界面产生，但**存档里那些还得照原样重放** ——
+      所以 paintStroke 里对两种 tool 的处理都留着。
+    */
+    const liveTool = tool === 'eraser' ? 'erase' : tool;
+    live = { tool: liveTool, color: liveTool === 'erase' ? ERASER_COLOR : color, size: sizeOf(), points: [toBoard(e)] };
     schedule();
   }) as EventListener);
 
@@ -1701,10 +2043,19 @@ export function mountBoard(opts: BoardOpts): BoardHandle {
       uncapture(pe.pointerId);
       return;
     }
-    /* 橡皮"只擦自己的"这一趟收了：它本来就没有要提交的东西 */
+    /* 橡皮那两种"不画东西"的趟收了：整笔那一种本来就没有要提交的东西；
+       像素（只擦自己）那一种要把裁过的几笔发出去 —— 见 commitCuts */
     if (erasing) {
+      const kind = erasing.kind;
       erasing = null;
       uncapture(pe.pointerId);
+      void (kind === 'pixel' ? commitCuts() : Promise.resolve()).then(() => {
+        /* 擦的这一趟里被压住的那次轮询，收工之后补上 */
+        if (deferredRefresh) {
+          deferredRefresh = false;
+          void refresh();
+        }
+      });
       return;
     }
     if (moving) {
@@ -1843,7 +2194,12 @@ export function mountBoard(opts: BoardOpts): BoardHandle {
         cursor,
         day,
         grid: gridOn,
-        eraserAll,
+        /* 橡皮那两颗（2026-10-10）：方式 + 两种方式各自的"擦别人的"；eraserAll 只是兼容老验收的读法 */
+        eraserMode,
+        eraserStrokeOthers,
+        eraserPixelOthers,
+        eraserOthers: othersAllowed(),
+        eraserAll: othersAllowed(),
         palette: paletteColors(),
       };
     },
@@ -1880,6 +2236,7 @@ export function mountBoard(opts: BoardOpts): BoardHandle {
       stop = true;
       window.clearTimeout(timer);
       window.clearTimeout(prefsTimer);
+      window.clearTimeout(previewTimer);
       if (raf) cancelAnimationFrame(raf);
       ro?.disconnect();
       /* ★ 监听全摘掉：只停轮询的话，上一份引擎还挂在画布上（画一笔提交两次） */

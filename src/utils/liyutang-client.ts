@@ -892,6 +892,14 @@ export function mountChat(opts: ChatOpts): ChatHandle {
   let stop = false;
   let sending = false;
   let timer = 0;
+  /*
+    ⚠ 2026-10-10：这一趟挂的所有监听都拴在这个 controller 上，stop() 一 abort 就全摘掉。
+    为什么必须摘（而不是只停轮询）：前端是"账号状态一变就 stop() 再 mountChat()"那种写法
+    （茶绘右栏那个聊天框就是这么接的），上一份要是还挂在输入框上，**按一次回车会发两条** ——
+    真浏览器验收里当场量到了（"新发了几条: 2"）。
+  */
+  const ac = new AbortController();
+  const sig = { signal: ac.signal };
 
   const say = (text: string, ok = false) => {
     if (!status) return;
@@ -999,7 +1007,7 @@ export function mountChat(opts: ChatOpts): ChatHandle {
   };
 
   const doSend = async () => {
-    if (sending) return;
+    if (sending || stop) return;
     const text = input.value.trim();
     if (!text) return;
     sending = true;
@@ -1024,6 +1032,7 @@ export function mountChat(opts: ChatOpts): ChatHandle {
 
   /** 传图：压到 1000px → 直接发一条带图的消息 */
   const pickImage = () => {
+    if (stop) return;
     const picker = document.createElement('input');
     picker.type = 'file';
     picker.accept = 'image/png,image/jpeg,image/webp,image/gif';
@@ -1055,24 +1064,32 @@ export function mountChat(opts: ChatOpts): ChatHandle {
     picker.click();
   };
 
-  send.addEventListener('click', () => void doSend());
-  input.addEventListener('keydown', (ev) => {
-    /* 回车发、Shift+回车换行 —— 和聊天软件一个手感 */
-    if (ev.key === 'Enter' && !ev.shiftKey) {
-      ev.preventDefault();
-      void doSend();
-    }
-  });
-  imageBtn?.addEventListener('click', pickImage);
+  send.addEventListener('click', () => void doSend(), sig);
+  input.addEventListener(
+    'keydown',
+    (ev) => {
+      /* 回车发、Shift+回车换行 —— 和聊天软件一个手感 */
+      if (ev.key === 'Enter' && !ev.shiftKey) {
+        ev.preventDefault();
+        void doSend();
+      }
+    },
+    sig
+  );
+  imageBtn?.addEventListener('click', pickImage, sig);
 
   const tick = async () => {
     if (stop) return;
     if (document.visibilityState === 'visible') await refresh();
     timer = window.setTimeout(() => void tick(), pollMs);
   };
-  document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible' && !stop) void refresh();
-  });
+  document.addEventListener(
+    'visibilitychange',
+    () => {
+      if (document.visibilityState === 'visible' && !stop) void refresh();
+    },
+    sig
+  );
 
   void tick();
 
@@ -1081,6 +1098,8 @@ export function mountChat(opts: ChatOpts): ChatHandle {
     stop: () => {
       stop = true;
       window.clearTimeout(timer);
+      /* ★ 监听一起摘掉：只停轮询的话，上一份还挂在输入框上 —— 按一次回车会发两条 */
+      ac.abort();
     },
   };
 }

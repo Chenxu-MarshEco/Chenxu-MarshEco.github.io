@@ -66,9 +66,31 @@ check(
 );
 /*
   2026-10-07 晚上：首页那段「留言不用注册、都要先审」的说明按用户要求整段删了，
-  换成一句「发帖和留言都要登录；账号注册后要等站长过审」——断言跟着改口径。
+  换成一句「发帖和留言都要登录；账号注册后要等站长过审」——当时断言跟着改成"页面上有这几个字"。
+  2026-10-10 再改一次（**从数据现推**）：那句话现在是站长在编辑器里填的
+  （`src/data/liyutang.json` 的 `copy.home.lead` / `copy.home.note`），
+  而站长把这两格清空了（用户原话：「把我自己生造的那些介绍句子全删了」）——
+  再写死"页面上必须有过审两个字"就必然假红。规矩本身没变，只是换成按数据判：
+    · 站长填了 → 页面上就得看得见；
+    · 留空   → 页面上一个字都不许有（这类句子**不许写死在代码里**，就是这个 refactor 的意义）。
 */
-check('首页把「要登录、账号要过审」这条规矩写出来了', /过审|审核/.test(home));
+const copyHome = (() => {
+  try {
+    return JSON.parse(read(path.join('src', 'data', 'liyutang.json'))).copy?.home ?? {};
+  } catch {
+    return {};
+  }
+})();
+/* ⚠ 源码要从 SRC 读，不能走上面那个 read()（它是按 ROOT=dist 拼的） */
+const homeSrc = fs.readFileSync(path.join(SRC, 'src', 'pages', 'liyutang', 'index.astro'), 'utf8');
+if (copyHome.lead || copyHome.note) {
+  check('首页把站长填的那句「要登录 / 要过审」显示出来了（copy.home.lead / note）',
+    (!!copyHome.lead && home.includes(copyHome.lead)) || (!!copyHome.note && home.includes(copyHome.note)),
+    JSON.stringify(copyHome));
+} else {
+  check('首页没有把「要登录 / 要过审」这类句子写死在代码里（留空 = 不显示，文案归站长）',
+    !/过审|审核/.test(home) && /data-lt-copy="home\.lead"/.test(homeSrc) && /data-lt-copy="home\.note"/.test(homeSrc));
+}
 
 /* 帖子文件：src/content/liyutang/<版块>/<帖子>.md */
 const contentDir = path.join(SRC, 'src', 'content', 'liyutang');

@@ -158,3 +158,16 @@ node tools/liyutang-archive.mjs --day 2026-10-09 --prune-only  # ② 提交成�
    所以他改了名，以前说过的话、发过的贴、画过的笔划也都显示新昵称。
    `LT_DRAW_LIST` 的增量游标从 `createdAt` 改成 **`updatedAt`**，
    这样被拖动过的线条别的客户端也能收到。
+
+### 2026-10-10 这一批（橡皮的两种方式 + 墓碑）
+
+用户原话：「橡皮优化为两种 一种是擦除接触到的整根该笔画的线条 一种是仅去除划过的地方的像素
+…… 两种下面都分别有个按钮开关控制能否擦别人的」。
+
+| 事件 / 字段 | 干什么 | 备注 |
+| --- | --- | --- |
+| `tool: 'erase'` | **像素橡皮**那一笔（新的第三种笔划）：它不带墨，画的时候是 destination-out / 存档 SVG 一层 `<mask>` | 老值 `pen` / `eraser` 照旧收；老存档重放出来的样子一个像素都不变 |
+| `LT_DRAW_DELETE` 带 `others: true` | 整笔橡皮**擦别人的**整根线条（用户要的那颗开关） | 不带这个字段时行为不变（只能撤/擦自己的）；带它时一小时最多 `DELETE_OTHERS_PER_HOUR`（800）根 |
+| `LT_DRAW_REPLACE` | 像素橡皮只擦自己时：**一根换成 0~n 段**（`{edits:[{id, parts:[…]}]}`） | 只准改自己的；**先全部校验再动**（要么全成要么不动）；一次最多 80 根 / 240 段；和 ADD 同一把限速尺子；新段**继承原来那一笔的 createdAt**（z 序不能变） |
+| `deleted: true` 墓碑 | `publicStroke` 多带一个 `deleted`，而且 **`LT_DRAW_LIST` 带游标那一趟不再过滤 deleted** | 撤销 / 被擦掉的笔划要能传到别人屏幕上；删除时**必须一起抬 `updatedAt`**（游标是它）。第一趟（无游标）照旧只给活着的 |
+| `eraserMode` / `eraserStrokeOthers` / `eraserPixelOthers` | `LT_PREFS_SET` 多认这三个字段（橡皮的方式 + 两种方式各自的"擦别人的"） | 老字段 `eraserAll` 还收（老客户端），客户端读到它会映射成"像素 + 擦别人的" |

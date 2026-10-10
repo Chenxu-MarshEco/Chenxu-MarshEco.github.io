@@ -50,13 +50,16 @@ const dayCount = chatDays().length;
       <a href={today}>去今天的聊天室 ›</a>
     </p>
 
-    <div class="lyt-chat">
+    <div class="lyt-chat lyt-chat--nofind">
       {/*
         左栏和聊天室那两页是同一条轴；只有搜索框不重复放（search={false}）——
         这一页右栏顶上那个大输入框就是搜索框，左边再来一个会让人不知道该打哪个。
-        is-nofind 是给样式的：没有搜索框，轴就不用给它让出那一行的高度了。
+        lyt-chat--nofind（在外层）是给样式的：没有搜索框，轴就不用给它让出那一行的高度了。
+        ⚠ 2026-10-10：这个"没有搜索框"的记号从里层 aside 上的 .is-nofind 搬到了外层 ——
+        面板高度 --lyt-tl-panel-h 是在 .lyt-chat 那一层算好的，在里层改 --lyt-tl-form-h
+        不会回头影响它（自定义属性一经计算就固定了）。
       */}
-      <aside class="lyt-chat__side lyt-chat__side--tl is-nofind" data-lyt-chat-days>
+      <aside class="lyt-chat__side lyt-chat__side--tl" data-lyt-chat-days>
         <LiyutangChatRail tl={tl} apex={apex} search={false} />
       </aside>
 

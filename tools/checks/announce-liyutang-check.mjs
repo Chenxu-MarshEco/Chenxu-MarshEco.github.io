@@ -425,9 +425,27 @@ try {
   /*
     2026-10-07 晚上口径变了：首页那段「留言不用注册、都要先审」的说明**整段删掉**，
     换成一句"发帖和留言都要登录；账号注册后要等站长过审"。
-    所以这条断言从「写没写先审后发」改成「写没写要登录 / 要过审」。
+    2026-10-10 再改一次（**从数据现推**）：那句现在是站长在编辑器里填的
+    （`copy.home.lead` / `copy.home.note`），而站长把两格清空了 ——
+    写死"页面上必须有过审这两个字"必然假红。规矩没变，只是按数据判：
+    填了就得显示、留空就一个字都不许有（这类句子不许写死在代码里）。
   */
-  check('首页把「要登录、账号要过审」这条规矩写出来了', /过审|审核/.test(lyt.mainText), lyt.mainText.slice(0, 80));
+  const copyHome = (() => {
+    try {
+      return JSON.parse(fs.readFileSync(path.join(SRC, 'src', 'data', 'liyutang.json'), 'utf8')).copy?.home ?? {};
+    } catch {
+      return {};
+    }
+  })();
+  const lytHomeSrc = fs.readFileSync(path.join(SRC, 'src', 'pages', 'liyutang', 'index.astro'), 'utf8');
+  if (copyHome.lead || copyHome.note) {
+    check('首页把站长填的那句「要登录 / 要过审」显示出来了（copy.home.lead / note）',
+      (!!copyHome.lead && lyt.mainText.includes(copyHome.lead)) || (!!copyHome.note && lyt.mainText.includes(copyHome.note)),
+      JSON.stringify(copyHome));
+  } else {
+    check('首页没有把「要登录 / 要过审」这类句子写死在代码里（留空 = 不显示，文案归站长）',
+      !/过审|审核/.test(lyt.mainText) && /data-lt-copy="home\.lead"/.test(lytHomeSrc) && /data-lt-copy="home\.note"/.test(lytHomeSrc));
+  }
   check('/liyutang 没有横向溢出', lyt.overflow <= 1, `${lyt.overflow}px`);
   check('没有 console 报错', cdp.errors.length === 0, cdp.errors.slice(0, 2).join(' | '));
 
