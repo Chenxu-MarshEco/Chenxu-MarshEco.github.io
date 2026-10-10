@@ -5,5 +5,21 @@
     "读它的地方：/liyutang/teahouse/calendar/（日历）、/liyutang/teahouse/<日>/（那一天的板）。",
     "⚠ 别手改：下一次存档会覆盖（一天一条，按日期倒序）。"
   ],
-  "days": []
+  "days": [
+    {
+      "day": "2026-10-09",
+      "count": 1224,
+      "painters": 8,
+      "users": [
+        "钻大臣",
+        "Chenxu_MarshEco",
+        "青涩眷恋",
+        "Memori_Monita",
+        "盾返",
+        "亲亲老母鸡",
+        "No_Dreamlogic",
+        "ai"
+      ]
+    }
+  ]
 }

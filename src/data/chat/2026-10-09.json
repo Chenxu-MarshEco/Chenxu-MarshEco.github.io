@@ -1,0 +1,266 @@
+{
+  "_readme": [
+    "聊天室某一天的存档（2026-10-09 起）。",
+    "",
+    "这一份是**机器写的**：tools/liyutang-archive.mjs 每天把云端那天的话搬下来，",
+    "图片解成 public/img/chat/<日>/ 下的 WebP，头像按内容去重放进 public/img/chat/avatars/。",
+    "搬完云端只留静态路径（LT_ADMIN_CHAT_PRUNE），所以翻旧账和搜索都不碰云端额度。",
+    "⚠ 这天有 5 张图在云端只剩一条路径、仓库里却没有那个文件（2026-10-09 那次\"先抹后提交\"的事故），那些消息的 image 是空串。",
+    "",
+    "⚠ 别手改这个文件：下一次存档会覆盖它（要改的是页面，不是数据）。",
+    "消息里的 text / nick 是当时的原文，页面渲染要当纯文本（textContent），不要拼 HTML。"
+  ],
+  "day": "2026-10-09",
+  "archivedAt": "2026-10-10T01:17:26.423Z",
+  "count": 24,
+  "images": 0,
+  "lostImages": [
+    "431b8212983d",
+    "09d24bf2c3f2",
+    "47d68e63d394",
+    "d79181a8c17d",
+    "b434fb17b7a4"
+  ],
+  "messages": [
+    {
+      "id": "ef61eaec84da",
+      "nick": "验收测试",
+      "alias": "验收测试",
+      "text": "连通性测试（会自动撤回）",
+      "createdAt": 1791534007004,
+      "deleted": true,
+      "avatar": "",
+      "image": ""
+    },
+    {
+      "id": "a2a79051ac31",
+      "nick": "Chenxu_MarshEco",
+      "alias": "Chenxu_MarshEco",
+      "text": "你好你好你们好呀",
+      "createdAt": 1791534833597,
+      "deleted": false,
+      "avatar": "/img/chat/avatars/av-27fd8e78.webp",
+      "image": ""
+    },
+    {
+      "id": "de61479f0751",
+      "nick": "Memori_Monita",
+      "alias": "Memori_Monita",
+      "text": "hi子",
+      "createdAt": 1791536041846,
+      "deleted": false,
+      "avatar": "/img/chat/avatars/av-7e18287e.webp",
+      "image": ""
+    },
+    {
+      "id": "921a8864cd83",
+      "nick": "钻大臣",
+      "alias": "钻大臣",
+      "text": "我说这不是网络聊天室吗",
+      "createdAt": 1791536143238,
+      "deleted": false,
+      "avatar": "/img/chat/avatars/av-8bba30c5.webp",
+      "image": ""
+    },
+    {
+      "id": "431b8212983d",
+      "nick": "Memori_Monita",
+      "alias": "Memori_Monita",
+      "text": "",
+      "createdAt": 1791536153568,
+      "deleted": false,
+      "avatar": "/img/chat/avatars/av-7e18287e.webp",
+      "image": ""
+    },
+    {
+      "id": "a82effbf111f",
+      "nick": "Chenxu_MarshEco",
+      "alias": "Chenxu_MarshEco",
+      "text": "对",
+      "createdAt": 1791536161981,
+      "deleted": false,
+      "avatar": "/img/chat/avatars/av-27fd8e78.webp",
+      "image": ""
+    },
+    {
+      "id": "899b0100cc31",
+      "nick": "Memori_Monita",
+      "alias": "Memori_Monita",
+      "text": "健康大陆",
+      "createdAt": 1791536163395,
+      "deleted": false,
+      "avatar": "/img/chat/avatars/av-7e18287e.webp",
+      "image": ""
+    },
+    {
+      "id": "c7064d4fc605",
+      "nick": "钻大臣",
+      "alias": "钻大臣",
+      "text": "？怎么图片都可以发",
+      "createdAt": 1791536199175,
+      "deleted": false,
+      "avatar": "/img/chat/avatars/av-8bba30c5.webp",
+      "image": ""
+    },
+    {
+      "id": "fd199c598558",
+      "nick": "Chenxu_MarshEco",
+      "alias": "Chenxu_MarshEco",
+      "text": "是的",
+      "createdAt": 1791536210922,
+      "deleted": false,
+      "avatar": "/img/chat/avatars/av-27fd8e78.webp",
+      "image": ""
+    },
+    {
+      "id": "e390c9afd829",
+      "nick": "钻大臣",
+      "alias": "钻大臣",
+      "text": "图片怎么发",
+      "createdAt": 1791536261525,
+      "deleted": false,
+      "avatar": "/img/chat/avatars/av-8bba30c5.webp",
+      "image": ""
+    },
+    {
+      "id": "e4c45e932ef9",
+      "nick": "钻大臣",
+      "alias": "钻大臣",
+      "text": "我复制不进来啊",
+      "createdAt": 1791536265867,
+      "deleted": false,
+      "avatar": "/img/chat/avatars/av-8bba30c5.webp",
+      "image": ""
+    },
+    {
+      "id": "09d24bf2c3f2",
+      "nick": "Chenxu_MarshEco",
+      "alias": "Chenxu_MarshEco",
+      "text": "",
+      "createdAt": 1791536287663,
+      "deleted": false,
+      "avatar": "/img/chat/avatars/av-27fd8e78.webp",
+      "image": ""
+    },
+    {
+      "id": "47d68e63d394",
+      "nick": "亲亲老母鸡",
+      "alias": "亲亲老母鸡",
+      "text": "",
+      "createdAt": 1791536298832,
+      "deleted": false,
+      "avatar": "/img/chat/avatars/av-56cc17e7.webp",
+      "image": ""
+    },
+    {
+      "id": "912436112e61",
+      "nick": "Chenxu_MarshEco",
+      "alias": "Chenxu_MarshEco",
+      "text": "目前只有一个传图键可以用 我回去优化一下",
+      "createdAt": 1791536309504,
+      "deleted": false,
+      "avatar": "/img/chat/avatars/av-27fd8e78.webp",
+      "image": ""
+    },
+    {
+      "id": "d79181a8c17d",
+      "nick": "钻大臣",
+      "alias": "钻大臣",
+      "text": "",
+      "createdAt": 1791536452114,
+      "deleted": false,
+      "avatar": "/img/chat/avatars/av-8bba30c5.webp",
+      "image": ""
+    },
+    {
+      "id": "02877ae7dcaa",
+      "nick": "钻大臣",
+      "alias": "钻大臣",
+      "text": "我觉得可以给这里加点常用表情包，放点MH武器和群内常用表情包什么的",
+      "createdAt": 1791536472710,
+      "deleted": false,
+      "avatar": "/img/chat/avatars/av-8bba30c5.webp",
+      "image": ""
+    },
+    {
+      "id": "82b3bb4055dd",
+      "nick": "Chenxu_MarshEco",
+      "alias": "Chenxu_MarshEco",
+      "text": "可以",
+      "createdAt": 1791536605820,
+      "deleted": false,
+      "avatar": "/img/chat/avatars/av-27fd8e78.webp",
+      "image": ""
+    },
+    {
+      "id": "61e500042062",
+      "nick": "No_Dreamlogic",
+      "alias": "No_Dreamlogic",
+      "text": "什么不可以发动图吗",
+      "createdAt": 1791547056545,
+      "deleted": false,
+      "avatar": "/img/chat/avatars/av-8cd8bfcc.webp",
+      "image": ""
+    },
+    {
+      "id": "9c42e48fc86c",
+      "nick": "验收测试",
+      "alias": "验收测试",
+      "text": "连通性测试（会自动撤回）",
+      "createdAt": 1791547574654,
+      "deleted": true,
+      "avatar": "",
+      "image": ""
+    },
+    {
+      "id": "e9de3ccc9663",
+      "nick": "验收测试",
+      "alias": "验收测试",
+      "text": "连通性测试（会自动撤回）",
+      "createdAt": 1791547618249,
+      "deleted": true,
+      "avatar": "",
+      "image": ""
+    },
+    {
+      "id": "b434fb17b7a4",
+      "nick": "钻大臣",
+      "alias": "钻大臣",
+      "text": "",
+      "createdAt": 1791548096673,
+      "deleted": false,
+      "avatar": "/img/chat/avatars/av-8bba30c5.webp",
+      "image": ""
+    },
+    {
+      "id": "3c8423eda578",
+      "nick": "钻大臣",
+      "alias": "钻大臣",
+      "text": "好把他根本没在动",
+      "createdAt": 1791548105481,
+      "deleted": false,
+      "avatar": "/img/chat/avatars/av-8bba30c5.webp",
+      "image": ""
+    },
+    {
+      "id": "e0a887822a93",
+      "nick": "验收测试",
+      "alias": "验收测试",
+      "text": "连通性测试（会自动撤回）",
+      "createdAt": 1791551695245,
+      "deleted": true,
+      "avatar": "",
+      "image": ""
+    },
+    {
+      "id": "c133aeb11e80",
+      "nick": "Shema_Sunf",
+      "alias": "Shema_Sunf",
+      "text": "你好，世界！",
+      "createdAt": 1791569509375,
+      "deleted": false,
+      "avatar": "",
+      "image": ""
+    }
+  ]
+}

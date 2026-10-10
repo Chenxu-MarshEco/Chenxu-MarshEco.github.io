@@ -5,5 +5,20 @@
     "读它的地方：聊天室侧栏那条「日子」时间轴、历史搜索页、以及 /liyutang/chatroom/<日>/ 那几页。",
     "⚠ 别手改：下一次存档会覆盖（一天一条，按日期倒序）。"
   ],
-  "days": []
+  "days": [
+    {
+      "day": "2026-10-09",
+      "count": 24,
+      "images": 0,
+      "users": [
+        "验收测试",
+        "Chenxu_MarshEco",
+        "Memori_Monita",
+        "钻大臣",
+        "亲亲老母鸡",
+        "No_Dreamlogic",
+        "Shema_Sunf"
+      ]
+    }
+  ]
 }
