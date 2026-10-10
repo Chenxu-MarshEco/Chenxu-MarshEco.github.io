@@ -6,16 +6,21 @@ name: 每日存档（聊天室 + 画板）
 # 用户原话：「每天保存一次聊天记录 …… 保存的聊天记录最好可以不调用腾讯云的额度
 # 例如保存在本地仓库？但是需要所有用户都能搜索」。
 #
-# 这一份干的就是"搬"：
-#   · 到点（北京时间 04:00）跑 tools/liyutang-archive.mjs --yesterday：
-#     向云函数要昨天那一整天（LT_ADMIN_CHAT_DAY，要站长密码），
-#     文字写成 src/data/chat/<日>.json、图片解成 public/img/chat/<日>/*.webp、
-#     头像按内容去重放进 public/img/chat/avatars/，并更新 src/data/chat/index.json；
-#   · 搬完把云端那些 base64 抹掉（--prune）：数据库不再随历史长大，
-#     而"翻旧账 + 搜索"从此全是静态文件 —— 一个字节都不碰腾讯云额度；
-#   · 然后把新文件提交推送。推送会触发既有的部署工作流（deploy.yml），
-#     那边有发布门卫把关：**只放行存档那几个路径**（见 tools/publish/gate.mjs 的 ALLOW），
-#     所以这个机器人身份不会被误认为可以随便改站点。
+# 这一份干的就是"搬"，而且**严格分成三段，顺序不能换**（2026-10-10 改的）：
+#   ① 搬（`--yesterday`，不带 --prune）：向云函数要昨天那一整天 ——
+#      聊天室走 LT_ADMIN_CHAT_DAY，文字写成 src/data/chat/<日>.json、
+#      图片解成 public/img/chat/<日>/*.webp、头像按内容去重放进 public/img/chat/avatars/；
+#      画板走 LT_ADMIN_DRAW_DAY（**分页取**，因为一次返回曾经超过腾讯云 6MB 上限），
+#      写成 src/data/draw/<日>.json + public/img/draw/<日>.svg。两步互不拖累。
+#   ② 提交推送（只提交，**不碰云端**）。推送会触发既有的部署工作流（deploy.yml），
+#      那边有发布门卫把关：**只放行存档那几个路径**（见 tools/publish/gate.mjs 的 ALLOW）。
+#   ③ 提交成功之后才清云端（`--prune-only`）—— 这一步不可逆，放最后。
+#
+# ⚠⚠ 为什么必须是"先提交、后清理"：2026-10-09 那天是一趟跑完（搬完立刻抹云端），
+#   结果画板那一枪撞上 6MB 上限失败 → 脚本 exit 1 → **提交那一步根本没执行**，
+#   而聊天室的 5 张图 base64 已经被抹掉了。用户第二天看到的就是"昨天的聊天和画都没保存"，
+#   那 5 张图至今只剩一条指向空气的路径（救不回来）。现在清理那一步有两个前提：
+#   搬的时候没报错 + 这一次确实有东西提交（另外清理自己还有对账闸门，见存档脚本）。
 #
 # 为什么要自己提交（而不是让云函数去推）：云函数里不放任何 GitHub 凭据。
 #
@@ -63,14 +68,20 @@ jobs:
         with:
           node-version: 24
 
-      - name: 把昨天的话搬进仓库
+      - name: 把昨天的话和画搬进仓库
+        id: fetch
+        # ⚠ 这一条**故意**允许失败：2026-10-10 04:17 那次就是"聊天室搬好了、画板那一枪失败"
+        #   （响应体超过腾讯云 6MB 上限），脚本 exit 1 之后整个 job 立刻结束 ——
+        #   连"提交"那一步都没走到，已经写好的聊天室存档随 runner 一起没了。
+        #   现在失败也往下走：能提交的先提交，最后再用一条步骤把这次跑标红。
+        continue-on-error: true
         env:
           LT_ADMIN_PASSWORD: ${{ secrets.LT_ADMIN_PASSWORD }}
         run: |
           if [ -n "${{ github.event.inputs.day }}" ]; then
-            node tools/liyutang-archive.mjs --day "${{ github.event.inputs.day }}" --prune
+            node tools/liyutang-archive.mjs --day "${{ github.event.inputs.day }}"
           else
-            node tools/liyutang-archive.mjs --yesterday --prune
+            node tools/liyutang-archive.mjs --yesterday
           fi
 
       - name: 看看有没有东西要提交
@@ -97,3 +108,22 @@ jobs:
           # 提交信息里的时间用**北京时间**（runner 是 UTC；这一跑发生在北京 04:00，
           # 用 date -u 会写成前一天 20:00，跟"存的是哪一天"对不上）。
           node tools/git/sync.mjs publish --message "存档：聊天室 + 画板（北京时间 $(TZ=Asia/Shanghai date '+%F %H:%M')）"
+
+      - name: 提交成功之后再清云端（不可逆那一步放最后）
+        # 条件是"搬的时候没报错 + 这一次真的有东西提交上去"。
+        # 2026-10-09 的教训：先抹云端、再提交，中间任何一步失败 = 云端那份没了、仓库里也没有。
+        if: steps.fetch.outcome == 'success' && steps.changed.outputs.changed == '1'
+        env:
+          LT_ADMIN_PASSWORD: ${{ secrets.LT_ADMIN_PASSWORD }}
+        run: |
+          if [ -n "${{ github.event.inputs.day }}" ]; then
+            node tools/liyutang-archive.mjs --day "${{ github.event.inputs.day }}" --prune-only
+          else
+            node tools/liyutang-archive.mjs --yesterday --prune-only
+          fi
+
+      - name: 搬的时候出错就把这次跑标红（已经提交的部分留着，云端那份也没动）
+        if: steps.fetch.outcome == 'failure'
+        run: |
+          echo "::error::存档脚本报错了（原因在上面『把昨天的话和画搬进仓库』那一步的日志里）。已经成功搬下来的部分已经提交推送；云端那一份没被清理，修好之后重跑这个工作流即可。"
+          exit 1

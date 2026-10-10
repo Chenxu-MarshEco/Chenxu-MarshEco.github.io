@@ -1218,14 +1218,30 @@ async function handleUserEvent(payload) {
       · PRUNE —— 存好之后回来把云端那些 base64 抹掉，只留一条静态路径 `/img/chat/<日>/<id>.webp`。
     两个都走站长密码那道闸门（上面的 adminCheck），不出现在任何前端页面上。
   */
+  /*
+    ⚠ 和画板那条一样，这里也**分页**（2026-10-10 加）：
+    一整天的话里只要带十几张图（一张 data URL 最大 ~533KB），响应体就会撞上腾讯云 6MB 上限 ——
+    画板 10-09 已经真栽过一次（见 LT_ADMIN_DRAW_DAY 那段），聊天室是同一条路，别等它再栽。
+    协议与游标完全一致：`after` / `afterId` / `limit`，按 `(createdAt, id)` 严格排序 + 2MB 字节预算，
+    返回 `{count, total, messages, next}`；`next === null` 或这批 0 条 = 取完了。
+  */
   if (event === 'LT_ADMIN_CHAT_DAY') {
     const day = String(payload.day || '');
     if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return bad('要指定哪一天（yyyy-mm-dd）');
-    const docs = await (await chat()).find({ day }).sort({ createdAt: 1 }).toArray();
-    return ok({
-      day,
-      count: docs.length,
-      messages: docs.map((d) => ({
+    const limit = Math.min(Math.max(Number(payload.limit) || 200, 1), 1000);
+    const budget = 2 * 1024 * 1024;
+    const afterTs = Number(payload.after) || 0;
+    const afterId = String(payload.afterId || '');
+    const col = await chat();
+    const q = afterTs
+      ? { day, $or: [{ createdAt: { $gt: afterTs } }, { createdAt: afterTs, id: { $gt: afterId } }] }
+      : { day };
+    const docs = await col.find(q).sort({ createdAt: 1, id: 1 }).limit(limit).toArray();
+    const total = await col.countDocuments({ day });
+    const messages = [];
+    let bytes = 0;
+    for (const d of docs) {
+      const m = {
         id: d.id,
         nick: d.nick,
         avatar: d.avatar || '',
@@ -1233,7 +1249,19 @@ async function handleUserEvent(payload) {
         image: d.image || '',
         createdAt: d.createdAt,
         deleted: !!d.deleted,
-      })),
+      };
+      const n = JSON.stringify(m).length;
+      if (messages.length && bytes + n > budget) break;
+      bytes += n;
+      messages.push(m);
+    }
+    const last = messages[messages.length - 1];
+    return ok({
+      day,
+      count: messages.length,
+      total,
+      messages,
+      next: last ? { ts: last.createdAt, id: last.id } : null,
     });
   }
 
@@ -1242,6 +1270,21 @@ async function handleUserEvent(payload) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return bad('要指定哪一天（yyyy-mm-dd）');
     const col = await chat();
     const docs = await col.find({ day, image: { $regex: '^data:' } }).toArray();
+    /*
+      ⚠ 2026-10-10 加的闸门：抹 base64 是不可逆的（MongoDB 免费档没有备份），
+      而云端那一份当时是**唯一**一份 —— 10-09 那次运行就是"图抹了、文件没提交"，5 张图从此没了。
+      所以：存档脚本把"它搬下来几张"（expect）带过来，跟云端还剩几张对不上就不许抹。
+      另外顺序也改了：现在是**先提交、后抹**（见 daily-archive.yml），抹这一步只在提交成功之后跑。
+    */
+    const expectRaw = payload.expect;
+    if (expectRaw !== undefined && expectRaw !== null && expectRaw !== '') {
+      const expect = Number(expectRaw);
+      /* 危险方向只有一个：云端还有图、存档里却没有 —— 那说明有些图根本没搬下来。
+         （反过来"存档里的图比云端多"是正常的：上一次已经抹过一遍了，重跑不该报错。） */
+      if (!Number.isFinite(expect) || expect < docs.length) {
+        return bad(`云端这天还有 ${docs.length} 张图没搬、存档里数出来是 ${expectRaw} —— 对不上，先别抹`);
+      }
+    }
     let pruned = 0;
     for (const d of docs) {
       /* 路径的规矩和存档脚本写文件时一模一样：/img/chat/<日>/<消息 id>.webp */
@@ -1249,6 +1292,21 @@ async function handleUserEvent(payload) {
       pruned += 1;
     }
     return ok({ day, pruned });
+  }
+
+  /*
+    把"仓库里其实没有那个文件"的图片引用抹成空（2026-10-10 加）。
+    来由：10-09 那次事故之后，云端这 5 条消息的 image 是一条静态路径，而 public/img/chat/2026-10-09/
+    下的文件从来没进过仓库 —— 页面上就是 5 个碎图。像素已经救不回来了（base64 被抹掉了），
+    能做的就是别再让它们显示成碎图：存档脚本发现路径指向的文件不存在时，调这个事件把云端那条置空。
+  */
+  if (event === 'LT_ADMIN_CHAT_CLEAR_IMAGE') {
+    const day = String(payload.day || '');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return bad('要指定哪一天（yyyy-mm-dd）');
+    const ids = (Array.isArray(payload.ids) ? payload.ids : []).map((x) => String(x)).filter(Boolean);
+    if (!ids.length) return bad('要给出要清哪几条（ids）');
+    const r = await (await chat()).updateMany({ day, id: { $in: ids } }, { $set: { image: '' } });
+    return ok({ day, cleared: r.modifiedCount, ids });
   }
 
   if (event === 'LT_ADMIN_CHAT_DELETE') {
@@ -1269,14 +1327,35 @@ async function handleUserEvent(payload) {
     所以这里是 DAY + CLEAR，而不是聊天室那种"抹掉图片、留下文字"。
     ⚠ CLEAR 之后云端就没有那天的笔划了 —— 想回看只能看仓库里那份存档（这正是设计意图）。
   */
+  /*
+    ⚠ 2026-10-10 的事故就出在这里，改之前先看这段：
+      原来这一枪把一整天的笔划**一次全返回**。10-09 那天笔划多到响应体超过腾讯云 **6MB 上限**，
+      云函数直接抛 `FUNCTIONS_INVOCATION_FAILED: The size of HTTP response body exceeds the upper limit (6MB)`，
+      存档脚本那一枪整个失败 —— 而它排在聊天室之后，于是"聊天室已经搬好、云端图片 base64 也抹掉了"
+      的那次运行**连提交都没走到**（文件只存在于 runner 上，随 runner 一起没了）。
+      现在改成**分页**：调用方带 `after` / `afterId` / `limit`，服务端按 `(createdAt, id)` 严格排序，
+      并且在**字节预算**（默认 2MB，给 6MB 留足余量）内尽量多装，返回 `{strokes, count, total, next}`：
+        · `count` = 这一批几条；`total` = 这天总共几条（调用方拿它对账，少一条都不许当"取完了"）；
+        · `next` = `{ts, id}`，下一批带上；`next === null` 或这批 0 条 = 取完了。
+      id 必须一起当游标：同一毫秒可能有好几笔，只按 createdAt 会漏。
+  */
   if (event === 'LT_ADMIN_DRAW_DAY') {
     const day = String(payload.day || '');
     if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return bad('要指定哪一天（yyyy-mm-dd）');
-    const docs = await (await draw()).find({ day }).sort({ createdAt: 1 }).toArray();
-    return ok({
-      day,
-      count: docs.length,
-      strokes: docs.map((d) => ({
+    const limit = Math.min(Math.max(Number(payload.limit) || 500, 1), 2000);
+    const budget = 2 * 1024 * 1024;
+    const afterTs = Number(payload.after) || 0;
+    const afterId = String(payload.afterId || '');
+    const col = await draw();
+    const q = afterTs
+      ? { day, $or: [{ createdAt: { $gt: afterTs } }, { createdAt: afterTs, id: { $gt: afterId } }] }
+      : { day };
+    const docs = await col.find(q).sort({ createdAt: 1, id: 1 }).limit(limit).toArray();
+    const total = await col.countDocuments({ day });
+    const strokes = [];
+    let bytes = 0;
+    for (const d of docs) {
+      const s = {
         id: d.id,
         uk: d.uk,
         nick: d.nick,
@@ -1287,14 +1366,40 @@ async function handleUserEvent(payload) {
         points: d.points,
         createdAt: d.createdAt,
         deleted: !!d.deleted,
-      })),
+      };
+      const n = JSON.stringify(s).length;
+      if (strokes.length && bytes + n > budget) break; /* 装不下就停，下一批接着取 */
+      bytes += n;
+      strokes.push(s);
+    }
+    const last = strokes[strokes.length - 1];
+    return ok({
+      day,
+      count: strokes.length,
+      total,
+      strokes,
+      next: last ? { ts: last.createdAt, id: last.id } : null,
     });
   }
 
   if (event === 'LT_ADMIN_DRAW_CLEAR') {
     const day = String(payload.day || '');
     if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return bad('要指定哪一天（yyyy-mm-dd）');
-    const r = await (await draw()).deleteMany({ day });
+    const col = await draw();
+    const n = await col.countDocuments({ day });
+    /*
+      ⚠ 这道闸门是 2026-10-10 加的，理由很具体：云端这一份是**唯一**的一份，
+      清掉就没了。存档脚本会把它数出来的笔数（`expect`）带过来 —— 对不上就不许清。
+      没有它，一个"取到一半失败"的存档会把云端那天的画删干净，而仓库里什么都没有。
+    */
+    const expectRaw = payload.expect;
+    if (expectRaw !== undefined && expectRaw !== null && expectRaw !== '') {
+      const expect = Number(expectRaw);
+      if (!Number.isFinite(expect) || expect !== n) {
+        return bad(`云端这天有 ${n} 笔、存档里数出来是 ${expectRaw} —— 对不上，先别清`);
+      }
+    }
+    const r = await col.deleteMany({ day });
     return ok({ day, cleared: r.deletedCount });
   }
 

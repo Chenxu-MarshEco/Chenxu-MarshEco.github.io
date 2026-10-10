@@ -191,10 +191,18 @@ const fakeFn = http.createServer((req, res) => {
     seen.push(body);
     res.writeHead(200, { 'content-type': 'application/json' });
     if (body.event === 'LT_ADMIN_CHAT_DAY') {
-      res.end(JSON.stringify({ code: 0, day: body.day, count: 2, messages: [
+      /* 和画板一样是分页夹具：两条消息、一次给一条，第二条才收尾（验"翻页"这条路真的走通） */
+      const all = [
         { id: 'c1', nick: '虹星', avatar: '', text: '命令行这条', image: PNG, createdAt: 1, deleted: false },
         { id: 'c2', nick: 'hoshi', avatar: '', text: '还有这条', image: '', createdAt: 2, deleted: false },
-      ] }));
+      ];
+      const after = Number(body.after) || 0;
+      const rest = all.filter((m) => m.createdAt > after);
+      const page = rest.slice(0, 1);
+      res.end(JSON.stringify({
+        code: 0, day: body.day, count: page.length, total: all.length, messages: page,
+        next: page.length && rest.length > page.length ? { ts: page[0].createdAt, id: page[0].id } : null,
+      }));
       return;
     }
     if (body.event === 'LT_ADMIN_CHAT_PRUNE') {
@@ -202,9 +210,21 @@ const fakeFn = http.createServer((req, res) => {
       return;
     }
     if (body.event === 'LT_ADMIN_DRAW_DAY') {
-      res.end(JSON.stringify({ code: 0, day: body.day, count: 1, strokes: [
+      /*
+        分页夹具（2026-10-10 起云函数就是分页的）：一共两笔，一次给一笔、第二笔才收尾。
+        这样"翻页"这条路在验收里是真走了一遍的，而不是只看代码里写了 while。
+      */
+      const all = [
         { id: 'k1', uk: 'aaaa1111', nick: '虹星', avatar: '', tool: 'pen', color: '#1d1430', size: 10, points: [[10, 10], [20, 30], [40, 20]], createdAt: 1, deleted: false },
-      ] }));
+        { id: 'k2', uk: 'bbbb2222', nick: 'hoshi', avatar: '', tool: 'eraser', color: '#fbf6ee', size: 20, points: [[50, 50], [60, 60]], createdAt: 2, deleted: false },
+      ];
+      const after = Number(body.after) || 0;
+      const rest = all.filter((s) => s.createdAt > after);
+      const page = rest.slice(0, 1);
+      res.end(JSON.stringify({
+        code: 0, day: body.day, count: page.length, total: all.length, strokes: page,
+        next: page.length && rest.length > page.length ? { ts: page[0].createdAt, id: page[0].id } : null,
+      }));
       return;
     }
     if (body.event === 'LT_ADMIN_DRAW_CLEAR') {
@@ -227,23 +247,104 @@ const run = (args) =>
     p.on('close', (code) => resolve({ code, out }));
   });
 
-const cli = await run(['--day', '2026-10-07', '--api', api, '--password', 'pw-123', '--prune', '--root', tmp3]);
-info('脚本输出：' + cli.out.trim().split('\n').map((l) => l.trim()).join(' | ').slice(0, 200));
+/* ---- 命令行 ①：只搬，**绝不动云端**（2026-10-10 的新顺序）---- */
+const cli = await run(['--day', '2026-10-07', '--api', api, '--password', 'pw-123', '--root', tmp3]);
+info('脚本输出：' + cli.out.trim().split('\n').map((l) => l.trim()).join(' | ').slice(0, 260));
 check('命令行跑通了（退出码 0）', cli.code === 0, `exit=${cli.code}`);
-check('★ 先问 LT_ADMIN_CHAT_DAY（带密码和日期）',
-  seen[0]?.event === 'LT_ADMIN_CHAT_DAY' && seen[0]?.password === 'pw-123' && seen[0]?.day === '2026-10-07',
+check('★ 先问 LT_ADMIN_CHAT_DAY（带密码和日期、从第一批开始）',
+  seen[0]?.event === 'LT_ADMIN_CHAT_DAY' && seen[0]?.password === 'pw-123' && seen[0]?.day === '2026-10-07' &&
+    (seen[0]?.after ?? 0) === 0,
   JSON.stringify(seen[0] ?? {}));
-check('★ 再问 LT_ADMIN_CHAT_PRUNE（把云端图片抹掉）',
-  seen[1]?.event === 'LT_ADMIN_CHAT_PRUNE' && seen[1]?.day === '2026-10-07', JSON.stringify(seen[1] ?? {}));
+check('★ 聊天室取数也是**分页**的：第二批带上 after / afterId 游标',
+  seen[1]?.event === 'LT_ADMIN_CHAT_DAY' && seen[1]?.after === 1 && seen[1]?.afterId === 'c1',
+  JSON.stringify(seen[1] ?? {}));
 check('★ 接着问 LT_ADMIN_DRAW_DAY（画板那天也要搬）',
   seen[2]?.event === 'LT_ADMIN_DRAW_DAY' && seen[2]?.day === '2026-10-07', JSON.stringify(seen[2] ?? {}));
-check('★ 最后 LT_ADMIN_DRAW_CLEAR（画板搬完把云端那天的笔划删掉，省数据库）',
-  seen[3]?.event === 'LT_ADMIN_DRAW_CLEAR' && seen[3]?.day === '2026-10-07', JSON.stringify(seen[3] ?? {}));
+check('★ 画板取数也是分页的：第二批带上了 after / afterId 游标',
+  seen[3]?.event === 'LT_ADMIN_DRAW_DAY' && seen[3]?.after === 1 && seen[3]?.afterId === 'k1',
+  JSON.stringify(seen[3] ?? {}));
+check('★★ 搬的这一趟**一次都没碰云端**（没有 PRUNE、没有 CLEAR —— 10-09 丢图就是栽在这上面）',
+  seen.every((b) => b.event !== 'LT_ADMIN_CHAT_PRUNE' && b.event !== 'LT_ADMIN_DRAW_CLEAR'),
+  seen.map((b) => b.event).join(' > '));
 check('文件真的写到了 --root 指定的地方',
   fs.existsSync(path.join(tmp3, 'src', 'data', 'chat', '2026-10-07.json')) &&
     fs.existsSync(path.join(tmp3, 'public', 'img', 'chat', '2026-10-07', 'c1.png')) &&
     fs.existsSync(path.join(tmp3, 'src', 'data', 'draw', '2026-10-07.json')) &&
     fs.existsSync(path.join(tmp3, 'public', 'img', 'draw', '2026-10-07.svg')));
+check('★★ 翻页取回来的笔划一笔不少（两批各一笔都写进了存档）',
+  (() => {
+    const j = JSON.parse(fs.readFileSync(path.join(tmp3, 'src', 'data', 'draw', '2026-10-07.json'), 'utf8'));
+    return j.strokes.length === 2 && j.strokes.map((s) => s.id).join() === 'k1,k2';
+  })());
+check('★★ 聊天室翻页取回来的话也一条不少（两批各一条，按时间正序）',
+  (() => {
+    const j = JSON.parse(fs.readFileSync(path.join(tmp3, 'src', 'data', 'chat', '2026-10-07.json'), 'utf8'));
+    return j.count === 2 && j.messages.map((m) => m.id).join() === 'c1,c2';
+  })());
+
+/* ---- 命令行 ②：提交之后再清（--prune-only）---- */
+seen.length = 0;
+const cli2 = await run(['--day', '2026-10-07', '--api', api, '--password', 'pw-123', '--prune-only', '--root', tmp3]);
+check('清理那一趟跑通了（退出码 0）', cli2.code === 0, `exit=${cli2.code}：${cli2.out.trim().split('\n').slice(-2).join(' ')}`);
+check('★ 清理先抹聊天室图片、再清画板笔划',
+  seen[0]?.event === 'LT_ADMIN_CHAT_PRUNE' && seen[1]?.event === 'LT_ADMIN_DRAW_CLEAR', seen.map((b) => b.event).join(' > '));
+check('★★ 清理带上了**对账数字**（expect：聊天室 1 张图 / 画板 2 笔）—— 云端条数对不上就拒清',
+  seen[0]?.expect === 1 && seen[1]?.expect === 2,
+  JSON.stringify(seen.map((b) => ({ e: b.event, expect: b.expect }))));
+
+/* ---- 命令行 ③：仓库里没有那天的存档时，清理一步一个请求都不许发 ---- */
+seen.length = 0;
+const tmpEmpty = fs.mkdtempSync(path.join(os.tmpdir(), 'lyt-archive-pruneempty-'));
+const cli5 = await run(['--day', '2026-10-07', '--api', api, '--password', 'pw-123', '--prune-only', '--root', tmpEmpty]);
+check('★★ 仓库里没有那天的存档 → 清理什么都不做（一个请求都不发，云端那份原封不动）',
+  cli5.code === 0 && seen.length === 0 && /没有那天的存档/.test(cli5.out),
+  `exit=${cli5.code} requests=${seen.length}`);
+
+/* ---- 命令行 ④：画板失败不许把聊天室那份一起弄丢（10-09 的真事故）---- */
+const brokeFn = http.createServer((req, res) => {
+  let raw = '';
+  req.on('data', (d) => (raw += d));
+  req.on('end', () => {
+    const body = JSON.parse(raw || '{}');
+    res.writeHead(200, { 'content-type': 'application/json' });
+    if (body.event === 'LT_ADMIN_DRAW_DAY') {
+      /* 复刻 10-09 那一枪：云函数直接报响应体超限 */
+      res.end(JSON.stringify({ code: 1000, message: 'The size of HTTP response body exceeds the upper limit (6MB).' }));
+      return;
+    }
+    /* 聊天室照常给（新协议，一条消息就收尾）—— 这一段要验的是"画板炸了、聊天室那份也得落盘" */
+    res.end(JSON.stringify({
+      code: 0, day: body.day, count: 1, total: 1,
+      messages: [{ id: 'x1', nick: '虹星', avatar: '', text: '画板炸了也別丢我', image: '', createdAt: 1, deleted: false }],
+      next: null, strokes: [],
+    }));
+  });
+});
+await new Promise((r) => brokeFn.listen(0, '127.0.0.1', r));
+const brokeApi = `http://127.0.0.1:${brokeFn.address().port}/fn`;
+const tmp6 = fs.mkdtempSync(path.join(os.tmpdir(), 'lyt-archive-brokedraw-'));
+const cli6 = await run(['--day', '2026-10-08', '--api', brokeApi, '--password', 'pw-123', '--root', tmp6]);
+check('★★ 画板那一枪失败时：退出码 1（工作流会标红），但**聊天室那份照样落盘**（以前整次运行直接退出，那份也白写了）',
+  cli6.code === 1 && fs.existsSync(path.join(tmp6, 'src', 'data', 'chat', '2026-10-08.json')) && /画板/.test(cli6.out),
+  `exit=${cli6.code} 聊天室文件=${fs.existsSync(path.join(tmp6, 'src', 'data', 'chat', '2026-10-08.json'))}`);
+check('★ 那次失败时也没碰云端（没有 DRAW_CLEAR / CHAT_PRUNE）', !/清云端|抹掉/.test(cli6.out), '');
+await new Promise((r) => brokeFn.close(r));
+
+/* ---- 工作流那三段：顺序和开关本身就是安全的一部分（2026-10-10 定的）---- */
+const wf = fs.readFileSync(path.join(SRC, '.github', 'workflows', 'daily-archive.yml'), 'utf8');
+const at = (needle) => wf.indexOf(needle);
+check('★ 工作流的排程是北京时间 04:00（UTC 20:00）', /cron:\s*'0 20 \* \* \*'/.test(wf), '');
+check('★ 搬的那一步允许失败（continue-on-error: true）—— 这样后面"提交"那一步还跑得到',
+  /把昨天的话和画搬进仓库[\s\S]{0,400}?continue-on-error:\s*true/.test(wf), '');
+check('★★ 提交那一步必须排在清理之前（先提交、后清理 —— 顺序换回去就是 10-09 的坑）',
+  at('提交并推送') > 0 && at('提交并推送') < at('提交成功之后再清云端'),
+  `提交@${at('提交并推送')} < 清理@${at('提交成功之后再清云端')}`);
+check('★★ 清理那一步只在"搬没报错 + 这一次确实有东西提交"时才跑',
+  /提交成功之后再清云端[\s\S]{0,320}?if:\s*steps\.fetch\.outcome == 'success' && steps\.changed\.outputs\.changed == '1'/.test(wf), '');
+check('★★ 工作流里不许再出现"搬完顺手清"的老开关（裸 --prune 就是 10-09 丢掉 5 张图的写法）',
+  !/\s--prune\s/.test(wf) && /--prune-only/.test(wf), '');
+check('★ 搬失败会把这次跑标红（用 ::error:: + exit 1），但已经提交的部分留着',
+  /::error::/.test(wf) && /exit 1/.test(wf), '');
 
 /* 没密码就该拒绝干活 */
 const noPw = await run(['--day', '2026-10-07', '--api', api, '--root', tmp3]);
@@ -253,7 +354,7 @@ check('不给站长密码 → 直接拒绝（不猜、不空跑）', noPw.code =
 seen.length = 0;
 const emptyFn = http.createServer((req, res) => {
   res.writeHead(200, { 'content-type': 'application/json' });
-  res.end(JSON.stringify({ code: 0, day: '2026-01-01', count: 0, messages: [] }));
+  res.end(JSON.stringify({ code: 0, day: '2026-01-01', count: 0, total: 0, messages: [], next: null }));
 });
 await new Promise((r) => emptyFn.listen(0, '127.0.0.1', r));
 const tmp4 = fs.mkdtempSync(path.join(os.tmpdir(), 'lyt-archive-empty-'));

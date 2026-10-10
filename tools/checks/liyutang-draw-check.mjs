@@ -326,14 +326,47 @@ if (!MongoMemoryServer || !mongodBinary) {
   check('★ 一小时超过 4000 笔 → 被拒（脚本刷不动）', over.code !== 0 && /4000/.test(String(over.message)), String(over.message));
 
   const today = new Date(Date.now() + 8 * 3600 * 1000).toISOString().slice(0, 10);
-  const day = await call({ event: 'LT_ADMIN_DRAW_DAY', password: 'admin-pass-123', day: today });
-  check('★ 站长能取某天的全部笔划（存档要用）', day.code === 0 && day.count >= 4002, `${day.count} 笔`);
+  /*
+    ⚠ 2026-10-10 改的：取某天的笔划原来是"一次全给你"。10-09 那天量太大，响应体超过腾讯云 **6MB** 上限，
+    云函数抛 FUNCTIONS_INVOCATION_FAILED，存档那一枪整个失败；而它排在聊天室之后，
+    于是"聊天室搬好、云端图片也抹了"的那次运行连提交都没走到 —— 用户第二天看到
+    "昨天的画和聊天都没保存"。现在按 (createdAt, id) 游标 + 字节预算分页，下面把这条协议逐条量出来。
+  */
+  const page1 = await call({ event: 'LT_ADMIN_DRAW_DAY', password: 'admin-pass-123', day: today, limit: 50 });
+  check('★ 站长取某天的笔划是**分页**给的（第一批只给 limit 条，还带 total / next）',
+    page1.code === 0 && page1.count === 50 && page1.total >= 4002 && !!page1.next,
+    `count=${page1.count} total=${page1.total} next=${JSON.stringify(page1.next)}`);
+  let acc = [...page1.strokes];
+  let cursor = page1.next;
+  let pages = 1;
+  let maxBytes = JSON.stringify(page1).length;
+  while (cursor && pages < 300) {
+    const p = await call({
+      event: 'LT_ADMIN_DRAW_DAY', password: 'admin-pass-123', day: today,
+      limit: 50, after: cursor.ts, afterId: cursor.id,
+    });
+    if (p.code !== 0) break;
+    maxBytes = Math.max(maxBytes, JSON.stringify(p).length);
+    acc.push(...p.strokes);
+    cursor = p.next;
+    pages += 1;
+  }
+  check('★★ 一直翻页能把那一天取完（累计 = total，一笔都不少）',
+    acc.length === page1.total && acc.length >= 4002, `${acc.length}/${page1.total}，共 ${pages} 批`);
+  check('★★ 单批响应体远小于腾讯云 6MB 上限 —— 这就是 10-09 那次失败的根因，现在这条路走得通',
+    maxBytes < 3 * 1024 * 1024, `最大一批 ${Math.round(maxBytes / 1024)}KB（网关上限 6144KB）`);
+  check('翻页不重不漏（id 去重之后条数一样）', new Set(acc.map((s) => s.id)).size === acc.length, `${acc.length} 条`);
   check('取出来的带着 tool / color / points（够画回一张 SVG）',
-    day.strokes.every((s) => s.tool && s.color && Array.isArray(s.points)), '');
-  const cleared = await call({ event: 'LT_ADMIN_DRAW_CLEAR', password: 'admin-pass-123', day: today });
+    acc.every((s) => s.tool && s.color && Array.isArray(s.points)), '');
+  /* CLEAR 的对账闸门：云端那份是**唯一**的一份，条数对不上就必须拒清 */
+  const badClear = await call({ event: 'LT_ADMIN_DRAW_CLEAR', password: 'admin-pass-123', day: today, expect: 3 });
+  const stillThere = await call({ event: 'LT_ADMIN_DRAW_DAY', password: 'admin-pass-123', day: today, limit: 1 });
+  check('★★ 清云端要先报对数：条数对不上就拒清，而且云端一笔没少',
+    badClear.code !== 0 && /对不上/.test(String(badClear.message)) && stillThere.total >= 4002,
+    `message=${badClear.message} 云端还剩 ${stillThere.total} 笔`);
+  const cleared = await call({ event: 'LT_ADMIN_DRAW_CLEAR', password: 'admin-pass-123', day: today, expect: acc.length });
   check('★ 站长清某天（搬进仓库之后把云端删掉）', cleared.code === 0 && cleared.cleared >= 4002, String(cleared.cleared));
-  check('清完之后那天真的空了', (await call({ event: 'LT_ADMIN_DRAW_DAY', password: 'admin-pass-123', day: today })).count === 0);
-  check('站长密码不对 → 取不到 / 清不掉',
+  check('清完之后那天真的空了', (await call({ event: 'LT_ADMIN_DRAW_DAY', password: 'admin-pass-123', day: today })).count === 0);  check('站长密码不对 → 取不到 / 清不掉',
     (await call({ event: 'LT_ADMIN_DRAW_DAY', password: '乱猜', day: today })).code !== 0 &&
     (await call({ event: 'LT_ADMIN_DRAW_CLEAR', password: '乱猜', day: today })).code !== 0);
 

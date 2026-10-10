@@ -62,35 +62,46 @@
 
 ## 聊天室的「每日存档」需要两样东西（2026-10-09 起）
 
-聊天室当天的话住在云端的 `lt_chat` 里；**过完那一天**由 `.github/workflows/chat-archive.yml`
-（每天北京时间 00:10）把那天搬进仓库 —— 这一段完全不经过浏览器，靠的是云函数里这两个**站长事件**：
+聊天室当天的话、画板当天的笔划都住在云端（`lt_chat` / `lt_draw`）；**过完那一天**由
+`.github/workflows/daily-archive.yml`（每天**北京时间 04:00**）把那天搬进仓库 ——
+这一段完全不经过浏览器，靠的是云函数里这几个**站长事件**：
 
 | 事件 | 干什么 | 谁在调 |
 | --- | --- | --- |
 | `LT_ADMIN_CHAT_DAY` | 取出某一天的全部消息（**含图片 base64**） | `tools/liyutang-archive.mjs` |
-| `LT_ADMIN_CHAT_PRUNE` | 存好之后把云端那些 base64 抹掉，只留静态路径 `/img/chat/<日>/<id>.webp` | 同上（`--prune`） |
-| `LT_ADMIN_DRAW_DAY` | 取出某一天画板上的全部笔划（矢量，存档要用） | 同上 |
-| `LT_ADMIN_DRAW_CLEAR` | 搬进仓库之后把云端那天的笔划**删掉**（笔划在仓库里已是完整记录，云端留着占地方） | 同上（`--prune`） |
+| `LT_ADMIN_CHAT_PRUNE` | 存好之后把云端那些 base64 抹掉，只留静态路径 `/img/chat/<日>/<id>.webp`（带 `expect` 对账闸门） | 同上（`--prune-only`） |
+| `LT_ADMIN_CHAT_CLEAR_IMAGE` | 把"图已经没了"的那几条的 `image` 置空，别再显示碎图（2026-10-09 事故的收尾用） | 同上（`--prune-only`） |
+| `LT_ADMIN_DRAW_DAY` | 取出某一天画板上的全部笔划，**分页**：带 `after` / `afterId` / `limit`，按 `(createdAt, id)` 游标 + 2MB 字节预算分批，返回 `{count, total, strokes, next}` | 同上 |
+| `LT_ADMIN_DRAW_CLEAR` | 搬进仓库之后把云端那天的笔划**删掉**（带 `expect` 对账闸门：条数对不上就拒清） | 同上（`--prune-only`） |
 
-两个都走**站长密码**那道闸门（`adminCheck`），页面上没有任何入口能调到它们。要跑通它，得先在 GitHub 仓库里配好：
+⚠ `LT_ADMIN_DRAW_DAY` 为什么必须分页：2026-10-09 那天笔划多到响应体超过**腾讯云 6MB 上限**，
+云函数抛 `FUNCTIONS_INVOCATION_FAILED`，存档整个失败；而它排在聊天室之后，于是那一次运行
+**连提交都没走到**（聊天室的 5 张图 base64 已经被抹了 ⇒ 那 5 张图从此丢失）。
+现在工作流的顺序是**搬 → 提交推送 → 再清云端**，清理那一步只在"搬没报错 + 有东西提交"时才跑。
+
+它们都走**站长密码**那道闸门（`adminCheck`），页面上没有任何入口能调到。要跑通它，得先在 GitHub 仓库里配好：
 
 1. **Settings → Secrets and variables → Actions → New repository secret**：
    名字 `LT_ADMIN_PASSWORD`，值就是你在评论区小齿轮里设的**站长密码原文**。
 2. 那个工作流自己是 `permissions: contents: write`（全仓唯一一处写权限，只给它）——
    它提交时走的是站里统一的 `tools/git/sync.mjs publish`（先拉后推、永不强推），
    推上去之后由既有的部署工作流发布，而**发布门卫只放行存档那几个路径**
-   （`src/data/chat/<日期>.json`、`index.json`、`public/img/chat/**`，见 `tools/publish/gate.mjs`）。
+   （`src/data/chat|draw/<日期>.json`、两边的 `index.json`、`public/img/chat/**`、`public/img/draw/<日期>.svg`，
+   见 `tools/publish/gate.mjs`）。
 
-补档（比如某天忘了存、或者想手动试一次）：Actions → 「聊天室每日存档」→ **Run workflow**，
-`day` 填 `2026-10-08` 这种日期；本地也可以直接跑：
+补档（比如某天忘了存、或者想手动试一次）：Actions → 「每日存档（聊天室 + 画板）」→ **Run workflow**，
+`day` 填 `2026-10-09` 这种日期；本地也可以直接跑（**两段式**，顺序别合回去）：
 
 ```powershell
 $env:LT_ADMIN_PASSWORD = '你的站长密码'
-node tools/liyutang-archive.mjs --day 2026-10-08 --prune
+node tools/liyutang-archive.mjs --day 2026-10-09              # ① 只搬，云端一个字节都不动
+# …这里应该 git 提交推送，确认存档真的进了仓库…
+node tools/liyutang-archive.mjs --day 2026-10-09 --prune-only  # ② 提交成功了再清云端
 ```
 
-⚠ 本地跑**一定要带 `--prune` 之外的时候想清楚**：不带 `--prune` 只写仓库、云端图片留着；
-带了就把云端那份抹掉换成静态路径（下次如果删了仓库里的图，历史里那张图就没了）。
+⚠ 清理是**不可逆**的（云端那份删了就没了，MongoDB 免费档没有备份），所以它自带两道保险：
+仓库里必须有那天的存档文件、条数还要跟云端剩的对得上；任何一条不满足就什么都不清。
+本地图省事也可以一趟跑完（`--prune`），但**工作流不许用**那个写法 —— 10-09 丢图就是那么来的。
 
 ## 本地怎么验这份代码（不用连云）
 
