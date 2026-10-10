@@ -27,8 +27,15 @@
   "title": "曼沫砾总线",
   "subtitle": "",
   "latest": 5,
-  "updated": "2026-10-07",
+  "updated": "2026-10-10",
   "items": [
+    {
+      "id": "an-20261010-01",
+      "kind": "update",
+      "date": "2026-10-10",
+      "title": "茶绘已开放！快和大家一起去画画吧~",
+      "href": "https://chenxu-marsheco.github.io/liyutang/teahouse/"
+    },
     {
       "id": "an-20261007-01",
       "kind": "update",
