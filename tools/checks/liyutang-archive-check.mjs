@@ -65,6 +65,11 @@ const indexFile = path.join(chatDir, 'index.json');
 
 check('写出了那一天的 JSON', fs.existsSync(dayFile));
 check('写好了索引 index.json', fs.existsSync(indexFile));
+/* 2026-10-10 用户："存进仓库也尽量压小" —— 那天的话可能很长，缩进纯属白占地方（索引仍旧缩进，它每天有 diff） */
+check('★ 聊天室那天的存档写的是紧凑 JSON（不缩进）',
+  fs.readFileSync(dayFile, 'utf8').split('\n').length <= 2, `${fs.readFileSync(dayFile, 'utf8').split('\n').length} 行`);
+check('★ 索引仍旧缩进写（它小、而且每天都要 diff 一行）',
+  fs.readFileSync(indexFile, 'utf8').includes('\n  "'), '');
 check('图片解出来了（public/img/chat/<日>/<消息 id>.webp）',
   fs.existsSync(path.join(imgDir, day, 'm1.png')), fs.existsSync(path.join(imgDir, day, 'm1.png')) ? 'm1.png' : '缺');
 const avFiles = fs.existsSync(path.join(imgDir, 'avatars')) ? fs.readdirSync(path.join(imgDir, 'avatars')) : [];
@@ -131,10 +136,12 @@ check('★ "昨天"按北京时间**凌晨四点**切：23:30 与次日 00:30 �
 
 console.log('\n=== ②-b 画板存档：笔划 → JSON + 一张 SVG ===');
 const tmpDraw = fs.mkdtempSync(path.join(os.tmpdir(), 'lyt-draw-archive-'));
+/* 一个 20KB 的假头像：用来证明"头像只按人存一份"，不是每笔复制一遍（那会把文件撑到十倍） */
+const BIG_AVATAR = 'data:image/png;base64,' + 'A'.repeat(20 * 1024);
 const drawStrokes = [
-  { id: 's1', uk: 'aaaa1111', nick: '虹星', avatar: '', tool: 'pen', color: '#1d1430', size: 8, points: [[100, 100], [300, 200], [500, 150]], createdAt: 1000 },
+  { id: 's1', uk: 'aaaa1111', nick: '虹星', avatar: BIG_AVATAR, tool: 'pen', color: '#1d1430', size: 8, points: [[100, 100], [300, 200], [500, 150]], createdAt: 1000 },
   { id: 's2', uk: 'bbbb2222', nick: 'hoshi', avatar: '', tool: 'eraser', color: '#fbf6ee', size: 20, points: [[200, 150], [260, 170]], createdAt: 2000 },
-  { id: 's3', uk: 'aaaa1111', nick: '虹星', avatar: '', tool: 'pen', color: '#ff4d6d', size: 6, points: [[300, 300]], createdAt: 3000, deleted: true },
+  { id: 's3', uk: 'aaaa1111', nick: '虹星', avatar: BIG_AVATAR, tool: 'pen', color: '#ff4d6d', size: 6, points: [[300, 300]], createdAt: 3000, deleted: true },
   { id: 'bad', uk: 'x', nick: 'x', tool: 'pen', color: 'red', size: 4, points: [[1, 1]], createdAt: 4000 },
 ];
 const drawSum = writeDrawArchive({ day: '2026-10-08', strokes: drawStrokes, root: tmpDraw, now: Date.UTC(2026, 9, 9, 0, 10, 0) });
@@ -144,11 +151,53 @@ const drawSvgFile = path.join(tmpDraw, 'public', 'img', 'draw', '2026-10-08.svg'
 check('画板存档：那天的 JSON + 一张 SVG 都写出来了', fs.existsSync(drawDayFile) && fs.existsSync(drawSvgFile));
 check('画板存档：索引写出来了', fs.existsSync(path.join(drawDirOut, 'index.json')));
 
-const drawJson = JSON.parse(fs.readFileSync(drawDayFile, 'utf8'));
+const drawRaw = fs.readFileSync(drawDayFile, 'utf8');
+const drawJson = JSON.parse(drawRaw);
 check('★ 脏笔划（颜色不合法）和删掉的那笔都没进存档', drawJson.count === 2 && drawJson.strokes.length === 2, `${drawJson.count} 笔`);
+/*
+  ⚠ 2026-10-10 补的两条，来由是真事故：清理云端时如果拿 count（存档里留下的笔数）去对账，
+  它会永远对不上云端那份原始条数（10-09 是 1476 里留下 1224），于是云端永远清不掉。
+  所以存档必须**如实记下云端本来有几笔**（cloudTotal）和丢了几笔（skipped）。
+*/
+check('★★ 存档如实记着"云端本来有几笔"（cloudTotal = 4）与丢了什么（删掉 1 / 脏 1）',
+  drawJson.cloudTotal === 4 && drawJson.skipped?.deleted === 1 && drawJson.skipped?.dirty === 1,
+  `cloudTotal=${drawJson.cloudTotal} count=${drawJson.count} skipped=${JSON.stringify(drawJson.skipped)}`);
+check('★ 对账用的数必须是 cloudTotal（不是 count）—— 4 ≠ 2，两者确实不是同一个数',
+  drawJson.cloudTotal !== drawJson.count, `${drawJson.cloudTotal} vs ${drawJson.count}`);
+/*
+  ★★ 2026-10-10 用户拍的那条：「存入仓库也尽量压小 / 8MB 太大了」。
+  实测 10-09 那份：6.24MB 里 **5.61MB 是每笔各存一份的头像**（那天总共只有 6 张不同的脸）。
+  规矩：**头像按人存一份**（people 里），笔划里一个 avatar 都不许有；而且整体写紧凑 JSON。
+*/
+check('★★ 头像只按人存一份：笔划里没有 avatar 字段',
+  drawJson.strokes.every((s) => !Object.prototype.hasOwnProperty.call(s, 'avatar')),
+  JSON.stringify(Object.keys(drawJson.strokes[0] ?? {})));
+check('★★ 头像本身没丢：people 里那个人带着（一份，不是每笔一份）',
+  Array.isArray(drawJson.people) && drawJson.people.some((p) => p.uk === 'aaaa1111' && p.avatar === BIG_AVATAR),
+  JSON.stringify((drawJson.people ?? []).map((p) => ({ uk: p.uk, av: String(p.avatar || '').length }))));
+check(`★★ 20KB 的假头像没有被复制进文件：整份存档只有 ${Math.round(Buffer.byteLength(drawRaw) / 1024)}KB（撑到十倍就是每笔一份头像）`,
+  Buffer.byteLength(drawRaw) < 30 * 1024, `${Buffer.byteLength(drawRaw)} 字节`);
+check('★★ 存档写的是**紧凑 JSON**（不缩进）—— 缩进一天要多占两成多',
+  !drawRaw.includes('\n  "') && drawRaw.split('\n').length <= 2, `${drawRaw.split('\n').length} 行`);
 check('★ 按人归好了（谁画了几笔）',
-  drawJson.painters.length === 2 && drawJson.painters.some((p) => p.nick === '虹星' && p.count === 1),
-  JSON.stringify(drawJson.painters));
+  drawJson.people.length === 2 && drawJson.people.some((p) => p.nick === '虹星' && p.count === 1),
+  JSON.stringify((drawJson.people ?? []).map((p) => ({ n: p.nick, c: p.count }))));
+check('★ 索引里也带了那份人表（日页靠它，于是构建不必读每天的 <日>.json）',
+  (() => {
+    const idx = JSON.parse(fs.readFileSync(path.join(drawDirOut, 'index.json'), 'utf8'));
+    const e = (idx.days ?? []).find((d) => d.day === '2026-10-08');
+    return !!e && Array.isArray(e.people) && e.people.length === 2;
+  })(), '');
+
+/* ---- 构建成本（2026-10-10 用户："不要让构建太慢"）：不许再把每天的存档读进构建 ---- */
+const drawReader = fs.readFileSync(path.join(SRC, 'src', 'utils', 'draw-archive.ts'), 'utf8');
+const drawDayPage = fs.readFileSync(path.join(SRC, 'src', 'pages', 'liyutang', 'teahouse', '[day].astro'), 'utf8');
+/* 判的是**代码**，不是注释：注释里正大光明地写着"以前是这么干的、别改回去"（剥掉注释再判） */
+const stripComments = (s) => String(s).replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+check('★★ 构建期不再读每天的画板存档（`import.meta.glob ... data/draw/*.json` 一个都不许有；eager 更不行）',
+  !/import\.meta\.glob[^\n]*data\/draw\/\*\.json/.test(stripComments(drawReader)), '');
+check('★ 画板日页的人表从索引读（drawPeople），不再去读那天几 MB 的笔划存档',
+  /drawPeople/.test(stripComments(drawDayPage)) && !/drawArchive\(/.test(stripComments(drawDayPage)), '');
 check('笔划带着工具 / 颜色 / 点集（够画回一张图）',
   drawJson.strokes.every((s) => ['pen', 'eraser'].includes(s.tool) && /^#[0-9a-f]{6}$/.test(s.color) && s.points.length >= 1));
 
@@ -160,6 +209,16 @@ check('★ SVG 里两条笔划（橡皮按纸色画）',
   (svgText.match(/<path /g) || []).length === 2 && svgText.includes('stroke="#fbf6ee"'),
   `${(svgText.match(/<path /g) || []).length} 条`);
 check('SVG 里标了作者（回看时知道是谁画的）', svgText.includes('data-by="虹星"') && svgText.includes('data-by="hoshi"'));
+/*
+  ★★ 2026-10-10 用户："存进仓库也尽量压小" —— SVG 是那天的第二大件（10-09 实测 1.35MB），
+  改成**相对命令**（q/l 写增量）并把共用的表现属性提到外层 <g> 之后降到 0.77MB（省 43%）。
+  这两条是防回退：路径必须是相对的、每条 path 上不许再重复那三个可继承属性。
+*/
+check('★★ SVG 用相对命令写路径（q / l 增量），不是绝对的大坐标 —— 10-09 那份因此小了 43%',
+  /<path d="M[^"]*q/.test(svgText) && !/<path d="M[^"]* Q /.test(svgText), '');
+check('★★ 共用的表现属性在外层一个 <g> 上（fill / linecap / linejoin），不在每条 path 上重复',
+  svgText.includes('<g fill="none" stroke-linecap="round" stroke-linejoin="round">') &&
+    !/<path [^>]*stroke-linecap=/.test(svgText), '');
 
 const drawIdx = JSON.parse(fs.readFileSync(path.join(drawDirOut, 'index.json'), 'utf8'));
 check('索引里记了那一天（笔数 / 人数 / 都有谁）',
@@ -217,6 +276,8 @@ const fakeFn = http.createServer((req, res) => {
       const all = [
         { id: 'k1', uk: 'aaaa1111', nick: '虹星', avatar: '', tool: 'pen', color: '#1d1430', size: 10, points: [[10, 10], [20, 30], [40, 20]], createdAt: 1, deleted: false },
         { id: 'k2', uk: 'bbbb2222', nick: 'hoshi', avatar: '', tool: 'eraser', color: '#fbf6ee', size: 20, points: [[50, 50], [60, 60]], createdAt: 2, deleted: false },
+        /* 一笔**撤掉的**：它不进存档，但云端确实有它 —— 对账必须按 3 笔算，不是 2 笔 */
+        { id: 'k3', uk: 'aaaa1111', nick: '虹星', avatar: '', tool: 'pen', color: '#ff4d6d', size: 6, points: [[70, 70], [80, 80]], createdAt: 3, deleted: true },
       ];
       const after = Number(body.after) || 0;
       const rest = all.filter((s) => s.createdAt > after);
@@ -271,10 +332,10 @@ check('文件真的写到了 --root 指定的地方',
     fs.existsSync(path.join(tmp3, 'public', 'img', 'chat', '2026-10-07', 'c1.png')) &&
     fs.existsSync(path.join(tmp3, 'src', 'data', 'draw', '2026-10-07.json')) &&
     fs.existsSync(path.join(tmp3, 'public', 'img', 'draw', '2026-10-07.svg')));
-check('★★ 翻页取回来的笔划一笔不少（两批各一笔都写进了存档）',
+check('★★ 翻页取回来的 3 条里，该留的 2 笔都进了存档（撤掉的那笔按规矩不进）',
   (() => {
     const j = JSON.parse(fs.readFileSync(path.join(tmp3, 'src', 'data', 'draw', '2026-10-07.json'), 'utf8'));
-    return j.strokes.length === 2 && j.strokes.map((s) => s.id).join() === 'k1,k2';
+    return j.strokes.length === 2 && j.strokes.map((s) => s.id).join() === 'k1,k2' && j.cloudTotal === 3;
   })());
 check('★★ 聊天室翻页取回来的话也一条不少（两批各一条，按时间正序）',
   (() => {
@@ -288,8 +349,8 @@ const cli2 = await run(['--day', '2026-10-07', '--api', api, '--password', 'pw-1
 check('清理那一趟跑通了（退出码 0）', cli2.code === 0, `exit=${cli2.code}：${cli2.out.trim().split('\n').slice(-2).join(' ')}`);
 check('★ 清理先抹聊天室图片、再清画板笔划',
   seen[0]?.event === 'LT_ADMIN_CHAT_PRUNE' && seen[1]?.event === 'LT_ADMIN_DRAW_CLEAR', seen.map((b) => b.event).join(' > '));
-check('★★ 清理带上了**对账数字**（expect：聊天室 1 张图 / 画板 2 笔）—— 云端条数对不上就拒清',
-  seen[0]?.expect === 1 && seen[1]?.expect === 2,
+check('★★ 清理带上了**对账数字**（expect：聊天室 1 张图 / 画板 **3 笔 = 云端原始条数**，不是存档里的 2 笔）',
+  seen[0]?.expect === 1 && seen[1]?.expect === 3,
   JSON.stringify(seen.map((b) => ({ e: b.event, expect: b.expect }))));
 
 /* ---- 命令行 ③：仓库里没有那天的存档时，清理一步一个请求都不许发 ---- */
@@ -345,6 +406,26 @@ check('★★ 工作流里不许再出现"搬完顺手清"的老开关（裸 --p
   !/\s--prune\s/.test(wf) && /--prune-only/.test(wf), '');
 check('★ 搬失败会把这次跑标红（用 ::error:: + exit 1），但已经提交的部分留着',
   /::error::/.test(wf) && /exit 1/.test(wf), '');
+/* 三段（提交/部署/清理）互不拖累：部署挂了也要让清理跑得到，反之亦然；末尾统一标红 */
+check('★★ 部署与清理两步都挂了 continue-on-error（谁失败都不许把另一段卡死）',
+  (wf.match(/continue-on-error: true/g) || []).length >= 3 &&
+    /id: deploy[\s\S]{0,400}?continue-on-error: true/.test(wf) &&
+    /id: prune[\s\S]{0,400}?continue-on-error: true/.test(wf), '');
+check('★★ 末尾那一步把三段的结果都看了（fetch / deploy / prune 任意一段失败 → 这次跑标红）',
+  /steps\.fetch\.outcome == 'failure' \|\| steps\.deploy\.outcome == 'failure' \|\| steps\.prune\.outcome == 'failure'/.test(wf), '');
+/*
+  ⚠ 2026-10-10 实测的第二个坑：用默认 GITHUB_TOKEN 推的提交**不会触发** push 类工作流
+  （GitHub 防递归），于是"存档进了 main、线上还是 404" —— 那天 /liyutang/teahouse/2026-10-09/
+  确实一直是 404，直到手动点了一次 Run workflow。所以工作流必须自己点一次 deploy.yml。
+*/
+check('★★ 工作流自己点一次站点部署（否则机器人提交的存档永远不上线）',
+  /gh workflow run deploy\.yml/.test(wf), '');
+check('★ 为了能 dispatch，权限里得有 actions: write',
+  /permissions:[\s\S]{0,200}?actions:\s*write/.test(wf), '');
+check('★★ 顺序是"提交 → 点部署 → 清云端"（部署不该被清理挡住）',
+  at('name: 提交并推送') > 0 && at('name: 提交并推送') < at('name: 点一次站点部署') &&
+    at('name: 点一次站点部署') < at('name: 提交成功之后再清云端'),
+  `提交@${at('name: 提交并推送')} < 部署@${at('name: 点一次站点部署')} < 清理@${at('name: 提交成功之后再清云端')}`);
 
 /* 没密码就该拒绝干活 */
 const noPw = await run(['--day', '2026-10-07', '--api', api, '--root', tmp3]);

@@ -190,6 +190,7 @@ export function writeArchive({ day, messages, root = ROOT, now = Date.now(), dry
       '',
       '⚠ 别手改这个文件：下一次存档会覆盖它（要改的是页面，不是数据）。',
       '消息里的 text / nick 是当时的原文，页面渲染要当纯文本（textContent），不要拼 HTML。',
+      '（紧凑 JSON、不缩进：一天的话可能很长，缩进纯属白占地方；要看舒服点就 `jq . <文件>`。）',
     ],
     day,
     archivedAt: new Date(now).toISOString(),
@@ -200,7 +201,8 @@ export function writeArchive({ day, messages, root = ROOT, now = Date.now(), dry
     messages: out,
   };
 
-  const body = JSON.stringify(json, null, 2) + '\n';
+  /* 紧凑写（和画板存档一个规矩）：这一天的话可能很长，缩进纯属白占地方；索引仍旧缩进 */
+  const body = JSON.stringify(json) + '\n';
   if (!dry) fs.writeFileSync(path.join(chatDir, `${day}.json`), body, 'utf8');
 
   /* 索引：有哪些天、每天多少条/几张图/都有谁 —— 侧栏的时间轴和搜索页都读它 */
@@ -270,17 +272,41 @@ export function writeDrawArchive({ day, strokes, root = ROOT, now = Date.now(), 
     fs.mkdirSync(imgDir, { recursive: true });
   }
 
-  /* 只留画得出来的那几笔（脏数据不进存档），删掉的也不进 */
+  /* 只留画得出来的那几笔（脏数据不进存档），删掉的也不进 —— 所以要如实记下"云端本来有几笔" */
+  const rawTotal = Array.isArray(strokes) ? strokes.length : 0;
+  let skippedDeleted = 0;
+  let skippedDirty = 0;
   const rows = [];
+  /*
+    ⚠⚠ 2026-10-10：**每笔不再存一份头像**。
+    实测（10-09 那天，1224 笔）：文件 6.24MB 里有 **5.61MB 是头像** —— 1224 笔各带一份
+    同一个人的头像 data URL，而那天总共只有 **6 张不同的脸**。去掉之后 6.24MB → 0.78MB。
+    头像按人存一份放在 `people` 里（6 张 → 几十 KB），要查谁画的用 `uk` 对上去就行。
+  */
+  const avatarByUk = new Map();
   for (const s of Array.isArray(strokes) ? strokes : []) {
-    if (!s || s.deleted) continue;
+    if (!s || s.deleted || !s.uk) continue;
+    const av = String(s.avatar || '');
+    if (av && !avatarByUk.has(String(s.uk))) avatarByUk.set(String(s.uk), av);
+  }
+  for (const s of Array.isArray(strokes) ? strokes : []) {
+    if (!s) {
+      skippedDirty += 1;
+      continue;
+    }
+    if (s.deleted) {
+      skippedDeleted += 1;
+      continue;
+    }
     const got = checkStroke(s, { w: BOARD_W, h: BOARD_H });
-    if (!got.ok) continue;
+    if (!got.ok) {
+      skippedDirty += 1;
+      continue;
+    }
     rows.push({
       id: String(s.id || ''),
       uk: String(s.uk || ''),
       nick: String(s.nick || ''),
-      avatar: String(s.avatar || ''),
       tool: got.stroke.tool,
       color: got.stroke.color,
       size: got.stroke.size,
@@ -290,7 +316,13 @@ export function writeDrawArchive({ day, strokes, root = ROOT, now = Date.now(), 
   }
   rows.sort((a, b) => a.createdAt - b.createdAt);
 
-  const people = paintersOf(rows, { w: BOARD_W, h: BOARD_H });
+  const people = paintersOf(rows, { w: BOARD_W, h: BOARD_H }).map((p) => ({
+    uk: p.key,
+    nick: p.nick,
+    /* 头像按人一份（不是按笔）—— 这是把文件从 6MB 压到 0.8MB 的那一刀 */
+    avatar: avatarByUk.get(String(p.key)) || '',
+    count: p.count,
+  }));
   const svg = strokesToSvg(rows, { w: BOARD_W, h: BOARD_H });
   const json = {
     _readme: [
@@ -298,19 +330,30 @@ export function writeDrawArchive({ day, strokes, root = ROOT, now = Date.now(), 
       '',
       '这一份是**机器写的**：tools/liyutang-archive.mjs 每天把云端那天画的笔划搬下来，',
       '同一批笔划还渲染成 public/img/draw/<日>.svg（日历和日页直接内联它）。',
-      '笔划是矢量的：{ tool: pen|eraser, color: #rrggbb, size, points: [[x, y], …] }，',
-      `坐标是画板自己的坐标系（${BOARD_W}×${BOARD_H}，和屏幕无关）。`,
+      '笔划是矢量的：{ id, uk, nick, tool, color, size, points: [[x, y], …], createdAt }，',
+      `坐标是画板自己的坐标系（${BOARD_W}×${BOARD_H}，屏幕无关），精确到 0.1 画板像素。`,
+      '',
+      '**这一份是紧凑 JSON（不缩进）**：一天几千笔，缩进能把文件撑大两成多。要看就 `jq` 一下。',
+      '**头像不在笔划上**：每笔存一份头像会让文件涨到十倍（2026-10-10 实测：6.24MB 里 5.61MB 是头像，',
+      '而那天只有 6 张不同的脸），所以头像按人存在 `people` 里，用 uk 对。',
+      '',
+      `count = 这里真正留下的笔数；cloudTotal = 云端那天的原始条数（${rawTotal}）。`,
+      `两者不等是**故意**的：撤掉的（${skippedDeleted} 笔）和画不出来的脏数据（${skippedDirty} 笔）都不进存档。`,
+      '清理云端时拿 cloudTotal 对账 —— 别拿 count 去比，那不是同一个数。',
       '',
       '⚠ 别手改这个文件：下一次存档会覆盖它（要改的是页面，不是数据）。',
     ],
     day,
     archivedAt: new Date(now).toISOString(),
     count: rows.length,
-    painters: people.map((p) => ({ uk: p.key, nick: p.nick, count: p.count })),
+    cloudTotal: rawTotal,
+    skipped: { deleted: skippedDeleted, dirty: skippedDirty },
+    people,
     strokes: rows,
   };
 
-  const body = JSON.stringify(json, null, 2) + '\n';
+  /* 紧凑写（不缩进）：一天几千笔时缩进要多占两成多；索引文件仍旧缩进（它小、而且每天都有 diff） */
+  const body = JSON.stringify(json) + '\n';
   if (!dry) {
     fs.writeFileSync(path.join(drawDir, `${day}.json`), body, 'utf8');
     fs.writeFileSync(path.join(imgDir, `${day}.svg`), svg, 'utf8');
@@ -331,9 +374,18 @@ export function writeDrawArchive({ day, strokes, root = ROOT, now = Date.now(), 
     '画板的存档索引：有哪些天、每天多少笔、几个人画的（2026-10-09 起，机器写的）。',
     '',
     '读它的地方：/liyutang/teahouse/calendar/（日历）、/liyutang/teahouse/<日>/（那一天的板）。',
+    '`people` 是那天动过笔的人（uk / 昵称 / 头像 / 几笔）—— 日页那张"这天动过笔的人"就靠它，',
+    '所以构建**不需要**去读每天的 <日>.json（那些文件很大，一天几 MB；eager 读进来会把构建拖垮）。',
     '⚠ 别手改：下一次存档会覆盖（一天一条，按日期倒序）。',
   ];
-  const entry = { day, count: rows.length, painters: people.length, users: people.map((p) => p.nick) };
+  const entry = {
+    day,
+    count: rows.length,
+    painters: people.length,
+    users: people.map((p) => p.nick),
+    /* 日页要的人表（原来只在 <日>.json 里，构建就得把每天的存档全读进来） */
+    people,
+  };
   index.days = [entry, ...(index.days ?? []).filter((d) => d && d.day !== day)].sort((a, b) =>
     String(b.day).localeCompare(String(a.day))
   );
@@ -506,10 +558,21 @@ async function pruneCloud(api, day, password, only, root) {
       console.log('     [画板] 仓库里没有那天的存档，不清（没什么可清的）');
     } else {
       const j = JSON.parse(fs.readFileSync(drawFile, 'utf8'));
-      const n = (j.strokes || []).length;
-      const c = await callFnRetry(api, { event: 'LT_ADMIN_DRAW_CLEAR', password, day, expect: n }, '清云端笔划');
-      console.log(c.code === 0 ? `     [画板] 云端删掉 ${c.cleared} 笔（仓库里已经是完整记录了）` : `     [画板] 没清：${c.message}`);
-      if (c.code !== 0) problems.push('画板清理：' + String(c.message ?? ''));
+      /*
+        ⚠ 对账要拿 **cloudTotal**（云端那天的原始条数），不能拿 count（存档里留下的笔数）：
+        撤掉的笔和脏数据本来就不进存档，2026-10-09 那天是 1476 条里留下 1224 笔 ——
+        拿 count 去比会永远对不上，云端那份就永远清不掉。
+        老存档里没有 cloudTotal 的话，宁可不清（重跑一次"搬"那一趟就有了）。
+      */
+      const n = Number(j.cloudTotal);
+      if (!Number.isFinite(n)) {
+        console.log('     [画板] 存档里没有 cloudTotal（老格式），这次不清 —— 重跑一次搬那一趟再来');
+        problems.push('画板清理：存档缺 cloudTotal');
+      } else {
+        const c = await callFnRetry(api, { event: 'LT_ADMIN_DRAW_CLEAR', password, day, expect: n }, '清云端笔划');
+        console.log(c.code === 0 ? `     [画板] 云端删掉 ${c.cleared} 笔（仓库里已经是完整记录了）` : `     [画板] 没清：${c.message}`);
+        if (c.code !== 0) problems.push('画板清理：' + String(c.message ?? ''));
+      }
     }
   }
 

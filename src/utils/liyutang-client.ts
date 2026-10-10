@@ -802,11 +802,11 @@ export interface LtMsg {
   mine: boolean;
 }
 
-/** 拉某一天的消息（不给 day 就是服务器那边的"今天"；after 是增量游标） */
+/** 拉某一天的消息（不给 day 就是服务器那边的"今天"；after/afterId 是增量游标） */
 export async function listChat(
   api: string,
-  opts: { day?: string; after?: number; limit?: number } = {}
-): Promise<{ messages: LtMsg[]; day: string; today: string; serverNow: number } | { error: string }> {
+  opts: { day?: string; after?: number; afterId?: string; limit?: number } = {}
+): Promise<{ messages: LtMsg[]; day: string; today: string; serverNow: number; more: boolean; next: { ts: number; id: string } | null } | { error: string }> {
   try {
     const r = await call(api, { event: 'LT_CHAT_LIST', ltToken: getToken(), ...opts });
     if (r.code !== 0) return { error: String(r.message ?? '读不到消息') };
@@ -815,6 +815,9 @@ export async function listChat(
       day: String(r.day ?? ''),
       today: String(r.today ?? ''),
       serverNow: Number(r.serverNow) || Date.now(),
+      /* 这一趟是不是被截断了（一条带图的 data URL 能有半兆，一天十几张就撞 6MB 上限）；见云函数里那段 */
+      more: !!r.more,
+      next: r.next && Number(r.next.ts) ? { ts: Number(r.next.ts), id: String(r.next.id ?? '') } : null,
     };
   } catch (err) {
     return { error: '连不上服务器：' + String((err as Error)?.message ?? err) };
@@ -884,6 +887,8 @@ export function mountChat(opts: ChatOpts): ChatHandle {
   const { api, log, input, send, image: imageBtn, status } = opts;
   const pollMs = opts.pollMs ?? 4000;
   let cursor = 0;
+  /** 复合游标第二半（同一毫秒的几条按 id 排；见 listChat 那段注释） */
+  let cursorId = '';
   let stop = false;
   let sending = false;
   let timer = 0;
@@ -948,7 +953,7 @@ export function mountChat(opts: ChatOpts): ChatHandle {
   };
 
   const refresh = async () => {
-    const r = await listChat(api, cursor ? { after: cursor } : {});
+    const r = await listChat(api, cursor ? { after: cursor, afterId: cursorId } : {});
     if ('error' in r) {
       /*
         有一种错要翻译一下：云函数里那份代码比页面旧的时候，它不认识 LT_CHAT_*，
@@ -975,10 +980,20 @@ export function mountChat(opts: ChatOpts): ChatHandle {
       for (const m of r.messages) paint(m);
       scrollDown(near);
     }
-    if (r.messages.length) cursor = r.messages[r.messages.length - 1].createdAt;
+    if (r.next) {
+      cursor = r.next.ts;
+      cursorId = r.next.id;
+    } else if (r.messages.length) {
+      const lastMsg = r.messages[r.messages.length - 1];
+      cursor = Number(lastMsg.createdAt) || cursor;
+      cursorId = String(lastMsg.id || '');
+    }
+    /* 这一趟被字节预算截断了：立刻带游标再要一趟（分几批到，但一定拉得全） */
+    if (r.more) void refresh();
     /* 跨零点了：这一天的记录已经翻篇，重来一次（会走"第一趟"那条路，把新的一天画出来） */
     if (r.today && r.day && r.today !== r.day) {
       cursor = 0;
+      cursorId = '';
       await refresh();
     }
   };

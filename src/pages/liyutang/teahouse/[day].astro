@@ -12,7 +12,7 @@
  */
 import ForumLayout from '../../../layouts/ForumLayout.astro';
 import { withBase } from '../../../utils/url';
-import { boardUrl, drawArchive, drawCalendarUrl, drawDateText, drawDays, drawSvgUrl } from '../../../utils/draw-archive';
+import { boardUrl, drawCalendarUrl, drawDateText, drawDays, drawPeople, drawSvgUrl } from '../../../utils/draw-archive';
 
 export function getStaticPaths() {
   return drawDays().map((d) => ({ params: { day: d.day }, props: { day: d.day } }));
@@ -20,11 +20,13 @@ export function getStaticPaths() {
 
 const { day } = Astro.props as { day: string };
 const meta = drawDays().find((d) => d.day === day);
-const archive = drawArchive(day);
 const board = boardUrl();
 const calendar = drawCalendarUrl();
-/* 谁画了多少：优先用存档里的（更准），没有就用索引里那个数 */
-const painters = archive?.painters ?? (meta?.users ?? []).map((nick) => ({ uk: nick, nick, count: 0 }));
+/*
+  谁画了多少：来自**索引**（存档时按人算好写进去的），不再去读那天的笔划存档 ——
+  一天几 MB 的 JSON 在构建期读进来只为一张人表，不划算（2026-10-10 改）。
+*/
+const painters = drawPeople(day);
 ---
 
 <ForumLayout title={`${day} 的画板`} description={`久昭卿茶绘：${day} 那天的画。`} noindex>

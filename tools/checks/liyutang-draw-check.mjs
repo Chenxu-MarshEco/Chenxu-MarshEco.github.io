@@ -288,7 +288,7 @@ if (!MongoMemoryServer || !mongodBinary) {
   check('★ 撤别人画的不行（先塞一笔别人的）', await (async () => {
     await raw.insertOne({
       id: 'other1',
-      day: new Date(Date.now() + 8 * 3600 * 1000).toISOString().slice(0, 10),
+      day: new Date(Date.now() + 4 * 3600 * 1000).toISOString().slice(0, 10),
       userId: 'someone-else',
       uk: 'deadbeef',
       nick: '别人',
@@ -305,10 +305,12 @@ if (!MongoMemoryServer || !mongodBinary) {
 
   /* 一小时上限：直接塞 4000 笔（接口造不出来，因为限速） */
   const now = Date.now();
+  /* 这一天的标签照云函数 dayKey 写（now + 4h 的 UTC 日期）—— 用 now + 8h 的话半夜跑会差一天 */
+  const todayDay = new Date(now + 4 * 3600 * 1000).toISOString().slice(0, 10);
   await raw.insertMany(
     Array.from({ length: 4000 }, (_, i) => ({
       id: 'bulk' + i,
-      day: new Date(now + 8 * 3600 * 1000).toISOString().slice(0, 10),
+      day: todayDay,
       userId: idHoshi,
       uk: one.stroke.uk,
       nick: 'hoshi',
@@ -325,7 +327,110 @@ if (!MongoMemoryServer || !mongodBinary) {
   const over = await call({ event: 'LT_DRAW_ADD', ltToken: tokHoshi, tool: 'pen', color: '#123456', size: 2, points: [[1, 1]] });
   check('★ 一小时超过 4000 笔 → 被拒（脚本刷不动）', over.code !== 0 && /4000/.test(String(over.message)), String(over.message));
 
-  const today = new Date(Date.now() + 8 * 3600 * 1000).toISOString().slice(0, 10);
+  /*
+    ★★ 用户报的"画多了就超 6MB"（原话：「这个非常严重」）就在这里量。
+    `LT_DRAW_LIST` 原来默认一次给 1500 笔 —— 一天的画多了之后响应体能到 10MB，
+    撞上腾讯云 **6MB 上限** → 云函数抛 FUNCTIONS_INVOCATION_FAILED →
+    **所有人打开画板都是一片空白**（画得越多越打不开）。现在按 2MB 字节预算分批，
+    并用 more / next 让页面续着拉。下面把这条路一步步量出来（这批 4000 笔还特意**不带 updatedAt**，
+    顺带验"老文档也不能被游标漏掉"那条）。
+  */
+  const live1 = await call({ event: 'LT_DRAW_LIST', ltToken: tokHoshi });
+  const live1Bytes = JSON.stringify(live1).length;
+  check('★★ 一次拉全天的响应体被字节预算压住了（远小于网关 6144KB 上限）',
+    live1Bytes < 3 * 1024 * 1024, `${Math.round(live1Bytes / 1024)}KB / ${live1.strokes.length} 笔`);
+  check('★★ 它明说"还有更多"（more=true），而不是硬发一坨超限的',
+    live1.more === true && live1.strokes.length < 4000, JSON.stringify({ more: live1.more, n: live1.strokes.length }));
+  const walked = new Set(live1.strokes.map((s) => s.id));
+  let liveCur = live1.next;
+  let livePages = 1;
+  let liveMax = live1Bytes;
+  while (liveCur && livePages < 80) {
+    const p = await call({ event: 'LT_DRAW_LIST', ltToken: tokHoshi, after: liveCur.ts, afterId: liveCur.id });
+    if (p.code !== 0) break;
+    livePages += 1;
+    liveMax = Math.max(liveMax, JSON.stringify(p).length);
+    for (const s of p.strokes) walked.add(s.id);
+    if (!p.more || !p.next) break;
+    liveCur = p.next;
+  }
+  check('★★ 一路翻页能把那天拉完（4000 笔一笔不漏，含没有 updatedAt 的老文档）',
+    walked.size >= 4000, `${walked.size} 笔 / ${livePages} 批`);
+  check('★ 每一批都在预算之内（没有哪一批偷偷超上去）', liveMax < 3 * 1024 * 1024, `最大一批 ${Math.round(liveMax / 1024)}KB`);
+
+  /* 同一毫秒画下的多笔：只按 updatedAt 过滤会漏掉后面几笔，复合游标 (updatedAt, id) 才不会 */
+  const tieTs = now - 500000;
+  await raw.insertMany(
+    Array.from({ length: 7 }, (_, i) => ({
+      id: 'tie' + i, day: todayDay, userId: idHoshi, uk: one.stroke.uk, nick: 'hoshi', avatar: '',
+      tool: 'pen', color: '#123456', size: 2, points: [[i, i]], createdAt: tieTs, updatedAt: tieTs, deleted: false,
+    }))
+  );
+  const tieSeen = new Set();
+  let tieCur = null;
+  let tiePages = 0;
+  for (;;) {
+    const p = await call({ event: 'LT_DRAW_LIST', ltToken: tokHoshi, limit: 2, ...(tieCur ? { after: tieCur.ts, afterId: tieCur.id } : {}) });
+    if (p.code !== 0 || !p.strokes.length) break;
+    for (const s of p.strokes) if (String(s.id).startsWith('tie')) tieSeen.add(s.id);
+    tiePages += 1;
+    if (!p.more || !p.next || tiePages > 80) break;
+    tieCur = p.next;
+  }
+  check('★★ 同一毫秒画下的 7 笔一笔都不漏（复合游标 (updatedAt, id)）', tieSeen.size === 7, `${tieSeen.size}/7`);
+
+  /*
+    ★★ 真正挡 6MB 的是**字节预算**，不是条数上限：上面那 4000 笔每笔只有一两个点（很小），
+    条数上限就先把它截住了。这里塞一批"胖笔划"（每笔 200 个点，约 3KB）——2000 笔合计 6MB 上下，
+    要是还按条数一次吐出去，线上就是那条 FUNCTIONS_INVOCATION_FAILED。把条数上限放到最大（2000）
+    再看：响应必须仍然被预算压住，而且一路翻页要能把这 2000 笔全捞回来。
+  */
+  const fatCount = 2000;
+  await raw.insertMany(
+    Array.from({ length: fatCount }, (_, i) => ({
+      id: 'fat' + String(i).padStart(4, '0'),
+      day: todayDay,
+      userId: idHoshi,
+      uk: one.stroke.uk,
+      nick: 'hoshi',
+      avatar: '',
+      tool: 'pen',
+      color: '#123456',
+      size: 2,
+      points: Array.from({ length: 200 }, (_, k) => [100 + k * 10, 200 + ((k * 7 + i) % 500)]),
+      createdAt: now + 100 + i,
+      updatedAt: now + 100 + i,
+      deleted: false,
+    }))
+  );
+  const fat1 = await call({ event: 'LT_DRAW_LIST', ltToken: tokHoshi, after: now + 99, limit: 2000 });
+  const fat1Bytes = JSON.stringify(fat1).length;
+  const fatPerStroke = fat1Bytes / Math.max(1, fat1.strokes.length);
+  check('★★ 胖笔划也不会一次吐出去：条数上限放到 2000，响应仍被字节预算压住',
+    fat1Bytes < 3 * 1024 * 1024 && fat1.more === true && fat1.strokes.length < fatCount,
+    `${Math.round(fat1Bytes / 1024)}KB / ${fat1.strokes.length} 笔；这 ${fatCount} 笔一次给约 ${(fatPerStroke * fatCount / 1024 / 1024).toFixed(1)}MB（网关上限 6MB）`);
+  const fatSeen = new Set(fat1.strokes.map((s) => s.id));
+  let fatCur = fat1.next;
+  let fatPages = 1;
+  let fatMax = fat1Bytes;
+  while (fatCur && fatPages < 40) {
+    const p = await call({ event: 'LT_DRAW_LIST', ltToken: tokHoshi, after: fatCur.ts, afterId: fatCur.id, limit: 2000 });
+    if (p.code !== 0) break;
+    fatPages += 1;
+    fatMax = Math.max(fatMax, JSON.stringify(p).length);
+    for (const s of p.strokes) fatSeen.add(s.id);
+    if (!p.more || !p.next) break;
+    fatCur = p.next;
+  }
+  check('★★ 胖笔划一路翻页也一笔不漏（2000 笔全部到手）',
+    fatSeen.size >= fatCount, `${fatSeen.size}/${fatCount}，共 ${fatPages} 批，最大一批 ${Math.round(fatMax / 1024)}KB`);
+
+  /*
+    这一天的标签必须和云函数 `dayKey()` **一模一样**：`new Date(now + 4h)` 的 UTC 日期
+    （＝北京时间凌晨四点切天）。这里原来写的是 `now + 8h`（北京自然日）——
+    在 00:00~04:00 之间跑验收时两者差一天，那会是个"一过半夜就假红"的坑。
+  */
+  const today = new Date(Date.now() + 4 * 3600 * 1000).toISOString().slice(0, 10);
   /*
     ⚠ 2026-10-10 改的：取某天的笔划原来是"一次全给你"。10-09 那天量太大，响应体超过腾讯云 **6MB** 上限，
     云函数抛 FUNCTIONS_INVOCATION_FAILED，存档那一枪整个失败；而它排在聊天室之后，
@@ -366,7 +471,75 @@ if (!MongoMemoryServer || !mongodBinary) {
     `message=${badClear.message} 云端还剩 ${stillThere.total} 笔`);
   const cleared = await call({ event: 'LT_ADMIN_DRAW_CLEAR', password: 'admin-pass-123', day: today, expect: acc.length });
   check('★ 站长清某天（搬进仓库之后把云端删掉）', cleared.code === 0 && cleared.cleared >= 4002, String(cleared.cleared));
-  check('清完之后那天真的空了', (await call({ event: 'LT_ADMIN_DRAW_DAY', password: 'admin-pass-123', day: today })).count === 0);  check('站长密码不对 → 取不到 / 清不掉',
+  check('清完之后那天真的空了', (await call({ event: 'LT_ADMIN_DRAW_DAY', password: 'admin-pass-123', day: today })).count === 0);
+
+  /*
+    聊天室那条路同一天也加了分页（2026-10-10）：一张图最大 ~533KB 的 data URL，
+    一天里十几张图就会撞上**同一个 6MB 上限** —— 画板已经真栽过一次，聊天室没理由等它再栽。
+    这里对着**真云函数 + 内存 MongoDB** 量：翻页取完必须等于 total，一条不重不漏。
+    ⚠ 发消息之间要留够 1.5 秒：聊天室有自己的"1.5 秒一条"限速，连着发第二句会被拒（这条踩过一次）。
+  */
+  for (let i = 1; i <= 2; i += 1) {
+    await call({ event: 'LT_CHAT_SEND', ltToken: tokHoshi, text: `分页测试 ${i}` });
+    if (i < 2) await sleep(1700);
+  }
+  const c1 = await call({ event: 'LT_ADMIN_CHAT_DAY', password: 'admin-pass-123', day: today, limit: 1 });
+  check('★ 站长取某天的聊天记录也是**分页**给的（第一批只给 limit 条，还带 total / next）',
+    c1.code === 0 && c1.count === 1 && c1.total >= 2 && !!c1.next,
+    `count=${c1.count} total=${c1.total} next=${JSON.stringify(c1.next)}`);
+  const cAcc = [...c1.messages];
+  let cCur = c1.next;
+  let cPages = 1;
+  while (cCur && cPages < 50) {
+    const p = await call({
+      event: 'LT_ADMIN_CHAT_DAY', password: 'admin-pass-123', day: today,
+      limit: 1, after: cCur.ts, afterId: cCur.id,
+    });
+    if (p.code !== 0) break;
+    cAcc.push(...p.messages);
+    cCur = p.next;
+    cPages += 1;
+  }
+  check('★★ 聊天室翻页取完 = total（不重不漏，和画板同一套协议）',
+    cAcc.length === c1.total && new Set(cAcc.map((m) => m.id)).size === c1.total,
+    `${cAcc.length}/${c1.total}，共 ${cPages} 批`);
+
+  /*
+    ★★ 聊天室那条路的**字节预算**（同一类事故）：一条带图的 data URL 能到 ~400KB
+    （页面把图压到 1000px 的 WebP），十几条就是 6MB —— 和画板一样会把整个页面打死。
+    这里发 6 条胖消息（每条 ~380KB 的假图），量"一次响应绝不会把这一天全吐出来"。
+    ⚠ 聊天室有 1.5 秒一条的限速，所以这一步要等 10 秒左右。
+  */
+  const bigImg = 'data:image/png;base64,' + 'A'.repeat(380 * 1024);
+  const bigIds = [];
+  /* 要凑够 8 条（8 × 380KB ≈ 3MB > 2MB 预算，这样才真的能验到"预算把这一批截住"）。
+     聊天室 1.5 秒一条的限速偶尔会顶掉一条，所以多试几次、够了就停。 */
+  for (let i = 1; i <= 12 && bigIds.length < 8; i += 1) {
+    const r = await call({ event: 'LT_CHAT_SEND', ltToken: tokHoshi, text: `胖消息 ${i}`, image: bigImg });
+    if (r.code === 0 && r.message?.id) bigIds.push(r.message.id);
+    await sleep(1800);
+  }
+  const bigList = await call({ event: 'LT_CHAT_LIST', ltToken: tokHoshi, day: today, limit: 500 });
+  const bigBytes = JSON.stringify(bigList).length;
+  check('★★ 聊天室一次响应也被字节预算压住（8 条 380KB 的图 ≈ 3MB，没被一次吐完）',
+    bigIds.length >= 8 && bigBytes < 2.5 * 1024 * 1024 && bigList.more === true,
+    `${Math.round(bigBytes / 1024)}KB / ${bigList.messages.length} 条（胖消息 ${bigIds.length} 条）`);
+  const bigSeen = new Set(bigList.messages.map((m) => m.id));
+  let bigCur = bigList.next;
+  let bigPages = 1;
+  while (bigCur && bigPages < 20) {
+    const p = await call({ event: 'LT_CHAT_LIST', ltToken: tokHoshi, day: today, after: bigCur.ts, afterId: bigCur.id, limit: 500 });
+    if (p.code !== 0) break;
+    bigPages += 1;
+    for (const m of p.messages) bigSeen.add(m.id);
+    if (!p.more || !p.next) break;
+    bigCur = p.next;
+  }
+  check('★★ 聊天室翻页也一条不漏（刚发的胖消息全取回来了）',
+    bigIds.length >= 8 && bigIds.every((id) => bigSeen.has(id)),
+    `${bigIds.filter((id) => bigSeen.has(id)).length}/${bigIds.length}，共 ${bigPages} 批`);
+
+  check('站长密码不对 → 取不到 / 清不掉',
     (await call({ event: 'LT_ADMIN_DRAW_DAY', password: '乱猜', day: today })).code !== 0 &&
     (await call({ event: 'LT_ADMIN_DRAW_CLEAR', password: '乱猜', day: today })).code !== 0);
 
@@ -422,9 +595,26 @@ const fakeBackend = (body) => {
   if (event === 'LT_DRAW_LIST') {
     seen.lists += 1;
     const after = Number(body?.after) || 0;
-    /* 第一趟（没有游标）给空的：板子上先是干净的；之后给"别人画的"那一笔 + 注入的那些 */
-    const all = after ? [{ ...OTHER, createdAt: after + 1, updatedAt: after + 1 }] : [];
-    for (const s of extra) if (!all.some((x) => x.id === s.id)) all.push(s);
+    const afterId = String(body?.afterId || '');
+    /*
+      ⚠ 2026-10-10 改：这个夹具原来**只在带了游标时**才回"别人画的"那一笔，而当时客户端靠
+      **本地**推进游标（抬笔就把游标推到自己那一笔），所以看着是通的。客户端改成"不自己推游标"之后
+      （那条改动是为了不跳过同一毫秒里别人画的笔划），夹具就必须像**真后端**那样：
+      把 `updatedAt > 游标` 的所有笔划都回给轮询 —— **包括你自己刚画的那几笔**。
+      真后端本来就是这么干的；`absorb()` 按 id 去重，自己的笔划再吸一次不会有副作用。
+    */
+    const all = [
+      ...[...created.values()],
+      ...extra,
+      ...(after ? [{ ...OTHER, createdAt: after + 1, updatedAt: after + 1 }] : []),
+    ];
+    const strokes = servedWiped
+      ? []
+      : all.filter((s) => {
+          const ts = Number(s.updatedAt ?? s.createdAt) || 0;
+          return ts > after || (!!after && ts === after && String(s.id) > afterId);
+        });
+    const last = strokes[strokes.length - 1];
     return {
       code: 0,
       day: servedToday,
@@ -432,7 +622,9 @@ const fakeBackend = (body) => {
       serverNow: Date.now(),
       more: false,
       /* "今天这块板已经被存档搬空/换天了" → 一条都不给（客户端该照 today 自清） */
-      strokes: servedWiped ? [] : all.filter((s) => Number(s.updatedAt ?? s.createdAt) > after),
+      strokes,
+      /* 复合游标（和真后端一个形状）：客户端拿它当下一趟的游标 */
+      next: last ? { ts: Number(last.updatedAt ?? last.createdAt) || 0, id: String(last.id) } : null,
     };
   }
   if (event === 'LT_DRAW_ADD') {

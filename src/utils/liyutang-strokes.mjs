@@ -172,21 +172,32 @@ export function strokePath(points, opts = {}) {
   if (!pts.length) return '';
   const n = (v) => Math.round(v * 10) / 10;
   /*
-    单点和两点的输出**故意不走 strokeSegments**：它们是最短的那两种形态，
-    存档 SVG 里写 `l 0.1 0` / `L …` 比写成二次贝塞尔更小更好读，而且这两条输出
-    已经被验收钉住了（tools/checks/liyutang-strokes-check.mjs）。
-    三个点以上才走共享的平滑几何 —— 那是唯一需要"两边算得一模一样"的地方。
+    ⚠ 2026-10-10：改成**相对命令**（`q` / `l` 里写增量），并且省掉命令后面那个空格。
+    缘由：存档那天的 SVG 是仓库里最大的东西（10-09：1.34MB，比压完的 JSON 还大）——
+    绝对坐标每个点要写两个好几位的大数（"Q 673.2 212.7 672.2 213.7"），
+    相对坐标只是几像素的小增量（"q-1 1-1.2 1"）。几何**一模一样**，只是换个写法；
+    日历页那些缩略图也跟着一起瘦（它们就是这些 SVG）。
   */
   if (pts.length === 1) {
     const [x, y] = pts[0];
-    return `M ${n(x)} ${n(y)} l 0.1 0`;
+    return `M${n(x)} ${n(y)}l.1 0`;
   }
   if (pts.length === 2 || opts.smooth === false) {
-    return `M ${pts.map(([x, y]) => `${n(x)} ${n(y)}`).join(' L ')}`;
+    let d = `M${n(pts[0][0])} ${n(pts[0][1])}`;
+    for (let i = 1; i < pts.length; i += 1) {
+      d += `l${n(pts[i][0] - pts[i - 1][0])} ${n(pts[i][1] - pts[i - 1][1])}`;
+    }
+    return d;
   }
   const { start, curves } = strokeSegments(pts);
-  let d = `M ${n(start[0])} ${n(start[1])}`;
-  for (const [cx, cy, x, y] of curves) d += ` Q ${n(cx)} ${n(cy)} ${n(x)} ${n(y)}`;
+  let d = `M${n(start[0])} ${n(start[1])}`;
+  let px = start[0];
+  let py = start[1];
+  for (const [cx, cy, x, y] of curves) {
+    d += `q${n(cx - px)} ${n(cy - py)} ${n(x - px)} ${n(y - py)}`;
+    px = x;
+    py = y;
+  }
   return d;
 }
 
@@ -239,15 +250,18 @@ export function strokesToSvg(strokes, opts = {}) {
       /*
         data-by 用**昵称 alias**（后端 publicStroke 会发），没设过昵称时后端已经兜底等于用户名 ——
         这样"用户改了昵称，存档里的署名也跟着变"（2026-10-09 用户要求）。
+        fill / stroke-linecap / stroke-linejoin 是**可继承**的，写到外层那个 <g> 上就够：
+        一条笔划省 50 来个字节，一天一两千笔就是几十 KB（2026-10-10）。
       */
-      `<path d="${esc(d)}" fill="none" stroke="${esc(color)}" stroke-width="${esc(got.stroke.size)}" ` +
-        `stroke-linecap="round" stroke-linejoin="round" data-by="${esc(s.alias || s.nick || '')}" />`
+      `<path d="${esc(d)}" stroke="${esc(color)}" stroke-width="${esc(got.stroke.size)}" ` +
+        `data-by="${esc(s.alias || s.nick || '')}" />`
     );
   }
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}">` +
     `<rect width="${w}" height="${h}" fill="${esc(bg)}" />` +
-    body.join('') +
+    /* 笔划共用的表现属性放这一层（可继承）：fill / 圆头圆角，省掉每条 path 上的重复 */
+    (body.length ? `<g fill="none" stroke-linecap="round" stroke-linejoin="round">${body.join('')}</g>` : '') +
     `</svg>`
   );
 }

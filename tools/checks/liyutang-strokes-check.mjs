@@ -46,16 +46,61 @@ const many = cleanPoints(Array.from({ length: MAX_POINTS + 500 }, (_, i) => [i %
 check(`点数被截到上限 ${MAX_POINTS}`, many.length === MAX_POINTS, String(many.length));
 
 console.log('\n=== ③ 路径：手感就是这一段 ===');
+/*
+  ⚠ 2026-10-10：路径从**绝对命令**改成**相对命令**（`q`/`l` 写增量，省掉命令后的空格）——
+  存档那天的 SVG 是仓库里最大的东西，相对写法实测省掉近一半，几何**一模一样**。
+  所以下面这些断言改成判**几何**而不是判语法：先把相对路径还原成绝对坐标再比。
+  （比"把期望字符串换成新写法"更结实：以后谁再改写法，只要几何没变就不会假红。）
+*/
+const toAbsolute = (d) => {
+  /* 只认我们这两种命令：M（绝对起点）、l/q（相对）。返回绝对坐标序列 + 全程是否只有相对命令。 */
+  const toks = String(d).match(/[Mlq]|-?\d*\.?\d+/g) ?? [];
+  const out = [];
+  let cmd = '';
+  let x = 0;
+  let y = 0;
+  let i = 0;
+  const num = () => Number(toks[i++]);
+  while (i < toks.length) {
+    const t = toks[i];
+    if (/^[Mlq]$/.test(t)) {
+      cmd = t;
+      i += 1;
+      continue;
+    }
+    if (cmd === 'M') {
+      x = num(); y = num(); out.push([x, y]);
+    } else if (cmd === 'l') {
+      x += num(); y += num(); out.push([x, y]);
+    } else if (cmd === 'q') {
+      const cx = x + num(); const cy = y + num(); const ex = x + num(); const ey = y + num();
+      out.push([cx, cy], [ex, ey]); x = ex; y = ey;
+    } else {
+      i += 1;
+    }
+  }
+  return out;
+};
 const one = strokePath([[100, 100]]);
-check('点一下 → 也能留下一个极短线段（不然"点了没反应"）', /^M 100 100 l 0\.1 0$/.test(one), one);
+const oneAbs = toAbsolute(one);
+check('点一下 → 也能留下一个极短线段（不然"点了没反应"）',
+  /^M100 100l\.1 0$/.test(one) && oneAbs.length === 2 &&
+    Math.abs(oneAbs[1][0] - oneAbs[0][0] - 0.1) < 1e-9 && oneAbs[1][1] === oneAbs[0][1],
+  one);
 const two = strokePath([[0, 0], [10, 20]]);
-check('两个点 → 一条直线', two === 'M 0 0 L 10 20', two);
+check('两个点 → 一条直线（相对写法，几何是 (0,0)→(10,20)）',
+  !/[A-Z]/.test(two.replace(/M/g, '')) && JSON.stringify(toAbsolute(two)) === JSON.stringify([[0, 0], [10, 20]]), two);
 const curve = strokePath([[0, 0], [30, 0], [60, 30], [90, 30]]);
-check('★ 三个点以上 → 中点二次贝塞尔（Q），不是折线（没有 L）',
-  /^M 0 0 Q 30 0 45 15 Q 60 30 75 30 Q 60 30 90 30$/.test(curve), curve);
+/* 期望的绝对几何：起点 + 三段二次贝塞尔（控制点、终点）——就是原来那串 Q 命令 */
+const wantCurve = [[0, 0], [30, 0], [45, 15], [60, 30], [75, 30], [60, 30], [90, 30]];
+check('★ 三个点以上 → 中点二次贝塞尔（q），不是折线（相对命令里没有 l/大写 L）',
+  /^M0 0q/.test(curve) && !/l/.test(curve) && JSON.stringify(toAbsolute(curve)) === JSON.stringify(wantCurve), curve);
 check('锚点是"相邻两点的中点"：p1(30,0) 与 p2(60,30) 的中点是 (45,15)',
-  curve.includes('45 15') && curve.includes('75 30'), curve);
-check('smooth:false 时退回折线（对照用）', strokePath([[0, 0], [10, 10], [20, 0]], { smooth: false }) === 'M 0 0 L 10 10 L 20 0');
+  JSON.stringify(toAbsolute(curve)[2]) === JSON.stringify([45, 15]) &&
+    JSON.stringify(toAbsolute(curve)[4]) === JSON.stringify([75, 30]), curve);
+check('smooth:false 时退回折线（对照用）',
+  JSON.stringify(toAbsolute(strokePath([[0, 0], [10, 10], [20, 0]], { smooth: false }))) ===
+    JSON.stringify([[0, 0], [10, 10], [20, 0]]));
 check('空点集 → 空路径（不抛）', strokePath([]) === '');
 
 console.log('\n=== ④ 校验：一根笔划什么样才算数 ===');

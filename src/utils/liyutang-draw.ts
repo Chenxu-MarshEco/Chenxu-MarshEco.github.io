@@ -282,6 +282,8 @@ export function mountBoard(opts: BoardOpts): BoardHandle {
   /** 被"点灭了"的人（uk）：他们的笔划不画 */
   const hidden = new Set<string>();
   let cursor = 0;
+  /** 复合游标的第二半（updatedAt 相同时按 id 排；见 refresh() 里那段） */
+  let cursorId = '';
   /**
    * 服务端说的"今天是哪天"（`LT_DRAW_LIST` 回的那个 `today`）。
    * ⚠ 页面**不自己算日期**：切天点是云函数里的（北京时间凌晨 4 点），
@@ -687,7 +689,16 @@ export function mountBoard(opts: BoardOpts): BoardHandle {
       return;
     }
     const body: Record<string, unknown> = { event: 'LT_DRAW_LIST', ltToken: getToken() };
-    if (cursor) body.after = cursor;
+    /*
+      复合游标 `(updatedAt, id)`（2026-10-10）：
+      只带一个 updatedAt 的话，同一毫秒画下的几笔会被 `updatedAt > 游标` 漏掉 ——
+      画得快的时候（或者批量补数据）真的会撞上。云函数那边按 `(updatedAt, id)` 排序/过滤，
+      并把下一批的游标放在 `next` 里；老云函数没有 next，就退回按 updatedAt 取最大（行为同旧版）。
+    */
+    if (cursor) {
+      body.after = cursor;
+      body.afterId = cursorId;
+    }
     let r: Record<string, any>;
     try {
       r = await call(api, body);
@@ -726,6 +737,7 @@ export function mountBoard(opts: BoardOpts): BoardHandle {
       strokes = [];
       hidden.clear();
       cursor = 0;
+      cursorId = '';
       redoStack = [];
       cacheDirty = true;
       paintFaces();
@@ -739,10 +751,28 @@ export function mountBoard(opts: BoardOpts): BoardHandle {
     absorb(got);
     /*
       游标按 **updatedAt** 算（不是 createdAt）：别人拖动过的线条 updatedAt 会变新，
-      按 createdAt 算的话它就永远拉不到了（云函数那边也是按 updatedAt 过滤的）。
+      按 createdAt 算的话它就永远拉不到了（云函数那边也是按这个排序的）。
+      优先用服务端给的 `next`（复合游标，精确到同一毫秒里的第几条）；
+      老云函数没有 next 才退回"自己算最大 updatedAt"。
     */
-    if (got.length) cursor = Math.max(cursor, ...got.map((s) => Number(s.updatedAt ?? s.createdAt) || 0));
-    /* 这一趟拉满了：立刻再要一趟（一小时的画可能上千笔，一趟拉不完） */
+    if (r.next && Number(r.next.ts)) {
+      cursor = Number(r.next.ts) || 0;
+      cursorId = String(r.next.id || '');
+    } else if (got.length) {
+      let best = cursor;
+      let bestId = cursorId;
+      for (const s of got) {
+        const ts = Number(s.updatedAt ?? s.createdAt) || 0;
+        const id = String(s.id || '');
+        if (ts > best || (ts === best && id > bestId)) {
+          best = ts;
+          bestId = id;
+        }
+      }
+      cursor = best;
+      cursorId = bestId;
+    }
+    /* 这一趟拉满了（或者被字节预算截断了）：立刻再要一趟 —— 一天的画分几批到，但一定能拉完 */
     if (r.more) void refresh();
     say(`今天这块板上已经有 ${strokes.filter((s) => !hidden.has(s.uk)).length} 笔（你自己看到的）`, true);
   };
@@ -784,7 +814,12 @@ export function mountBoard(opts: BoardOpts): BoardHandle {
         strokes.splice(dup, 1);
         cacheDirty = true;
       }
-      cursor = Math.max(cursor, Number(got?.updatedAt ?? got?.createdAt) || temp.updatedAt || temp.createdAt);
+      /*
+        ⚠ 这里**故意不推进游标**（2026-10-10 改的）：原来写成
+        `cursor = Math.max(cursor, got.updatedAt)`，等于"我刚画的这一笔之后的内容都别拉"——
+        同一毫秒里别人画的那几笔（id 比我的小）就会被永久跳过。
+        反正这一笔已经在本地了，下一趟轮询即使把它再拉一次，absorb() 按 id 去重，不会有副作用。
+      */
       paintFaces();
       schedule();
       if (okWord) say(okWord, true);

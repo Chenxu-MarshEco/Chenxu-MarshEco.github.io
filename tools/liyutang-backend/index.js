@@ -545,23 +545,56 @@ async function handleChatEvent(event, payload) {
     /* 不给 day 就默认"今天"：页面平时只拉今天，翻旧账时才会带 day（存档页是静态的，不走这儿） */
     const day = String(payload.day || '') || dayKey();
     const filter = { day, deleted: { $ne: true } };
-    /* 增量拉：只要比这个时间戳新的（页面每几秒问一次"有没有新的"） */
-    const after = Number(payload.after) || 0;
-    if (after) filter.createdAt = { $gt: after };
+    /*
+      ⚠ 2026-10-10 和画板那条一起改的：原来这里一次给最多 200 条，而一条带图的 data URL 能到 ~533KB ——
+      一天里十几张图，响应体就撞上腾讯云 6MB 上限，**整个聊天室打不开**。
+      现在同样按**字节预算**装（2MB 一批，给 6MB 留足余量），并把 `more` / `next` 一起回给页面，
+      页面看到 more 立刻带游标再要一趟（分几批到，但一定会拉全）。
+      游标用 `(createdAt, id)` 复合：只按 createdAt 的话同一毫秒的几条会被 `$gt` 漏掉；
+      而且**绝不切断同一毫秒那一组**（老页面只认一个 createdAt 游标，截断了它就永远拉不到剩下那几条）。
+    */
+    const afterTs = Number(payload.after) || 0;
+    const afterId = String(payload.afterId || '');
+    if (afterTs) {
+      /* 同画板那条：只有 afterId 也给了才启用"同一时间戳"那一条（老页面只发 after，不能把游标那一条自己捞回来） */
+      filter.$or = [{ createdAt: { $gt: afterTs } }];
+      if (afterId) filter.$or.push({ createdAt: afterTs, id: { $gt: afterId } });
+    }
     const limit = Math.min(Math.max(Number(payload.limit) || 200, 1), 500);
-    const docs = await col.find(filter).sort({ createdAt: 1 }).limit(limit).toArray();
+    const budget = 2 * 1024 * 1024;
+    const docs = await col.find(filter).sort({ createdAt: 1, id: 1 }).limit(limit).toArray();
     /*
       一屏消息的作者 → **当前**昵称（改了名，他以前说的话也跟着显示新昵称）。
       一次 $in 查询，最多几十个作者，很便宜。
     */
     const amChat = await aliasMapOf(docs);
     for (const d of docs) d.alias = amChat.get(d.userId) || d.alias;
+    const messages = [];
+    let bytes = 0;
+    let more = false;
+    let lastTs = 0;
+    for (const d of docs) {
+      const m = publicMsg(d, me.id);
+      const n = JSON.stringify(m).length;
+      const ts = Number(m.createdAt) || 0;
+      if (messages.length && bytes + n > budget && ts !== lastTs) {
+        more = true;
+        break;
+      }
+      bytes += n;
+      lastTs = ts;
+      messages.push(m);
+    }
+    if (!more && docs.length === limit) more = true;
+    const last = messages[messages.length - 1];
     return ok({
       day,
-      messages: docs.map((d) => publicMsg(d, me.id)),
+      messages,
       serverNow: Date.now(),
       /* 云函数那边"今天"是哪天（页面用它判断是不是跨零点了） */
       today: dayKey(),
+      more,
+      next: last ? { ts: Number(last.createdAt) || 0, id: last.id } : null,
     });
   }
 
@@ -745,24 +778,78 @@ async function handleDrawEvent(event, payload) {
 
   /* ---- 拉今天的板（增量：只要比游标新的） ---- */
   if (event === 'LT_DRAW_LIST') {
+    /*
+      ⚠⚠ 2026-10-10 修的那个"画多了就超 6MB"的问题就在这里（用户原话：「非常严重」）。
+      原来这一枪默认 `limit = 1500`，一天的笔划多起来之后**一次响应能到 10MB**，
+      直接撞上腾讯云 6MB 上限 → 云函数抛 FUNCTIONS_INVOCATION_FAILED →
+      **所有人打开画板都是一片空白 + "连不上服务器"**。画得越多越打不开，恶性循环。
+      现在改成"**按字节预算装**"：一批最多装到 2MB（给 6MB 留足余量），装不下就把剩下的留给下一趟；
+      客户端看到 `more: true` 会带着游标立刻再要一趟（这条循环早就在了），于是它**照样能拉完整个白天**，
+      只是分几次到 —— 从"整块打不开"变成"几百毫秒内分批出现"。
+      两个细节：
+        · 游标是 `(updatedAt, id)` 复合游标。只按 updatedAt 的话，同一毫秒的几笔会被 `$gt` 漏掉
+          （拖动过的线条要用 updatedAt 才拉得到新位置，所以不能改回 createdAt）。
+        · 预算裁剪那一步**绝不切断同一毫秒那一组**（装不下就整组一起留给下一批）。
+          诚实说明一处边界：如果一批恰好卡在**查询条数上限**（limit）上，同毫秒的另一组可能跨批 ——
+          新页面有复合游标不受影响；只有 2026-10-10 之前部署的老页面（只认一个 updatedAt 游标）
+          在"函数已更新、站点还没重新部署"那几分钟里，理论上会漏掉跨批的同毫秒笔划。
+    */
     const day = String(payload.day || '') || dayKey();
-    const filter = { day, deleted: { $ne: true } };
-    const after = Number(payload.after) || 0;
-    /* 游标用 updatedAt（不是 createdAt）：线条被拖动过之后，别的客户端也能收到那一笔的新位置 */
-    if (after) filter.updatedAt = { $gt: after };
-    /* 上限给得比聊天室大：一小时的画作可能上千笔，页面轮询时会带游标只要新的 */
-    const limit = Math.min(Math.max(Number(payload.limit) || 1500, 1), 2000);
-    const docs = await col.find(filter).sort({ updatedAt: 1 }).limit(limit).toArray();
+    const baseFilter = { day, deleted: { $ne: true } };
+    const afterTs = Number(payload.after) || 0;
+    const afterId = String(payload.afterId || '');
+    const limit = Math.min(Math.max(Number(payload.limit) || 500, 1), 2000);
+    const budget = 2 * 1024 * 1024;
+    /*
+      游标字段 = `updatedAt`，**没有这个键的老文档就退回 createdAt**（那个键是 2026-10-09 晚上才加的）。
+      为什么放在聚合里算、而不是写成 `$or` 条件：老文档的 updatedAt 是"缺失"，排序时当 null 排在最前，
+      而过滤又想按 createdAt 比 —— 两边一错位，翻页就会**跳着给**、页数早期就 `more:false` 收工
+      （2026-10-10 验收里就是这么红的：4000 笔只翻出 597 笔）。用 `$ifNull` 把两条路并成一个字段，
+      排序和过滤就是同一把尺子，怎么翻都不会跳。
+    */
+    const pipeline = [
+      { $match: baseFilter },
+      { $addFields: { cur: { $ifNull: ['$updatedAt', '$createdAt'] } } },
+    ];
+    if (afterTs) {
+      const cursorMatch = [{ cur: { $gt: afterTs } }];
+      /* ⚠ 只有 afterId 也给了才启用"同一时间戳"那一条 —— 老页面只发一个 after，
+         那时 `id > ''` 会把游标那一笔自己又捞回来（"没有新笔划时应该是空的"当场变红）。 */
+      if (afterId) cursorMatch.push({ cur: afterTs, id: { $gt: afterId } });
+      pipeline.push({ $match: { $or: cursorMatch } });
+    }
+    pipeline.push({ $sort: { cur: 1, id: 1 } }, { $limit: limit });
+    const docs = await col.aggregate(pipeline).toArray();
     /* 作画者 → 当前昵称（改了名，之前画的笔划也显示新名） */
     const amDraw = await aliasMapOf(docs);
     for (const d of docs) d.alias = amDraw.get(d.userId) || d.alias;
+    const strokes = [];
+    let bytes = 0;
+    let more = false;
+    let lastTs = 0;
+    for (const d of docs) {
+      const s = publicStroke(d, meUk);
+      const n = JSON.stringify(s).length;
+      const ts = Number(s.updatedAt ?? s.createdAt) || 0;
+      if (strokes.length && bytes + n > budget && ts !== lastTs) {
+        more = true; /* 装不下 → 剩下的下一趟再来（绝不切断同一毫秒那一组） */
+        break;
+      }
+      bytes += n;
+      lastTs = ts;
+      strokes.push(s);
+    }
+    if (!more && docs.length === limit) more = true;
+    const last = strokes[strokes.length - 1];
     return ok({
       day,
-      strokes: docs.map((d) => publicStroke(d, meUk)),
+      strokes,
       serverNow: Date.now(),
       today: dayKey(),
       /* 还有更多（说明这一趟没拉完，页面下次带游标继续） */
-      more: docs.length === limit,
+      more,
+      /* 给新客户端用的复合游标；老客户端继续用自己算的 updatedAt，行为不变 */
+      next: last ? { ts: Number(last.updatedAt ?? last.createdAt) || 0, id: last.id } : null,
     });
   }
 

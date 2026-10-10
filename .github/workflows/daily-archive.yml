@@ -12,8 +12,12 @@ name: 每日存档（聊天室 + 画板）
 #      图片解成 public/img/chat/<日>/*.webp、头像按内容去重放进 public/img/chat/avatars/；
 #      画板走 LT_ADMIN_DRAW_DAY（**分页取**，因为一次返回曾经超过腾讯云 6MB 上限），
 #      写成 src/data/draw/<日>.json + public/img/draw/<日>.svg。两步互不拖累。
-#   ② 提交推送（只提交，**不碰云端**）。推送会触发既有的部署工作流（deploy.yml），
-#      那边有发布门卫把关：**只放行存档那几个路径**（见 tools/publish/gate.mjs 的 ALLOW）。
+#   ② 提交推送（只提交，**不碰云端**），然后**显式点一次站点部署**。
+#      ⚠ 2026-10-10 实测的一个坑：用默认 GITHUB_TOKEN 推的提交**不会触发** push 类工作流
+#      （GitHub 防止递归的老规矩），所以"提交上去了"不等于"站点重建了"——
+#      那天存档进了 main，线上 /liyutang/teahouse/2026-10-09/ 还是 404，得站长手动点一次
+#      「Run workflow」才发出来。现在这里显式 `gh workflow run deploy.yml`。
+#      发布门卫照旧把关：**只放行存档那几个路径**（见 tools/publish/gate.mjs 的 ALLOW）。
 #   ③ 提交成功之后才清云端（`--prune-only`）—— 这一步不可逆，放最后。
 #
 # ⚠⚠ 为什么必须是"先提交、后清理"：2026-10-09 那天是一趟跑完（搬完立刻抹云端），
@@ -27,7 +31,8 @@ name: 每日存档（聊天室 + 画板）
 # ⚠ 两件必须先在仓库里配好的事（不然这个工作流会失败）：
 #   ① Settings → Secrets and variables → Actions → New repository secret：
 #      名字 `LT_ADMIN_PASSWORD`，值 = 你在评论区小齿轮里设的**站长密码原文**；
-#   ② 这个工作流的 `permissions: contents: write` —— 全仓唯一一处写权限，只给它。
+#   ② 这个工作流的 `permissions`：`contents: write`（存档要写仓库）+ `actions: write`
+#      （提交之后要点一次 deploy.yml）。除它以外没有任何工作流有这个权限。
 # ============================================================================
 
 on:
@@ -47,6 +52,7 @@ on:
 
 permissions:
   contents: write # 存档要往仓库写文件（全仓唯一一处写权限）
+  actions: write # 提交之后要显式点一次站点部署（见下面那一步的解释）
 
 # 同一条流水线一次只跑一个；存档不能被取消（跑到一半取消会留下半份文件）
 concurrency:
@@ -96,6 +102,7 @@ jobs:
           fi
 
       - name: 提交并推送（先拉后推，永不强推）
+        id: commit
         if: steps.changed.outputs.changed == '1'
         env:
           GIT_TERMINAL_PROMPT: '0'
@@ -109,9 +116,25 @@ jobs:
           # 用 date -u 会写成前一天 20:00，跟"存的是哪一天"对不上）。
           node tools/git/sync.mjs publish --message "存档：聊天室 + 画板（北京时间 $(TZ=Asia/Shanghai date '+%F %H:%M')）"
 
+      - name: 点一次站点部署（机器人推的提交不会自己触发 deploy.yml）
+        id: deploy
+        # ⚠ 2026-10-10 实测：默认 GITHUB_TOKEN 推的提交不会触发 push 类工作流（GitHub 防递归的老规矩）。
+        #   结果就是"存档进了 main、线上还是 404" —— 那天得站长手动点一次 Run workflow 才发出来。
+        #   这里显式 dispatch 一次。
+        #   ⚠ 这一步和下面"清云端"都挂了 continue-on-error：三段（提交/部署/清理）互不拖累，
+        #   谁失败最后由末尾那一步统一标红 —— 线性串起来的话，部署这一步一失败，
+        #   清理就永远轮不到（云端一直占着地方），反过来也一样。
+        continue-on-error: true
+        if: steps.commit.outcome == 'success' && steps.changed.outputs.changed == '1'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh workflow run deploy.yml
+
       - name: 提交成功之后再清云端（不可逆那一步放最后）
+        id: prune
         # 条件是"搬的时候没报错 + 这一次真的有东西提交上去"。
         # 2026-10-09 的教训：先抹云端、再提交，中间任何一步失败 = 云端那份没了、仓库里也没有。
+        continue-on-error: true
         if: steps.fetch.outcome == 'success' && steps.changed.outputs.changed == '1'
         env:
           LT_ADMIN_PASSWORD: ${{ secrets.LT_ADMIN_PASSWORD }}
@@ -122,8 +145,9 @@ jobs:
             node tools/liyutang-archive.mjs --yesterday --prune-only
           fi
 
-      - name: 搬的时候出错就把这次跑标红（已经提交的部分留着，云端那份也没动）
-        if: steps.fetch.outcome == 'failure'
+      - name: 哪一段出错了就把这次跑标红（已经提交的部分留着，云端那份也没动）
+        # 三段里任意一段失败都让这次跑变红；但**不改动**已经提交的东西，也不回头去动云端。
+        if: steps.fetch.outcome == 'failure' || steps.deploy.outcome == 'failure' || steps.prune.outcome == 'failure'
         run: |
-          echo "::error::存档脚本报错了（原因在上面『把昨天的话和画搬进仓库』那一步的日志里）。已经成功搬下来的部分已经提交推送；云端那一份没被清理，修好之后重跑这个工作流即可。"
+          echo "::error::存档这一趟有失败的分段（搬=${{ steps.fetch.outcome }} 部署=${{ steps.deploy.outcome }} 清理=${{ steps.prune.outcome }}）。已经成功搬下来的部分已经提交推送；云端那一份没被清理；修好之后重跑这个工作流即可。"
           exit 1
