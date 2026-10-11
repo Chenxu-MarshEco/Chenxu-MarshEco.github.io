@@ -16,9 +16,9 @@ import { withBase } from '../utils/url';
 
   {
     site.friends.length === 0 ? (
-      <p class="empty">
-        还没有友链。打开 <code>src/site.config.ts</code>，往 friends 数组里加就行。
-      </p>
+      /* 2026-10-10：原来这里写的是「打开 src/site.config.ts，往 friends 数组里加就行」——
+         那是给站长看的操作说明，却会显示在**访客**眼前。按用户要求（别留生造句）改成一句人话。 */
+      <p class="empty">还没有友链。</p>
     ) : (
       <ul class="friend-grid">
         {site.friends.map((f) => (

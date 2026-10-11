@@ -56,8 +56,13 @@ export const site = {
   title: '花涧堂',
   /** 副标题 / 一句话签名，会显示在页头和首页 */
   tagline: '等待篠雨的日子里',
-  /** 站点的 meta description，也会用于 RSS */
-  description: '一个记录想法、笔记和一些不成熟作品的个人站点。',
+  /**
+   * 站点的 meta description，也会用于 RSS。
+   * 2026-10-10 改：原来那句「一个记录想法、笔记和一些不成熟作品的个人站点。」是生造的介绍句
+   * （分享卡片上会被红圈），按用户要求换成那句签名本身。
+   * ⚠ 这句话**只出现在分享卡片 / 搜索结果 / RSS 里**，页面上看不见（页面上显示的是 tagline）。
+   */
+  description: '等待篠雨的日子里',
 
   /** 你的名字 / 笔名 */
   author: 'Chenxu',
@@ -100,11 +105,13 @@ export const site = {
     { label: '关于', href: '/about' },
   ] as NavItem[],
 
-  /** 关于页面里的自我介绍，支持 Markdown 换行（用 \n\n 分段） */
-  aboutIntro: [
-    '这里还没有写自我介绍。',
-    '在编辑器里打开「关于」页面，或者直接改 src/pages/about.astro，把这段话换成你自己的。',
-  ],
+  /**
+   * 关于页面里的自我介绍，支持 Markdown 换行（用 \n\n 分段）。
+   * ⚠ 2026-10-10：这里原来是两句"占位说明"（「这里还没有写自我介绍。」+「在编辑器里打开…把这段话换成你自己的。」），
+   * 它们会**直接显示在 /about/ 页面上** —— 按用户要求（「不要留任何这种生造的句子」）清掉了。
+   * 现在留空 = 「关于本站」那一节只有下面那段技术说明；要写自我介绍就往这个数组里加句子。
+   */
+  aboutIntro: [] as string[],
 
   /** 联系方式，显示在关于页 */
   contacts: [
@@ -117,15 +124,14 @@ export const site = {
     { label: 'GitHub', href: 'https://github.com/Chenxu-MarshEco' },
   ] as SocialLink[],
 
-  /** 友情链接。image 可留空，留空就只显示文字 */
-  friends: [
-    {
-      name: '示例友链',
-      href: 'https://example.com',
-      description: '这里可以放朋友的站点，把这段换成真的就行。',
-      image: '',
-    },
-  ],
+  /**
+   * 友情链接。image 可留空，留空就只显示文字。
+   * ⚠ 2026-10-10：原来这里放着一条**占位的**「示例友链」（链到 example.com，说明写的是
+   * 「这里可以放朋友的站点，把这段换成真的就行。」）—— 那是模板自带的，会在 /friends/ 上
+   * 真的显示成一张卡片。按用户要求（「不要留任何这种生造的句子」）清空了：
+   * 现在那一页只显示「还没有友链。」；有真友链时往这个数组里加就行（格式见上面那个例子）。
+   */
+  friends: [] as { name: string; href: string; description: string; image: string }[],
 
   /** 首页顶部是否显示那句 tagline */
   showTagline: true,
