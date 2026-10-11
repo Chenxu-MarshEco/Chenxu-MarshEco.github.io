@@ -4,8 +4,11 @@ import Img from '../components/Img.astro';
 import { entryUrl, getNotes, getPosts } from '../utils/content';
 import { toISODate } from '../utils/date';
 import { withBase } from '../utils/url';
+/* 页头那句说明归「文案」面板（site-copy.json 的 archive.lead，留空 = 只剩"全部 N 条记录，"） */
+import { copy, text } from '../utils/site-copy';
 
 const entries = [...(await getPosts()), ...(await getNotes())];
+const lead = text(copy.archive?.lead);
 
 // 按年份分组，组内按日期倒序
 const byYear = new Map<number, typeof entries>();
@@ -25,7 +28,8 @@ const years = [...byYear.entries()]
   layoutPage="list">
   <header class="page-header">
     <h1 class="page-header__title" data-edit="heading">归档</h1>
-    <p class="page-header__desc">全部 {entries.length} 条记录，按年份倒序。</p>
+    {/* 说明句留空时就以句号收尾（原来写死的是「全部 N 条记录，按年份倒序。」） */}
+    <p class="page-header__desc" data-copy="archive.lead">全部 {entries.length} 条记录{lead ? `，${lead}` : '。'}</p>
   </header>
 
   {

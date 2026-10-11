@@ -20,10 +20,16 @@
  */
 import { announceBoard, announceExternal, announceHref, ANNOUNCE_KIND_LABEL, latestAnnounces } from '../utils/announce';
 import { withBase } from '../utils/url';
+/* 两句说明（「这条还没填跳转地址」悬停提示 / 「还没有公告」空状态）归「文案」面板 */
+import { copy, text } from '../utils/site-copy';
 
 const board = announceBoard();
 const items = latestAnnounces();
 const boardHref = withBase('/zongxian/');
+/** 没填跳转地址那条的悬停提示（留空 = 不给提示） */
+const missingHref = text(copy.announce?.missingHref);
+/** 一条公告都没有时那句话（留空 = 整句不显示） */
+const emptyText = text(copy.announce?.empty);
 /** 日期在这一行上很短，只写 MM-DD（年份在公告栏那一页里看得到） */
 const shortDate = (d: string) => (d.length === 10 ? d.slice(5) : d);
 ---
@@ -67,7 +73,7 @@ const shortDate = (d: string) => (d.length === 10 ? d.slice(5) : d);
                 </a>
               ) : (
                 /* 更新提醒没填链接：照样列出来，只是点不动（页面上得说清是为什么） */
-                <span class="ann__link ann__link--dead" title="这条还没填跳转地址（编辑器「公告」面板里填）">
+                <span class="ann__link ann__link--dead" title={missingHref || undefined} data-copy="announce.missingHref">
                   {inner}
                 </span>
               )}
@@ -76,7 +82,7 @@ const shortDate = (d: string) => (d.length === 10 ? d.slice(5) : d);
         })}
       </ul>
     ) : (
-      <p class="ann__empty">还没有公告 —— 编辑器的「公告」面板里写第一条。</p>
+      emptyText && <p class="ann__empty" data-copy="announce.empty">{emptyText}</p>
     )
   }
 </section>

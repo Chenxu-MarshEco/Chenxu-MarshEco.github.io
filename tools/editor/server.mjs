@@ -878,7 +878,16 @@ function normalizeFrontmatterSafe(type, data) {
 
 const SITE_FALLBACK = { title: '本地内容编辑器', author: '', tagline: '' };
 
+/**
+ * 站点身份（编辑器的品牌条要显示）。
+ *
+ * ⚠ 2026-10-11：`tagline` / `description` 现在已经**不住在 site.config.ts 里**了 ——
+ * 它们搬进了 `src/data/site-copy.json`（编辑器「文案」面板写它，见下面 SITE_COPY_FILE）。
+ * site.config.ts 里那两行现在是 `copyText(siteCopy.site?.tagline)` 这种**读 JSON 的表达式**，
+ * 再用老的正则去抠会抠出一串代码（原来就是这么抠的），所以这里改成从 JSON 读。
+ */
 async function readSiteInfo() {
+  const fallback = { ...SITE_FALLBACK };
   try {
     const raw = await fs.readFile(path.join(PROJECT_ROOT, 'src', 'site.config.ts'), 'utf8');
     const pick = (key) => {
@@ -887,14 +896,18 @@ async function readSiteInfo() {
       if (!m) return undefined;
       return m[2].replace(/\\'/g, "'").replace(/\\"/g, '"').replace(/\\\\/g, '\\');
     };
-    return {
-      title: pick('title') || SITE_FALLBACK.title,
-      author: pick('author') || SITE_FALLBACK.author,
-      tagline: pick('tagline') || SITE_FALLBACK.tagline,
-    };
+    fallback.title = pick('title') || SITE_FALLBACK.title;
+    fallback.author = pick('author') || SITE_FALLBACK.author;
   } catch {
-    return { ...SITE_FALLBACK };
+    /* 读不到就用兜底 */
   }
+  try {
+    const copy = await readSiteCopy();
+    fallback.tagline = String(copy?.site?.tagline ?? '').trim() || SITE_FALLBACK.tagline;
+  } catch {
+    /* 读不到就用兜底 */
+  }
+  return fallback;
 }
 
 // ---------------------------------------------------------------
@@ -1496,6 +1509,45 @@ async function handleApi(req, res, url) {
       output = String(err?.message || err);
     }
     return sendJson(res, 200, { ok: true, built, ms, output, dropped: data.dropped });
+  }
+
+  // ---- 站点文案（src/data/site-copy.json：那些介绍 / 说明句）----
+  // 「文案」面板写这一个文件。写完就重建：这几句散在首页 / 关于 / 友链 / 各列表页上，
+  // 不重建的话预览里还是旧的（和导航 / 音乐 / 公告一个道理）。
+  if (route === '/api/site-copy' && req.method === 'GET') {
+    try {
+      return sendJson(res, 200, await readSiteCopy());
+    } catch {
+      /* 文件还没建 / 坏了：给一份空的 —— 面板自己按白名单画格子，不靠文件长什么样 */
+      return sendJson(res, 200, {});
+    }
+  }
+  if (route === '/api/site-copy' && req.method === 'POST') {
+    const payload = await readBody(req);
+    const current = await readSiteCopy().catch(() => ({}));
+    const data = cleanSiteCopy(payload, current);
+    try {
+      await fs.copyFile(SITE_COPY_FILE, `${SITE_COPY_FILE}.bak`);
+    } catch {
+      /* 第一次还没有这个文件，正常 */
+    }
+    await fs.writeFile(SITE_COPY_FILE, `${JSON.stringify(data.file, null, 2)}\n`, 'utf8');
+    let built = false;
+    let ms = 0;
+    let output = '';
+    try {
+      const r = await runBuild();
+      built = true;
+      ms = r.ms;
+      output = r.output;
+    } catch (err) {
+      output = String(err?.message || err);
+    }
+    /* 填了几格 / 一共几格：面板拿它说一句"清空了几处"，人一眼知道这次改了多少 */
+    const groups = Object.values(data.file).filter((v) => v && typeof v === 'object' && !Array.isArray(v));
+    const total = groups.reduce((n, g) => n + Object.keys(g).length, 0);
+    const filled = groups.reduce((n, g) => n + Object.values(g).filter((t) => String(t ?? '').trim()).length, 0);
+    return sendJson(res, 200, { ok: true, built, ms, output, copy: data.file, total, filled });
   }
 
   // ---- 曼沫砾总线（src/data/announcements.json：公告栏的两种公告）----
@@ -3509,6 +3561,75 @@ function cleanWidgets(payload, current) {
   }
 
   return { file, dropped };
+}
+
+/* ------------------------------------------------------------------
+   站点文案（src/data/site-copy.json）· 2026-10-11 加
+
+   用户原话：「要清的都是这些编辑器里编辑不了且我之前也没有要求需要有这些句子存在的句子」
+            「如果你无法判断就都把那种句子加上编辑器可以修改的接口」。
+
+   于是站点上那些**写死、站长改不了**的介绍句（页头那句签名 / meta description /
+   列表页说明 / 空状态 …）搬进了这一份 JSON，面板「文案」里一格一句。
+   站点那边按 key 读它（src/utils/site-copy.ts）：**留空 = 那一块整块不渲染**。
+
+   白名单：只有 SITE_COPY_SHAPE 里列着的组 / 键会落盘，别的键一律丢掉（和黎语堂那份
+   copy、和 home-widgets 一个规矩）。每条给一个字数上限，超了**直接报错**而不是悄悄截断 ——
+   这几句都是会显示在页面上的，截半句比报个错难查得多。
+   ------------------------------------------------------------------ */
+const SITE_COPY_FILE = path.join(PROJECT_ROOT, 'src', 'data', 'site-copy.json');
+
+/** 认识的组 / 键 / 上限字数（面板上的顺序也照这份来） */
+const SITE_COPY_SHAPE = {
+  site: { tagline: 60, description: 200 },
+  home: { enter: 60, back: 60 },
+  about: { intro: 500, tech: 500, subscribe: 200 },
+  posts: { lead: 200, empty: 200 },
+  notes: { lead: 200, empty: 200 },
+  archive: { lead: 200 },
+  tags: { lead: 200, empty: 200 },
+  search: { lead: 500, noscript: 500 },
+  friends: { lead: 500, empty: 200 },
+  aboutMe: { empty: 500, noAvatar: 200 },
+  salon: { empty: 500 },
+  board: { childrenDone: 200, childrenEmpty: 200 },
+  iceberg: { missingLink: 200 },
+  announce: { missingHref: 200, empty: 200 },
+};
+
+/** 读那一份文案（文件不在 / 坏了就当空的，站点那边也有兜底） */
+async function readSiteCopy() {
+  const text = await fs.readFile(SITE_COPY_FILE, 'utf8');
+  const data = JSON.parse(text);
+  return data && typeof data === 'object' ? data : {};
+}
+
+/**
+ * 把面板递上来的整份文案规整一遍：只留认识的键、去首尾空白、卡字数。
+ * @param {object} payload 面板递上来的
+ * @param {object} [current] 盘上那一份（用来把 `_readme` 原样带走）
+ * @returns {{file: object}} 规整后的
+ */
+function cleanSiteCopy(payload, current = {}) {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    throw httpError(400, '文案数据格式不对，需要一个按组分的对象');
+  }
+  const file = {};
+  /* `_readme` 是给手改的人看的说明：以**盘上那份**为准（面板不管它，也不许被面板冲掉） */
+  if (Array.isArray(current._readme)) file._readme = current._readme;
+  for (const [group, keys] of Object.entries(SITE_COPY_SHAPE)) {
+    const src = payload[group] && typeof payload[group] === 'object' ? payload[group] : {};
+    const out = {};
+    for (const [key, max] of Object.entries(keys)) {
+      const v = String(src[key] ?? '').trim();
+      if (v.length > max) {
+        throw httpError(400, `「${group}.${key}」太长了（${v.length} 字，最多 ${max} 字）`);
+      }
+      out[key] = v;
+    }
+    file[group] = out;
+  }
+  return { file };
 }
 
 /* ------------------------------------------------------------------

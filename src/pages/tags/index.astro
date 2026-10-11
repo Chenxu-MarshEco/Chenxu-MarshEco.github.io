@@ -2,21 +2,25 @@
 import BaseLayout from '../../layouts/BaseLayout.astro';
 import { collectTags, getNotes, getPosts } from '../../utils/content';
 import { withBase } from '../../utils/url';
+/* 页头说明和"还没有标签"那句都归「文案」面板（site-copy.json 的 tags.lead / tags.empty） */
+import { copy, text } from '../../utils/site-copy';
 
 const entries = [...(await getPosts()), ...(await getNotes())];
 const tags = collectTags(entries);
+const lead = text(copy.tags?.lead);
+const empty = text(copy.tags?.empty);
 ---
 
 <BaseLayout title="标签" description="按标签浏览全部内容"
   layoutPage="list">
   <header class="page-header">
     <h1 class="page-header__title" data-edit="heading">标签</h1>
-    <p class="page-header__desc">一共 {tags.length} 个标签。数字是使用次数。</p>
+    <p class="page-header__desc" data-copy="tags.lead">一共 {tags.length} 个标签。{lead}</p>
   </header>
 
   {
     tags.length === 0 ? (
-      <p class="empty">还没有标签。在文章开头的 tags 里加几个词就会出现。</p>
+      <p class="empty" data-copy="tags.empty">{empty}</p>
     ) : (
       <ul class="tag-cloud">
         {tags.map(({ tag, count }) => (

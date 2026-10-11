@@ -3,8 +3,12 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
 import CrtScreen from '../../components/CrtScreen.astro';
 import PostItem from '../../components/PostItem.astro';
 import { getNotes } from '../../utils/content';
+/* 页头说明和"还没有手记"那句都归「文案」面板（site-copy.json 的 notes.lead / notes.empty） */
+import { copy, text } from '../../utils/site-copy';
 
 const notes = await getNotes();
+const lead = text(copy.notes?.lead);
+const empty = text(copy.notes?.empty);
 ---
 
 <BaseLayout title="手记" description="短一点的日常记录"
@@ -14,14 +18,14 @@ const notes = await getNotes();
   <div class="crt-screen">
     <header class="page-header">
       <h1 class="page-header__title" data-edit="heading">手记</h1>
-      <p class="page-header__desc">
-        比文章更短、更随意的记录：今天做了什么、看到什么、想到什么。共 {notes.length} 条。
+      <p class="page-header__desc" data-copy="notes.lead">
+        {lead}共 {notes.length} 条。
       </p>
     </header>
 
     {
       notes.length === 0 ? (
-        <p class="empty">还没有手记。手记适合写一两句话，不用成篇。</p>
+        <p class="empty" data-copy="notes.empty">{empty}</p>
       ) : (
         <ul class="post-list">
           {notes.map((entry) => (

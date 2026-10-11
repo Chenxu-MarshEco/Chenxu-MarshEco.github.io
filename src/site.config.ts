@@ -50,19 +50,23 @@ export type HomeBoard = {
  * 很容易把格式弄坏，改 JSON 则简单可靠。手改那个 JSON 也完全没问题。
  */
 import homeBoardsData from './data/home-boards.json';
+/*
+  站点上那些「介绍 / 说明」句子（页头那句签名、meta description …）2026-10-10 挪进了
+  `src/data/site-copy.json`，编辑器「文案」面板里能直接改（留空 = 不显示）。
+  这一份只是把它读进来 —— **别再往这个文件里写死介绍句**，那一类句子一律走那份 JSON。
+*/
+import { copy as siteCopy, text as copyText } from './utils/site-copy';
 
 export const site = {
   /** 浏览器标题栏和页头显示的名字 */
   title: '花涧堂',
-  /** 副标题 / 一句话签名，会显示在页头和首页 */
-  tagline: '等待篠雨的日子里',
+  /** 副标题 / 一句话签名，会显示在页头和首页（＝文案面板里的「首页那句签名」） */
+  tagline: copyText(siteCopy.site?.tagline),
   /**
-   * 站点的 meta description，也会用于 RSS。
-   * 2026-10-10 改：原来那句「一个记录想法、笔记和一些不成熟作品的个人站点。」是生造的介绍句
-   * （分享卡片上会被红圈），按用户要求换成那句签名本身。
+   * 站点的 meta description，也会用于 RSS（＝文案面板里的「分享卡片 / 搜索结果那句描述」）。
    * ⚠ 这句话**只出现在分享卡片 / 搜索结果 / RSS 里**，页面上看不见（页面上显示的是 tagline）。
    */
-  description: '等待篠雨的日子里',
+  description: copyText(siteCopy.site?.description),
 
   /** 你的名字 / 笔名 */
   author: 'Chenxu',
@@ -105,13 +109,12 @@ export const site = {
     { label: '关于', href: '/about' },
   ] as NavItem[],
 
-  /**
-   * 关于页面里的自我介绍，支持 Markdown 换行（用 \n\n 分段）。
-   * ⚠ 2026-10-10：这里原来是两句"占位说明"（「这里还没有写自我介绍。」+「在编辑器里打开…把这段话换成你自己的。」），
-   * 它们会**直接显示在 /about/ 页面上** —— 按用户要求（「不要留任何这种生造的句子」）清掉了。
-   * 现在留空 = 「关于本站」那一节只有下面那段技术说明；要写自我介绍就往这个数组里加句子。
-   */
-  aboutIntro: [] as string[],
+  /*
+    ⚠ 原来这里有个 `aboutIntro`（关于页的自我介绍）。
+    2026-10-10 它挪进了 `src/data/site-copy.json` 的 `about.intro` —— 编辑器「文案」面板里能改，
+    留空就不显示（原来它写着两句占位说明，会直接显示在 /about/ 页面上）。
+    这一类"介绍句"以后一律走那份 JSON，别再往这个文件里加。
+  */
 
   /** 联系方式，显示在关于页 */
   contacts: [

@@ -10,6 +10,8 @@ import { withBase } from '../utils/url';
 import { flattenBoards, visibleBoards, type BoardNode } from '../utils/boards';
 import { editVars } from '../utils/layout';
 import { bgStyle, coverUrl, variantUrl } from '../utils/images';
+/* 首页两处小字（进入提示 / 回到封面）归「文案」面板：site-copy.json 的 home.* */
+import { copy, text } from '../utils/site-copy';
 
 /*
   天际线走图片管线出的**无损 WebP**：颜色逐位不变（塔吊的 --ink #08020c
@@ -36,6 +38,12 @@ const boardUrl = (id: string) =>
 
 /** 首页各元素的排版微调值（编辑器「排版」模式写入 src/data/layout.json） */
 const styleOf = (key: string) => editVars('home', key) ?? undefined;
+/*
+  封面上那两句（「点击进入花涧堂」/「回到首页欣赏」）归「文案」面板
+  （site-data/site-copy.json 的 home.enter / home.back；留空 = 那句小字/无障碍名字不出现）
+*/
+const enterText = text(copy.home?.enter);
+const backText = text(copy.home?.back);
 ---
 
 <BaseLayout description={site.description} bodyClass="is-home" layoutPage="home" preloadHref={skylineUrl}>
@@ -235,7 +243,7 @@ const styleOf = (key: string) => editVars('home', key) ?? undefined;
         封面滚过去它跟着消失，这个行为不需要 JS。
       */}
       <a class="cover__hint" href="#home-boards" data-flip="in">
-        <span class="cover__hintText">点击进入花涧堂</span>
+        {enterText && <span class="cover__hintText" data-copy="home.enter">{enterText}</span>}
         <span class="cover__hintArrow" aria-hidden="true">﹀</span>
       </a>
     </section>
@@ -247,9 +255,19 @@ const styleOf = (key: string) => editVars('home', key) ?? undefined;
       `height: 0` 是为了让它**不占地方** —— 有没有它，下面卡片的排版一模一样。
     */}
     <div class="cards" id="home-cards">
-      <a class="cards__back" href="#home-cover" data-flip="out" title="回到首页欣赏">
+      {/*
+        ⚠ 那个 aria-label 是**兜底**（功能性文案，不归站长）：站长把「回到首页欣赏」清空之后，
+        这个链接只剩一个 ↑ 箭头，读屏会念不出它是什么；a11y 那条验收也过不去。
+      */}
+      <a
+        class="cards__back"
+        href="#home-cover"
+        data-flip="out"
+        title={backText || undefined}
+        aria-label={backText || '回到封面'}
+      >
         <span class="cards__arrow" aria-hidden="true">↑</span>
-        <span class="sr-only">回到首页欣赏</span>
+        {backText && <span class="sr-only" data-copy="home.back">{backText}</span>}
       </a>
 
       <div class="boards" id="home-boards" data-edit="boards" style={styleOf('boards')}>

@@ -14,9 +14,13 @@ import { marked } from 'marked';
 import widgets from '../data/home-widgets.json';
 import { enhanceHtml, variantUrl } from '../utils/images';
 import { withBase } from '../utils/url';
+import { copy, text } from '../utils/site-copy';
 
 const about = (widgets.about ?? {}) as { title?: string; avatar?: string; text?: string; href?: string };
 const title = about.title || '关于我';
+/* 没传头像 / 没写内容时那两句也归「文案」面板（site-copy.json 的 aboutMe.noAvatar / aboutMe.empty） */
+const noAvatar = text(copy.aboutMe?.noAvatar);
+const emptyText = text(copy.aboutMe?.empty);
 const avatarRaw = String(about.avatar ?? '').trim();
 /** 头像也走图片管线：编辑器里传上来的图在上传时就压过，这里取那一档（查不到就退回原图） */
 const avatar = avatarRaw ? variantUrl(avatarRaw, 400) : '';
@@ -45,17 +49,14 @@ const body = enhanceHtml(marked.parse(String(about.text ?? '').trim(), { async: 
         }
       </div>
       <h1 class="me__title">{title}</h1>
-      {!avatar && <p class="me__hint">头像还没传：编辑器「关于我」面板里传一张就好。</p>}
+      {!avatar && noAvatar && <p class="me__hint" data-copy="aboutMe.noAvatar">{noAvatar}</p>}
     </header>
 
     {
       body.trim() ? (
         <div class="me__body" set:html={body} />
       ) : (
-        <p class="me__empty">
-          这里还没有写内容 —— 编辑器「关于我」面板里写点什么吧（支持 **粗体**、[链接](地址) 这些
-          Markdown 写法）。
-        </p>
+        emptyText && <p class="me__empty" data-copy="aboutMe.empty">{emptyText}</p>
       )
     }
 

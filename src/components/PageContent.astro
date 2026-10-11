@@ -44,6 +44,8 @@ import site from '../site.config';
 */
 import mianyuLog from '../data/mianyu.json';
 import recentEdits from '../data/recent-edits.json';
+/* 「子页面都摆完了 / 这一层还没有子页面」那两句归「文案」面板（site-copy.json 的 board.*） */
+import { copy as siteCopy, text as copyText } from '../utils/site-copy';
 
 interface Props {
   blocks: PageBlock[];
@@ -56,6 +58,11 @@ interface Props {
 }
 
 const { blocks, children, posts, timeline } = Astro.props;
+/** 「子页面」块空着时那两句（文案面板里可改；留空 = 整块不画） */
+const boardCopy = {
+  childrenDone: copyText(siteCopy.board?.childrenDone),
+  childrenEmpty: copyText(siteCopy.board?.childrenEmpty),
+};
 
 /*
   Markdown 用 marked 渲染。
@@ -883,12 +890,13 @@ function cardsForBlock(b: PageBlock): { list: BlockItem[]; missing: string[] } {
                 没挑（ref 空）或者指向的子页面不在了 → 整块不画，只在 data-missing 上留个记号。
               */
               if (!list.length) {
-                return b.type === 'card' ? null : (
+                /* 两句话都归「文案」面板（site-copy.json 的 board.childrenDone / childrenEmpty）；
+                   留空 = 那一块整块不画（原来是写死在这里的） */
+                const note = missing.length ? boardCopy.childrenDone : boardCopy.childrenEmpty;
+                return b.type === 'card' || !note ? null : (
                   <div class="pcards" data-shape={defs.shape} data-size={defs.size}>
-                    <p class="pcards__empty">
-                      {missing.length
-                        ? '这一层的子页面都已经摆在这个页面上了。'
-                        : '这一层还没有子页面。'}
+                    <p class="pcards__empty" data-copy={missing.length ? 'board.childrenDone' : 'board.childrenEmpty'}>
+                      {note}
                     </p>
                   </div>
                 );

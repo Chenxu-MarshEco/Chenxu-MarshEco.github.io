@@ -21,8 +21,12 @@ import {
   announceHref,
   announceList,
 } from '../../utils/announce';
+/* 两句说明（没填地址的悬停提示 / 「还没有公告」空状态）归「文案」面板，和首页那一块共用同一份 */
+import { copy, text } from '../../utils/site-copy';
 
 const board = announceBoard();
+const missingHref = text(copy.announce?.missingHref);
+const emptyText = text(copy.announce?.empty);
 const all = announceList();
 const groups = announceGroups(all);
 const noticeCount = all.filter((a) => a.kind === 'notice').length;
@@ -39,7 +43,7 @@ const updateCount = all.length - noticeCount;
 
     {
       groups.length === 0 ? (
-        <p class="alb__empty">还没有公告 —— 编辑器的「公告」面板里写第一条。</p>
+        emptyText && <p class="alb__empty" data-copy="announce.empty">{emptyText}</p>
       ) : (
         groups.map((g) => (
           <section class="alb__group" data-announce-month={g.key}>
@@ -65,7 +69,7 @@ const updateCount = all.length - noticeCount;
                         {external && <span class="alb__out" aria-hidden="true"> ↗</span>}
                       </a>
                     ) : (
-                      <span class="alb__title alb__title--dead" title="这条还没填跳转地址（编辑器「公告」面板里填）">
+                      <span class="alb__title alb__title--dead" title={missingHref || undefined} data-copy="announce.missingHref">
                         {it.title}
                       </span>
                     )}

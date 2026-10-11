@@ -8,8 +8,12 @@
 import widgets from '../data/home-widgets.json';
 import { variantUrl } from '../utils/images';
 import { withBase } from '../utils/url';
+/* 「还没填链接」那句悬停提示归「文案」面板（site-copy.json 的 iceberg.missingLink） */
+import { copy, text } from '../utils/site-copy';
 
 const ice = (widgets.iceberg ?? {}) as { title?: string; image?: string; text?: string; href?: string };
+/** 没填链接时鼠标停上去那句话（留空 = 不给提示） */
+const missingLink = text(copy.iceberg?.missingLink);
 const rawHref = String(ice.href ?? '').trim();
 const external = /^https?:/i.test(rawHref);
 const url = rawHref ? (external ? rawHref : withBase(rawHref)) : '';
@@ -23,7 +27,7 @@ const Tag = url ? 'a' : 'div';
 <Tag
   class:list={['ice', !url && 'ice--nolink']}
   href={url || undefined}
-  title={url ? title : '还没填链接（编辑器「冰室冰山」面板里填）'}
+  title={url ? title : missingLink || undefined}
   {...external ? { target: '_blank', rel: 'noopener' } : {}}
 >
   <span class="ice__art">

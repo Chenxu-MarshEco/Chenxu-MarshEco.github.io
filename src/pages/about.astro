@@ -3,35 +3,46 @@ import BaseLayout from '../layouts/BaseLayout.astro';
 import Img from '../components/Img.astro';
 import site from '../site.config';
 import { withBase } from '../utils/url';
+/*
+  「关于本站」和「订阅」这两段都归「文案」面板（site-copy.json 的 about.intro / about.tech / about.subscribe）。
+  ⚠ 句子里那两个 {repo} / {rss} 是**占位符**：页面把句子从中间拆开，把链接插进去 ——
+    这样整句话都由站长写，链接又还是真链接（不能让他去写 HTML）。
+  留空 = 那一段整块不渲染（原来是 site.config.ts 里写死的 aboutIntro）。
+*/
+import { copy, splitCopy, text } from '../utils/site-copy';
 
 const repoUrl = site.socials.find((s) => s.href.includes('github.com'))?.href ?? '';
+const intro = text(copy.about?.intro);
+const [techA, techB] = splitCopy(copy.about?.tech, '{repo}');
+const [subA, subB] = splitCopy(copy.about?.subscribe, '{rss}');
 ---
 
 <BaseLayout title="关于" description={`关于 ${site.title}`} narrow
   layoutPage="list">
   <header class="page-header">
     <h1 class="page-header__title" data-edit="heading">关于</h1>
-    <p class="page-header__desc">{site.tagline}</p>
+    {site.tagline && <p class="page-header__desc" data-copy="site.tagline">{site.tagline}</p>}
   </header>
 
   <div class="prose about-section">
     <h2>关于本站</h2>
-    {site.aboutIntro.map((p) => <p>{p}</p>)}
+    {intro && <p data-copy="about.intro">{intro}</p>}
 
-    <p>
-      这个站点用 Astro 构建，静态生成后托管在 GitHub Pages 上。
-      没有数据库、没有后端，所有内容都是仓库里的 Markdown 文件。
-      {repoUrl && (
-        <>
-          {' '}
-          源码在{' '}
-          <a href={repoUrl} target="_blank" rel="noopener noreferrer">
-            GitHub
-          </a>{' '}
-          上。
-        </>
-      )}
-    </p>
+    {
+      techA && (
+        <p data-copy="about.tech">
+          {techA}{' '}
+          {repoUrl ? (
+            <a href={repoUrl} target="_blank" rel="noopener noreferrer">
+              GitHub
+            </a>
+          ) : (
+            'GitHub'
+          )}
+          {techB && ` ${techB}`}
+        </p>
+      )
+    }
   </div>
 
   <div class="prose about-section">
@@ -77,8 +88,14 @@ const repoUrl = site.socials.find((s) => s.href.includes('github.com'))?.href ??
 
   <div class="prose about-section">
     <h2>订阅</h2>
-    <p>
-      用任意 RSS 阅读器订阅 <a href={withBase('/rss.xml')}>/rss.xml</a> 就能跟进更新。
-    </p>
+    {
+      subA && (
+        <p data-copy="about.subscribe">
+          {subA}{' '}
+          <a href={withBase('/rss.xml')}>/rss.xml</a>
+          {subB && ` ${subB}`}
+        </p>
+      )
+    }
   </div>
 </BaseLayout>

@@ -32,12 +32,15 @@ import {
 } from '../utils/salon';
 import { getTimeline } from '../utils/timelines';
 import { variantUrl, imageDims, viewUrls } from '../utils/images';
+import { copy, text } from '../utils/site-copy';
 /*
   左边那条时间轴：编辑器里选中的那一条，**原样**渲染。
   以前这里是按精华日期自己生成几百个点（还写死比例尺），又卡又超出用户要求 ——
   现在的规则是「点、段、塔吊、比例尺全是那条轴自己的，一个都不加不删」。
 */
 const tl = salonTimelineId ? getTimeline(salonTimelineId) : undefined;
+/* 没选时间轴时左栏那句话（归「文案」面板：site-copy.json 的 salon.empty；留空 = 整块不显示） */
+const salonEmpty = text(copy.salon?.empty);
 const params = tl ? essenceParams(tl) : new Map<string, number>();
 const list = salonEssences;
 const eraName = new Map(salonEras.map((e) => [e.id, e.title]));
@@ -84,10 +87,8 @@ const firstParam = list.length && tl ? (params.get(list[0].id) ?? 0) : 0;
           <Timeline timeline={tl} pinned={true} fill={true} rail={true} defaultParam={firstParam} />
         </div>
       ) : (
-        <p class="salon__tlNone">
-          这里还没有放时间轴。<br />
-          编辑器的「精华」面板里可以选一条站点已有的时间轴放上来（<b>原样放，不改一个字</b>）。
-        </p>
+        /* 没选时间轴时那句话归「文案」面板（site-copy.json 的 salon.empty；留空 = 整块不显示） */
+        salonEmpty && <p class="salon__tlNone" data-copy="salon.empty">{salonEmpty}</p>
       )}
       {/*
         轴下面原来还有一行小字（「点刻度或塔吊 → 跳到最近的一条精华」，

@@ -18,6 +18,11 @@
 import BaseLayout from '../layouts/BaseLayout.astro';
 import searchCore from '../search/core.js?raw';
 import searchTransit from '../search/transit.js?raw';
+/* 页头那句说明和 <noscript> 那段都归「文案」面板（site-copy.json 的 search.lead / search.noscript） */
+import { copy, text } from '../utils/site-copy';
+
+const lead = text(copy.search?.lead);
+const noscript = text(copy.search?.noscript);
 
 /*
   内核 + 这一页自己的逻辑拼成一段内联脚本。core.js 在 /search/ 上会被内联两次
@@ -47,9 +52,7 @@ const base = import.meta.env.BASE_URL.replace(/\/$/, '');
 
   <header class="page-header">
     <h1 class="page-header__title">搜索</h1>
-    <p class="page-header__desc">
-      全站页面的索引都在这一页过滤。冰室精华里的每一条都是独立结果，点进去会落到那一条的位置。
-    </p>
+    {lead && <p class="page-header__desc" data-copy="search.lead">{lead}</p>}
   </header>
 
   <div class="srchPage" id="srch-page">
@@ -72,10 +75,7 @@ const base = import.meta.env.BASE_URL.replace(/\/$/, '');
     <div class="srchPage__body" id="srch-page-body"></div>
 
     <noscript>
-      <p class="srchPage__none">
-        这一页靠脚本过滤站内索引，需要开启 JavaScript。右上角的搜索框同理，
-        不过站内每一个页面都能从首页和目录栏点进去。
-      </p>
+      {noscript && <p class="srchPage__none" data-copy="search.noscript">{noscript}</p>}
     </noscript>
   </div>
 

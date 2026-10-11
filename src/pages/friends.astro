@@ -3,22 +3,24 @@ import BaseLayout from '../layouts/BaseLayout.astro';
 import Img from '../components/Img.astro';
 import site from '../site.config';
 import { withBase } from '../utils/url';
+/* 页头那句和"还没有友链。"都归「文案」面板（site-copy.json 的 friends.lead / friends.empty） */
+import { copy, text } from '../utils/site-copy';
+
+const lead = text(copy.friends?.lead);
+const empty = text(copy.friends?.empty);
 ---
 
 <BaseLayout title="友链" description="朋友们的地方" narrow
   layoutPage="list">
   <header class="page-header">
     <h1 class="page-header__title" data-edit="heading">友链</h1>
-    <p class="page-header__desc">
-      这里放一些我常看的站点。想交换链接的话，写信告诉我你的站名、地址和一句话介绍。
-    </p>
+    {lead && <p class="page-header__desc" data-copy="friends.lead">{lead}</p>}
   </header>
 
   {
     site.friends.length === 0 ? (
-      /* 2026-10-10：原来这里写的是「打开 src/site.config.ts，往 friends 数组里加就行」——
-         那是给站长看的操作说明，却会显示在**访客**眼前。按用户要求（别留生造句）改成一句人话。 */
-      <p class="empty">还没有友链。</p>
+      /* 空着时那一句也归站长写（留空 = 什么都不显示） */
+      empty && <p class="empty" data-copy="friends.empty">{empty}</p>
     ) : (
       <ul class="friend-grid">
         {site.friends.map((f) => (

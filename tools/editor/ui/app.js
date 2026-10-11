@@ -200,6 +200,11 @@ const els = {
   annEditor: $('ann-editor'),
   annSave: $('ann-save'),
 
+  /* 站点文案（src/data/site-copy.json）：那些介绍 / 说明句，一格一句 */
+  copyModal: $('copy-modal'),
+  copyEditor: $('copy-editor'),
+  copySave: $('copy-save'),
+
   btnLiyutang: $('btn-liyutang'),
 
   /* 冰山图（src/data/iceberg.json）：分类 / 标签 / 层级 / 条目 */
@@ -1973,6 +1978,14 @@ const WORKSPACES = [
   */
   { id: 'announce', label: '公告', hint: '曼沫砾总线：事项公告（有正文）/ 更新提醒（只有标题和链接）' },
   { id: 'liyutang', label: '黎语堂', hint: '首页「黎语堂」板块卡：标题 / 副标题 / 背景图' },
+  /*
+    站点文案（2026-10-11 加，src/data/site-copy.json）：
+    站点上那些**写死、站长改不了**的介绍 / 说明句（页头签名、分享卡片那句描述、
+    各列表页的说明、几处空状态…）全在这儿，一格一句、留空就不显示。
+    用户原话：「要清的都是这些编辑器里编辑不了且我之前也没有要求需要有这些句子存在的句子」
+           「如果你无法判断就都把那种句子加上编辑器可以修改的接口」。
+  */
+  { id: 'copy', label: '文案', hint: '站点上那些介绍 / 说明句：改掉或清空（清空 = 那一块不显示）' },
 ];
 
 /** 现在开着的是哪个工作面；没有面板开着就是主界面 'docs' */
@@ -2001,6 +2014,7 @@ function closeWorkspace(id) {
   else if (id === 'members') closeMembersModal();
   else if (id === 'announce') closeAnnounceModal();
   else if (id === 'liyutang') closeLiyutangModal();
+  else if (id === 'copy') closeCopyModal();
 }
 
 /** 关掉除 except 以外的所有面板 */
@@ -2036,6 +2050,7 @@ async function openWorkspace(id) {
   else if (id === 'members') await openMembersModal();
   else if (id === 'announce') await openAnnounceModal();
   else if (id === 'liyutang') await openLiyutangModal();
+  else if (id === 'copy') await openCopyModal();
 }
 
 /** 面板里那条切换条：每个面板顶上都有一个空的 [data-ws-slot]，往里面填按钮 */
@@ -10205,7 +10220,9 @@ function panelShell(host, { hint = '', group = '' } = {}) {
           ? iceDirty
           : group === 'announce'
             ? announceDirty
-            : false;
+            : group === 'copy'
+              ? copyDirty
+              : false;
   if (dirty) markPanelDirty(status, group);
   return { body, foot: bar, status };
 }
@@ -10463,6 +10480,7 @@ function markPanelDirty(statusEl, group = '') {
   if (group === 'salon') salonDirty = true;
   else if (group === 'iceberg') iceDirty = true;
   else if (group === 'announce') announceDirty = true;
+  else if (group === 'copy') copyDirty = true;
   else widgetsDirty = true;
   if (!statusEl) return;
   statusEl.textContent = '有改动没保存';
@@ -10707,6 +10725,214 @@ function renderCalendarPanel() {
       saveWidgets(els.calSave, status, 'calendar'), true, 'cal-save'),
   );
   els.calSave = $('cal-save');
+}
+
+/* ---------- 站点文案（src/data/site-copy.json） · 2026-10-11 加 ---------- */
+
+/*
+  为什么有这一个面板
+  ------------------------------------------------------------------
+  用户原话（2026-10-10 / 10-11）：
+    「红圈里这句话改为 等待篠雨的日子里    另外说了不要留任何这种ds味很浓的难以阅读的句子」
+    「要清的都是这些编辑器里编辑不了且我之前也没有要求需要有这些句子存在的句子」
+    「如果你无法判断就都把那种句子加上编辑器可以修改的接口」
+
+  所以站点上那些**写死、站长改不了**的介绍 / 说明句，全搬进了
+  `src/data/site-copy.json`，这一格里一格一句。三条规矩：
+    · **留空 = 那一块整块不渲染**（页面按空串走"不画"那条路，不是画一个空盒子）；
+    · 只收介绍 / 说明 / 空状态这类句子；功能性的短提示（报错、登录闸门）不在里面；
+    · 用户自己写的东西（文章、手记、公告、板块名…）也不在里面 —— 那些本来就有入口。
+
+  ⚠ 改了这个面板里任何一格，站点上对应的位置**要重新构建**才会变（和公告 / 导航一个道理），
+    所以底下的按钮是「保存并重新构建」。
+  ⚠ 面板只认这一份白名单（和服务端 SITE_COPY_SHAPE 一一对应）：面板上多一格、少一格，
+    保存时都会被服务端按白名单收掉。加字段时**两处一起改**（还有站点那边读它的那一处）。
+  ⚠ 句子里 `{repo}` / `{rss}` 这样的花括号是**占位符**：页面渲染时会换成真链接，
+    站长看到的就是一句完整的话（不能让站长自己去写 HTML）。别把花括号删掉 ——
+    删了那句话照样显示，只是链接没了。
+*/
+const COPY_FIELDS = [
+  { box: '站点', group: 'site', key: 'tagline', label: '首页那句签名', rows: 1,
+    where: '首页封面上的签名，也是 /about/ 页头那句、浏览器标题栏「花涧堂 · …」的后半截。' },
+  { box: '站点', group: 'site', key: 'description', label: '分享卡片那句描述', rows: 2,
+    where: '只出现在分享卡片、搜索结果和 RSS 里，页面上看不见。' },
+
+  { box: '首页', group: 'home', key: 'enter', label: '封面下方那行小字', rows: 1,
+    where: '首页封面底部那颗「点击进入花涧堂」。留空 = 只剩箭头。' },
+  { box: '首页', group: 'home', key: 'back', label: '回到封面那颗箭头的说明', rows: 1,
+    where: '首页卡片区左上角那颗 ↑（鼠标停上去的提示 + 读屏念的名字）。留空 = 用「回到封面」兜底。' },
+  { box: '首页', group: 'iceberg', key: 'missingLink', label: '冰室冰山 · 没填链接时的提示', rows: 1,
+    where: '首页「冰室冰山」那块，编辑器里没填跳转地址时鼠标停上去显示的话。' },
+  { box: '首页', group: 'announce', key: 'empty', label: '公告 · 一条都没有时', rows: 1,
+    where: '首页公告栏和 /zongxian/ 上一条公告都没有时那句。' },
+  { box: '首页', group: 'announce', key: 'missingHref', label: '公告 · 没填跳转地址时的提示', rows: 1,
+    where: '公告清单里那种点不动的条目，鼠标停上去显示的话。' },
+
+  { box: '关于 / 关于我', group: 'about', key: 'intro', label: '「关于本站」的自我介绍', rows: 4,
+    where: '/about/「关于本站」第一段。原来那里写着"这里还没有写自我介绍"那种占位句，已经清掉了。' },
+  { box: '关于 / 关于我', group: 'about', key: 'tech', label: '「关于本站」的技术说明', rows: 4,
+    where: '/about/「关于本站」第二段。句子里写 {repo} 的地方会变成 GitHub 那个链接。' },
+  { box: '关于 / 关于我', group: 'about', key: 'subscribe', label: '「订阅」那一段', rows: 2,
+    where: '/about/「订阅」那一段。句子里写 {rss} 的地方会变成 /rss.xml 那个链接。' },
+  { box: '关于 / 关于我', group: 'aboutMe', key: 'empty', label: '关于我 · 还没写内容时', rows: 3,
+    where: '/about-me/ 正文空着时显示的那句（编辑器「关于我」面板里写了正文就不显示）。' },
+  { box: '关于 / 关于我', group: 'aboutMe', key: 'noAvatar', label: '关于我 · 还没传头像时', rows: 1,
+    where: '/about-me/ 头像位空着时那行小字。' },
+
+  { box: '列表页', group: 'posts', key: 'lead', label: '文章列表页 · 说明', rows: 1,
+    where: '/posts/ 页头「共 N 篇。」后面那句。' },
+  { box: '列表页', group: 'posts', key: 'empty', label: '文章列表页 · 一篇都没有时', rows: 1,
+    where: '/posts/ 上一篇都没有时显示的那句。' },
+  { box: '列表页', group: 'notes', key: 'lead', label: '手记列表页 · 说明', rows: 2,
+    where: '/notes/ 页头提到「共 N 条」之前那句。' },
+  { box: '列表页', group: 'notes', key: 'empty', label: '手记列表页 · 一条都没有时', rows: 1,
+    where: '/notes/ 上一条手记都没有时显示的那句。' },
+  { box: '列表页', group: 'archive', key: 'lead', label: '归档页 · 说明', rows: 1,
+    where: '/archive/ 页头「全部 N 条记录」后面那句；留空就以句号收尾。' },
+  { box: '列表页', group: 'tags', key: 'lead', label: '标签页 · 说明', rows: 1,
+    where: '/tags/ 页头「一共 N 个标签。」后面那句。' },
+  { box: '列表页', group: 'tags', key: 'empty', label: '标签页 · 一个标签都没有时', rows: 1,
+    where: '/tags/ 上一个标签都没有时显示的那句。' },
+
+  { box: '搜索页', group: 'search', key: 'lead', label: '页头那段说明', rows: 3,
+    where: '/search/ 页头那段。' },
+  { box: '搜索页', group: 'search', key: 'noscript', label: '没开 JavaScript 时的说明', rows: 3,
+    where: '/search/ 那段 <noscript>（关掉 JavaScript 才看得见）。' },
+
+  { box: '友链页', group: 'friends', key: 'lead', label: '页头那段', rows: 3,
+    where: '/friends/ 页头那段。' },
+  { box: '友链页', group: 'friends', key: 'empty', label: '一条友链都没有时', rows: 1,
+    where: '/friends/ 空着时那句。' },
+
+  { box: '版块页', group: 'board', key: 'childrenDone', label: '子页面都摆完了', rows: 1,
+    where: '版块页「子页面」块里，所有子页面都被单独摆出来之后那句。' },
+  { box: '版块页', group: 'board', key: 'childrenEmpty', label: '这一层没有子页面', rows: 1,
+    where: '版块页「子页面」块里，这一层一个子页面都没有时那句。' },
+
+  { box: '冰室精华', group: 'salon', key: 'empty', label: '没选时间轴时那句话', rows: 2,
+    where: '/salon/ 左栏那句（编辑器「精华」面板里选了时间轴就不显示）。' },
+];
+
+/** src/data/site-copy.json 的草稿 */
+let copyDraft = null;
+/** 这一组有没有没保存的改动 */
+let copyDirty = false;
+
+async function loadSiteCopyDraft() {
+  if (copyDraft) return copyDraft;
+  const res = await fetch('/api/site-copy');
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const data = await res.json();
+  copyDraft = data && typeof data === 'object' ? data : {};
+  return copyDraft;
+}
+
+/** 草稿里某一格（顺手把组建出来；盘上文件缺组也不怕） */
+function copyValue(group, key) {
+  if (!copyDraft) copyDraft = {};
+  if (!copyDraft[group] || typeof copyDraft[group] !== 'object') copyDraft[group] = {};
+  return String(copyDraft[group][key] ?? '');
+}
+
+async function saveSiteCopy(btn, statusEl) {
+  const was = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = '正在保存…';
+  statusEl.textContent = '正在保存…';
+  statusEl.classList.remove('is-dirty');
+  try {
+    const res = await fetch('/api/site-copy', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(copyDraft),
+    });
+    const data = await res.json();
+    if (!res.ok || !data.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    copyDirty = false;
+    /* 拿服务端那份重新来：它按白名单收过一遍，界面上看到的必须和落盘的一致 */
+    copyDraft = data.copy ?? null;
+    renderCopyPanel();
+    const liveStatus = els.copyEditor.querySelector('.wpanel__status') || statusEl;
+    const said = `填了 ${data.filled ?? 0}/${data.total ?? COPY_FIELDS.length} 格`;
+    if (data.built) {
+      liveStatus.textContent = `已保存并重新构建（${data.ms} ms）· ${said}`;
+      toast(`站点文案已保存并重新构建（${data.ms} ms）· ${said}；清空的格子对应的位置就不显示了`);
+    } else {
+      liveStatus.textContent = '已保存，但重新构建没成功';
+      toast(`已保存，但重新构建没成功：${String(data.output || '').split('\n')[0]}`, true);
+    }
+  } catch (err) {
+    statusEl.textContent = `出错了：${err.message}`;
+    statusEl.classList.add('is-dirty');
+    toast(`保存失败：${err.message}`, true);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = was;
+  }
+}
+
+async function openCopyModal() {
+  markWorkspaceActive('copy');
+  els.copyModal.hidden = false;
+  els.copyEditor.textContent = '正在读取…';
+  try {
+    await loadSiteCopyDraft();
+  } catch (err) {
+    els.copyEditor.textContent = `读取失败：${err.message}`;
+    return;
+  }
+  renderCopyPanel();
+}
+
+function closeCopyModal() {
+  els.copyModal.hidden = true;
+}
+
+function renderCopyPanel() {
+  const { body, foot, status } = panelShell(els.copyEditor, {
+    hint:
+      '站点上那些「介绍 / 说明」句子都在这里（原来写死在页面代码里、你改不了的那些）。' +
+      '**留空 = 那一块整块不显示**；句子里 {repo} / {rss} 这种花括号是占位符，别删掉。改完按「保存并重新构建」。',
+    group: 'copy',
+  });
+
+  /* 按「在哪个位置」分组画（COPY_FIELDS 的顺序就是面板上的顺序） */
+  let currentBox = null;
+  let box = null;
+  for (const f of COPY_FIELDS) {
+    if (f.box !== currentBox) {
+      currentBox = f.box;
+      box = panelBox(f.box, '');
+      body.appendChild(box);
+    }
+    const area = panelArea(copyValue(f.group, f.key), '留空 = 那一块不显示', f.rows, (v) => {
+      copyDraft[f.group][f.key] = v;
+      markPanelDirty(status, 'copy');
+    });
+    /* 验收脚本按这个属性找每一格（data-copy-field="group.key"） */
+    area.dataset.copyField = `${f.group}.${f.key}`;
+    area.dataset.copyId = `${f.group}.${f.key}`;
+    box.appendChild(panelRow(f.label, area, f.where));
+  }
+
+  const filled = COPY_FIELDS.filter((f) => copyValue(f.group, f.key).trim()).length;
+  foot.append(
+    panelBtn('关闭面板', '关掉这个面板（没保存的改动留着，切回来还在）', () => openWorkspace('docs')),
+    panelBtn('重新读取', '把盘上的值重新读一遍（没保存的改动会丢）', async () => {
+      if (!confirm('重新读盘会丢掉还没保存的改动，确定吗？')) return;
+      copyDraft = null;
+      copyDirty = false;
+      await loadSiteCopyDraft();
+      renderCopyPanel();
+    }),
+    panelBtn('打开首页', '在新标签页打开预览站点的首页（要先构建过）', () => {
+      window.open(`${PREVIEW_URL}/`, '_blank', 'noopener');
+    }),
+    panelBtn('保存并重新构建', '写进 src/data/site-copy.json 并重新构建站点', () =>
+      saveSiteCopy(els.copySave, status), true, 'copy-save'),
+  );
+  els.copySave = $('copy-save');
+  if (!status.textContent) status.textContent = `现在开着 ${filled}/${COPY_FIELDS.length} 格（清空的那几格在站点上不显示）`;
 }
 
 /* ---------- 关于我 ---------- */
@@ -13796,6 +14022,7 @@ function bindEvents() {
     [els.icebergModal, closeIcebergModal],
     [els.liyutangModal, closeLiyutangModal],
     [els.announceModal, closeAnnounceModal],
+    [els.copyModal, closeCopyModal],
     [els.icechartModal, closeIceChartModal],
     [els.essencesModal, closeEssencesModal],
     [els.membersModal, closeMembersModal],
@@ -13889,6 +14116,7 @@ function bindEvents() {
         [els.icebergModal, closeIcebergModal],
         [els.liyutangModal, closeLiyutangModal],
         [els.announceModal, closeAnnounceModal],
+        [els.copyModal, closeCopyModal],
         [els.icechartModal, closeIceChartModal],
         [els.essencesModal, closeEssencesModal],
         [els.membersModal, closeMembersModal],
