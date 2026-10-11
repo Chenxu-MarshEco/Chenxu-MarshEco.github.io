@@ -6,8 +6,33 @@
     "同一页只留最新一条，最新的排最前，最多 40 条。手改这个文件也行（改完要重新构建）。",
     "下面这几条是最初的种子（按 2026-09-28 那几次提交里改过的文件反推出来的），之后会被真记录顶下去。"
   ],
-  "updated": "2026-10-10T07:42:45.162Z",
+  "updated": "2026-10-11T15:56:50.809Z",
   "edits": [
+    {
+      "href": "/huaya/years/skybuger",
+      "title": "眠鱼路",
+      "at": "2026-10-11T15:56:50.809Z"
+    },
+    {
+      "href": "/huaya/years/qihuaya",
+      "title": "绮花娅域",
+      "at": "2026-10-11T15:50:40.807Z"
+    },
+    {
+      "href": "/huaya/years/newhuaya",
+      "title": "新花娅地",
+      "at": "2026-10-11T15:46:11.375Z"
+    },
+    {
+      "href": "/huaya/years/huayadi",
+      "title": "花娅地",
+      "at": "2026-10-11T15:45:18.592Z"
+    },
+    {
+      "href": "/salon/",
+      "title": "冰室精华",
+      "at": "2026-10-11T15:39:29.722Z"
+    },
     {
       "href": "/huaya/memory/bingshi",
       "title": "冰室古闻考",
@@ -67,31 +92,6 @@
       "href": "/huaya/years/yaohua",
       "title": "遥花娅空域",
       "at": "2026-09-29T08:41:34.611Z"
-    },
-    {
-      "href": "/huaya/years/skybuger",
-      "title": "眠鱼路",
-      "at": "2026-09-29T08:40:36.053Z"
-    },
-    {
-      "href": "/huaya/years/qihuaya",
-      "title": "绮花娅域",
-      "at": "2026-09-29T08:40:36.049Z"
-    },
-    {
-      "href": "/huaya/years/newhuaya",
-      "title": "新花娅地",
-      "at": "2026-09-29T08:40:08.338Z"
-    },
-    {
-      "href": "/salon/",
-      "title": "冰室精华",
-      "at": "2026-09-29T08:36:52.406Z"
-    },
-    {
-      "href": "/huaya/years/huayadi",
-      "title": "花娅地",
-      "at": "2026-09-29T08:35:30.528Z"
     },
     {
       "href": "/huaya/years/gerg",

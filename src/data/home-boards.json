@@ -1568,12 +1568,12 @@
                 {
                   "id": "huaya-r2-2-pmumf7gac7",
                   "type": "text",
-                  "text": "## 花娅地"
+                  "text": "## 花娅地\nSSW的1.20自组模组服务器。花娅之名的诞生地。由此花娅围绕着SSW的服务器诞生出了无数有趣的位面。"
                 },
                 {
                   "id": "huaya-r2-2-pmumf7gac8",
                   "type": "video",
-                  "src": "",
+                  "src": "https://www.bilibili.com/video/BV1dg4y1m72R/",
                   "placeholder": true
                 },
                 {
@@ -1662,12 +1662,12 @@
                 {
                   "id": "huaya-r2-3-pmumfcc7023",
                   "type": "text",
-                  "text": "## 新花娅地"
+                  "text": "## 新花娅地\nSSW的脆骨症服。来自纷鸟的各个成员不断加入冰室，建设花娅。今后花娅的地区命名，石碑格局等也在这段时期逐渐成型。"
                 },
                 {
                   "id": "huaya-r2-3-pmumfcc7024",
                   "type": "video",
-                  "src": "",
+                  "src": "https://www.bilibili.com/video/BV1Kf421X7YX/",
                   "placeholder": true
                 },
                 {
@@ -1756,13 +1756,18 @@
                 {
                   "id": "huaya-r2-4-pmumfeup139",
                   "type": "text",
-                  "text": "## 绮花娅域"
+                  "text": "## 绮花娅域\nSSW的悠然乐事服。花娅的黄金时期，悠然的日常仿佛永远不会结束。无数故事，无数奇遇都在这片樱色的古建筑群中萌生。自此开始花娅已经正式成为冰室的重要部分，月末总结大会也成为花娅的传统延续至今。"
                 },
                 {
                   "id": "huaya-r2-4-pmumfeup140",
                   "type": "video",
-                  "src": "",
+                  "src": "https://www.bilibili.com/video/BV19QtLehE3E/",
                   "placeholder": true
+                },
+                {
+                  "id": "huaya-r2-4-pmv40107i1",
+                  "type": "video",
+                  "src": "https://www.bilibili.com/video/BV1LCzhYpEYV/"
                 },
                 {
                   "id": "huaya-r2-4-pmumfeup141",
@@ -1836,7 +1841,95 @@
               "id": "huaya-r2-5",
               "title": "眠鱼路",
               "href": "/huaya/years/skybuger",
-              "image": "/img/uploads/20260915-1515-b96e-2025-06-12_22.45.09.jpg"
+              "image": "/img/uploads/20260915-1515-b96e-2025-06-12_22.45.09.jpg",
+              "page": [
+                {
+                  "id": "huaya-r2-5-pmv4036rb2",
+                  "type": "toc",
+                  "text": "Nataša的日记本"
+                },
+                {
+                  "id": "huaya-r2-5-pmv4036rb3",
+                  "type": "divider"
+                },
+                {
+                  "id": "huaya-r2-5-pmv4036rb4",
+                  "type": "text",
+                  "text": "## 眠鱼路\nSSW的空岛汉堡店服。短暂却完满的小插曲，Raw与凡家物语的村民互动诞生出了冰室传唱至今的传奇狂性派史诗。"
+                },
+                {
+                  "id": "huaya-r2-5-pmv4036rb5",
+                  "type": "video",
+                  "src": "https://www.bilibili.com/video/BV1x1juzhEJp/",
+                  "placeholder": true
+                },
+                {
+                  "id": "huaya-r2-5-pmv4036rb6",
+                  "type": "divider"
+                },
+                {
+                  "id": "huaya-r2-5-pmv4036rb7",
+                  "type": "text",
+                  "text": "## 地图勘探"
+                },
+                {
+                  "id": "huaya-r2-5-pmv4036rb8",
+                  "type": "map",
+                  "pages": [
+                    {
+                      "id": "huaya-r2-5-pmv4036rb8-p1",
+                      "src": "",
+                      "markers": [],
+                      "lines": []
+                    }
+                  ],
+                  "placeholder": true
+                },
+                {
+                  "id": "huaya-r2-5-pmv4036rb9",
+                  "type": "divider"
+                },
+                {
+                  "id": "huaya-r2-5-pmv4036rb10",
+                  "type": "text",
+                  "text": "## 重要事件"
+                },
+                {
+                  "id": "huaya-r2-5-pmv4036rb11",
+                  "type": "divider"
+                },
+                {
+                  "id": "huaya-r2-5-pmv4036rb12",
+                  "type": "text",
+                  "text": "## 溪流之外的轶事"
+                },
+                {
+                  "id": "huaya-r2-5-pmv4036rb13",
+                  "type": "divider"
+                },
+                {
+                  "id": "huaya-r2-5-pmv4036rb14",
+                  "type": "text",
+                  "text": "## 画廊"
+                },
+                {
+                  "id": "huaya-r2-5-pmv4036rb15",
+                  "type": "divider"
+                },
+                {
+                  "id": "huaya-r2-5-pmv4036rb16",
+                  "type": "text",
+                  "text": "## 导航"
+                },
+                {
+                  "id": "huaya-r2-5-pmv4036rb17",
+                  "type": "nav",
+                  "cats": [
+                    "navcat-mu9dgbej916"
+                  ],
+                  "text": "导航"
+                }
+              ]
             },
             {
               "id": "huaya-r2-6",
