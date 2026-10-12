@@ -413,9 +413,18 @@ check('★ 判定「像不像代理问题」：代理的连接失败算，别的
   // 先证明这份配置真的会撞代理（裸 git 走一遍）
   const plainRun = spawnSync('git', ['ls-remote', '--heads', 'origin'],
     { cwd: PROXY_DIR, encoding: 'utf8', timeout: 60000 });
-  check('（前提）裸 git 在这份配置下确实报「over proxy」',
-    plainRun.status !== 0 && /over proxy/i.test(String(plainRun.stderr || '')),
-    String(plainRun.stderr || '').split('\n').filter(Boolean)[0]?.slice(0, 80));
+  /*
+    ⚠ 这里量的是"**连代理**这一步失败了"，不是 git 的某一句原文（2026-10-12 修）：
+    老版本 git 报「Failed to connect to github.com:443 over proxy …」，
+    新版本（本机 2.5x）对"http.proxy 指向一个没人接的端口"报的是
+    「Failed to connect to 127.0.0.1:57431 after 2050 ms: Could not connect to server」——
+    连 "proxy" 这个词都不出现了，只认老原文的话这条前提会假红（行为其实一切正常，
+    下面那两条"会自动摘掉代理重试"是过的）。
+  */
+  const plainErr = String(plainRun.stderr || '');
+  check('（前提）裸 git 在这份配置下确实连不上代理',
+    plainRun.status !== 0 && (/over proxy/i.test(plainErr) || /failed to connect|connection refused|timed out/i.test(plainErr)),
+    plainErr.split('\n').filter(Boolean)[0]?.slice(0, 80));
 
   const viaModule1 = mod.git(['ls-remote', '--heads', 'origin'], { cwd: PROXY_DIR, timeout: 60000 });
   check('★★ 走我们的实现：同一条命令会自动摘掉代理重试（报错里换成了直连目标，不再提代理）',
