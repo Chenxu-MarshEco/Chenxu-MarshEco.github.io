@@ -8987,8 +8987,13 @@ function renderSubPicker() {
    它们是纯视觉变换、不参与布局，所以响应式断点照常生效。
    --------------------------------------------------------------- */
 
-/** 预览站点地址。本地预览服务默认在 4321。 */
-const PREVIEW_URL = 'http://127.0.0.1:4321';
+/** 预览站点地址。本地预览服务默认在 4321；服务端设了 EDITOR_PREVIEW_PORT 就跟着换。 */
+const PREVIEW_PORT =
+  (() => {
+    const n = Number.parseInt(window.__DSH_PREVIEW_PORT__ ?? '', 10);
+    return Number.isInteger(n) && n >= 1 && n <= 65535 ? n : 4321;
+  })();
+const PREVIEW_URL = `http://127.0.0.1:${PREVIEW_PORT}`;
 /*
   黎语堂自己的管理系统（2026-10-06）。
   用户要求「不要将其接入原有的编辑器系统 应当在花娅陌质流里加一个新按钮跳转到黎语堂

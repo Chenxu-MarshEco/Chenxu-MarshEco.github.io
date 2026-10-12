@@ -144,6 +144,19 @@ const STATIC_FILES = new Map([
   ['/liyutang-admin/', { file: 'liyutang.html', type: 'text/html; charset=utf-8' }],
   ['/liyutang.html', { file: 'liyutang.html', type: 'text/html; charset=utf-8' }],
   ['/liyutang.js', { file: 'liyutang.js', type: 'text/javascript; charset=utf-8' }],
+  /*
+    本机外观覆盖层（2026-10-12 加）：
+      tools/editor/local-style.css        —— 覆盖样式，可选，缺了就是原样
+      tools/editor/local-icons/*.png      —— Fugue 图标，可选
+      tools/editor/local-icons/apply-icons.js —— 把图标挂到按钮上，可选
+    这三样都**不进仓库**（.gitignore 里排掉了），只在本机生效；
+    不存在时静默 404，页面照常。
+  */
+  ['/local-style.css', { file: '../local-style.css', type: 'text/css; charset=utf-8' }],
+  [
+    '/local-icons/apply-icons.js',
+    { file: '../local-icons/apply-icons.js', type: 'text/javascript; charset=utf-8' },
+  ],
 ]);
 
 /** marked 的候选位置，按顺序找第一个存在的；都没有就 404，前端自行降级 */
@@ -2627,6 +2640,19 @@ async function handleApi(req, res, url) {
 }
 
 /**
+ * 本地站点预览服务的端口。
+ *
+ * 为什么能改：4321 是本仓库的默认值，但一台机器上可能不止一个本地站点
+ * （比如另一个项目的编辑器也占着 4321）。撞上了就设环境变量
+ * `EDITOR_PREVIEW_PORT` 换一个（例：4323），前端 app.js / liyutang.js
+ * 那颗预览地址读的是同一个环境变量，一起跟着走。不设就是原来的 4321。
+ */
+const PREVIEW_PORT = (() => {
+  const n = Number.parseInt(process.env.EDITOR_PREVIEW_PORT ?? '', 10);
+  return Number.isInteger(n) && n >= 1 && n <= 65535 ? n : 4321;
+})();
+
+/**
  * 本地站点预览服务的候选地址。
  *
  * 必须给两个：`astro dev` 默认只绑 localhost，在 Windows 上优先解析成
@@ -2634,7 +2660,10 @@ async function handleApi(req, res, url) {
  * 又只绑 IPv4。只写一个的话，总有一种启动方式会连不上，
  * 表现就是编辑器里「排版」报「先打开看效果」—— 明明预览是开着的。
  */
-const PREVIEW_ORIGINS = ['http://127.0.0.1:4321', 'http://localhost:4321'];
+const PREVIEW_ORIGINS = [
+  `http://127.0.0.1:${PREVIEW_PORT}`,
+  `http://localhost:${PREVIEW_PORT}`,
+];
 
 /**
  * 跑一次站点构建（astro build）。
@@ -2984,7 +3013,7 @@ async function sendPreview(res, targetPath) {
   }
   throw httpError(
     502,
-    '连不上本地预览服务（4321）。先在启动器里点「看效果」把它起起来。'
+    `连不上本地预览服务（${PREVIEW_PORT}）。先在启动器里点「看效果」把它起起来。`
   );
 }
 
@@ -6139,11 +6168,69 @@ async function serveAudio(res, pathname) {
 }
 
 async function serveStatic(res, pathname) {
+  /*
+    本机外观覆盖层的图标：/local-icons/icon-<名>(-shadowless).png
+    文件名收得很紧（只有字母、数字和连字符），不做目录遍历。
+    注意大小写：图标名里有 `imageUrl` 这种驼峰，所以匹配不区分大小写，
+    但读盘时用捕获到的原样名字。
+  */
+  const iconMatch = /^\/local-icons\/(icon-[A-Za-z0-9-]+\.png)$/.exec(pathname);
+  if (iconMatch) {
+    try {
+      const buf = await fs.readFile(path.join(__dirname, 'local-icons', iconMatch[1]));
+      res.writeHead(200, {
+        'Content-Type': 'image/png',
+        'Content-Length': buf.length,
+        'Cache-Control': 'no-store',
+      });
+      res.end(buf);
+    } catch {
+      sendText(res, 404, '这张本地图标不存在');
+    }
+    return true;
+  }
+
   const entry = STATIC_FILES.get(pathname);
   if (!entry) return false;
   const abs = path.join(UI_DIR, entry.file);
   try {
-    const buf = await fs.readFile(abs);
+    let buf = await fs.readFile(abs);
+    /*
+      HTML 页面里按需注入两样本机的东西（都没有时**一个字节都不加**，
+      页面和原来完全一样 —— 别人没放这些文件，就不该多一个请求、多一条 404）：
+
+        1. 预览端口：只有不是默认的 4321 时才注入。
+           前端 app.js / liyutang.js 那颗「预览」地址靠它跟着走。
+        2. 本机外观层：`local-style.css` / `local-icons/apply-icons.js`
+           在盘上时才挂 —— 这两个文件不进仓库（见 .gitignore），
+           所以站长和别的协作者那边这层等于不存在。
+    */
+    if (entry.type.startsWith('text/html')) {
+      const has = async (p) => {
+        try {
+          await fs.access(p);
+          return true;
+        } catch {
+          return false;
+        }
+      };
+      const parts = [];
+      if (PREVIEW_PORT !== 4321) {
+        parts.push(`<script>window.__DSH_PREVIEW_PORT__ = ${PREVIEW_PORT};</script>`);
+      }
+      if (await has(path.join(__dirname, 'local-style.css'))) {
+        parts.push('<link rel="stylesheet" href="/local-style.css">');
+      }
+      if (await has(path.join(__dirname, 'local-icons', 'apply-icons.js'))) {
+        parts.push('<script type="module" src="/local-icons/apply-icons.js"></script>');
+      }
+      if (parts.length) {
+        buf = Buffer.from(
+          buf.toString('utf8').replace(/<\/body>/, `${parts.join('\n  ')}\n  </body>`),
+          'utf8'
+        );
+      }
+    }
     res.writeHead(200, {
       'Content-Type': entry.type,
       'Content-Length': buf.length,

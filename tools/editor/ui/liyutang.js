@@ -27,8 +27,13 @@
  */
 
 const THEME_KEY = 'local-editor:theme';
-/** 站点预览服务（和编辑器不是同一个端口），「打开 /liyutang/」用 */
-const PREVIEW_URL = 'http://127.0.0.1:4321';
+/** 站点预览服务（和编辑器不是同一个端口），「打开 /liyutang/」用；跟着 EDITOR_PREVIEW_PORT 走 */
+const PREVIEW_PORT =
+  (() => {
+    const n = Number.parseInt(window.__DSH_PREVIEW_PORT__ ?? '', 10);
+    return Number.isInteger(n) && n >= 1 && n <= 65535 ? n : 4321;
+  })();
+const PREVIEW_URL = `http://127.0.0.1:${PREVIEW_PORT}`;
 
 const $ = (id) => document.getElementById(id);
 

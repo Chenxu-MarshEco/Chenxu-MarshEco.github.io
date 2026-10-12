@@ -35,3 +35,9 @@ desktop.ini
 # （每台机器填自己的用户名，用来显示推流动态、以及判断是不是站长本人。
 #   提交进仓库的话，别人的编辑器就会拿着我的名字到处跑。）
 tools/editor/.editor-identity.json
+
+# 本机外观覆盖层：只改自己这台机器的编辑器长相，不进仓库
+# （local-style.css 覆盖样式，local-icons/ 是 Fugue 图标和挂载脚本。
+#   提交进仓库的话，别人的编辑器会被迫换外观。）
+tools/editor/local-style.css
+tools/editor/local-icons/
