@@ -9,6 +9,22 @@
   ],
   "days": [
     {
+      "day": "2026-10-12",
+      "count": 236,
+      "painters": 1,
+      "users": [
+        "ai"
+      ],
+      "people": [
+        {
+          "uk": "fb130881",
+          "nick": "ai",
+          "avatar": "",
+          "count": 236
+        }
+      ]
+    },
+    {
       "day": "2026-10-11",
       "count": 101,
       "painters": 1,
