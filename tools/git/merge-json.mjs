@@ -57,6 +57,37 @@ export function deepEqual(a, b) {
 
 const isPlain = (v) => Boolean(v) && typeof v === 'object' && !Array.isArray(v);
 
+/* ------------------------------------------------------------------
+ * 「最后写的人赢」的时间戳字段（2026-10-12 加）
+ * ------------------------------------------------------------------
+ * 用户和朋友一起用编辑器时撞上的真事：一个在改「导航」、一个在改「冰山图」，
+ * 两边**内容完全不冲突**，发布却被拦住了 —— 撞的是 src/data/recent-edits.json 的 `updated`。
+ *
+ * 那份文件是**编辑器自己写的记账表**（「近期更新」那一块用它）：每保存一次，
+ * 就把 `updated` 盖成"现在"，再往 edits 里插一条。于是**任何两个人各改各的东西**，
+ * 这个字段都会两边各推一格 —— 一个纯粹的记账字段，为它拦下一次发布毫无道理。
+ *
+ * 所以：键名像时间戳、而且两边的值都是「YYYY-MM-DD…」这种形状 → 取**晚的那一份**（不打冲突）。
+ * ⚠ 形状卡得很死（必须以 YYYY-MM-DD 开头）：salon.json 里精华的 `at` 是"几点几分"（20:21），
+ *   绝不能被当成时间戳去比大小。
+ * ------------------------------------------------------------------ */
+const TIME_KEY = /^(updated|updatedAt|savedAt|editedAt|mtime|at|time)$/i;
+
+/** 路径最后那一段：`a.b[href:x].at` → `at`；`a.b` → `b` */
+function lastKey(path) {
+  const seg = String(path ?? '').split('.').pop() ?? '';
+  return seg.replace(/\[[^\]]*\]$/, '');
+}
+
+/** 值像不像一个时间戳（必须以 YYYY-MM-DD 开头）；不像就给 NaN，交给正常规则处理 */
+function asTime(v) {
+  const s = typeof v === 'string' ? v.trim() : '';
+  if (!/^\d{4}-\d{2}-\d{2}/.test(s)) return NaN;
+  const t = Date.parse(s);
+  return Number.isFinite(t) ? t : NaN;
+}
+
+
 /** 元素的身份字段：`id` 优先，其次 `key`（本仓库两种都有） */
 const ID_KEYS = ['id', 'key', 'href', 'url'];
 
@@ -127,6 +158,16 @@ export function mergeJson3(base, ours, theirs, { maxConflicts = 40, depth = 0 } 
     if (deepEqual(b, o)) return t;              // 只有我这边改了
     if (deepEqual(b, t)) return o;              // 只有远端改了
     if (dep > 60) return conflict(path, '嵌套太深，不自动合', b, o, t);
+
+    /* 「最后写的人赢」的时间戳字段（见下面 TIME_KEY 那段）：取晚的那份，不算冲突 */
+    const key = lastKey(path);
+    const ot = asTime(o);
+    const tt = asTime(t);
+    if (TIME_KEY.test(key) && Number.isFinite(ot) && Number.isFinite(tt)) {
+      const win = ot >= tt ? o : t;
+      notes.push(`${path}：两边都往前推了时间戳，取了晚的那份（${ot >= tt ? '你这边' : '远端'}的 ${win}）`);
+      return win;
+    }
 
     if (isPlain(b) && isPlain(o) && isPlain(t)) return walkObject(path, b, o, t, dep);
     if (Array.isArray(b) && Array.isArray(o) && Array.isArray(t)) return walkArray(path, b, o, t, dep);

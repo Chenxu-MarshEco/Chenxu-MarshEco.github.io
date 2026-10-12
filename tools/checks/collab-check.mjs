@@ -360,6 +360,67 @@ check('★ 回滚的代码里没有强推 / 硬重置（自带红线）',
 const reflog = must(['reflog', 'show', '--all'], ORIGIN);
 check('★ 远端 reflog 里没有 forced-update（全程没强推过）', !/forced-update/.test(reflog), reflog.split('\n').length + ' 行');
 
+/* ================================================================
+   ②-9 各改各的，但两边都动了「近期更新」那张**机器写的表**
+   ----------------------------------------------------------------
+   用户 2026-10-12 的真实事故（截图里那次"这次没能发布"）：
+     我在改导航、朋友在改冰山图，内容八竿子打不着，发布却被拦住 ——
+     撞的是 src/data/recent-edits.json 的 `updated`：
+     那份文件是编辑器自己写的记账表，**每保存一次就把 updated 盖成"现在"**，
+     于是任何两个人各改各的东西，这个字段都会两边各推一格。
+   预案：键名像时间戳、两边值都是「YYYY-MM-DD…」→ 取晚的那份，不算冲突（见 merge-json.mjs）。
+   这一段就是照着那个局面演一遍：朋友的先推上来，我的后推（先拉时会撞）。
+   ================================================================ */
+console.log('\n===== ②-9 「近期更新」那张机器写的表：两边都动了也该自己合 =====');
+const REC = 'src/data/recent-edits.json';
+const recSeed = {
+  _readme: ['近期更新：编辑器每次保存就往 edits 里记一笔'],
+  updated: '2026-10-12T08:00:00.000Z',
+  edits: [{ href: '/salon/', title: '冰室精华', at: '2026-10-12T06:00:00.000Z' }],
+};
+writeJson(path.join(A, REC), recSeed);
+check('先把那张"近期更新"的表推成共同基线', publish(A, '近期更新：基线').result?.code === 'ok');
+must(['pull', '--ff-only'], B);
+
+/* 朋友那一侧：改冰山图的内容 + 编辑器顺手把 updated 盖成"现在" */
+const friendIce = readJson(ICE(B));
+friendIce.items[1].title = '粉碎轮尿尿的描述';
+writeJson(ICE(B), friendIce);
+writeJson(path.join(B, REC), {
+  ...recSeed,
+  updated: '2026-10-12T08:12:00.000Z',
+  edits: [{ href: '/iceberg/', title: '冰山图', at: '2026-10-12T08:12:00.000Z' }, ...recSeed.edits],
+});
+const friendPush = publish(B, '朋友：改冰山图那条描述');
+check('朋友先推上去了（他那边内容 + updated 都动了）', friendPush.result?.code === 'ok', JSON.stringify(friendPush.result));
+
+/* 我这一侧：改导航 + 也把 updated 盖成"现在"（我保存得比他晚） */
+writeJson(path.join(A, 'src/data/navs.json'), {
+  _readme: ['导航分类库'],
+  categories: [{ id: 'navcat-1', title: '花娅地', groups: [{ id: 'g-1', title: '区域', items: [{ id: 'i-1', text: '百花锦屿' }] }] }],
+});
+writeJson(path.join(A, REC), {
+  ...recSeed,
+  updated: '2026-10-12T08:29:00.000Z',
+  edits: [{ href: '/huaya/years/huayadi/', title: '花娅地', at: '2026-10-12T08:29:00.000Z' }, ...recSeed.edits],
+});
+const myPush = publish(A, '我：导航里加百花锦屿');
+check('★★ 我这边照样推得上去（不再被那张记账表拦住）', myPush.result?.code === 'ok', JSON.stringify(myPush.result));
+check('★ 而且是**按 JSON 结构自动合**的（真合不动才该拦）',
+  (myPush.result?.jsonMerged || []).includes(REC), JSON.stringify(myPush.result?.jsonMerged || []));
+
+must(['pull', '--ff-only'], B);
+const recAfter = readJson(path.join(B, REC));
+const recHrefs = (recAfter.edits || []).map((e) => e.href);
+check('★ 合出来的表：我那条和朋友那条都在',
+  recHrefs.includes('/huaya/years/huayadi/') && recHrefs.includes('/iceberg/'), recHrefs.join(' '));
+check('★ updated 取的是**晚**的那一份（我 08:29 那次，不是他 08:12）',
+  recAfter.updated === '2026-10-12T08:29:00.000Z', String(recAfter.updated));
+check('★ 朋友的冰山图描述也在（他自己的内容一个字没被盖掉）',
+  readJson(ICE(B)).items[1].title === '粉碎轮尿尿的描述', readJson(ICE(B)).items[1].title);
+check('★ 我的导航内容也在（百花锦屿）',
+  JSON.stringify(readJson(path.join(B, 'src/data/navs.json'))).includes('百花锦屿'));
+
 /* ============================================================ ③ 真编辑器 + ④ 真浏览器 */
 
 console.log('\n===== ③ 真编辑器（接口）=====');
