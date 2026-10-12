@@ -7,30 +7,53 @@
  *    所有的图片可以点击 点击后可以放大查看这个图片 就像几乎所有wiki类网站一样
  *    放大后右上角有一个小x点击可以关掉图片 点击图片外的背景也可以关掉」
  *
- * 所以**只认标了 `data-zoom` 的图**（不是"全站所有 img"）：
- *   · 页面正文里由「＋图片」放进去的图 —— `PageContent.astro` 那个 image 块
- *   · 冰室精华页里每一条精华的截图 —— `salon.astro` 的 `.salon__pic img`
- * 头像、封面、首页小卡那些都没标，点了什么都不会发生。
+ * 用户后来把范围放开了（2026-10-12）：
+ *   「铃忆日记里的图片无法点开查看大图 应保证花涧堂网页内的所有图片都可以点开查看大图」
+ *
+ * 所以现在是**两条路一起用**：
+ *   ① 显式标了 `data-zoom` 的（页面内容块「＋图片」、冰室精华的截图、首页那几块）——
+ *      构建期就写在 HTML 上，没有 JS 时精华页那层 `<a href="原图">` 照旧能开原图；
+ *   ② 其余**内容图片**由脚本在浏览器里自己认（见下面 autoZoom 那段）——
+ *      手记 / 文章正文里的图是 Markdown 直接渲染的 `<img>`，构建期插不进属性
+ *      （Astro 7 的 Markdown 处理器换成 Sätteri 之后，想加 remark/rehype 插件得再引一个
+ *      依赖，见 astro.config.mjs 里那段说明 —— 为一个属性不值当），
+ *      而"哪些图该能点"这件事在浏览器里判断反而更准。
+ *
+ * 不参与放大的（点开一张头像没有意义，而且会挡住原本的点击行为）：
+ *   · 头像 / 徽记 / 图标 / 成员悬停小卡里的脸 —— 见 SKIP_CLASS；
+ *   · **包在链接里、而链接指向的不是图片的**图（文章卡片封面那种）——
+ *     那是导航，抢走点击等于整站都点不进文章了（这条最要紧，别删）；
+ *   · 自己这个灯箱里的 `<img>`；
+ *   · 显式写了 `data-nozoom` 的（留个后门：以后哪张图不想给它点，加个属性就行）。
  *
  * 原图从哪来：优先 `data-full`，没有就取包着它的那个 `<a href>`（精华页那层链接本来
  * 就指向原图），再退回 `currentSrc`。**给的是原图**，不是版面上那一档 ——
  * 精华页那些是聊天截图，放大就是为了看清字，给压缩过的那档没意义。
  *
- * 没有 JS 时：这里的框一直是 `hidden`，页面正文的图照旧点不动、精华页那层 `<a>`
- * 照旧开原图（`target="_blank"`）—— 一分钱功能都没少，只是没那么好看。
+ * 没有 JS 时：这里的框一直是 `hidden`，正文里那些图点不动（和以前一样），
+ * 精华页那层 `<a>` 照旧开原图（`target="_blank"`）—— 一分钱功能都没少，只是没那么好看。
  */
 ---
 
 <div class="izoom" data-izoom hidden role="dialog" aria-modal="true" aria-label="查看大图">
   <button type="button" class="izoom__close" data-izoom-close aria-label="关闭大图（Esc）">×</button>
   <!--
-    放大那张走 <picture>：AVIF 那一档有就给 <source>，浏览器自己挑（挑不中就回落 <img> 的 webp）。
-    比"写死 webp"省四成左右，而这一张偏偏是用户点开才会下的大图 —— 最值钱的一处。
+    滚动的只有这一层（2026-10-12 加）：手记里那些竖长截图 1404×8680，
+    原来 img 上也写 max-height:100%，于是"点开看大图"反而被压成 100 多像素宽 ——
+    比版面上还小。现在改成**宽度贴合视口、高度超出就滚**：
+    小图照旧居中，竖长图按视口宽度铺满、上下滚着看。
+    × 和下面那行图注留在滚动层外面，滚图的时候它们不会跟着跑掉。
   -->
-  <picture class="izoom__pic">
-    <source data-izoom-src type="image/avif" />
-    <img class="izoom__img" data-izoom-img alt="" decoding="async" />
-  </picture>
+  <div class="izoom__scroll" data-izoom-scroll>
+    <!--
+      放大那张走 <picture>：AVIF 那一档有就给 <source>，浏览器自己挑（挑不中就回落 <img> 的 webp）。
+      比"写死 webp"省四成左右，而这一张偏偏是用户点开才会下的大图 —— 最值钱的一处。
+    -->
+    <picture class="izoom__pic">
+      <source data-izoom-src type="image/avif" />
+      <img class="izoom__img" data-izoom-img alt="" decoding="async" />
+    </picture>
+  </div>
   <p class="izoom__cap" data-izoom-cap hidden></p>
 </div>
 
@@ -44,6 +67,76 @@
   if (box && pic && closeBtn) {
     /* 打开之前焦点在哪儿，关掉之后还回去（键盘用户不会"掉到页面顶上"） */
     let backTo: HTMLElement | null = null;
+
+    /*
+      ------------------------------------------------------------------
+      自动认「内容图片」（2026-10-12 加）
+      ------------------------------------------------------------------
+      手记 / 文章正文里的图是 Markdown 直接渲染的 `<img>`，构建期没有 data-zoom，
+      所以在这里认一遍：认得下的就打上 data-zoom，后面那套点击 / 键盘 / 光标照旧生效。
+      （这份名单是照着产物里真实存在的 class 定的 —— node .tmp 那个扫描脚本数过：
+        4990 个 img 里，大头是成员悬停小卡的脸 1708×2、精华页头像 809，
+        剩下的内容图就是"没有 class"的那些，也就是手记正文里的图。）
+    */
+    const SKIP_CLASS =
+      /(?:^|\s)(mem__face|mem__zoomImg|salon__avatar|site-brand__logo|brand__logo|ltbar__logo|about-pill__face|me__face|daily__avatar|cal__diaryFace|lt-avatar__img|navblk__ico|phover__img|izoom__img)(?:\s|$)/;
+    /** 链接指向图片本身（精华页那种"点开原图"）—— 只有这种才允许从链接里抢点击 */
+    const IMG_HREF = /\.(?:jpe?g|png|webp|avif|gif|svg|bmp)(?:[?#]|$)/i;
+
+    const zoomable = (im: HTMLImageElement): boolean => {
+      if (im.hasAttribute('data-zoom')) return true;
+      if (im.hasAttribute('data-nozoom')) return false;
+      if (im.closest('[data-izoom]')) return false;
+      if (SKIP_CLASS.test(im.className)) return false;
+      if (!im.getAttribute('src')) return false;
+      const a = im.closest('a');
+      if (a) {
+        const href = a.getAttribute('href') ?? '';
+        if (!IMG_HREF.test(href) && !a.hasAttribute('data-zoom')) return false;
+      }
+      return true;
+    };
+
+    /** 认一遍页面上的图；返回这次新认下几个（验收脚本会读这个数） */
+    const autoZoom = (): number => {
+      let added = 0;
+      for (const im of document.querySelectorAll<HTMLImageElement>('img:not([data-zoom])')) {
+        if (!zoomable(im)) continue;
+        im.dataset.zoom = '1';
+        /*
+          键盘 / 读屏也要能用：正文里的图**不在链接里**，自己不聚焦就没人到得了它。
+          （和「＋图片」那条路一致 —— PageContent 给那几张图写的就是这三样。
+           包在链接里的图不加 tabindex：那颗 <a> 本来就是可聚焦的，再加一个就是两个 Tab 站。）
+        */
+        const inLink = !!im.closest('a');
+        if (!inLink && !im.hasAttribute('tabindex')) im.tabIndex = 0;
+        if (!inLink && !im.hasAttribute('role')) im.setAttribute('role', 'button');
+        if (!inLink && !im.hasAttribute('aria-label')) {
+          const alt = (im.getAttribute('alt') ?? '').trim();
+          im.setAttribute('aria-label', alt ? `放大查看：${alt}` : '放大查看这张图');
+        }
+        added += 1;
+      }
+      (window as unknown as Record<string, unknown>).__izoomAttached = added;
+      return added;
+    };
+
+    autoZoom();
+    /*
+      聊天室、画板、精华那些图有一部分是脚本后来插进 DOM 的 ——
+      盯着变化，闲下来再认一遍（合并成一次，别每插一张图就扫全页）。
+    */
+    let scanTimer = 0;
+    const schedule = () => {
+      if (scanTimer) return;
+      scanTimer = window.setTimeout(() => {
+        scanTimer = 0;
+        autoZoom();
+      }, 300);
+    };
+    if (document.body) {
+      new MutationObserver(schedule).observe(document.body, { childList: true, subtree: true });
+    }
 
     const open = (im: HTMLImageElement) => {
       const a = im.closest('a');
@@ -107,9 +200,14 @@
 
     /* 右上角那个小 × */
     closeBtn.addEventListener('click', close);
-    /* 点图片**外面**的底色也关（点在图上不关，方便细看） */
+    /*
+      点图片**外面**的底色也关（点在图上不关，方便细看）。
+      ⚠ 现在图外面那圈是**滚动层**（.izoom__scroll），点它也要算"点到了底色" ——
+      只认 `box` 的话，那圈会因为多包了一层而变成点不动（2026-10-12 改结构时想过这一点）。
+    */
     box.addEventListener('click', (ev) => {
-      if (ev.target === box) close();
+      const t = ev.target as HTMLElement | null;
+      if (t === box || t?.classList?.contains('izoom__scroll') || t?.classList?.contains('izoom__pic')) close();
     });
     document.addEventListener('keydown', (ev) => {
       if (ev.key === 'Escape') {
@@ -148,20 +246,31 @@
     inset: 0;
     /* 比页头（20）、目录抽屉、失真那层（30）都高 */
     z-index: 90;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: clamp(0.8rem, 3vw, 2.4rem);
-    padding-top: clamp(3rem, 6vh, 4rem);
     background: rgb(10 2 16 / 0.86);
     backdrop-filter: blur(3px);
   }
   .izoom[hidden] {
     display: none;
   }
+  /*
+    滚动层：只滚它。宽度贴合视口、高度超出就上下滚（手记那种 1404×8680 的竖长截图）。
+    `align-items: safe center` —— 比视口高的图从**顶部**开始排；
+    普通 center 在溢出时会把上半截顶到滚不到的地方（flexbox 的老毛病）。
+  */
+  .izoom__scroll {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: safe center;
+    justify-content: center;
+    overflow: auto;
+    overscroll-behavior: contain;
+    padding: clamp(0.8rem, 3vw, 2.4rem);
+    padding-top: clamp(3rem, 6vh, 4rem);
+  }
   .izoom__img {
+    display: block;
     max-width: 100%;
-    max-height: 100%;
     width: auto;
     height: auto;
     object-fit: contain;
@@ -169,9 +278,10 @@
     background: #fff;
     box-shadow: 0 24px 70px rgb(0 0 0 / 0.65);
   }
-  /* 右上角那个小 × */
+  /* 右上角那个小 ×（在滚动层外面，滚图时不会跟着跑） */
   .izoom__close {
     position: absolute;
+    z-index: 2;
     top: max(0.6rem, env(safe-area-inset-top, 0px));
     right: max(0.6rem, env(safe-area-inset-right, 0px));
     display: grid;
@@ -201,6 +311,7 @@
   }
   .izoom__cap {
     position: absolute;
+    z-index: 2;
     left: 50%;
     bottom: 0.7rem;
     max-width: min(52rem, 90vw);

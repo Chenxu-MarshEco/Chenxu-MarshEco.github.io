@@ -86,7 +86,7 @@ export function originInfo() {
 /* ---------------------------------------------------------------- 问 gh */
 
 /** 跑一条命令，把它说的话抓回来（问不出来就 null，不抛） */
-function tryCli(cmd, args, timeout = 8000) {
+function tryCli(cmd, args, timeout = 4000) {
   try {
     const out = execFileSync(cmd, args, {
       cwd: ROOT,
@@ -105,12 +105,21 @@ function tryCli(cmd, args, timeout = 8000) {
  * 问一次 GitHub「现在登录的是谁」。
  * 缓存过的先看缓存（12 小时）—— 编辑器每次打开都要问身份，不能每次都起 gh。
  * 失败也缓存（缓存里记 ok:false）：没登录就是没登录，重试一百遍也不会变。
+ *
+ * ⚠ `allowSpawn: false`：**绝不在请求处理里起 gh**（2026-10-12 加）。
+ *   `gh api user` 是同步调用，慢起来好几秒 —— 而编辑器服务是**单线程**的，
+ *   一次这样的调用会把"保存 / 预览 / 上传"全堵在后面。踩到的现象很隐蔽：
+ *   验收脚本里"页面刚打开就派发一个 input 事件"，结果因为服务端被堵住、
+ *   页面自己的初始化还没跑完，那个事件根本没接上（三条不相干的检查一起红）。
+ *   所以服务端那条路只用缓存：没缓存就返回空（界面上先写"身份未知"），
+ *   由 server.mjs 在**后台**跑一次 CLI 把缓存捂热（见 warmIdentity）。
  */
-export function detectGithubLogin({ force = false } = {}) {
+export function detectGithubLogin({ force = false, allowSpawn = true } = {}) {
   const cache = readJson(CACHE_FILE);
   if (!force && cache && Date.now() - Number(cache.at || 0) < CACHE_TTL_MS) {
     return cache.login || '';
   }
+  if (!allowSpawn) return '';
   // gh 没装 / 没登录时 gh api 会失败，这里就返回 null，交给 git config 那条路
   const login = tryCli('gh', ['api', 'user', '--jq', '.login']);
   writeJson(CACHE_FILE, { at: Date.now(), login: login && LOGIN_RE.test(login) ? login : '' });
@@ -134,7 +143,7 @@ function gitConfig(key) {
  * 现在是谁。三处来源合并成一份，每个字段各自标一下是从哪儿来的 ——
  * 界面上要如实说「这是你自己填的 / 这是从 git 配置读的 / 这是 gh 说的」。
  */
-export function me({ refresh = false } = {}) {
+export function me({ refresh = false, allowGh = true } = {}) {
   const origin = originInfo();
   const saved = readJson(IDENTITY_FILE) || {};
   const gName = gitConfig('user.name');
@@ -145,7 +154,7 @@ export function me({ refresh = false } = {}) {
   let login = fromFile(saved.login);
   let loginFrom = login ? 'identity' : '';
   if (!login) {
-    login = detectGithubLogin({ force: refresh });
+    login = detectGithubLogin({ force: refresh && allowGh, allowSpawn: allowGh });
     loginFrom = login ? 'gh' : '';
   }
   if (!login) {
@@ -196,8 +205,12 @@ export function me({ refresh = false } = {}) {
   };
 }
 
-/** 把身份写进本机那份文件（不碰 git config，也不进仓库） */
-export function saveIdentity(patch = {}) {
+/**
+ * 把身份写进本机那份文件（不碰 git config，也不进仓库）
+ * @param {{login?:string,name?:string,email?:string,owner?:boolean|null}} patch
+ * @param {{allowGh?:boolean}} opts 编辑器服务那边传 false：别在请求里起 gh（见上面那段说明）
+ */
+export function saveIdentity(patch = {}, { allowGh = true } = {}) {
   const cur = readJson(IDENTITY_FILE) || {};
   const next = { ...cur };
   if (patch.login !== undefined) {
@@ -228,7 +241,7 @@ export function saveIdentity(patch = {}) {
     'owner: true/false 是手写的"这台机器就是站长"（只有 origin 认不出仓库所属者时才需要）。',
   ];
   writeJson(IDENTITY_FILE, next);
-  return me({ refresh: true });
+  return me({ allowGh });
 }
 
 /* ---------------------------------------------------------------- 命令行 */

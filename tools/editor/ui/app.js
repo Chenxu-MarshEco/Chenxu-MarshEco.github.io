@@ -7827,6 +7827,60 @@ let navsPages = [];
 /** 当前在看第几个大分类 */
 let navIndex = 0;
 
+/*
+  ------------------------------------------------------------------
+  右栏预览的两份小状态（2026-10-12 加，用户报的两个毛病都出在这儿）
+  ------------------------------------------------------------------
+  用户原话：
+    「在编写导航时 右边的预览处完全看不到花娅地的导航预览 并且如果把上面三栏导航
+      收起来以看到花娅地导航预览的话 一但点击添加新条目 原来收起的导航又会全部展开
+      导致再次无法预览花娅地的导航 必须往下滚动才能看到 非常麻烦」
+
+  两个毛病两个原因：
+    · 分类一多，"正在编辑的那一节"被上面几节顶到看不见的地方 —— 因为预览整栏
+      跟着面板一起滚（左中右三栏同一个滚动条），滚到下面时中栏的输入框又跑上面去了；
+    · 展开状态**没记住**：以前每次重画都写死 `open = true`，而「＋ 加条目」这类
+      操作会把整个面板重画一遍 —— 用户刚收起来的几节立刻全被打回展开。
+
+  所以：展开状态记在这儿（`navPreviewFolded` 收着的分类 id），
+  正在编辑的那一节永远展开、并且**换了一类就自动滚到它**（打字时不动，免得抢滚动条）。
+  ------------------------------------------------------------------
+*/
+let navPreviewFolded = new Set();
+/** 上一次"自动滚到正在编辑的那一节"滚的是谁（只在换了一类时才滚） */
+let navPreviewFocused = '';
+/** 刚加的一条（条目 / 子分类 / 细分类）id —— 下一次画完预览就把它滚进视野 */
+let navPreviewReveal = '';
+
+/**
+ * 画完预览之后把它滚到该看的地方。
+ * 两件事按优先级：先照顾"刚加的那一条"（用户刚点完，最想立刻看到），
+ * 没有的话再看"正在编辑的那一类"换没换。
+ * ⚠ 用 getBoundingClientRect 算，不用 offsetTop —— 预览那一栏是 sticky 的（自己就是
+ *   定位元素），里面元素的 offsetParent 是它自己，加减 offsetTop 会算错。
+ */
+function revealNavPreview(host) {
+  if (!host || !host.isConnected) return;
+  const box = host.getBoundingClientRect();
+  const put = (el) => {
+    const r = el.getBoundingClientRect();
+    if (r.top < box.top + 2 || r.bottom > box.bottom - 2) host.scrollTop += r.top - box.top - 6;
+  };
+  if (navPreviewReveal) {
+    const just = host.querySelector(`[data-nav-id="${CSS.escape(navPreviewReveal)}"]`);
+    navPreviewReveal = '';
+    if (just) {
+      put(just);
+      return;
+    }
+  }
+  const cur = navsDraft?.categories?.[navIndex];
+  if (!cur || navPreviewFocused === cur.id) return;
+  navPreviewFocused = cur.id;
+  const cat = host.querySelector(`details[data-cat-id="${CSS.escape(cur.id)}"]`);
+  if (cat) put(cat);
+}
+
 async function loadNavs() {
   if (navsDraft) return navsDraft;
   const res = await fetch('/api/navs');
@@ -8115,7 +8169,9 @@ function renderNavEditor() {
   addGroup.className = 'btn btn--ghost boardedit__mini nv-addgroup';
   addGroup.textContent = '＋ 加子分类';
   addGroup.addEventListener('click', () => {
-    cat.groups.push({ id: newNavGroupId(cat), title: '新子分类', items: [] });
+    const made = { id: newNavGroupId(cat), title: '新子分类', items: [] };
+    cat.groups.push(made);
+    navPreviewReveal = made.id;      // 画完把刚加的这一节滚进视野
     renderNavEditor();
   });
   mid.appendChild(addGroup);
@@ -8234,7 +8290,9 @@ function navGroupBox(cat, g, gi, pv) {
   g.items.forEach((it, ii) => items.appendChild(navItemRow(cat, g, it, ii, pv)));
   directWrap.appendChild(items);
   const addItem = mini('＋ 加条目', '加一条「图标 + 文字」，点文字跳到地址', () => {
-    g.items.push({ id: newNavItemId(cat), text: '新条目' });
+    const made = { id: newNavItemId(cat), text: '新条目' };
+    g.items.push(made);
+    navPreviewReveal = made.id;      // 画完把刚加的这一条滚进视野
     renderNavEditor();
   });
   addItem.classList.add('nv-additem');
@@ -8248,7 +8306,9 @@ function navGroupBox(cat, g, gi, pv) {
   box.appendChild(subsBox);
 
   const addSub = mini('＋ 细分类', '在「' + (g.title || '这个子分类') + '」下面再分一层（第三级，只做这一层）', () => {
-    g.subgroups.push({ id: newNavSubgroupId(g), title: '新细分类', items: [] });
+    const made = { id: newNavSubgroupId(g), title: '新细分类', items: [] };
+    g.subgroups.push(made);
+    navPreviewReveal = made.id;
     renderNavEditor();
   });
   addSub.classList.add('nv-addsub');
@@ -8306,7 +8366,9 @@ function navSubgroupBox(cat, g, sg, si, pv) {
   box.appendChild(items);
 
   const addItem = mini('＋ 加条目', '加一条「图标 + 文字」，点文字跳到地址', () => {
-    sg.items.push({ id: newNavItemId(cat), text: '新条目' });
+    const made = { id: newNavItemId(cat), text: '新条目' };
+    sg.items.push(made);
+    navPreviewReveal = made.id;
     renderNavEditor();
   });
   addItem.classList.add('nv-additem');
@@ -8412,7 +8474,38 @@ function paintNavPreview(host) {
 
   const head = document.createElement('div');
   head.className = 'nv-pv__head';
-  head.textContent = '预览（示意）';
+  const headLabel = document.createElement('span');
+  headLabel.textContent = '预览（示意）';
+  head.appendChild(headLabel);
+  /*
+    两颗小按钮（2026-10-12 加）：分类一多，「正在编辑的那一节」就被上面几节顶到
+    看不见的地方去了。这两颗是一句话的出口 —— 把别的都收起来只看它 / 全部展开。
+    （收起来的状态记在 navPreviewFolded 里，加条目重画之后照样是收着的。）
+    只有一个分类时没什么可收的，就不摆了。
+  */
+  if (cats.length > 1) {
+    const only = document.createElement('button');
+    only.type = 'button';
+    only.className = 'btn btn--ghost nv-pv__mini';
+    only.textContent = '只看正在编辑的';
+    only.title = '把别的分类收起来，只看你正在改的这一节（收起状态会一直记着）';
+    only.addEventListener('click', () => {
+      const cur = cats[navIndex];
+      navPreviewFolded = new Set(cats.filter((c) => c.id !== cur?.id).map((c) => c.id));
+      navPreviewFocused = '';                 // 清掉"滚过了"的记号，让它重新滚到那一节
+      paintNavPreview(host);
+    });
+    const all = document.createElement('button');
+    all.type = 'button';
+    all.className = 'btn btn--ghost nv-pv__mini';
+    all.textContent = '全部展开';
+    all.title = '把所有分类都展开';
+    all.addEventListener('click', () => {
+      navPreviewFolded = new Set();
+      paintNavPreview(host);
+    });
+    head.append(only, all);
+  }
   host.appendChild(head);
 
   if (!cats.length) {
@@ -8449,10 +8542,21 @@ function paintNavPreview(host) {
   });
   blk.appendChild(bar);
 
+  const curCat = cats[navIndex];
   for (const c of cats) {
     const details = document.createElement('details');
-    details.className = 'nv-pv__cat';
-    details.open = true;
+    details.className = 'nv-pv__cat' + (c.id === curCat?.id ? ' is-current' : '');
+    details.dataset.catId = c.id;
+    /*
+      ⚠ 展开状态**要记着**（见上面 navPreviewFolded 那段）：
+      以前这里写死 `open = true`，「收起上面几节好看第四节」这件事一次点击就没了。
+      正在编辑的那一类永远展开 —— 不然"看不到它的预览"会以另一种形式回来。
+    */
+    details.open = c.id === curCat?.id ? true : !navPreviewFolded.has(c.id);
+    details.addEventListener('toggle', () => {
+      if (details.open) navPreviewFolded.delete(c.id);
+      else if (c.id !== curCat?.id) navPreviewFolded.add(c.id);
+    });
     const sum = document.createElement('summary');
     sum.className = 'nv-pv__summary';
     const t = document.createElement('span');
@@ -8483,6 +8587,8 @@ function paintNavPreview(host) {
       const href = String(it.href ?? '').trim();
       const el = document.createElement(href ? 'a' : 'span');
       el.className = `nv-pv__item${href ? '' : ' nv-pv__item--plain'}`;
+      /* 刚加的那一条要能被滚进视野（见 revealNavPreview） */
+      el.dataset.navId = it.id;
       if (href) {
         el.href = href;
         // 预览里点它别真跳走（要看地址对不对，悬停有 title 就够了）
@@ -8520,6 +8626,7 @@ function paintNavPreview(host) {
       const subs = g.subgroups ?? [];
       const rowEl = document.createElement('div');
       rowEl.className = `nv-pv__row${subs.length ? ' nv-pv__row--nest' : ''}`;
+      rowEl.dataset.navId = g.id;
       const label = document.createElement('div');
       label.className = 'nv-pv__label';
       label.textContent = g.title || '(未命名子分类)';
@@ -8546,6 +8653,7 @@ function paintNavPreview(host) {
         const cell = document.createElement('div');
         cell.className = 'nv-pv__cell';
         cell.dataset.subgroupId = sg.id;
+        cell.dataset.navId = sg.id;
         const sl = document.createElement('span');
         sl.className = 'nv-pv__sublabel';
         sl.textContent = sg.title || '(未命名细分类)';
@@ -8578,6 +8686,9 @@ function paintNavPreview(host) {
   note.textContent =
     '页面上的样子（示意）：顶栏是这一页挂了哪几个大分类，每个分类一整节可以收起/展开；一行一个子分类（名字在左边、纵跨整组），它右边先铺直接挂的条目、再铺细分类（细分类名 + 它自己的条目）——「图标 + 文字」点文字跳地址。';
   host.appendChild(note);
+
+  /* 画完了才滚（这时候才量得到位置）：换到哪一类就滚到哪一节，加了一条就滚到那一条 */
+  revealNavPreview(host);
 }
 
 async function saveNavs() {
@@ -11138,6 +11249,10 @@ function whoText(person, mine) {
 
 /* ---------------------------------------------------------------- 我是谁 */
 
+/** 身份还没问出来时的重试（最多两次，见 loadCollabInfo） */
+let collabRetryLeft = 2;
+let collabRetryTimer = null;
+
 async function loadCollabInfo() {
   try {
     const data = await apiGet('/api/collab/me');
@@ -11146,6 +11261,17 @@ async function loadCollabInfo() {
     state.collab = null;
   }
   paintCollabBadges();
+  /*
+    第一次在这台机器上打开时，用户名可能还没问出来：服务端**故意不在请求里起 gh**
+    （`gh api user` 是同步调用，会把整个编辑器堵好几秒），它改成在后台跑一次 CLI
+    把 12 小时缓存写下来。所以这里过两三秒自己再问一次 —— 用户名一到位，
+    「版本」面板（只有站长有）就会自己长出来，不用刷新页面。
+    ⚠ 只重试两次：问不出来（没装 gh / 没填用户名）是正常情况，不能没完没了地轮询。
+  */
+  if (state.collab && !state.collab.me?.login && collabRetryLeft > 0) {
+    collabRetryLeft -= 1;
+    collabRetryTimer = setTimeout(() => { collabRetryTimer = null; void loadCollabInfo(); }, 2600);
+  }
   return state.collab;
 }
 

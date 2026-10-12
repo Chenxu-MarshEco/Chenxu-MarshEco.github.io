@@ -33,7 +33,7 @@ import { spawn } from 'node:child_process';
   ⚠ 这三个都是 tools/git/ 下的独立脚本（也都能单独在命令行里跑），编辑器服务只负责
     起子进程、把机读结果（`[result] {…}` 那一行）转给页面 —— 和「拉远端」那条路一致。
 */
-import { me as whoami, saveIdentity } from '../git/whoami.mjs';
+import { me as whoamiMe, saveIdentity } from '../git/whoami.mjs';
 import { activity, panelsForFiles } from '../git/activity.mjs';
 import { listVersions, versionDetail } from '../git/versions.mjs';
 
@@ -305,6 +305,34 @@ function startRemoteWatch() {
   const timer = setInterval(fetchRemoteInBackground, FETCH_EVERY_MS);
   if (typeof timer.unref === 'function') timer.unref();
   return timer;
+}
+
+/**
+ * 「现在是谁」——编辑器里**一律不许在请求里起 gh**（见 whoami.mjs 那段说明）。
+ * 只用本机身份文件 + `.tmp/whoami-cache.json`（由 warmIdentity 在后台捂热）+ git config，
+ * 三条都是几毫秒的事；问不出来就先当"身份未知"，下一次请求就有了。
+ */
+const whoami = () => whoamiMe({ allowGh: false });
+/** 上一次在后台捂身份缓存的时间（10 分钟内不重复起进程） */
+let identityWarmAt = 0;
+/**
+ * 后台把用户名缓存捂热：起一个 whoami CLI 子进程（`--refresh` 会去问一次性 gh 并写缓存）。
+ * 为什么走子进程：gh 慢起来好几秒，而这个调用**绝不能**出现在请求处理里（会把编辑器堵住）。
+ */
+function warmIdentity() {
+  if (Date.now() - identityWarmAt < 10 * 60 * 1000) return;
+  identityWarmAt = Date.now();
+  try {
+    const child = spawn(process.execPath, [path.join(PROJECT_ROOT, 'tools', 'git', 'whoami.mjs'), '--refresh', '--json'], {
+      cwd: PROJECT_ROOT,
+      stdio: 'ignore',
+      windowsHide: true,
+      detached: true,
+    });
+    child.unref();
+  } catch {
+    /* 起不来就算了：下次打开面板再试（界面会先说"身份未知"） */
+  }
 }
 
 /** RFC3339 之类的字符串可能带毫秒；统一 YYYY-MM-DD HH:mm */
@@ -966,19 +994,22 @@ async function checkStale(type, base, payload) {
  * 这个接口写的是哪份数据文件（不是数据面板的接口就返回 null）。
  * ⚠ 写成函数而不是模块级常量：下面那些 *_FILE 常量定义在几千行之后，
  *   模块级引用会踩到「暂时性死区」。
+ *
+ * ⚠⚠ **接口带不带 rev，要和前端对不对得上**（2026-10-12 踩过）：
+ *   指纹闸的规矩是"GET 时把 rev 一起发下去，保存时原样送回来"。
+ *   可是面板的草稿往往**整份就是那个 GET 响应**（`salonDraft = await res.json()`），
+ *   于是它保存时会把自己**读到的那一版**的 rev 送回来 —— 第一次保存没问题，
+ *   **第二次就变成"你编辑期间被改过"**（其实是自己刚写的那一次），
+ *   保存直接被 409 挡掉（editor-ui-check 的「多成员编辑」就是这么红的）。
+ *   所以只有**前端接好了"存完刷新指纹"**（app.js 的 savePanelData）的那两份才发 rev：
+ *     · /api/boards   页面 / 子版块（home-boards.json）—— 条目最多、最容易撞
+ *     · /api/iceberg  冰山图（iceberg.json）
+ *   别的面板别在这里发 rev，除非同时把前端那一半也接上。
  */
 function revGuardFile(route) {
   switch (route) {
     case '/api/boards': return BOARDS_FILE;
-    case '/api/widgets': return WIDGETS_FILE;
-    case '/api/layout': return LAYOUT_FILE;
     case '/api/iceberg': return ICEBERG_FILE;
-    case '/api/salon': return SALON_FILE;
-    case '/api/navs': return NAVS_FILE;
-    case '/api/timelines': return TIMELINES_FILE;
-    case '/api/music': return MUSIC_FILE;
-    case '/api/announcements': return ANNOUNCEMENTS_FILE;
-    case '/api/site-copy': return SITE_COPY_FILE;
     /*
       ⚠ /api/templates 故意**不在**这张表里：它的 POST 是三个动作
       （存成模版 / 改名 / 删掉），各自带一份 rev 反而更容易莫名其妙地撞 409 ——
@@ -1522,6 +1553,12 @@ async function handleApi(req, res, url) {
 
   if (route === '/api/collab/me' && req.method === 'GET') {
     const who = whoami();
+    /*
+      用户名还没问出来（新机器第一次打开）：**现在不去问 gh**（那会把服务堵几秒），
+      改成后台起一次 CLI 把缓存捂热 —— 页面那边过两三秒会自己再来问一次，
+      那时候 12 小时的缓存已经写好了。
+    */
+    if (!who.login) warmIdentity();
     return sendJson(res, 200, {
       ok: true,
       me: {
@@ -1557,7 +1594,7 @@ async function handleApi(req, res, url) {
         email: payload.email,
         /* null = 撤销"我是站长"的手动声明（回到自动判断）；这个字段没传就一个字都不动 */
         owner: 'owner' in payload ? (payload.owner === null ? null : payload.owner === true) : undefined,
-      });
+      }, { allowGh: false });
       return sendJson(res, 200, {
         ok: true,
         me: {
@@ -1837,7 +1874,6 @@ async function handleApi(req, res, url) {
       music: { tracks: music.tracks, pages: music.pages },
       pages: await musicPages(),
       limits: { maxBytes: MAX_AUDIO_BYTES },
-      rev: await fileRev(MUSIC_FILE),
     });
   }
   // 整份写回 + 重新构建（要出现在网站上必须走这一步）
@@ -1879,7 +1915,7 @@ async function handleApi(req, res, url) {
 
   // ---- 时间轴（独立的一份数据，见上面 TIMELINES_FILE 那段的说明）----
   if (route === '/api/timelines' && req.method === 'GET') {
-    return sendJson(res, 200, { ...(await readTimelines()), rev: await fileRev(TIMELINES_FILE) });
+    return sendJson(res, 200, await readTimelines());
   }
   if (route === '/api/timelines' && req.method === 'POST') {
     const payload = await readBody(req);
@@ -1898,7 +1934,7 @@ async function handleApi(req, res, url) {
   // 和「音乐」一样，POST 会顺手重新构建：分类是给页面块引用的，
   // 改一次要让所有引用它的页面一起变，不重建的话页面还是旧的。
   if (route === '/api/navs' && req.method === 'GET') {
-    return sendJson(res, 200, { ok: true, navs: await readNavs(), pages: await navRefs(), rev: await fileRev(NAVS_FILE) });
+    return sendJson(res, 200, { ok: true, navs: await readNavs(), pages: await navRefs() });
   }
   if (route === '/api/navs' && req.method === 'POST') {
     const payload = await readBody(req);
@@ -1935,7 +1971,7 @@ async function handleApi(req, res, url) {
   // 「日历 / 关于我 / 冰室冰山 / 每日精华」三个面板都写这一个文件，所以
   // POST 是**逐块 merge**：只清洗请求里带来的那几块，daily 和 _readme 原样留着。
   if (route === '/api/widgets' && req.method === 'GET') {
-    return sendJson(res, 200, { ...(await readWidgets()), rev: await fileRev(WIDGETS_FILE) });
+    return sendJson(res, 200, await readWidgets());
   }
   if (route === '/api/widgets' && req.method === 'POST') {
     const payload = await readBody(req);
@@ -1982,7 +2018,7 @@ async function handleApi(req, res, url) {
   // 不重建的话预览里还是旧的（和导航 / 音乐 / 公告一个道理）。
   if (route === '/api/site-copy' && req.method === 'GET') {
     try {
-      return sendJson(res, 200, { ...(await readSiteCopy()), rev: await fileRev(SITE_COPY_FILE) });
+      return sendJson(res, 200, await readSiteCopy());
     } catch {
       /* 文件还没建 / 坏了：给一份空的 —— 面板自己按白名单画格子，不靠文件长什么样 */
       return sendJson(res, 200, {});
@@ -2020,7 +2056,7 @@ async function handleApi(req, res, url) {
   // 「公告」面板写这一个文件。写完就重建：首页那一块和 /zongxian/ 都是这份数据画的，
   // 不重建的话预览里还是旧的（和导航 / 音乐 / 冰山图一个道理）。
   if (route === '/api/announcements' && req.method === 'GET') {
-    return sendJson(res, 200, { ...(await readAnnouncements()), rev: await fileRev(ANNOUNCEMENTS_FILE) });
+    return sendJson(res, 200, await readAnnouncements());
   }
   if (route === '/api/announcements' && req.method === 'POST') {
     const payload = await readBody(req);
@@ -2342,7 +2378,7 @@ async function handleApi(req, res, url) {
   // 名字和头像全在 members 里现查），所以这里也是**逐块 merge**：
   // 请求里没带的块（比如只管成员时的那 735 条精华）原样保留，绝不凭空清空。
   if (route === '/api/salon' && req.method === 'GET') {
-    return sendJson(res, 200, { ...(await readSalon()), rev: await fileRev(SALON_FILE) });
+    return sendJson(res, 200, await readSalon());
   }
   if (route === '/api/salon' && req.method === 'POST') {
     const payload = await readBody(req);
@@ -2488,7 +2524,7 @@ async function handleApi(req, res, url) {
 
   // ---- 排版微调（首页元素的相对偏移与缩放）----
   if (route === '/api/layout' && req.method === 'GET') {
-    return sendJson(res, 200, { ...(await readLayout()), rev: await fileRev(LAYOUT_FILE) });
+    return sendJson(res, 200, await readLayout());
   }
   if (route === '/api/layout' && req.method === 'POST') {
     const payload = await readBody(req);
@@ -6255,6 +6291,12 @@ async function main() {
 
   // 后台探远端：页面右上角那个「拉远端」角标要有数可显示，并且每 5 分钟自己刷新
   startRemoteWatch();
+  /*
+    顺手在后台捂一次身份缓存（起 whoami CLI 子进程，不挡任何请求）：
+    新机器第一次打开编辑器时，「版本」面板要不要出现就靠这个用户名 ——
+    不能为了它把整个服务堵在 gh 上（2026-10-12 踩过，见 whoami.mjs 里那段说明）。
+  */
+  warmIdentity();
 
   if (!(await exists(UI_DIR))) {
     console.warn('  [警告] 找不到 tools/editor/ui 目录，页面可能无法打开。\n');

@@ -1,9 +1,14 @@
 /*
- * 三项验收（2026-09-22）：
- *   ① 放大看图：只有「页面→＋图片」放进来的图 + 冰室精华页里的图能点开看大图；
- *      右上角有个小 ×、点图片外面的底色、按 Esc 都能关掉。
- *   ② 地图图钉的名字卡不再被别的图钉挡住（鼠标指上去的那颗抬到最上层）。
- *   ③ （编辑器那一半在 editor-ui-check.mjs 里量）
+ * 验收（2026-09-22 起，2026-10-12 扩到"全站内容图"）：
+ *   ① 放大看图：右上角有个小 ×、点图片外面的底色、按 Esc 都能关掉；
+ *   ② 地图图钉的名字卡不再被别的图钉挡住（鼠标指上去的那颗抬到最上层）；
+ *   ③ **手记 / 文章正文里的图也能点开**（用户 2026-10-12：
+ *      「铃忆日记里的图片无法点开查看大图 应保证花涧堂网页内的所有图片都可以点开查看大图」）
+ *      —— 这些图是 Markdown 直接渲染的 `<img>`，产物里没有 data-zoom，
+ *      靠 ImageZoom.astro 的 autoZoom 在浏览器里补上，所以要真开一页日记量；
+ *   ④ **不该被抢的**：列表卡片封面（包在指向页面的链接里）和头像 / 悬停小卡的脸
+ *      一个都不能被认进来 —— 认过头会把"点封面进文章"这件事弄坏；
+ *   ⑤ （编辑器那一半在 editor-ui-check.mjs 里量）
  *
  * 用法：node tools/checks/image-zoom-check.mjs [dist目录]
  */
@@ -77,7 +82,7 @@ if (!salonPics || !boardPage || !mapPage) {
 check('① 精华页**每一张**截图都标了能点（data-zoom），一张不漏',
   salonPics > 0 && salonPicZoom === salonPics,
   `${salonPicZoom} / ${salonPics}`);
-check('① 精华页的头像**没有**被标成能点（只标截图，不是"全站所有 img"）',
+check('① 精华页的头像**没有**被标成能点（HTML 里只标截图，正文那些图由脚本在浏览器里认）',
   salonAvaZoom === 0 && salonZoomAll === salonPicZoom,
   `整页 data-zoom ${salonZoomAll} = 截图 ${salonPicZoom}｜头像 ${salonAvaZoom}`);
 check(`① 页面正文里的图都标了（拿 ${boardPage.rel} 量）`,
@@ -91,6 +96,19 @@ check('① 正文里的图还带了原图地址、而且键盘能聚焦（tabind
 check('① 灯箱本体在页面上（默认 hidden，里面有图和右上角那个 ×）',
   /class="izoom"[^>]*hidden/.test(salon) && /data-izoom-img/.test(salon) && /data-izoom-close/.test(salon),
   '');
+
+/* ③ 的"纸面"部分：自动认图那段代码在不在、护栏全不全（真行为在浏览器里量，见下面 ③） */
+const zoomSrc = fs.readFileSync(path.join(root, '..', 'src/components/ImageZoom.astro'), 'utf8').replace(/\r/g, '');
+const layoutSrc = fs.readFileSync(path.join(root, '..', 'src/layouts/BaseLayout.astro'), 'utf8').replace(/\r/g, '');
+check('③ 自动认图的代码在（autoZoom + 盯着 DOM 变化，聊天室那种后插的图也能认）',
+  /const autoZoom = /.test(zoomSrc) && /new MutationObserver\(/.test(zoomSrc));
+check('③★ 护栏：包在链接里、而链接不是图片的图**不许**抢点击（不然点封面就进不去文章了）',
+  /IMG_HREF/.test(zoomSrc) && /if \(!IMG_HREF\.test\(href\) && !a\.hasAttribute\('data-zoom'\)\) return false;/.test(zoomSrc));
+check('③ 护栏：头像 / 徽记 / 图标 / 悬停小卡的脸有排除名单，而且留了 data-nozoom 后门',
+  /SKIP_CLASS/.test(zoomSrc) && /salon__avatar/.test(zoomSrc) && /data-nozoom/.test(zoomSrc));
+check('③ 认下的图会补上键盘那三样（tabindex / role / aria-label）',
+  /im\.tabIndex = 0/.test(zoomSrc) && /setAttribute\('role', 'button'\)/.test(zoomSrc) && /放大查看/.test(zoomSrc));
+check('③ 灯箱挂在全站布局上（手记 / 文章 / 精华任何一页都有）', /<ImageZoom \/>/.test(layoutSrc));
 
 /* ---------------- 起服务 + 真浏览器 ---------------- */
 const server = http.createServer((req, res) => {
@@ -183,6 +201,7 @@ const STATE = `(() => {
   const box = document.querySelector('[data-izoom]');
   const img = box && box.querySelector('[data-izoom-img]');
   const btn = box && box.querySelector('[data-izoom-close]');
+  const sc = box && box.querySelector('[data-izoom-scroll]');
   const r = box && !box.hidden ? box.getBoundingClientRect() : null;
   const b = btn ? btn.getBoundingClientRect() : null;
   return {
@@ -193,6 +212,14 @@ const STATE = `(() => {
     boxZ: box ? getComputedStyle(box).zIndex : '',
     htmlLocked: document.documentElement.classList.contains('is-zoomed'),
     btn: b ? { x: Math.round(b.left + b.width / 2), y: Math.round(b.top + b.height / 2), w: Math.round(b.width), right: Math.round(b.right), top: Math.round(b.top) } : null,
+    /* 滚动层（2026-10-12 加）：竖长截图靠它上下滚；× 必须留在它外面，不然滚图时那颗 × 会跑掉 */
+    scroll: sc ? {
+      overflow: getComputedStyle(sc).overflowY,
+      scrollH: Math.round(sc.scrollHeight),
+      clientH: Math.round(sc.clientHeight),
+      canScroll: sc.scrollHeight > sc.clientHeight + 2,
+    } : null,
+    closeOutsideScroll: !!btn && !!sc && !sc.contains(btn),
     vw: innerWidth, vh: innerHeight,
     focus: document.activeElement ? document.activeElement.className || document.activeElement.tagName : '',
   };
@@ -346,7 +373,146 @@ await sleep(350);
 const focusBack = await cdp.ev(`(() => (document.activeElement && document.activeElement.matches && document.activeElement.matches('img[data-zoom]')) ? 'yes' : (document.activeElement.className || document.activeElement.tagName))()`);
 check('① 关掉之后焦点回到那张图（键盘用户不会掉到页面顶上）', focusBack === 'yes', String(focusBack));
 
-/* ---------------- ② 地图图钉的名字卡不再被挡住 ----------------
+/* ---------------- ③ 手记 / 文章正文里的图（用户 2026-10-12 报的那一条） ----------------
+   用户原话：
+     「铃忆日记里的图片无法点开查看大图 应保证花涧堂网页内的所有图片都可以点开查看大图」
+
+   这些图是 Markdown 直接渲染的 `<img>`（产物里连 class 都没有），构建期没有 data-zoom，
+   靠 ImageZoom.astro 里那段 autoZoom 在浏览器里补上。所以这里必须**真开一页日记**量：
+   补上了没有、点了开不开、给的是不是原图、键盘够不够得着。
+------------------------------------------------------------------------------ */
+const notePage = pages
+  .map((f) => f.replace(/\\/g, '/').replace(/^dist\//, ''))
+  .find((f) => /^notes\/.+\/index\.html$/.test(f) /* 随便哪一篇手记 */);
+if (notePage) {
+  await cdp.goto(`/${notePage.replace(/index\.html$/, '')}`, 2000);
+  const diary = await cdp.ev(`(() => {
+    const ims = [...document.querySelectorAll('article img')].filter((i) => /uploads/.test(i.getAttribute('src') || ''));
+    const im = ims[0];
+    if (!im) return { found: 0 };
+    im.scrollIntoView({ block: 'center', behavior: 'instant' });
+    const r = im.getBoundingClientRect();
+    return {
+      found: ims.length,
+      attached: window.__izoomAttached,
+      zoom: im.hasAttribute('data-zoom'),
+      tab: im.getAttribute('tabindex'),
+      role: im.getAttribute('role'),
+      name: im.getAttribute('aria-label'),
+      inLink: !!im.closest('a'),
+      src: im.getAttribute('src'),
+      x: Math.round(r.left + r.width / 2),
+      y: Math.round(r.top + r.height / 2),
+      w: Math.round(r.width),
+    };
+  })()`);
+  check('③ 手记正文里的图被自动认出来了（浏览器里补上 data-zoom + 可聚焦 + 有名字）',
+    diary.found > 0 && diary.zoom === true && diary.tab === '0' && diary.role === 'button' && !!diary.name && diary.inLink === false,
+    JSON.stringify(diary));
+
+  await cdp.click(diary.x, diary.y);
+  await sleep(900);
+  const diaryOpen = await cdp.ev(STATE);
+  /*
+    ⚠ 比的是**路径**不是整个地址：页面那张 img 的属性里写的是相对地址（/img/uploads/…），
+    而灯箱那一张走的是 `currentSrc`（浏览器给的是绝对地址）—— 直接字符串比会假红（第一版就假红了）。
+  */
+  const diaryPath = new URL(diary.src, 'http://x').pathname;
+  check('③★ 点一下 → 灯箱打开、给的是这张图本身（手记里的图就是原图地址）',
+    diaryOpen.open === true && new URL(diaryOpen.src, 'http://x').pathname === diaryPath && diaryOpen.natural?.w > 0,
+    `灯箱 ${diaryOpen.src}｜页面 ${diary.src}`);
+  /*
+    手记那些"群分析报告"是 1404×8680 的竖长截图 —— 灯箱里**不能再按高度缩**：
+    原来的 max-height:100% 会把它压成一百多像素宽，比版面上还小（点开看大图反而更看不清）。
+    现在的规矩是"宽度贴合视口、高度超出就滚"，所以这里量三件事：
+      · 灯箱里那张比版面上那张**宽**（没被缩小）；
+      · 它比视口高 → 滚动层真的能滚（scrollHeight > clientHeight）；
+      · 那颗 × 留在滚动层外面（滚图时不会跟着跑掉）。
+  */
+  check('③★ 竖长截图不会被压小：灯箱里比版面上那张宽（宽度贴合视口，不再按高度缩）',
+    !!diaryOpen.shown && diaryOpen.natural.w > diary.w && diaryOpen.shown.w >= Math.min(diary.w, diaryOpen.vw - 40),
+    `版面 ${diary.w}px → 灯箱 ${diaryOpen.shown?.w}px（原图 ${diaryOpen.natural?.w}×${diaryOpen.natural?.h}）`);
+  check('③★ 太高的图能上下滚（滚动层 scrollHeight > clientHeight），而不是被裁掉',
+    !!diaryOpen.scroll && diaryOpen.scroll.overflow === 'auto' && diaryOpen.scroll.canScroll === true,
+    JSON.stringify(diaryOpen.scroll));
+  check('③ 那颗 × 在滚动层外面（滚图时不会跑掉）', diaryOpen.closeOutsideScroll === true, String(diaryOpen.closeOutsideScroll));
+
+  /* 滚一下：内容真的跟着动（不是"看着像能滚"） */
+  const scrolled = await cdp.ev(`(() => {
+    const sc = document.querySelector('[data-izoom-scroll]');
+    if (!sc) return null;
+    const before = sc.scrollTop;
+    sc.scrollTop = 600;
+    return { before, after: Math.round(sc.scrollTop), max: Math.round(sc.scrollHeight - sc.clientHeight) };
+  })()`);
+  check('③★ 滚一下确实滚得动（手记那种长图才看得全）',
+    !!scrolled && scrolled.after > scrolled.before && scrolled.max > 0, JSON.stringify(scrolled));
+
+  await cdp.send('Input.dispatchKeyEvent', { type: 'rawKeyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27, nativeVirtualKeyCode: 27 });
+  await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27, nativeVirtualKeyCode: 27 });
+  await sleep(350);
+  const diaryClosed = await cdp.ev(STATE);
+  check('③ Esc 能关掉', diaryClosed.open === false, JSON.stringify(diaryClosed.open));
+
+  /* 键盘那条路也要通（图可聚焦 → 回车能开）—— 这是"补属性"那一步的验收 */
+  const kb = await cdp.ev(`(async () => {
+    const im = [...document.querySelectorAll('article img[data-zoom]')][0];
+    if (!im) return 'no-img';
+    im.scrollIntoView({ block: 'center', behavior: 'instant' });
+    im.focus();
+    await new Promise((r) => setTimeout(r, 150));
+    return document.activeElement === im ? 'focused' : (document.activeElement.className || document.activeElement.tagName);
+  })()`);
+  check('③ 那张图真能被 Tab / focus 到（键盘用户够得着）', kb === 'focused', String(kb));
+  await cdp.send('Input.dispatchKeyEvent', { type: 'rawKeyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 13 });
+  await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 13 });
+  await sleep(500);
+  const kbOpen = await cdp.ev(STATE);
+  check('③★ 在图上按回车 → 也能放大（不用鼠标）', kbOpen.open === true, JSON.stringify(kbOpen.open));
+  await cdp.send('Input.dispatchKeyEvent', { type: 'rawKeyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27, nativeVirtualKeyCode: 27 });
+  await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27, nativeVirtualKeyCode: 27 });
+  await sleep(300);
+} else {
+  skip('③ 手记正文里的图（产物里没找到手记页）');
+}
+
+/* ---------------- ④ 不该被抢的图：卡片封面（点了要能进文章）和头像 ----------------
+   自动认图最怕的就是"认过头"：文章列表的封面图是包在 `<a href="/notes/…">` 里的，
+   要是也给它 data-zoom，点封面就变成开灯箱、**整站再也点不进文章**了。这里量死这一条。
+------------------------------------------------------------------------------ */
+await cdp.goto('/notes/', 1800);
+const cover = await cdp.ev(`(() => {
+  const im = document.querySelector('img.post-item__cover') || document.querySelector('a img');
+  if (!im) return null;
+  const a = im.closest('a');
+  return {
+    cls: im.className, zoom: im.hasAttribute('data-zoom'),
+    inLink: !!a, href: a ? a.getAttribute('href') : '',
+    linkZoom: a ? a.hasAttribute('data-zoom') : null,
+  };
+})()`);
+check('④★ 列表卡片封面**没有**被认成可放大（它包在指向页面的链接里，点了要能进文章）',
+  !!cover && cover.inLink === true && cover.zoom === false && cover.linkZoom !== true,
+  JSON.stringify(cover));
+
+await cdp.goto('/salon/', 2200);
+const avatar = await cdp.ev(`(() => {
+  const av = document.querySelector('img.salon__avatar');
+  const mem = document.querySelector('img.mem__face');
+  return {
+    avatars: document.querySelectorAll('img.salon__avatar').length,
+    avatarZoom: document.querySelectorAll('img.salon__avatar[data-zoom]').length,
+    memFaces: document.querySelectorAll('img.mem__face').length,
+    memZoom: document.querySelectorAll('img.mem__face[data-zoom]').length,
+    attached: window.__izoomAttached,
+    pics: document.querySelectorAll('img[data-zoom]').length,
+  };
+})()`);
+check('④★ 头像和成员悬停小卡的脸一个都没被认进来（点开一张 16px 的小脸没意义）',
+  avatar.avatarZoom === 0 && avatar.memZoom === 0 && avatar.pics > 0,
+  JSON.stringify(avatar));
+
+/* ---------------- ⑤ 地图图钉的名字卡不再被挡住 ----------------
    做法：**造一个必然重叠的局面**（把后面那颗钉子的头挪到前面那颗的卡片上），
    然后只改一处 —— 被指着那颗钉子的 z-index —— 看卡片那个坐标上命中谁。
    这样就不是"碰运气找一对重叠的钉子"，而是因果对齐的对照实验。 */

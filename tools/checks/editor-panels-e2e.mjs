@@ -993,7 +993,14 @@ try {
         if (cy > b.top + 40 && cy < b.bottom - 40) break;
         body.dispatchEvent(new WheelEvent('wheel', { deltaY: cy - (b.top + b.height / 2), bubbles: true, cancelable: true }));
       }
-      const a = it.querySelector('a.tl__crane') || it.querySelector('a.tl__name') || it;
+      /*
+        ⚠ 塔吊 / 名字**可能是 a、也可能是 span**（CraneTag 按"这个点有没有链接"决定标签）：
+        花娅年代记那条轴上的点没有 href，渲染出来就是 span.tl__crane ——
+        以前这里写的是 a.tl__crane（带上了标签名），于是**一个都找不到**，
+        「时间轴上找得到一个当前就能点的刻度」那两条一直假红（2026-10-12 定位并修）。
+        站点那边点一下照样能跳：click 是委托在 .tl__item 上的（见 salon.astro 里那一段）。
+      */
+      const a = it.querySelector('.tl__crane') || it.querySelector('.tl__name') || it;
       const b = body.getBoundingClientRect();
       const ar = a.getBoundingClientRect();
       const x = ar.left + ar.width / 2;

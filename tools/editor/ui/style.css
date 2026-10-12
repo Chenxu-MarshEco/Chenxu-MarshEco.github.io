@@ -3345,13 +3345,59 @@ body.pblock-dragging * {
 .nv-additem {
   align-self: flex-start;
 }
+/*
+  预览那一栏（2026-10-12 改）：
+  分类一多，"正在编辑的那一节"就被上面几节顶到看不见的地方去了，而面板是**整块**滚的
+  （左中右三栏共用一个滚动条）—— 滚下去看预览，中栏的输入框又跑到上面去了。
+  所以这一栏自己 sticky 在顶上 + 自己有一条滚动条：
+    · 中栏往下滚（加条目、改字段）时，预览一直停在视野里；
+    · 预览内部要滚也只滚它自己，中栏不动（配合 app.js 的 revealNavPreview 自动滚到
+      正在编辑/刚加的那一节）。
+  高度给个上限，别让它比面板还高（那样 sticky 就没意义了）。
+*/
 .nv-pv {
   gap: 6px;
+  position: sticky;
+  top: 0;
+  max-height: min(76vh, 44rem);
+  overflow: auto;
+  /* 自己滚的时候别把中栏的输入框带着晃 */
+  overscroll-behavior: contain;
 }
 .nv-pv__head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
   font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.06em;
+  /*
+    滚动时不跟着走：滚下去还看得见"预览"这两个字和那两颗按钮。
+    负 margin 是为了顶掉那一栏自己的 10px 内边距 —— 不然内容会从它上面那条缝里露出来。
+  */
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  margin: -10px -10px 0;
+  padding: 10px 10px 6px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+.nv-pv__mini {
+  padding: 1px 6px;
+  font-size: 11px;
+  letter-spacing: 0;
+  font-weight: 400;
+  margin-left: auto;
+}
+.nv-pv__mini + .nv-pv__mini {
+  margin-left: 0;
+}
+/* 正在编辑的那一节：描个边，一眼看出预览里看的是哪一节 */
+.nv-pv__cat.is-current {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent-soft);
 }
 .nv-pv__blk {
   border: 1px solid var(--border);

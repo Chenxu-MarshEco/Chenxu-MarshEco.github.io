@@ -125,12 +125,13 @@ check('★ 编辑器文档里有「共享编辑器」这一节和协作者上手
   /## 共享编辑器/.test(editorReadme) && /一起写\.cmd/.test(editorReadme) && /发布上线/.test(editorReadme));
 
 /*
-  给协作者**本人**看的那份教程（根目录 协作者怎么写页面.md）。
+  给协作者**本人**看的那份教程（根目录 花涧堂共创编写教程.md）。
   量两件事：几个关键动作讲没讲到；里面的按钮名字和真界面对不对得上 ——
   文档最容易烂的地方就是"界面上那颗按钮早改名了，文档还写着老名字"。
+  （这份文件最早叫「协作者怎么写页面.md」，2026-10-12 站长自己改成了现在这个名字。）
 */
-const tutorialPath = path.join(SRC, '协作者怎么写页面.md');
-check('★ 有一份给协作者本人看的教程（协作者怎么写页面.md）', fs.existsSync(tutorialPath));
+const tutorialPath = path.join(SRC, '花涧堂共创编写教程.md');
+check('★ 有一份给协作者本人看的教程（花涧堂共创编写教程.md）', fs.existsSync(tutorialPath));
 if (fs.existsSync(tutorialPath)) {
   const t = read(tutorialPath);
   const steps = ['一起写.cmd', '拉远端', '保存并重新构建', '发布上线', '动态'];
@@ -415,6 +416,41 @@ try {
   check('★ /api/collab/me：这台机器是谁 + 是不是站长 + 有没有构建环境',
     me.status === 200 && typeof me.json?.me?.login === 'string' && typeof me.json.rollback === 'boolean' && typeof me.json.buildEnv === 'boolean',
     JSON.stringify({ login: me.json?.me?.login, owner: me.json?.me?.owner, rollback: me.json?.rollback }));
+
+  /*
+    「冷机器」那条路（2026-10-12 修的一个真 bug）：
+    服务端原来会在请求里同步起 `gh api user` 问用户名 —— gh 慢起来好几秒，而编辑器服务是
+    **单线程**的，那一会儿保存 / 预览 / 上传全堵在后面（连验收脚本都跟着红：
+    页面还没初始化完，脚本派的 input 事件根本没接上）。
+    现在改成**绝不在请求里起 gh**：先用本机身份文件 / 缓存 / git config 回话，
+    同时在后台起一个 CLI 子进程把缓存捂热，页面过两三秒自己再问一次。
+    这条量两件事：冷的那一次**很快**（没去问 gh）、过几秒用户名真的到位了。
+  */
+  const idCacheFile = path.join(SRC, '.tmp', 'whoami-cache.json');
+  const idCacheSaved = fs.existsSync(idCacheFile) ? read(idCacheFile) : null;
+  const collabIdSaved = fs.existsSync(IDENTITY) ? read(IDENTITY) : null;
+  try {
+    fs.rmSync(idCacheFile, { force: true });
+    fs.rmSync(IDENTITY, { force: true });   // 身份文件里没有 login，才会走到"问 gh"那一步
+    const t0 = Date.now();
+    const cold = await api('/api/collab/me');
+    const ms = Date.now() - t0;
+    check('★ 冷机器上第一次问身份不卡（服务端绝不在请求里起 gh）',
+      cold.status === 200 && ms < 900, `${ms} ms`);
+    let warmed = '';
+    for (let i = 0; i < 14 && !warmed; i += 1) {
+      await sleep(500);
+      const r = await api('/api/collab/me');
+      if (r.json?.me?.login) warmed = r.json.me.login;
+    }
+    check('★ 后台那次 CLI 把用户名捂热了（过几秒就有身份了，界面不用刷新）',
+      Boolean(warmed), warmed || '（没等到，可能这台机器没登录 gh）');
+  } finally {
+    if (idCacheSaved === null) fs.rmSync(idCacheFile, { force: true });
+    else fs.writeFileSync(idCacheFile, idCacheSaved, 'utf8');
+    if (collabIdSaved === null) fs.rmSync(IDENTITY, { force: true });
+    else fs.writeFileSync(IDENTITY, collabIdSaved, 'utf8');
+  }
 
   const act = await api('/api/git/activity?limit=5');
   check('★ /api/git/activity：读得到最近谁推了什么',
