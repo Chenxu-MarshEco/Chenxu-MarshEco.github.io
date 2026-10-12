@@ -124,6 +124,37 @@ const editorReadme = read(path.join(SRC, 'tools', 'editor', 'README.md'));
 check('★ 编辑器文档里有「共享编辑器」这一节和协作者上手四步',
   /## 共享编辑器/.test(editorReadme) && /一起写\.cmd/.test(editorReadme) && /发布上线/.test(editorReadme));
 
+/*
+  给协作者**本人**看的那份教程（根目录 协作者怎么写页面.md）。
+  量两件事：几个关键动作讲没讲到；里面的按钮名字和真界面对不对得上 ——
+  文档最容易烂的地方就是"界面上那颗按钮早改名了，文档还写着老名字"。
+*/
+const tutorialPath = path.join(SRC, '协作者怎么写页面.md');
+check('★ 有一份给协作者本人看的教程（协作者怎么写页面.md）', fs.existsSync(tutorialPath));
+if (fs.existsSync(tutorialPath)) {
+  const t = read(tutorialPath);
+  const steps = ['一起写.cmd', '拉远端', '保存并重新构建', '发布上线', '动态'];
+  const miss = steps.filter((k) => !t.includes(k));
+  check('★ 教程讲到那几个关键动作（启动 / 拉远端 / 保存并重新构建 / 发布上线 / 动态）',
+    miss.length === 0, miss.join('、') || '都在');
+  check('★ 教程里写清了「保存 ≠ 上线」（最多人搞错的那一步）', /保存\s*≠\s*上线/.test(t));
+  /* 真界面里确实有这几个工作台（教程是按它们指路的） */
+  const named = ['「页面」', '「协作」', '「独立页面」', '「子版块」'];
+  check('★ 教程指的入口和编辑器真界面一致（页面 / 协作 / 独立页面 / 子版块）',
+    named.every((n) => t.includes(n)) && named.slice(0, 2).every((n) => appSrc.includes(`label: '${n.replace(/[「」]/g, '')}'`)),
+    named.filter((n) => !t.includes(n)).join('、') || '都在');
+  /*
+    页面工作台那排「＋ 文字 / ＋ 图片 / …」按钮的真来源是 app.js 里的 adders 表
+    （不是 panelBtn，panelBtn 那批是别的工作台的按钮）—— 教程里那张表要把它全覆盖到。
+  */
+  const addersSrc = /const adders = \[([\s\S]*?)\n  \];/.exec(appSrc)?.[1] ?? '';
+  const blockBtns = [...addersSrc.matchAll(/^\s*\['[a-z]+', '([^']+)'/gm)].map((m) => m[1]);
+  const notInTutorial = blockBtns.filter((b) => !t.includes(`＋ ${b}`));
+  check('★ 教程那张"内容块按钮表"覆盖了页面工作台上所有「＋ …」按钮',
+    blockBtns.length >= 10 && notInTutorial.length === 0,
+    `界面 ${blockBtns.length} 个（${blockBtns.join('、')}），教程缺：${notInTutorial.join('、') || '无'}`);
+}
+
 /* ============================================================ ② 真 git 仓库 */
 
 console.log('\n===== ② 一个 bare 远端 + 站长 A / 协作者 B（真 git）=====');

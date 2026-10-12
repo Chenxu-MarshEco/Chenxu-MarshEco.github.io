@@ -1091,6 +1091,11 @@ Clash 一关，git 就一直去敲那个没人接的端口（`Failed to connect 
 
 ### 协作者怎么上手（四步）
 
+> 📖 **发给协作者本人的那份教程在根目录：`协作者怎么写页面.md`**
+> （浅显版：认识板块 / 页面 / 内容块 → 找到要改的那一页 → 那排「＋」按钮各是什么 →
+> 文字块里的 Markdown 小抄 → 图片怎么进去 → 模版 → **保存 ≠ 上线** → 撞车了怎么办 → 常见问题）。
+> 下面这段是给改代码的人看的"最短路径"。
+
 1. **装 Node.js LTS**（<https://nodejs.org/>）和 **Git**（<https://git-scm.com/>）；
 2. `git clone https://github.com/Chenxu-MarshEco/Chenxu-MarshEco.github.io.git`
    （或者用 GitHub Desktop 之类的图形工具拉下来）；
