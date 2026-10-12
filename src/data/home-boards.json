@@ -1935,36 +1935,488 @@
               "id": "huaya-r2-6",
               "title": "煌花娅市",
               "href": "/huaya/years/huanghuaya",
-              "image": "/img/uploads/20260915-1516-e515-2025-09-15_22.00.05.jpg"
+              "image": "/img/uploads/20260915-1516-e515-2025-09-15_22.00.05.jpg",
+              "page": [
+                {
+                  "id": "huaya-r2-6-pmv4qpswh1",
+                  "type": "toc",
+                  "text": "煌花娅市城建档案馆"
+                },
+                {
+                  "id": "huaya-r2-6-pmv4qpswh2",
+                  "type": "divider"
+                },
+                {
+                  "id": "huaya-r2-6-pmv4qpswh3",
+                  "type": "text",
+                  "text": "## 煌花娅市\nSSW的ATM9服。有史以来建成区域面积最大的花娅，也是一次对现代建筑风格的尝试，虽然没有完全完成规划的城区建筑，但路网纵横之下也诞生了许多有趣的故事。"
+                },
+                {
+                  "id": "huaya-r2-6-pmv4qpswh4",
+                  "type": "video",
+                  "src": "https://www.bilibili.com/video/BV1bKMzzcECg/",
+                  "placeholder": true
+                },
+                {
+                  "id": "huaya-r2-6-pmv4qpswh5",
+                  "type": "divider"
+                },
+                {
+                  "id": "huaya-r2-6-pmv4qpswh6",
+                  "type": "text",
+                  "text": "## 地图勘探"
+                },
+                {
+                  "id": "huaya-r2-6-pmv4qpswh7",
+                  "type": "map",
+                  "pages": [
+                    {
+                      "id": "huaya-r2-6-pmv4qpswh7-p1",
+                      "src": "",
+                      "markers": [],
+                      "lines": []
+                    }
+                  ],
+                  "placeholder": true
+                },
+                {
+                  "id": "huaya-r2-6-pmv4qpswh8",
+                  "type": "divider"
+                },
+                {
+                  "id": "huaya-r2-6-pmv4qpswh9",
+                  "type": "text",
+                  "text": "## 重要事件"
+                },
+                {
+                  "id": "huaya-r2-6-pmv4qpswh10",
+                  "type": "divider"
+                },
+                {
+                  "id": "huaya-r2-6-pmv4qpswh11",
+                  "type": "text",
+                  "text": "## 溪流之外的轶事"
+                },
+                {
+                  "id": "huaya-r2-6-pmv4qpswh12",
+                  "type": "divider"
+                },
+                {
+                  "id": "huaya-r2-6-pmv4qpswh13",
+                  "type": "text",
+                  "text": "## 画廊"
+                },
+                {
+                  "id": "huaya-r2-6-pmv4qpswh14",
+                  "type": "divider"
+                },
+                {
+                  "id": "huaya-r2-6-pmv4qpswh15",
+                  "type": "text",
+                  "text": "## 导航"
+                },
+                {
+                  "id": "huaya-r2-6-pmv4qpswh16",
+                  "type": "nav",
+                  "cats": [
+                    "navcat-mu9dgbej916"
+                  ],
+                  "text": "导航"
+                }
+              ]
             },
             {
               "id": "huaya-r2-7",
               "title": "雏花娅冒险协会",
               "href": "/huaya/years/chuhua",
-              "image": "/img/uploads/20260915-1517-df93-2025-09-21_14.11.54.jpg"
+              "image": "/img/uploads/20260915-1517-df93-2025-09-21_14.11.54.jpg",
+              "page": [
+                {
+                  "id": "huaya-r2-7-pmv4qy39z17",
+                  "type": "toc",
+                  "text": "宝库夺宝记"
+                },
+                {
+                  "id": "huaya-r2-7-pmv4qy39z18",
+                  "type": "divider"
+                },
+                {
+                  "id": "huaya-r2-7-pmv4qy39z19",
+                  "type": "text",
+                  "text": "## 雏花娅冒险协会\nSSW的宝藏猎人3服。随着25年暑假的结束，花娅的黄金时代已经褪去，但这里依然谱写着充满着热斗激情的小插曲。"
+                },
+                {
+                  "id": "huaya-r2-7-pmv4qy39z20",
+                  "type": "video",
+                  "src": "https://www.bilibili.com/video/BV1qWpUz6ExV/",
+                  "placeholder": true
+                },
+                {
+                  "id": "huaya-r2-7-pmv4qy39z21",
+                  "type": "divider"
+                },
+                {
+                  "id": "huaya-r2-7-pmv4qy39z22",
+                  "type": "text",
+                  "text": "## 地图勘探"
+                },
+                {
+                  "id": "huaya-r2-7-pmv4qy39z23",
+                  "type": "map",
+                  "pages": [
+                    {
+                      "id": "huaya-r2-7-pmv4qy39z23-p1",
+                      "src": "",
+                      "markers": [],
+                      "lines": []
+                    }
+                  ],
+                  "placeholder": true
+                },
+                {
+                  "id": "huaya-r2-7-pmv4qy39z24",
+                  "type": "divider"
+                },
+                {
+                  "id": "huaya-r2-7-pmv4qy39z25",
+                  "type": "text",
+                  "text": "## 重要事件"
+                },
+                {
+                  "id": "huaya-r2-7-pmv4qy39z26",
+                  "type": "divider"
+                },
+                {
+                  "id": "huaya-r2-7-pmv4qy39z27",
+                  "type": "text",
+                  "text": "## 溪流之外的轶事"
+                },
+                {
+                  "id": "huaya-r2-7-pmv4qy39z28",
+                  "type": "divider"
+                },
+                {
+                  "id": "huaya-r2-7-pmv4qy39z29",
+                  "type": "text",
+                  "text": "## 画廊"
+                },
+                {
+                  "id": "huaya-r2-7-pmv4qy39z30",
+                  "type": "divider"
+                },
+                {
+                  "id": "huaya-r2-7-pmv4qy39z31",
+                  "type": "text",
+                  "text": "## 导航"
+                },
+                {
+                  "id": "huaya-r2-7-pmv4qy39z32",
+                  "type": "nav",
+                  "cats": [
+                    "navcat-mu9dgbej916"
+                  ],
+                  "text": "导航"
+                }
+              ]
             },
             {
               "id": "huaya-r2-8",
               "title": "徒花娅工业",
               "href": "/huaya/years/gerg",
-              "image": "/img/uploads/20260915-1517-fbb9-2025-11-30_21.14.18.jpg"
+              "image": "/img/uploads/20260915-1517-fbb9-2025-11-30_21.14.18.jpg",
+              "page": [
+                {
+                  "id": "huaya-r2-8-pmv4r6hbm33",
+                  "type": "toc",
+                  "text": "徒花员工日志"
+                },
+                {
+                  "id": "huaya-r2-8-pmv4r6hbm34",
+                  "type": "divider"
+                },
+                {
+                  "id": "huaya-r2-8-pmv4r6hbm35",
+                  "type": "text",
+                  "text": "## 徒花娅工业\nSSW的GTO服。花娅系列对格雷的初次探索。也许正如徒花二字所预兆的，因为被炸区块问题困扰许久最终不得不提前完结。"
+                },
+                {
+                  "id": "huaya-r2-8-pmv4r6hbm36",
+                  "type": "video",
+                  "src": "https://www.bilibili.com/video/BV1uP2ABuEpi/",
+                  "placeholder": true
+                },
+                {
+                  "id": "huaya-r2-8-pmv4r6hbm37",
+                  "type": "divider"
+                },
+                {
+                  "id": "huaya-r2-8-pmv4r6hbm38",
+                  "type": "text",
+                  "text": "## 地图勘探"
+                },
+                {
+                  "id": "huaya-r2-8-pmv4r6hbm39",
+                  "type": "map",
+                  "pages": [
+                    {
+                      "id": "huaya-r2-8-pmv4r6hbm39-p1",
+                      "src": "",
+                      "markers": [],
+                      "lines": []
+                    }
+                  ],
+                  "placeholder": true
+                },
+                {
+                  "id": "huaya-r2-8-pmv4r6hbm40",
+                  "type": "divider"
+                },
+                {
+                  "id": "huaya-r2-8-pmv4r6hbm41",
+                  "type": "text",
+                  "text": "## 重要事件"
+                },
+                {
+                  "id": "huaya-r2-8-pmv4r6hbm42",
+                  "type": "divider"
+                },
+                {
+                  "id": "huaya-r2-8-pmv4r6hbm43",
+                  "type": "text",
+                  "text": "## 溪流之外的轶事"
+                },
+                {
+                  "id": "huaya-r2-8-pmv4r6hbm44",
+                  "type": "divider"
+                },
+                {
+                  "id": "huaya-r2-8-pmv4r6hbm45",
+                  "type": "text",
+                  "text": "## 画廊"
+                },
+                {
+                  "id": "huaya-r2-8-pmv4r6hbm46",
+                  "type": "divider"
+                },
+                {
+                  "id": "huaya-r2-8-pmv4r6hbm47",
+                  "type": "text",
+                  "text": "## 导航"
+                },
+                {
+                  "id": "huaya-r2-8-pmv4r6hbm48",
+                  "type": "nav",
+                  "cats": [
+                    "navcat-mu9dgbej916"
+                  ],
+                  "text": "导航"
+                }
+              ]
             },
             {
               "id": "huaya-r2-9",
               "title": "新绮花娅域",
               "href": "/huaya/years/newqihua",
-              "image": "/img/uploads/20260915-1519-2863-2026-05-11_15.43.26.jpg"
+              "image": "/img/uploads/20260915-1519-2863-2026-05-11_15.43.26.jpg",
+              "page": [
+                {
+                  "id": "huaya-r2-9-pmv4rjore49",
+                  "type": "toc",
+                  "text": "通讯总线的长波"
+                },
+                {
+                  "id": "huaya-r2-9-pmv4rjore50",
+                  "type": "divider"
+                },
+                {
+                  "id": "huaya-r2-9-pmv4rjore51",
+                  "type": "text",
+                  "text": "## 新绮花娅域\nSSW的齿轮盛宴服。绮花娅的黄金时代的回声。在熟悉的樱色和熟悉的美食盛宴之中，又有许多趣事在这里发生。然而宴席终有散去的一天，新绮花娅的结档也宣告着冰室最为火热的花娅年代的结束。"
+                },
+                {
+                  "id": "huaya-r2-9-pmv4rjore52",
+                  "type": "video",
+                  "src": "https://www.bilibili.com/video/BV1m1vQBjEZd/",
+                  "placeholder": true
+                },
+                {
+                  "id": "huaya-r2-9-pmv4rjore53",
+                  "type": "divider"
+                },
+                {
+                  "id": "huaya-r2-9-pmv4rjore54",
+                  "type": "text",
+                  "text": "## 地图勘探"
+                },
+                {
+                  "id": "huaya-r2-9-pmv4rjore55",
+                  "type": "map",
+                  "pages": [
+                    {
+                      "id": "huaya-r2-9-pmv4rjore55-p1",
+                      "src": "",
+                      "markers": [],
+                      "lines": []
+                    }
+                  ],
+                  "placeholder": true
+                },
+                {
+                  "id": "huaya-r2-9-pmv4rjore56",
+                  "type": "divider"
+                },
+                {
+                  "id": "huaya-r2-9-pmv4rjore57",
+                  "type": "text",
+                  "text": "## 重要事件"
+                },
+                {
+                  "id": "huaya-r2-9-pmv4rjore58",
+                  "type": "divider"
+                },
+                {
+                  "id": "huaya-r2-9-pmv4rjore59",
+                  "type": "text",
+                  "text": "## 溪流之外的轶事"
+                },
+                {
+                  "id": "huaya-r2-9-pmv4rjore60",
+                  "type": "divider"
+                },
+                {
+                  "id": "huaya-r2-9-pmv4rjore61",
+                  "type": "text",
+                  "text": "## 画廊"
+                },
+                {
+                  "id": "huaya-r2-9-pmv4rjore62",
+                  "type": "divider"
+                },
+                {
+                  "id": "huaya-r2-9-pmv4rjore63",
+                  "type": "text",
+                  "text": "## 导航"
+                },
+                {
+                  "id": "huaya-r2-9-pmv4rjore64",
+                  "type": "nav",
+                  "cats": [
+                    "navcat-mu9dgbej916"
+                  ],
+                  "text": "导航"
+                }
+              ]
             },
             {
               "id": "huaya-r2-10",
               "title": "遥花娅空域",
               "href": "/huaya/years/yaohua",
-              "image": "/img/uploads/20260915-1519-3aab-2026-07-28_19.01.26.jpg"
+              "image": "/img/uploads/20260915-1519-3aab-2026-07-28_19.01.26.jpg",
+              "page": [
+                {
+                  "id": "huaya-r2-10-pmv4s6m5p65",
+                  "type": "toc",
+                  "text": "南风拂去的记录"
+                },
+                {
+                  "id": "huaya-r2-10-pmv4s6m5p66",
+                  "type": "divider"
+                },
+                {
+                  "id": "huaya-r2-10-pmv4s6m5p67",
+                  "type": "text",
+                  "text": "## 遥花娅空域\nSSW的FTB天空2：航空学服。在一个南风吹拂的大晴天里，花娅最为辉煌的长梦结束了。但梦的纸飞机不会停下，它已经被风挟着飞向了远方。"
+                },
+                {
+                  "id": "huaya-r2-10-pmv4s6m5p68",
+                  "type": "video",
+                  "src": "https://www.bilibili.com/video/BV1pEg463ETm/",
+                  "placeholder": true
+                },
+                {
+                  "id": "huaya-r2-10-pmv4s6m5p69",
+                  "type": "divider"
+                },
+                {
+                  "id": "huaya-r2-10-pmv4s6m5p70",
+                  "type": "text",
+                  "text": "## 地图勘探"
+                },
+                {
+                  "id": "huaya-r2-10-pmv4s6m5p71",
+                  "type": "map",
+                  "pages": [
+                    {
+                      "id": "huaya-r2-10-pmv4s6m5p71-p1",
+                      "src": "",
+                      "markers": [],
+                      "lines": []
+                    }
+                  ],
+                  "placeholder": true
+                },
+                {
+                  "id": "huaya-r2-10-pmv4s6m5p72",
+                  "type": "divider"
+                },
+                {
+                  "id": "huaya-r2-10-pmv4s6m5p73",
+                  "type": "text",
+                  "text": "## 重要事件"
+                },
+                {
+                  "id": "huaya-r2-10-pmv4s6m5p74",
+                  "type": "divider"
+                },
+                {
+                  "id": "huaya-r2-10-pmv4s6m5p75",
+                  "type": "text",
+                  "text": "## 溪流之外的轶事"
+                },
+                {
+                  "id": "huaya-r2-10-pmv4s6m5p76",
+                  "type": "divider"
+                },
+                {
+                  "id": "huaya-r2-10-pmv4s6m5p77",
+                  "type": "text",
+                  "text": "## 画廊"
+                },
+                {
+                  "id": "huaya-r2-10-pmv4s6m5p78",
+                  "type": "divider"
+                },
+                {
+                  "id": "huaya-r2-10-pmv4s6m5p79",
+                  "type": "text",
+                  "text": "## 导航"
+                },
+                {
+                  "id": "huaya-r2-10-pmv4s6m5p80",
+                  "type": "nav",
+                  "cats": [
+                    "navcat-mu9dgbej916"
+                  ],
+                  "text": "导航"
+                }
+              ]
             },
             {
               "id": "huaya-r2-11",
               "title": "花篠桓娅",
-              "href": "/huaya/years/huaxiao"
+              "href": "/huaya/years/huaxiao",
+              "page": [
+                {
+                  "id": "huaya-r2-11-pmv4sbxw781",
+                  "type": "text",
+                  "text": "## 花篠桓娅\n花篠桓娅，永远的花娅。以无尽增长的城市花篠市为陌点，许多有趣的远位面萌生而出。篠花娅的风尚不会结束，故事也还在书写，快去看看吧~"
+                },
+                {
+                  "id": "huaya-r2-11-pmv4sirpk82",
+                  "type": "video",
+                  "src": "https://www.bilibili.com/video/BV1JBp364Ewx/"
+                }
+              ]
             }
           ]
         },

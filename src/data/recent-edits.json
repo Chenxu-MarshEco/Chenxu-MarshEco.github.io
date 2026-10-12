@@ -6,8 +6,38 @@
     "同一页只留最新一条，最新的排最前，最多 40 条。手改这个文件也行（改完要重新构建）。",
     "下面这几条是最初的种子（按 2026-09-28 那几次提交里改过的文件反推出来的），之后会被真记录顶下去。"
   ],
-  "updated": "2026-10-11T15:56:50.809Z",
+  "updated": "2026-10-12T05:10:26.979Z",
   "edits": [
+    {
+      "href": "/huaya/years/yaohua",
+      "title": "遥花娅空域",
+      "at": "2026-10-12T05:10:26.979Z"
+    },
+    {
+      "href": "/huaya/years/huaxiao",
+      "title": "花篠桓娅",
+      "at": "2026-10-12T05:07:28.519Z"
+    },
+    {
+      "href": "/huaya/years/newqihua",
+      "title": "新绮花娅域",
+      "at": "2026-10-12T04:57:13.623Z"
+    },
+    {
+      "href": "/huaya/years/gerg",
+      "title": "徒花娅工业",
+      "at": "2026-10-12T04:39:37.467Z"
+    },
+    {
+      "href": "/huaya/years/chuhua",
+      "title": "雏花娅冒险协会",
+      "at": "2026-10-12T04:26:52.105Z"
+    },
+    {
+      "href": "/huaya/years/huanghuaya",
+      "title": "煌花娅市",
+      "at": "2026-10-12T04:22:45.935Z"
+    },
     {
       "href": "/huaya/years/skybuger",
       "title": "眠鱼路",
@@ -87,16 +117,6 @@
       "href": "/huaya",
       "title": "花娅陌域",
       "at": "2026-10-04T15:49:35.684Z"
-    },
-    {
-      "href": "/huaya/years/yaohua",
-      "title": "遥花娅空域",
-      "at": "2026-09-29T08:41:34.611Z"
-    },
-    {
-      "href": "/huaya/years/gerg",
-      "title": "徒花娅工业",
-      "at": "2026-09-29T06:41:25.272Z"
     },
     {
       "href": "/iceberg/",

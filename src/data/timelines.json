@@ -369,6 +369,13 @@
           "side": "right",
           "date": "2026-09-14",
           "label": "本站成立"
+        },
+        {
+          "id": "tl-mu6e19cb793-pmv4pzv4758",
+          "side": "right",
+          "date": "2026-10-01",
+          "label": "冰室首次国庆大聚会",
+          "kind": "event"
         }
       ],
       "spans": [
@@ -468,7 +475,7 @@
         },
         {
           "id": "tl-mu6e19cb793-smu6p6mfq15",
-          "name": "后冰室时代",
+          "name": "智能体年代",
           "from": "tl-mu6e19cb793-pmu6occ3a56",
           "to": "tl-mu6e19cb793-pmu6p6djx56"
         }
