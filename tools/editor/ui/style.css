@@ -4854,3 +4854,275 @@ body.pblock-dragging * {
   line-height: 1.5;
   color: var(--text-muted);
 }
+
+/* ==========================================================================
+   共享编辑器（2026-10-12）：协作 / 版本
+   --------------------------------------------------------------------------
+   两块面板的样式都收在这儿，用的还是上面那套颜色变量（浅色深色都跟着走）。
+   类名都带前缀（who / feed / vlist / vdiff），免得和前面几千行里已有的撞上。
+   ========================================================================== */
+
+/* 顶栏「动态」上那个小红点：有没看过的推流就亮 */
+.dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-left: 4px;
+  vertical-align: middle;
+  border-radius: 50%;
+  background: var(--danger);
+}
+
+/* 「发布上线」和「拉远端」不是一类动作，给它一点颜色上的分量
+   （但不用主色，免得和「保存」那颗抢眼） */
+.btn--go {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.btn--go:hover:not(:disabled) {
+  background: var(--accent-soft);
+}
+.btn.is-on {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* 一行放几个按钮 / 一句说明 + 按钮 */
+.stackrow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 10px;
+}
+.stackrow .hint {
+  flex: 1 1 220px;
+}
+
+/* 面板顶上「我是谁」那一条：头像 + 名字 + 身份来源 */
+.who {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.who__avatar {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+  font-size: 13px;
+}
+.who__avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.who__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.tag {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--border-strong);
+  background: var(--code-bg);
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.6;
+  vertical-align: middle;
+}
+.tag--owner {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+/* 推流动态：一条一条 */
+.feed {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 380px;
+  overflow: auto;
+}
+.feed__item {
+  display: flex;
+  gap: 9px;
+  align-items: flex-start;
+  padding: 8px 4px;
+  border-bottom: 1px solid var(--border);
+}
+.feed__item:last-child {
+  border-bottom: none;
+}
+.feed__item.is-mine {
+  /* 自己的推流淡一点：重点是"别人刚推了什么" */
+  opacity: 0.75;
+}
+.feed__main {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+.feed__line1 {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.feed__what {
+  font-size: 13px;
+  color: var(--text);
+  word-break: break-word;
+}
+.feed__title {
+  margin-top: 1px;
+  word-break: break-word;
+}
+.filelist {
+  list-style: none;
+  margin: 0 0 8px;
+  padding: 8px 10px;
+  max-height: 180px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--code-bg);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--text-muted);
+}
+.kv {
+  display: grid;
+  grid-template-columns: minmax(88px, max-content) 1fr;
+  gap: 4px 12px;
+  margin: 0;
+  font-size: 13px;
+}
+.kv dt {
+  color: var(--text-muted);
+}
+.kv dd {
+  margin: 0;
+  word-break: break-all;
+}
+
+/* 版本列表 */
+.vlist {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 340px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+}
+.vlist__item {
+  border-bottom: 1px solid var(--border);
+}
+.vlist__item:last-child {
+  border-bottom: none;
+}
+.vlist__item.is-picked {
+  background: var(--accent-soft);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+.vlist__btn {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  padding: 7px 10px;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.vlist__btn:hover {
+  background: var(--code-bg);
+}
+.vlist__line1 {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.vlist__line1 code {
+  color: var(--accent);
+  font-family: var(--font-mono);
+}
+.vlist__line2 {
+  font-size: 13px;
+  color: var(--text);
+  word-break: break-word;
+}
+.vlist__line3 {
+  word-break: break-word;
+}
+
+/* 这一版改了什么：一份文件一小块，字段级的变化列在里面 */
+.vdiff {
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+}
+.vdiff__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+.vdiff__head code {
+  font-family: var(--font-mono);
+  word-break: break-all;
+}
+.changelist {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  max-height: 220px;
+  overflow: auto;
+  font-size: 12px;
+  line-height: 1.7;
+}
+.changelist li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 2px 0;
+  border-top: 1px dashed var(--border);
+}
+.changelist code {
+  font-family: var(--font-mono);
+  color: var(--text-muted);
+  word-break: break-all;
+}
+.chg--add {
+  color: var(--accent);
+}
+.chg--del {
+  color: var(--danger);
+}
+.chg--change {
+  color: var(--text);
+}
+

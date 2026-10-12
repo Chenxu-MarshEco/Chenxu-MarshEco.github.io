@@ -82,6 +82,18 @@
         <button type="button" class="btn btn--ghost" id="btn-pull" title="把远端（另一位 / 机器人）的新内容拉到本机">
           拉远端
         </button>
+        <!--
+          共享编辑器（2026-10-12）：
+            · 发布上线 = 提交 + **先拉** + 推送（tools/git/sync.mjs publish，永不强推）；
+              角标上是"这台机器有几份文件还没发布"。
+            · 动态 = 谁 · 什么时候 · 推了什么；角标是"还没看过的条数"。
+        -->
+        <button type="button" class="btn btn--ghost" id="btn-activity" title="谁 · 什么时候 · 推了什么（别人推流了这里会亮）">
+          动态 <span class="dot" id="activity-dot" hidden></span>
+        </button>
+        <button type="button" class="btn btn--ghost btn--go" id="btn-publish" title="提交这份改动 → 先拉远端 → 推上去（发布上线）">
+          发布上线
+        </button>
         <button type="button" class="btn btn--primary" id="btn-save" title="保存（Ctrl+S）">
           保存
         </button>
@@ -749,6 +761,31 @@
 
     <!-- 隐藏的封面文件输入 -->
     <input type="file" id="cover-file" accept="image/png,image/jpeg,image/gif,image/webp,image/svg+xml" hidden />
+
+    <!--
+      协作（2026-10-12）：我是谁 / 推流动态 / 发布上线。
+      站点的内容不止一个人在改（协作者 + 机器人 + 每日存档），这个面板回答三件事：
+      现在这台机器是谁、别人刚刚推了什么、我这边改了的东西怎么安全地推上去。
+    -->
+    <div class="modal" id="collab-modal" hidden>
+      <div class="modal__mask" data-close="1"></div>
+      <div class="modal__panel modal__panel--full" role="dialog" aria-modal="true" aria-label="协作">
+        <h3 class="modal__title">共享编辑器 · 协作</h3>
+        <div id="collab-editor"></div>
+      </div>
+    </div>
+
+    <!--
+      版本（2026-10-12）：看历史 + 可视化回滚。**只有站长的编辑器会摆这个面板**
+      （协作者那儿连入口都不出现；服务端的 /api/versions* 还会再挡一道）。
+    -->
+    <div class="modal" id="versions-modal" hidden>
+      <div class="modal__mask" data-close="1"></div>
+      <div class="modal__panel modal__panel--full" role="dialog" aria-modal="true" aria-label="版本">
+        <h3 class="modal__title">版本 · 回滚</h3>
+        <div id="versions-editor"></div>
+      </div>
+    </div>
 
     <!--
       总入口的清单。挂在 body 上而不是顶栏里：顶栏有 z-index:5 的层叠上下文，

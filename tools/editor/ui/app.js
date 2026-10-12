@@ -205,6 +205,15 @@ const els = {
   copyEditor: $('copy-editor'),
   copySave: $('copy-save'),
 
+  /* 共享编辑器（2026-10-12）：协作 + 版本（版本只有站长看得见） */
+  collabModal: $('collab-modal'),
+  collabEditor: $('collab-editor'),
+  versionsModal: $('versions-modal'),
+  versionsEditor: $('versions-editor'),
+  btnActivity: $('btn-activity'),
+  btnPublish: $('btn-publish'),
+  activityDot: $('activity-dot'),
+
   btnLiyutang: $('btn-liyutang'),
 
   /* 冰山图（src/data/iceberg.json）：分类 / 标签 / 层级 / 条目 */
@@ -250,6 +259,30 @@ const state = {
   markedFailed: false,
   themeMode: 'auto',
   previewOn: true,
+  /*
+    共享编辑器（2026-10-12）：
+      · collab   这台机器是谁（/api/collab/me 读回来的那一份），没读到就是 null；
+      · activity 最近一次读到的推流动态（/api/git/activity）；
+      · seenHead 上一条"我看过的"提交号 —— 比它新的都算"还没看过"，用来点亮角标。
+        存在 localStorage 里，所以刷新页面不会把没看过的提示又当成看过了。
+  */
+  collab: null,
+  activity: null,
+  seenHead: '',
+  /** 「上一条我看过的动态」的时间（毫秒），见 readSeenAt / writeSeenAt */
+  seenAt: 0,
+  /** 上一次为哪条动态弹过提示条（免得每分钟弹一遍同样的话） */
+  lastToastSha: '',
+  /** 每分钟看一次远端的定时器 */
+  collabTimer: null,
+  publishing: false,
+  rollingBack: false,
+  /**
+   * 每个数据面板手上那份数据的指纹（rev）：
+   * 打开面板时从接口带回来，保存时原样送回去 —— 对不上就是"别人在你编辑期间改过了"（409）。
+   * 键是面板名（iceberg / boards / salon …），见 panelRevKey()。
+   */
+  revs: {},
 };
 
 /* ---------------------------------------------------------------
@@ -1986,7 +2019,20 @@ const WORKSPACES = [
            「如果你无法判断就都把那种句子加上编辑器可以修改的接口」。
   */
   { id: 'copy', label: '文案', hint: '站点上那些介绍 / 说明句：改掉或清空（清空 = 那一块不显示）' },
+  /*
+    共享编辑器（2026-10-12）：
+      collab    协作（人人都有）：我是谁 / 谁刚推了什么 / 发布上线；
+      versions  版本回滚（**只有站长**）：ownerOnly 的那一条在别人的编辑器里
+                连按钮都不会画出来（服务端 /api/versions* 还会再挡一道）。
+  */
+  { id: 'collab', label: '协作', hint: '我是谁 / 谁刚推流了什么 / 把这边的改动发布上线' },
+  { id: 'versions', label: '版本', hint: '看历史 + 可视化回滚（只有站长的编辑器有这一项）', ownerOnly: true },
 ];
+
+/** 这一条工作面现在该不该出现（ownerOnly 的只有站长看得见） */
+function workspaceVisible(ws) {
+  return !ws.ownerOnly || state.collab?.rollback === true;
+}
 
 /** 现在开着的是哪个工作面；没有面板开着就是主界面 'docs' */
 let activeWorkspace = 'docs';
@@ -2015,6 +2061,8 @@ function closeWorkspace(id) {
   else if (id === 'announce') closeAnnounceModal();
   else if (id === 'liyutang') closeLiyutangModal();
   else if (id === 'copy') closeCopyModal();
+  else if (id === 'collab') closeCollabModal();
+  else if (id === 'versions') closeVersionsModal();
 }
 
 /** 关掉除 except 以外的所有面板 */
@@ -2051,6 +2099,8 @@ async function openWorkspace(id) {
   else if (id === 'announce') await openAnnounceModal();
   else if (id === 'liyutang') await openLiyutangModal();
   else if (id === 'copy') await openCopyModal();
+  else if (id === 'collab') await openCollabModal();
+  else if (id === 'versions') await openVersionsModal();
 }
 
 /** 面板里那条切换条：每个面板顶上都有一个空的 [data-ws-slot]，往里面填按钮 */
@@ -2058,6 +2108,7 @@ function paintWorkspaceSwitch() {
   for (const slot of document.querySelectorAll('[data-ws-slot]')) {
     slot.textContent = '';
     for (const ws of WORKSPACES) {
+      if (!workspaceVisible(ws)) continue;
       const b = document.createElement('button');
       b.type = 'button';
       b.className = 'wsswitch__btn';
@@ -2083,6 +2134,7 @@ function buildHubMenu() {
   if (!box) return;
   box.textContent = '';
   for (const ws of WORKSPACES) {
+    if (!workspaceVisible(ws)) continue;
     const li = document.createElement('li');
     const b = document.createElement('button');
     b.type = 'button';
@@ -8579,24 +8631,103 @@ async function saveNavs() {
   }
 }
 
-async function saveBoards({ silent = false } = {}) {  try {
-    const res = await fetch('/api/boards', {
+/* ------------------------------------------------------------------
+   数据面板的指纹（rev）：挡住「你编着编着，别人也改了同一份数据」
+
+   服务端那半在 server.mjs 的 checkDataStale()：读数据时带一个内容指纹回来，
+   保存时原样送回去，对不上就 409（这份数据在别处被改过了）。
+
+   这里只接**最容易撞的那两份**：页面 / 子版块（home-boards.json，75KB、
+   整棵版块树都在这一个文件里）和冰山图（iceberg.json）。
+   用户 2026-10-12 的原话就是「因为有许多条目 冰山 页面等进行编写」——
+   其余几份数据面板暂时靠**发布时按 JSON 结构自动合**兜底（见 tools/git/merge-json.mjs），
+   那条路一样不会丢数据，只是发现得晚一点（保存时不报，推流时才合）。
+   ------------------------------------------------------------------ */
+
+/** 每个面板去哪个接口拿自己的指纹 */
+const PANEL_REV_PATH = {
+  boards: '/api/boards',
+  iceberg: '/api/iceberg',
+};
+
+/** 把响应里带的 rev 记下来（没有就返回 false，调用方自己去 GET 一次） */
+function setPanelRev(key, resp) {
+  const rev = resp && typeof resp.rev === 'string' ? resp.rev : '';
+  if (rev) {
+    state.revs[key] = rev;
+    return true;
+  }
+  return false;
+}
+
+/** 保存成功之后把指纹刷新一遍 —— 不然第二次保存会拿旧指纹去撞自己刚写的那一份 */
+async function refreshPanelRev(key) {
+  const path = PANEL_REV_PATH[key];
+  if (!path) return '';
+  try {
+    const resp = await apiGet(path);
+    if (setPanelRev(key, resp)) return state.revs[key];
+  } catch {
+    /* 刷不到就算了：下一次保存顶多再问一次"要不要覆盖" */
+  }
+  return '';
+}
+
+/**
+ * 数据面板的保存：自动带上指纹；被 409 挡下时按「覆盖 / 先不保存」问一次。
+ *
+ * 询问的语气和文章那条路（save 里那段 409 处理）**故意保持一致**：
+ * 默认不覆盖，取消之后你屏幕上那份一个字都不会丢。
+ */
+async function savePanelData(path, payload, key, what = '这份数据') {
+  const rev = state.revs[key] || (payload && typeof payload.rev === 'string' ? payload.rev : '');
+  const post = async (body) => {
+    const res = await fetch(path, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      /*
-        `current` = 现在正在编哪一页（节点 id）。
-        服务端拿它往「近期更新」（src/data/recent-edits.json）里记一笔 ——
-        保存时才知道"用户刚动的是这一页"，事后从整棵树里猜不出来。
-      */
-      body: JSON.stringify({
-        ...boardsDraft,
-        /* 这次真的改了哪几页（见 touchedBoardIds）+ 当前打开着的那一页（兜底） */
-        touched: touchedBoardIds(),
-        current: pageNode?.id || '',
-      }),
+      body: JSON.stringify(body),
     });
-    const data = await res.json();
-    if (!res.ok || !data.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    let data = null;
+    try {
+      data = await res.json();
+    } catch {
+      data = null;
+    }
+    return { res, data };
+  };
+
+  let { res, data } = await post({ ...payload, rev });
+  if (res.status === 409 && data && data.stale && payload?.force !== true) {
+    const go = confirm(
+      `${data.error || `${what}在别处被改过了`}\n\n`
+      + '· 点「确定」= 用你屏幕上这一份覆盖（**会把对方刚改的那部分盖掉**）\n'
+      + '· 点「取消」= 先不保存（你改的还在编辑器里，什么都没丢）',
+    );
+    if (!go) return { ok: false, cancelled: true, error: `已取消保存：盘上那份是别人改过的版本，你改的还在编辑器里` };
+    const sure = confirm('真的要覆盖吗？对方那部分改动被盖掉之后，只能靠「版本」面板回滚找回来。');
+    if (!sure) return { ok: false, cancelled: true, error: '已取消保存' };
+    ({ res, data } = await post({ ...payload, rev, force: true }));
+  }
+  if (!res.ok || !data || !data.ok) throw new Error((data && data.error) || `HTTP ${res.status}`);
+  if (!setPanelRev(key, data)) await refreshPanelRev(key);
+  return data;
+}
+
+async function saveBoards({ silent = false } = {}) {  try {
+    /*
+      `current` = 现在正在编哪一页（节点 id）。
+      服务端拿它往「近期更新」（src/data/recent-edits.json）里记一笔 ——
+      保存时才知道"用户刚动的是这一页"，事后从整棵树里猜不出来。
+
+      savePanelData 会先比一次指纹（rev）：你编辑期间别人也改了这份版块树的话，
+      这次保存会被挡下来问一句，而不是**整棵树**被你那边的草稿盖掉。
+    */
+    const data = await savePanelData('/api/boards', {
+      ...boardsDraft,
+      /* 这次真的改了哪几页（见 touchedBoardIds）+ 当前打开着的那一页（兜底） */
+      touched: touchedBoardIds(),
+      current: pageNode?.id || '',
+    }, 'boards', '页面 / 子版块');
     /* 存下去了 = 这份草稿就是新的"干净态"，下次保存再拿它当基准比 */
     boardsPristine = JSON.stringify(boardsDraft);
 
@@ -9301,6 +9432,8 @@ async function refreshPullBadge() {
     state.git = null;
   }
   renderPullButton();
+  /* 「发布上线 (N)」那个角标的数字也在 state.git 里（未发布的文件清单），顺手一起画 */
+  paintCollabBadges();
 }
 
 function renderPullButton() {
@@ -10935,7 +11068,731 @@ function renderCopyPanel() {
   if (!status.textContent) status.textContent = `现在开着 ${filled}/${COPY_FIELDS.length} 格（清空的那几格在站点上不显示）`;
 }
 
+/* ==================================================================
+   共享编辑器（2026-10-12）：协作 + 版本
+   ------------------------------------------------------------------
+   用户原话：
+     「可以让我的 github 的 Collaborators 使用和我同款的编辑器 和我进行共创 …
+       和跟铃忆机器人的联动一样 需要先拉取远端再推流以保证安全 并且因为可能会有
+       多人实时同步进行编辑 所以最好可以在编辑器里实时提醒哪个用户何时进行了推流
+       另外仅有我的编辑器需要加一个方便快捷可视化的版本回滚功能 以保证安全」
+
+   这一块管四件事：
+     · 我是谁        —— 这台机器的身份（显示谁、以及是不是站长）；
+     · 推流动态      —— 谁 · 什么时候 · 改了什么（每分钟自动看一眼远端）；
+     · 发布上线      —— 构建 → 提交 → **先拉** → 推（永不强推，见 tools/git/sync.mjs）；
+     · 版本回滚      —— 只有站长：看历史 + 把内容退回某一版（往前加提交，不改写历史）。
+
+   所有重活都在服务端那几个脚本里（tools/git/{whoami,activity,versions,sync}.mjs），
+   这里只画界面、调接口 —— 和「拉远端」那条路一个规矩。
+   ================================================================== */
+
+/** 上一条"我看过的"动态时间（毫秒）。存 localStorage：刷新页面不该把没看过的当看过 */
+const COLLAB_SEEN_KEY = 'local-editor:collab-seen-at';
+/** 前台时多久看一次远端（服务端那边还有 45 秒的最小间隔，见 COLLAB_FETCH_GAP_MS） */
+const ACTIVITY_POLL_MS = 60 * 1000;
+
+/** 「刚刚 / 12 分钟前 / 昨天…」—— 动态列表里用 */
+function timeAgo(iso) {
+  const t = Date.parse(String(iso || ''));
+  if (!t) return '';
+  const diff = Date.now() - t;
+  if (diff < 0) return '刚刚';
+  if (diff < 60e3) return '刚刚';
+  if (diff < 3600e3) return `${Math.max(1, Math.floor(diff / 60e3))} 分钟前`;
+  if (diff < 12 * 3600e3) return `${Math.floor(diff / 3600e3)} 小时前`;
+  const d = new Date(t);
+  const p = (n) => String(n).padStart(2, '0');
+  const sameYear = d.getFullYear() === new Date().getFullYear();
+  return `${sameYear ? '' : `${d.getFullYear()}-`}${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+/** 一条动态 / 一版历史前面的小头像（拿不到头像就用名字首字画一个圆） */
+function avatarEl(person, size = 26) {
+  const box = document.createElement('span');
+  box.className = 'who__avatar';
+  box.style.width = `${size}px`;
+  box.style.height = `${size}px`;
+  const name = String(person?.name || person?.login || '?');
+  if (person?.avatar) {
+    const img = document.createElement('img');
+    img.src = person.avatar;
+    img.alt = '';
+    img.loading = 'lazy';
+    img.referrerPolicy = 'no-referrer';
+    box.appendChild(img);
+  } else {
+    box.textContent = name.slice(0, 1).toUpperCase();
+  }
+  box.title = person?.login ? `@${person.login}` : name;
+  return box;
+}
+
+/** 「张三（你）」这一小段 */
+function whoText(person, mine) {
+  const label = person?.login || person?.name || '（没署名）';
+  return `${label}${mine ? '（你）' : ''}`;
+}
+
+/* ---------------------------------------------------------------- 我是谁 */
+
+async function loadCollabInfo() {
+  try {
+    const data = await apiGet('/api/collab/me');
+    state.collab = data && data.ok !== false ? data : null;
+  } catch {
+    state.collab = null;
+  }
+  paintCollabBadges();
+  return state.collab;
+}
+
+/* ---------------------------------------------------------------- 推流动态 */
+
+function readSeenAt() {
+  try {
+    return Number(localStorage.getItem(COLLAB_SEEN_KEY) || 0) || 0;
+  } catch {
+    return 0;
+  }
+}
+
+function writeSeenAt(ms) {
+  state.seenAt = ms;
+  try {
+    localStorage.setItem(COLLAB_SEEN_KEY, String(ms));
+  } catch {
+    /* 存不进去就只在这一次会话里算 */
+  }
+}
+
+/** 还没看过的条数（自己推的不算"别人推流"） */
+function unseenCommits() {
+  const list = state.activity?.commits || [];
+  const at = Number(state.seenAt || 0);
+  return list.filter((c) => Number(c.time || 0) > at && !c.mine);
+}
+
+/**
+ * 读一次动态。
+ * @param {{fetch?:boolean, limit?:number, notify?:boolean}} opts
+ */
+async function refreshActivity({ fetch: wantFetch = false, limit = 15, notify = true } = {}) {
+  const before = state.lastToastSha || '';
+  let data = null;
+  try {
+    const qs = new URLSearchParams({ limit: String(limit) });
+    if (wantFetch) qs.set('fetch', '1');
+    data = await apiGet(`/api/git/activity?${qs.toString()}`);
+  } catch {
+    state.activity = null;
+    paintCollabBadges();
+    return null;
+  }
+  if (!data || data.ok === false) {
+    state.activity = data || null;
+    paintCollabBadges();
+    return data;
+  }
+  state.activity = data;
+  const unseen = unseenCommits();
+
+  /*
+    有新东西就弹一条 —— 只在"冒出来新的那一条"时弹（用 sha 记住上一次弹过谁），
+    否则每分钟轮询一次就会每分钟弹一遍同样的话。
+  */
+  if (notify && unseen.length) {
+    const top = unseen[0];
+    if (top.sha !== before) {
+      state.lastToastSha = top.sha;
+      const who = top.author.login || top.author.name;
+      const what = (top.panels || []).slice(0, 3).join('、') || '有内容更新';
+      toast(`${who} 刚刚推流：${what}${top.mine ? '（你自己）' : ''}`);
+    }
+  }
+  paintCollabBadges();
+  return data;
+}
+
+/* ---------------------------------------------------------------- 发布上线 */
+
+/** 顶栏两个按钮上的角标：动态有几条没看、本地有几份没发布 */
+function paintCollabBadges() {
+  const unseen = unseenCommits().length;
+  if (els.activityDot) els.activityDot.hidden = unseen === 0;
+  if (els.btnActivity) {
+    els.btnActivity.classList.toggle('is-on', unseen > 0);
+    els.btnActivity.title = unseen > 0
+      ? `有 ${unseen} 条别人推流的动态还没看过（点开看看）`
+      : '谁 · 什么时候 · 推了什么（别人推流了这里会亮）';
+  }
+  if (els.btnPublish) {
+    const n = Array.isArray(state.git?.files) ? state.git.files.length : 0;
+    els.btnPublish.textContent = n > 0 ? `发布上线 (${n})` : '发布上线';
+    els.btnPublish.classList.toggle('is-on', n > 0);
+    els.btnPublish.title = n > 0
+      ? `这台机器改了 ${n} 份文件还没发布：提交 → 先拉远端 → 推上去`
+      : '把本机的改动提交 → 先拉远端 → 推上去（现在没有没发布的改动）';
+  }
+}
+
+/**
+ * 发布上线：构建 → 提交 → 先拉 → 推。
+ * 顺序和"永不强推"都在 tools/git/sync.mjs 里（和启动器、机器人同一条路）。
+ */
+async function doPublish({ ask = true, then } = {}) {
+  if (state.publishing) return null;
+  const files = Array.isArray(state.git?.files) ? state.git.files : [];
+  if (ask && !confirm(
+    '发布上线 = 把本机的改动提交，**先拉远端**（别人推的东西不会丢），再推上去。\n\n'
+    + (files.length ? `这次有 ${files.length} 份文件要发。\n\n` : '现在没有没发布的改动，会只做一次"先拉后推"。\n\n')
+    + '推上去之后 GitHub 会构建并上线（构建不过就不会上线）。继续吗？',
+  )) return null;
+
+  state.publishing = true;
+  const btn = els.btnPublish;
+  const was = btn ? btn.textContent : '';
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = '发布中…';
+  }
+  try {
+    const r = await apiPost('/api/git/publish', {});
+    if (r?.ok) {
+      const extra = r.jsonMerged?.length
+        ? `（其中 ${r.jsonMerged.length} 份数据是和别人**自动合**的，谁的东西都没丢）`
+        : '';
+      toast(`已发布${r.build?.skipped ? '（这台机器没装构建环境，没在本地校验）' : ''}${extra}`);
+    } else if (r?.code === 'build-failed') {
+      alert(`本机构建没过，这次没有推流（线上还是上一版）：\n\n${r.error || ''}`);
+      toast('构建没过，没有推流', true);
+    } else if (r?.code === 'nothing') {
+      toast('没有任何改动，不用发布');
+    } else {
+      alert(r?.message || r?.error || '这次没能发布，看看编辑器那个窗口里的日志。');
+      toast('没能发布，原因见刚才那个弹窗', true);
+    }
+    await refreshPullBadge();
+    await refreshActivity({ fetch: true });
+    if (typeof then === 'function') await then(r);
+    return r;
+  } catch (err) {
+    toast(`发布失败：${err.message}`, true);
+    return null;
+  } finally {
+    state.publishing = false;
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = was;
+    }
+    paintCollabBadges();
+  }
+}
+
+/* ---------------------------------------------------------------- 协作面板 */
+
+let collabDraft = { login: '', name: '', email: '' };
+
+async function openCollabModal() {
+  markWorkspaceActive('collab');
+  els.collabModal.hidden = false;
+  els.collabEditor.textContent = '正在读取…';
+  await loadCollabInfo();
+  /* 打开面板 = 看过动态了 */
+  const newest = (state.activity?.commits || [])[0];
+  writeSeenAt(Math.max(Number(state.seenAt || 0), Number(newest?.time || 0)));
+  await refreshActivity({ fetch: true, limit: 20 });
+  paintCollabBadges();
+  renderCollabPanel();
+}
+
+function closeCollabModal() {
+  els.collabModal.hidden = true;
+}
+
+function renderCollabPanel() {
+  const { body, foot, status } = panelShell(els.collabEditor, {
+    hint:
+      '这个面板管三件事：现在这台机器是谁、别人刚推了什么、你这边改的东西怎么安全地推上去。'
+      + '推流永远是**先拉远端再推**，永不强推 —— 谁的内容都不会被覆盖。',
+    group: '',
+  });
+
+  const me = state.collab?.me || null;
+  collabDraft = {
+    login: me?.login || collabDraft.login || '',
+    name: me?.name || collabDraft.name || '',
+    email: me?.email || collabDraft.email || '',
+  };
+
+  /* ---------- 我是谁 ---------- */
+  const whoBox = panelBox('我是谁', '用户名决定两件事：推流动态里显示的是谁，以及这台机器有没有「版本」回滚面板（只有站长有）。');
+  const idRow = document.createElement('div');
+  idRow.className = 'who';
+  idRow.appendChild(avatarEl({ name: collabDraft.name || collabDraft.login, avatar: me?.avatar, login: me?.login }, 40));
+  const idText = document.createElement('div');
+  idText.className = 'who__text';
+  const idName = document.createElement('strong');
+  idName.textContent = collabDraft.login || collabDraft.name || '（还没填用户名）';
+  const idSub = document.createElement('span');
+  idSub.className = 'hint';
+  idSub.textContent = me
+    ? `身份来源：${[me.source?.login && `用户名（${me.source.login}）`, me.source?.name && '名字', me.source?.email && '邮箱'].filter(Boolean).join(' / ') || '本机文件'}`
+    : '还没读到身份';
+  idText.append(idName, idSub);
+  if (me?.owner === true) {
+    const tag = document.createElement('span');
+    tag.className = 'tag tag--owner';
+    tag.textContent = '站长';
+    idText.appendChild(tag);
+  } else if (me?.owner === null) {
+    const tag = document.createElement('span');
+    tag.className = 'tag';
+    tag.textContent = '身份未知';
+    idText.appendChild(tag);
+  } else if (me?.owner === false) {
+    const tag = document.createElement('span');
+    tag.className = 'tag';
+    tag.textContent = '协作者';
+    idText.appendChild(tag);
+  }
+  idRow.appendChild(idText);
+  whoBox.appendChild(idRow);
+
+  for (const [key, label, hint, ph] of [
+    ['login', 'GitHub 用户名', '和仓库所属者一致时，这台机器才会出现「版本」回滚面板', '例如 Chenxu-MarshEco'],
+    ['name', '显示名', '只影响界面上怎么称呼你（提交署名跟着你本机的 git 配置走）', '例如 阿煦'],
+    ['email', '邮箱', '用来认「哪一条提交是我推的」；留空也能用', '例如 you@example.com'],
+  ]) {
+    const input = boardInput(collabDraft[key], ph, (v) => { collabDraft[key] = v; });
+    input.dataset.collabField = key;
+    whoBox.appendChild(panelRow(label, input, hint));
+  }
+  body.appendChild(whoBox);
+
+  /* ---------- 推流动态 ---------- */
+  const act = state.activity;
+  const behind = Number(state.git?.behind || 0);
+  const actBox = panelBox(
+    '推流动态',
+    '谁 · 什么时候 · 改了什么。它是读 git 提交记录来的（不新开服务器）：编辑器每分钟静默探一次远端，'
+    + '所以最多晚一分钟。',
+  );
+  const head = document.createElement('div');
+  head.className = 'stackrow';
+  const headText = document.createElement('span');
+  headText.className = 'hint';
+  headText.textContent = act
+    ? (behind > 0
+      ? `远端还有 ${behind} 个提交没拉到本机。`
+      : '本机已经是最新的。')
+      + (act.stale ? '（最近一次探远端没成功，下面这份可能不是最新的）' : '')
+    : '还没读到动态。';
+  head.appendChild(headText);
+  head.append(
+    panelBtn('现在看看', '立刻去探一次远端，然后重新读动态', async () => {
+      await refreshActivity({ fetch: true, limit: 20 });
+      renderCollabPanel();
+    }),
+    panelBtn(behind > 0 ? `拉下来（${behind}）` : '拉远端', '快进拉取远端的新内容（不合并、不会覆盖你本地的改动）', async () => {
+      await doPullRemote();
+      await refreshActivity({ fetch: true, limit: 20 });
+      renderCollabPanel();
+    }),
+  );
+  actBox.appendChild(head);
+
+  const list = document.createElement('ul');
+  list.className = 'feed';
+  for (const c of (act?.commits || []).slice(0, 20)) {
+    const li = document.createElement('li');
+    li.className = `feed__item${c.mine ? ' is-mine' : ''}`;
+    li.dataset.sha = c.sha;
+    li.appendChild(avatarEl(c.author, 26));
+    const main = document.createElement('div');
+    main.className = 'feed__main';
+    const line1 = document.createElement('div');
+    line1.className = 'feed__line1';
+    const who = document.createElement('strong');
+    who.textContent = whoText(c.author, c.mine);
+    const when = document.createElement('span');
+    when.className = 'hint';
+    when.textContent = timeAgo(c.iso);
+    line1.append(who, when);
+    const line2 = document.createElement('div');
+    line2.className = 'feed__what';
+    line2.textContent = (c.panels || []).slice(0, 4).join('、') || '（没列改了什么）';
+    main.append(line1, line2);
+    if (c.title) {
+      const t = document.createElement('div');
+      t.className = 'hint feed__title';
+      t.textContent = c.title;
+      main.appendChild(t);
+    }
+    if (c.relayed) {
+      const t = document.createElement('div');
+      t.className = 'hint';
+      t.textContent = `（由 ${c.committer.name} 合进来推上去的）`;
+      main.appendChild(t);
+    }
+    li.appendChild(main);
+    list.appendChild(li);
+  }
+  if (!list.children.length) {
+    const li = document.createElement('li');
+    li.className = 'hint';
+    li.textContent = '还没有读到动态（可能这个仓库还没有提交，或者最近一次探远端没成功）。';
+    list.appendChild(li);
+  }
+  actBox.appendChild(list);
+  body.appendChild(actBox);
+
+  /* ---------- 发布上线 ---------- */
+  const files = Array.isArray(state.git?.files) ? state.git.files : [];
+  const pubBox = panelBox('发布上线', '顺序是固定的：先在本机构建一遍（构建不过就不推）→ 提交 → **先拉远端** → 推上去。'
+    + '协作者的推送会直接上线（发布门卫按人放行，见 tools/publish/trusted.json），不需要谁点同意。');
+  const pubLine = document.createElement('p');
+  pubLine.className = 'hint';
+  pubLine.textContent = files.length
+    ? `这台机器有 ${files.length} 份文件还没发布：`
+    : '现在没有没发布的改动。';
+  pubBox.appendChild(pubLine);
+  if (files.length) {
+    const ul = document.createElement('ul');
+    ul.className = 'filelist';
+    for (const f of files.slice(0, 40)) {
+      const li = document.createElement('li');
+      li.textContent = f;
+      ul.appendChild(li);
+    }
+    if (files.length > 40) {
+      const li = document.createElement('li');
+      li.className = 'hint';
+      li.textContent = `……另外还有 ${files.length - 40} 份`;
+      ul.appendChild(li);
+    }
+    pubBox.appendChild(ul);
+  }
+  const env = state.collab?.buildEnv;
+  const envLine = document.createElement('p');
+  envLine.className = 'hint';
+  envLine.textContent = env === false
+    ? '⚠ 这台机器没装构建依赖（node_modules），本地不会构建；推上去之后 GitHub 会构建一次，'
+      + '构建不过就不会上线。想看本地预览就在仓库目录里跑一次 pnpm install。'
+    : '本机有构建环境，推送前会先构建一遍把错误摁在本地。';
+  pubBox.appendChild(envLine);
+  body.appendChild(pubBox);
+
+  /* ---------- 这台机器 ---------- */
+  const infoBox = panelBox('这台机器', '');
+  const origin = state.collab?.origin;
+  const dl = document.createElement('dl');
+  dl.className = 'kv';
+  const kv = (k, v) => {
+    const dt = document.createElement('dt');
+    dt.textContent = k;
+    const dd = document.createElement('dd');
+    dd.textContent = v;
+    dl.append(dt, dd);
+  };
+  kv('远端仓库', origin?.owner ? `${origin.owner}/${origin.repo}` : '（没连到 GitHub）');
+  kv('仓库所属者', origin?.owner || '（未知）');
+  kv('身份文件', state.collab?.me?.identityFile || '（未知）');
+  kv('构建环境', env ? '有' : '没有');
+  infoBox.appendChild(dl);
+  body.appendChild(infoBox);
+
+  foot.append(
+    panelBtn('关闭面板', '关掉这个面板', () => openWorkspace('docs')),
+    panelBtn('发布上线', '构建 → 提交 → 先拉远端 → 推上去', () => doPublish({ ask: true, then: () => renderCollabPanel() }), true, 'collab-publish'),
+  );
+  status.textContent = me
+    ? `你是 ${me.login || me.name}${me.owner === true ? '（站长）' : me.owner === false ? '（协作者）' : ''}`
+    : '还没读到身份';
+}
+
+/* ---------------------------------------------------------------- 版本（仅站长） */
+
+let versionsList = null;
+let versionsPicked = '';
+let versionsDetail = null;
+let versionsPickedFile = '';
+let versionsScope = 'data';
+
+async function openVersionsModal() {
+  markWorkspaceActive('versions');
+  els.versionsModal.hidden = false;
+  els.versionsEditor.textContent = '正在读取历史…';
+  await loadVersions();
+  /*
+    默认选中最新那一版并**立刻**把它改了什么都读出来：
+    只列一个列表、右边空白，看着像坏了（第一次就是这么写的，冒烟时才看出来）。
+  */
+  if (versionsPicked && versionsDetail?.sha !== versionsPicked) await loadVersionDetail(versionsPicked);
+  renderVersionsPanel();
+}
+
+function closeVersionsModal() {
+  els.versionsModal.hidden = true;
+}
+
+async function loadVersions() {
+  try {
+    const data = await apiGet(`/api/versions?limit=30&scope=${versionsScope}`);
+    versionsList = data;
+  } catch (err) {
+    versionsList = { ok: false, error: err.message, commits: [] };
+  }
+  if (!versionsPicked && versionsList?.commits?.length) versionsPicked = versionsList.commits[0].sha;
+  return versionsList;
+}
+
+async function loadVersionDetail(sha) {
+  versionsPicked = sha;
+  versionsPickedFile = '';
+  versionsDetail = null;
+  try {
+    versionsDetail = await apiGet(`/api/versions/detail?sha=${encodeURIComponent(sha)}`);
+  } catch (err) {
+    versionsDetail = { ok: false, error: err.message };
+  }
+  return versionsDetail;
+}
+
+function renderVersionsPanel() {
+  const { body, foot, status } = panelShell(els.versionsEditor, {
+    hint:
+      '这里是这个仓库的提交历史（默认只看和内容有关的那些）。选一版 → 看它到底改了什么字段 → 回滚。'
+      + '回滚是**往前加一个新提交**把改动抵消掉，不改写历史、也永不强推 —— 所以回滚本身还能再回滚回来。',
+    group: '',
+  });
+
+  /* ---------- 选一版 ---------- */
+  const listBox = panelBox('选一版', versionsScope === 'data'
+    ? '只列和内容有关的提交（数据 / 文章 / 图片 / 存档）。改代码的提交不在这儿。'
+    : '连改代码的提交也一起列出来了。');
+  const bar = document.createElement('div');
+  bar.className = 'stackrow';
+  bar.append(
+    panelBtn(versionsScope === 'data' ? '连代码提交也列' : '只看内容提交', '切换列表的范围', async () => {
+      versionsScope = versionsScope === 'data' ? 'all' : 'data';
+      versionsPicked = '';
+      versionsDetail = null;
+      await loadVersions();
+      if (versionsPicked) await loadVersionDetail(versionsPicked);
+      renderVersionsPanel();
+    }),
+    panelBtn('重新读取', '把历史重新读一遍', async () => {
+      await loadVersions();
+      if (versionsPicked && versionsDetail?.sha !== versionsPicked) await loadVersionDetail(versionsPicked);
+      renderVersionsPanel();
+    }),
+  );
+  listBox.appendChild(bar);
+
+  const ul = document.createElement('ul');
+  ul.className = 'vlist';
+  for (const c of versionsList?.commits || []) {
+    const li = document.createElement('li');
+    li.className = `vlist__item${c.sha === versionsPicked ? ' is-picked' : ''}`;
+    li.dataset.sha = c.sha;
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'vlist__btn';
+    const l1 = document.createElement('span');
+    l1.className = 'vlist__line1';
+    const sha = document.createElement('code');
+    sha.textContent = c.short;
+    const when = document.createElement('span');
+    when.textContent = timeAgo(c.iso);
+    const who = document.createElement('span');
+    who.textContent = c.author.name;
+    const stat = document.createElement('span');
+    stat.className = 'hint';
+    stat.textContent = `+${c.stat.add}/-${c.stat.del}`;
+    l1.append(sha, who, when, stat);
+    const l2 = document.createElement('span');
+    l2.className = 'vlist__line2';
+    l2.textContent = (c.panels || []).slice(0, 4).join('、') || '（没列改了什么）';
+    const l3 = document.createElement('span');
+    l3.className = 'hint vlist__line3';
+    l3.textContent = c.title || '';
+    btn.append(l1, l2, l3);
+    btn.addEventListener('click', async () => {
+      await loadVersionDetail(c.sha);
+      renderVersionsPanel();
+    });
+    li.appendChild(btn);
+    ul.appendChild(li);
+  }
+  if (!ul.children.length) {
+    const li = document.createElement('li');
+    li.className = 'hint';
+    li.textContent = versionsList?.ok === false ? `读不到历史：${versionsList.error}` : '没有读到历史。';
+    ul.appendChild(li);
+  }
+  listBox.appendChild(ul);
+  body.appendChild(listBox);
+
+  /* ---------- 这一版改了什么 ---------- */
+  const d = versionsDetail;
+  const dBox = panelBox('这一版改了什么', d?.ok
+    ? `${d.short} · ${d.iso ? d.iso.replace('T', ' ').slice(0, 16) : ''} · ${d.author.name}`
+    : '在上面选一版，这里会列出它改过的每一份文件 —— JSON 数据会精确到字段。');
+  if (d?.ok) {
+    for (const f of d.files) {
+      const box = document.createElement('div');
+      box.className = 'vdiff';
+      const head = document.createElement('div');
+      head.className = 'vdiff__head';
+      const pick = document.createElement('input');
+      pick.type = 'radio';
+      pick.name = 'vdiff-file';
+      pick.checked = versionsPickedFile === f.file;
+      pick.addEventListener('change', () => { versionsPickedFile = f.file; renderVersionsPanel(); });
+      const name = document.createElement('code');
+      name.textContent = f.file;
+      const tag = document.createElement('span');
+      tag.className = 'tag';
+      tag.textContent = f.panel;
+      const num = document.createElement('span');
+      num.className = 'hint';
+      num.textContent = `+${f.add ?? '—'}/-${f.del ?? '—'}`;
+      head.append(pick, name, tag, num);
+      box.appendChild(head);
+      if (f.note) {
+        const p = document.createElement('p');
+        p.className = 'hint';
+        p.textContent = f.note;
+        box.appendChild(p);
+      }
+      if (f.changes?.length) {
+        const cl = document.createElement('ul');
+        cl.className = 'changelist';
+        for (const c of f.changes.slice(0, 20)) {
+          const li = document.createElement('li');
+          const path = document.createElement('code');
+          path.textContent = c.path;
+          const arrow = document.createElement('span');
+          arrow.className = `chg chg--${c.kind}`;
+          arrow.textContent = `${c.before} → ${c.after}`;
+          li.append(path, arrow);
+          cl.appendChild(li);
+        }
+        if (f.changes.length > 20) {
+          const li = document.createElement('li');
+          li.className = 'hint';
+          li.textContent = `……这一份还有 ${f.changes.length - 20} 处（回滚是按整份来的，都会一起回去）`;
+          cl.appendChild(li);
+        }
+        box.appendChild(cl);
+      }
+      dBox.appendChild(box);
+    }
+  }
+  body.appendChild(dBox);
+
+  foot.append(
+    panelBtn('关闭面板', '关掉这个面板', () => openWorkspace('docs')),
+    panelBtn('只恢复选中的那份数据', '把选中的这份文件变回这一版的样子（其它文件不动）', () => doRollback('file'), false),
+    panelBtn('撤销这一次', '只把选中的这一次提交抵消掉（之后别人的改动不动）', () => doRollback('commit')),
+    panelBtn('恢复到这一版', '把内容恢复成这一版的样子（之后所有改动都抵消掉），然后立刻推流上线', () => doRollback('to'), true, 'ver-rollback'),
+  );
+  status.textContent = d?.ok
+    ? `选中的是 ${d.short}${versionsPickedFile ? ` · ${versionsPickedFile}` : ''}`
+    : '还没选版本';
+}
+
+/**
+ * 回滚 —— **只有站长**（服务端还会再挡一道：不是站长直接 403）。
+ * 回滚完会接着构建 + 发布上线（和「发布上线」同一条路）。
+ */
+async function doRollback(mode) {
+  if (state.rollingBack) return;
+  const sha = versionsPicked;
+  if (!sha) {
+    toast('先在上面选一版', true);
+    return;
+  }
+  const d = versionsDetail;
+  const what = mode === 'file'
+    ? `把 ${versionsPickedFile || '（还没选文件）'} 恢复成 ${d?.short || sha.slice(0, 7)} 那一版的样子`
+    : mode === 'commit'
+      ? `把 ${d?.short || sha.slice(0, 7)} 这一次的改动抵消掉`
+      : `把内容恢复到 ${d?.short || sha.slice(0, 7)} 那一版（之后所有改动都会一起抵消）`;
+  if (mode === 'file' && !versionsPickedFile) {
+    toast('先在下面那份文件前面点一下圆点', true);
+    return;
+  }
+  if (!confirm(
+    `${what}，然后**立刻推流上线**。\n\n`
+    + '回滚是往前加一个新提交（不改写历史、不强推），所以这一步本身也能再回滚回来。\n'
+    + '动手之前，本机没发布的改动会先被存成一个提交（"回滚前的现场"），不会丢。\n\n继续吗？',
+  )) return;
+
+  state.rollingBack = true;
+  const btn = $('ver-rollback');
+  const was = btn ? btn.textContent : '';
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = '回滚中…';
+  }
+  try {
+    const r = await apiPost('/api/versions/rollback', { sha, mode, file: versionsPickedFile });
+    if (r?.ok) {
+      toast(`已回滚并发布上线（改了 ${(r.changed || []).length} 份文件）`);
+    } else if (r?.code === 'build-failed') {
+      alert(`文件已经回滚，但本机构建没过，**没有推流**（线上还是原样）：\n\n${r.error || ''}`);
+    } else {
+      alert(r?.message || r?.error || '回滚没成功，看看编辑器那个窗口的日志。');
+      toast('回滚没成功', true);
+    }
+    await refreshPullBadge();
+    await refreshActivity({ fetch: true });
+    await loadVersions();
+    if (versionsPicked) await loadVersionDetail(versionsPicked);
+    renderVersionsPanel();
+    return r;
+  } catch (err) {
+    toast(`回滚失败：${err.message}`, true);
+    return null;
+  } finally {
+    state.rollingBack = false;
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = was;
+    }
+  }
+}
+
+/* ---------------------------------------------------------------- 轮询 */
+
+/**
+ * 前台时每分钟看一眼远端：有新提交就亮角标 + 弹一条提示。
+ * 页面在后台时不做（浏览器本来就限流，而且没必要）。
+ */
+function startCollabPolling() {
+  if (state.collabTimer) return;
+  state.collabTimer = setInterval(() => {
+    if (document.visibilityState !== 'visible') return;
+    void refreshPullBadge();
+    void refreshActivity({ fetch: true, limit: 20 });
+  }, ACTIVITY_POLL_MS);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') void refreshActivity({ fetch: true, limit: 20 });
+  });
+}
+
+/** 开机时读一次身份（决定「版本」面板要不要出现），再读一次动态 */
+async function bootCollab() {
+  state.seenAt = readSeenAt();
+  await loadCollabInfo();
+  await refreshActivity({ limit: 20 });
+  startCollabPolling();
+}
+
 /* ---------- 关于我 ---------- */
+
 
 async function openAboutModal() {
   if (!(await openWidgetPanel('about', els.aboutModal, els.aboutEditor))) return;
@@ -12443,13 +13300,11 @@ async function saveIceberg(btn, statusEl) {
   statusEl.textContent = '正在保存…';
   statusEl.classList.remove('is-dirty');
   try {
-    const res = await fetch('/api/iceberg', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(iceDraft),
-    });
-    const data = await res.json();
-    if (!res.ok || !data.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    /*
+      带指纹保存（见 savePanelData）：冰山图整份都在一个 JSON 里，
+      你编着编着别人也动了一条的话，这次保存会被挡下来问一句。
+    */
+    const data = await savePanelData('/api/iceberg', iceDraft, 'iceberg', '冰山图');
     iceDirty = false;
     /*
       拿服务端那份重新来过：它给补过 id、洗过引用（认不出来的分类 / 标签会清掉），
@@ -13804,6 +14659,14 @@ function bindEvents() {
   // 拉远端（另一位 / 机器人推上来的新内容）
   els.btnPull.addEventListener('click', doPullRemote);
 
+  /*
+    共享编辑器（2026-10-12）：顶栏另外两颗。
+      · 动态：打开「协作」面板（顺带把"看过"的位置推到最新，角标就灭了）；
+      · 发布上线：提交 → 先拉 → 推（和面板里那颗是同一个函数，会问一句再动手）。
+  */
+  els.btnActivity.addEventListener('click', () => openWorkspace('collab'));
+  els.btnPublish.addEventListener('click', () => doPublish({ ask: true }));
+
   // 主题 / 预览开关
   els.btnTheme.addEventListener('click', cycleTheme);
   els.btnPreview.addEventListener('click', () => {
@@ -14026,6 +14889,9 @@ function bindEvents() {
     [els.icechartModal, closeIceChartModal],
     [els.essencesModal, closeEssencesModal],
     [els.membersModal, closeMembersModal],
+    /* 共享编辑器（2026-10-12）：协作人人都有，版本只有站长的编辑器会打开 */
+    [els.collabModal, closeCollabModal],
+    [els.versionsModal, closeVersionsModal],
   ]) {
     modal.addEventListener('click', (ev) => {
       if (ev.target.dataset && ev.target.dataset.close) close();
@@ -14120,6 +14986,8 @@ function bindEvents() {
         [els.icechartModal, closeIceChartModal],
         [els.essencesModal, closeEssencesModal],
         [els.membersModal, closeMembersModal],
+        [els.collabModal, closeCollabModal],
+        [els.versionsModal, closeVersionsModal],
       ]) {
         if (!modal.hidden) {
           close();
@@ -14193,6 +15061,13 @@ async function init() {
   // 远端同步的角标（只读本地那份记录，不联网），之后由 startRemotePolling 自己盯着
   await refreshPullBadge();
   startRemotePolling();
+
+  /*
+    共享编辑器（2026-10-12）：读一次"我是谁"（决定「版本」面板要不要出现）+ 最近动态，
+    之后每分钟自己看一次远端。放在最后、不 await 到底 —— 身份要问一次 gh（约 1 秒），
+    动态要问一次 GitHub，都不该挡着"先把文章列表画出来"。
+  */
+  void bootCollab();
 
   const params = new URLSearchParams(location.search);
   const startType = params.get('new');

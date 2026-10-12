@@ -154,6 +154,11 @@ fs.rmSync(TMP, { recursive: true, force: true });
 fs.mkdirSync(path.join(TMP, 'src', 'data'), { recursive: true });
 fs.mkdirSync(path.join(TMP, 'tools', 'editor'), { recursive: true });
 fs.cpSync(path.join(SRC, 'tools', 'editor', 'ui'), path.join(TMP, 'tools', 'editor', 'ui'), { recursive: true });
+/*
+  共享编辑器（2026-10-12）：server.mjs 现在会 import tools/git/*.mjs（身份 / 动态 / 版本），
+  模块是按**文件位置**解析的，所以副本里也得有那一份 —— 少一份，副本的编辑器直接起不来。
+*/
+fs.cpSync(path.join(SRC, 'tools', 'git'), path.join(TMP, 'tools', 'git'), { recursive: true });
 
 let patched = read('tools/editor/server.mjs');
 const patch = (from, to) => {

@@ -72,10 +72,16 @@ const syncJs = fs.readFileSync(path.join(SRC, 'tools/git/sync.mjs'), 'utf8');
 check('★ 服务端有「只读本地」的状态接口', /route === '\/api\/git\/status'/.test(serverJs));
 check('★ 服务端有「拉远端」接口', /route === '\/api\/git\/pull'/.test(serverJs));
 check('★ 拉取走**子进程**（fetch 慢起来几秒，不能把编辑器服务堵住）',
-  /async function runGitCli\(cmd/.test(serverJs) && /spawn\(process\.execPath, args/.test(serverJs));
+  /*
+    ⚠ 2026-10-12 起 runGitCli 把"起子进程"这一步抽给了 runNodeTool（协作 / 版本那几个
+    工具也走同一条路），所以 spawn 那一段的参数名变了 —— 量的是"确实起了子进程"，不是那行原文。
+  */
+  /async function runGitCli\(cmd/.test(serverJs)
+  && /async function runNodeTool\(script/.test(serverJs)
+  && /spawn\(process\.execPath, \[script, \.\.\.args\]/.test(serverJs));
 check('★ 拉取跑的就是启动器发布用的同一份实现', /tools', 'git', 'sync\.mjs'/.test(serverJs));
 check('★ 编辑器启动就在后台探一次远端（角标一开始就有数）',
-  /function fetchRemoteInBackground\(\)/.test(serverJs) && /startRemoteWatch\(\);/.test(serverJs));
+  /function fetchRemoteInBackground\(/.test(serverJs) && /startRemoteWatch\(\);/.test(serverJs));
 check('★ 而且**每 5 分钟自己再探一次**（编辑器常开着，机器人后来推的不能不知道）',
   /setInterval\(fetchRemoteInBackground, FETCH_EVERY_MS\)/.test(serverJs));
 check('★ 服务端有「现在就去探一次」的接口（页面切回来就调它）',

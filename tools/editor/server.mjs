@@ -8,12 +8,16 @@
  *    · 零依赖：只用 node:* 内置模块，不需要装任何东西
  *    · 零配置：自己找到项目根目录、内容目录和站点配置
  *    · 只监听 127.0.0.1，绝不对外网暴露
+ *    · **一个编辑器，几个人一起用**（2026-10-12 起的共享编辑器）：
+ *      协作者 clone 下来跑同一个 server.mjs 就有同款编辑器，靠 git 同步；
+ *      面板多出「协作」（我是谁 / 谁刚推了什么 / 发布上线）和「版本」（只有站长）。
  *
  *  用法：
- *    node tools/editor/server.mjs            # 启动编辑器
+ *    node tools/editor/server.mjs            # 启动编辑器（端口从 4322 起找空位）
  *    node tools/editor/server.mjs --open     # 启动并自动打开浏览器
+ *    node tools/editor/server.mjs --port 4331  # 只试这一个端口（验收脚本用）
  *
- *  端口：从 4322 开始，被占用就依次试 4323、4324 …… 最多到 4340。
+ *  端口：默认从 4322 开始，被占用就依次试 4323、4324 …… 最多到 4340。
  */
 
 import http from 'node:http';
@@ -24,6 +28,14 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomBytes, createHash } from 'node:crypto';
 import { spawn } from 'node:child_process';
+/*
+  共享编辑器（2026-10-12）：身份 / 推流动态 / 版本回滚。
+  ⚠ 这三个都是 tools/git/ 下的独立脚本（也都能单独在命令行里跑），编辑器服务只负责
+    起子进程、把机读结果（`[result] {…}` 那一行）转给页面 —— 和「拉远端」那条路一致。
+*/
+import { me as whoami, saveIdentity } from '../git/whoami.mjs';
+import { activity, panelsForFiles } from '../git/activity.mjs';
+import { listVersions, versionDetail } from '../git/versions.mjs';
 
 // ---------------------------------------------------------------
 // 基本路径与常量
@@ -189,15 +201,25 @@ function ok(res, payload = { ok: true }) {
    机读结果：那个脚本在 `--json` 下会多打一行 `[result] {…}`，这里把它摘出来；
    剩下的日志原文一起回给前端，出问题时能照着念。
    ------------------------------------------------------------------ */
-async function runGitCli(cmd, { json = false, timeout = 180000 } = {}) {
-  const script = path.join(PROJECT_ROOT, 'tools', 'git', 'sync.mjs');
-  const args = [script, cmd];
+async function runGitCli(cmd, { json = false, timeout = 180000, extra = [] } = {}) {
+  const args = [cmd, ...extra];
   if (json) args.push('--json');
+  return await runNodeTool(path.join(PROJECT_ROOT, 'tools', 'git', 'sync.mjs'), args, { timeout });
+}
 
+/**
+ * 跑一个 tools/ 下的命令行工具，把它的 `[result] {…}` 那一行读回来。
+ *
+ * 为什么都走子进程：`git fetch` / `git log` 慢起来好几秒，而编辑器服务是单线程的 ——
+ * 同步跑会把「保存 / 预览 / 上传」全堵住（拉远端那条路 2026-10-05 就是这么定的）。
+ * 机读约定也一样：脚本在 `--json` 下最后多打一行 `[result] {…}`，这里摘出来，
+ * 剩下的日志原文一起回给前端，出问题时能照着念。
+ */
+async function runNodeTool(script, args = [], { timeout = 180000 } = {}) {
   return await new Promise((resolve) => {
     let child;
     try {
-      child = spawn(process.execPath, args, {
+      child = spawn(process.execPath, [script, ...args], {
         cwd: PROJECT_ROOT,
         stdio: ['ignore', 'pipe', 'pipe'],
         windowsHide: true,
@@ -210,7 +232,7 @@ async function runGitCli(cmd, { json = false, timeout = 180000 } = {}) {
     let out = '';
     const keep = (buf) => {
       out += buf.toString('utf8');
-      if (out.length > 8000) out = out.slice(-8000);
+      if (out.length > 20000) out = out.slice(-20000);
     };
     child.stdout.on('data', keep);
     child.stderr.on('data', keep);
@@ -252,11 +274,18 @@ async function runGitCli(cmd, { json = false, timeout = 180000 } = {}) {
   http.proxy=127.0.0.1:7890，Clash 一关，裸 git fetch 必然失败，角标就永远停在旧数字。
 */
 const FETCH_EVERY_MS = 5 * 60 * 1000;
+/**
+ * 共享编辑器（2026-10-12）：页面自己要求探远端时（前台轮询、切回标签页）的最小间隔。
+ * 一分钟探一次是"够实时"和"别把 GitHub 当轮询靶子"之间的折中 —— 每次 fetch
+ * 只走一次协商，很轻，但也没必要更密（真要更快只有常驻服务端推送那条路，见 activity.mjs）。
+ */
+const COLLAB_FETCH_GAP_MS = 45 * 1000;
 let lastFetch = { at: 0, ok: null, behind: null };
 let fetching = false;
 
-function fetchRemoteInBackground() {
+function fetchRemoteInBackground(minGapMs = 0) {
   if (fetching) return;   // 上一次还没回来就别叠着探
+  if (minGapMs > 0 && Date.now() - Number(lastFetch.at || 0) < minGapMs) return;
   fetching = true;
   runGitCli('fetch', { json: true, timeout: 60000 })
     .then((r) => {
@@ -281,6 +310,73 @@ function startRemoteWatch() {
 /** RFC3339 之类的字符串可能带毫秒；统一 YYYY-MM-DD HH:mm */
 function pad2(n) {
   return String(n).padStart(2, '0');
+}
+
+/* ------------------------------------------------------------------
+   共享编辑器用的几个小工具（2026-10-12）
+   ------------------------------------------------------------------ */
+
+/** 北京时间「YYYY-MM-DD HH:mm」—— 这个仓库里给人看的时间一律用它 */
+function beijingStamp(ms = Date.now()) {
+  const d = new Date(ms + 8 * 3600 * 1000);
+  return `${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}-${pad2(d.getUTCDate())} ${pad2(d.getUTCHours())}:${pad2(d.getUTCMinutes())}`;
+}
+
+/** 自动写的提交说明：和启动器一直以来的样子一致（「更新内容 日期 时间：改了哪几块」） */
+function defaultPublishMessage(panels = [], tail = '') {
+  const list = (panels || []).filter(Boolean).slice(0, 4).join('、');
+  const detail = [list, tail].filter(Boolean).join(' · ');
+  return `更新内容 ${beijingStamp()}${detail ? `：${detail}` : ''}`;
+}
+
+/** 这台机器上有没有构建环境（node_modules 里的 astro） */
+async function hasBuildEnv() {
+  try {
+    await fs.access(path.join(PROJECT_ROOT, 'node_modules', 'astro', 'bin', 'astro.mjs'));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 推流前先在本机构建一遍 —— **但缺构建环境不算失败**。
+ *
+ * 协作者第一次 clone 下来时 node_modules 是空的（要 pnpm install 才有）。
+ * 那时候不该拦着他推流：GitHub Actions 那边还会构建一次，**构建不过就不会上线**
+ * （线上还是上一版），所以他推上去最坏也只是"这次没生效"，不会把站点弄坏。
+ * 而构建环境齐全时，这一步能提前把错误摁在本地 —— 省一次"推上去了但没生效"。
+ */
+async function buildOrSkip() {
+  if (!(await hasBuildEnv())) {
+    return {
+      skipped: true,
+      env: false,
+      why: '这台机器没装构建依赖（node_modules），本机没构建；GitHub 上还会构建一次，构建不过就不会上线。'
+        + '想看本地预览的话，在仓库目录里跑一次 pnpm install。',
+    };
+  }
+  try {
+    const r = await runBuild();
+    return { built: true, ms: r.ms, output: r.output, env: true };
+  } catch (err) {
+    return { failed: true, env: true, error: String(err?.message || err), output: String(err?.data || '') };
+  }
+}
+
+/**
+ * 「版本回滚只有站长能用」的闸门。
+ * 页面上不摆这个面板是**方便**（协作者不该看到按不动的东西），
+ * 这里再挡一道才是**安全** —— 面板是能手动调接口绕过去的。
+ */
+function requireOwner() {
+  const who = whoami();
+  if (who.owner !== true) {
+    throw httpError(403, '版本回滚只有站长本人的编辑器能用'
+      + `（这台机器认到的身份是「${who.login || '还没填用户名'}」，仓库所属者是「${who.ownerLogin || '未知'}」）。`
+      + '如果你是站长：在「协作」面板里把 GitHub 用户名填对就行。');
+  }
+  return who;
 }
 
 function formatDateParts(d) {
@@ -836,6 +932,93 @@ async function checkStale(type, base, payload) {
   };
 }
 
+/*
+  ------------------------------------------------------------------
+  「整份 JSON 被谁先写了一步」的闸门（2026-10-12 加，共享编辑器）
+
+  用户 2026-10-12 的要求（原话）：
+    「可以让我的 github 的 Collaborators 使用和我同款的编辑器 和我进行共创 …
+      因为可能会有多人实时同步进行编辑」
+
+  上面那个 checkStale() 只护住了**文章和手记**（一份一个 .md 文件）。
+  但站点的数据面板 —— 冰山图、页面 / 子版块、精华、时间轴、导航、公告、文案… ——
+  全都是「读一整份 JSON → 在页面上改 → 整份写回去」。两个人同时开着同一个面板时：
+
+    我 10:00 打开冰山面板（内存里是那一份 10:00 的快照）
+    对方 10:05 保存 → 推流 → 10:06 我这边的目录（如果刚拉过）已经变了
+    我 10:07 点保存 → **整份写回** → 对方 10:05 那一步的改动被整段抹掉
+
+  这是共享编辑器里最隐蔽的一种丢数据：没有任何报错，对方的改动就这么没了。
+  所以数据面板也照文章那条路走：读的时候带一个内容指纹（rev），
+  保存时原样带回来；对不上就 409，让页面弹窗问一句"是重新载入，还是用我这份覆盖"。
+
+  三条出口和 checkStale() 一模一样（没带 rev 就不检查 —— 老页面、验收脚本、
+  手搓的请求行为一点不变；`force: true` = 用户在弹窗里明确选了覆盖）。
+  ------------------------------------------------------------------
+*/
+
+/**
+ * 这个接口写的是哪份数据文件（不是数据面板的接口就返回 null）。
+ * ⚠ 写成函数而不是模块级常量：下面那些 *_FILE 常量定义在几千行之后，
+ *   模块级引用会踩到「暂时性死区」。
+ */
+function revGuardFile(route) {
+  switch (route) {
+    case '/api/boards': return BOARDS_FILE;
+    case '/api/widgets': return WIDGETS_FILE;
+    case '/api/layout': return LAYOUT_FILE;
+    case '/api/iceberg': return ICEBERG_FILE;
+    case '/api/salon': return SALON_FILE;
+    case '/api/navs': return NAVS_FILE;
+    case '/api/timelines': return TIMELINES_FILE;
+    case '/api/music': return MUSIC_FILE;
+    case '/api/announcements': return ANNOUNCEMENTS_FILE;
+    case '/api/site-copy': return SITE_COPY_FILE;
+    /*
+      ⚠ /api/templates 故意**不在**这张表里：它的 POST 是三个动作
+      （存成模版 / 改名 / 删掉），各自带一份 rev 反而更容易莫名其妙地撞 409 ——
+      而模版是"一次一个人动一下就完了"的小东西，冲突面本来就小。
+      页面数据本身（home-boards.json）走的是 /api/boards，那一份是护住的。
+    */
+    /* /api/liyutang 自己有一份（liyutangRevOf，见那一节），这里不重复 */
+    default: return null;
+  }
+}
+
+/** 某份文件此刻的内容指纹（文件不在就给 null） */
+async function fileRev(abs) {
+  try {
+    return revOf(await fs.readFile(abs, 'utf8'));
+  } catch (err) {
+    if (!err || err.code !== 'ENOENT') throw err;
+    return null;
+  }
+}
+
+/** 保存前比一下：数据文件还是不是「页面读到的那一份」 */
+async function checkDataStale(route, payload) {
+  const rev = typeof payload?.rev === 'string' ? payload.rev.trim() : '';
+  if (!rev) return null;
+  if (payload?.force === true) return null;
+  const abs = revGuardFile(route);
+  if (!abs) return null;
+  const nowRev = await fileRev(abs);
+  if (nowRev === null) {
+    return { ok: false, stale: true, missing: true, error: '这份数据文件已经不在了（被别处删掉或改名了）' };
+  }
+  if (nowRev === rev) return null;
+  const rel = path.relative(PROJECT_ROOT, abs).split(path.sep).join('/');
+  return {
+    ok: false,
+    stale: true,
+    rev: nowRev,
+    file: rel,
+    error: '这份数据在你编辑的时候被别人改过了（谁改的看「协作」面板里的推流动态）。\n'
+      + '现在保存会把对方那部分整段抹掉，所以这次保存被拒绝了 ——\n'
+      + '选「重新载入」看一遍对方改了什么，或者确认自己这份更全再选「用我这份覆盖」。',
+  };
+}
+
 /** 读文件时容错：字段缺失也不报错，交给编辑器补全 */
 function normalizeFrontmatterSafe(type, data) {
   const fm = {
@@ -914,8 +1097,17 @@ async function readSiteInfo() {
 // 请求体读取（带上限；图片/音频不走这里）
 // ---------------------------------------------------------------
 
+/**
+ * 读请求体（带上限；图片/音频不走这里）。
+ *
+ * ⚠ 同一次请求只读一遍：**共享编辑器（2026-10-12）以后，服务端要先读一次请求体
+ *   做「这份数据是不是被别人改过了」的检查，然后路由里再读一次**。
+ *   req 是个流，读第二遍会读到空 —— 所以这里把 promise 挂在 req 上，
+ *   第二次调用拿到的是同一份结果（见 handleApi 里的 REV_GUARD）。
+ */
 function readBody(req, limit = MAX_BODY_BYTES, label = '请求体') {
-  return new Promise((resolve, reject) => {
+  if (req.__bodyPromise) return req.__bodyPromise;
+  req.__bodyPromise = new Promise((resolve, reject) => {
     const chunks = [];
     let size = 0;
     let done = false;
@@ -951,6 +1143,7 @@ function readBody(req, limit = MAX_BODY_BYTES, label = '请求体') {
       reject(err);
     });
   });
+  return req.__bodyPromise;
 }
 
 // ---------------------------------------------------------------
@@ -1139,8 +1332,53 @@ async function handleImageUpload(req, res, url) {
 // 路由
 // ---------------------------------------------------------------
 
+/**
+ * 只认「本页面自己发的」写请求（2026-10-12 加，共享编辑器）。
+ *
+ * 编辑器服务监听 127.0.0.1 且**没有登录**（它本来就是"自己电脑上的工具"）。
+ * 以前这没什么：只有你本人在用。共享编辑器以后，协作者的浏览器里也开着这个服务 ——
+ * 于是多了一种可能：他随手点开的某个网页，用 JS 往 `http://127.0.0.1:4322/api/...`
+ * 发一个跨站 POST（表单、fetch 都能发），把仓库里的数据改掉（读到结果不行，
+ * 但"改"这一下是能成的）。
+ *
+ * 挡法：浏览器对跨站请求一定会带上 `Origin`，而页面自己的请求 Origin 就是本服务的地址。
+ *   · 带了 Origin 而且 Host 对不上 → 403；
+ *   · `Sec-Fetch-Site: cross-site` 也一并挡掉（老浏览器没有这个头，不影响）；
+ *   · **没有 Origin 的请求照旧放行** —— 命令行、验收脚本、curl 都没有这个头，
+ *     挡掉它们只会把自动化全打坏，而它们不属于"浏览器里的跨站"这一类风险。
+ */
+function assertSameOrigin(req) {
+  const site = String(req.headers['sec-fetch-site'] || '');
+  if (site && site !== 'same-origin' && site !== 'none') {
+    throw httpError(403, '这个请求不是编辑器页面自己发的（跨站请求已拒绝）');
+  }
+  const origin = String(req.headers.origin || '');
+  if (!origin) return;
+  let host = '';
+  try {
+    host = new URL(origin).host;
+  } catch {
+    throw httpError(403, '请求来源看不懂，已拒绝');
+  }
+  const self = String(req.headers.host || '');
+  if (host !== self) throw httpError(403, `这个请求来自 ${host}，不是编辑器页面（已拒绝）`);
+}
+
 async function handleApi(req, res, url) {
   const route = url.pathname;
+
+  const mutating = req.method !== 'GET' && req.method !== 'HEAD';
+  if (mutating) assertSameOrigin(req);
+
+  /*
+    数据面板的「这份数据被别人改过了」闸门（2026-10-12）。
+    放在最前面、只读一次请求体：命中就 409 回绝，后面的路由照旧从缓存里拿同一份 body。
+  */
+  if (req.method === 'POST' && revGuardFile(route)) {
+    const payload = await readBody(req);
+    const stale = await checkDataStale(route, payload);
+    if (stale) return sendJson(res, 409, stale);
+  }
 
   if (route === '/api/bootstrap' && req.method === 'GET') {
     const site = await readSiteInfo();
@@ -1259,6 +1497,211 @@ async function handleApi(req, res, url) {
     });
   }
 
+  /* ==================================================================
+     共享编辑器（2026-10-12）
+     ------------------------------------------------------------------
+     用户原话：
+       「现在来制作一个非常重要的功能：便捷共享编辑器 … 可以让我的 github 的
+         Collaborators 使用和我同款的编辑器 和我进行共创 … 和跟铃忆机器人的联动
+         一样 需要先拉取远端再推流以保证安全 并且因为可能会有多人实时同步进行编辑
+         所以最好可以在编辑器里实时提醒哪个用户何时进行了推流 另外仅有我的编辑器
+         需要加一个方便快捷可视化的版本回滚功能 以保证安全」
+
+     四条路由，各管一件事：
+       · /api/collab/me          我是谁（推流动态里显示谁、以及这台机器是不是站长）
+       · /api/git/activity       谁 · 什么时候 · 推了什么（读 git log，不新起服务器）
+       · /api/git/publish        「发布上线」：构建 → 提交 → **先拉** → 推
+       · /api/versions*          版本列表 / 看了哪一版改了什么 / 回滚（**只有站长**）
+     ================================================================== */
+
+  if (route === '/api/collab/me' && req.method === 'GET') {
+    const who = whoami();
+    return sendJson(res, 200, {
+      ok: true,
+      me: {
+        login: who.login,
+        name: who.name,
+        email: who.email,
+        avatar: who.avatar,
+        profile: who.profile,
+        owner: who.owner,
+        ownerLogin: who.ownerLogin,
+        source: who.source,
+        identityFile: who.identityFile,
+      },
+      origin: who.origin,
+      rollback: who.owner === true,
+      buildEnv: await hasBuildEnv(),
+      lastFetch,
+    });
+  }
+
+  if (route === '/api/collab/me' && req.method === 'POST') {
+    const payload = await readBody(req);
+    try {
+      const who = saveIdentity({ login: payload.login, name: payload.name, email: payload.email });
+      return sendJson(res, 200, {
+        ok: true,
+        me: {
+          login: who.login,
+          name: who.name,
+          email: who.email,
+          avatar: who.avatar,
+          profile: who.profile,
+          owner: who.owner,
+          ownerLogin: who.ownerLogin,
+          source: who.source,
+          identityFile: who.identityFile,
+        },
+        rollback: who.owner === true,
+      });
+    } catch (err) {
+      return sendJson(res, 400, { ok: false, error: String(err?.message || err) });
+    }
+  }
+
+  if (route === '/api/git/activity' && req.method === 'GET') {
+    const rawLimit = Number(url.searchParams.get('limit'));
+    const limit = Number.isFinite(rawLimit) && rawLimit > 0 ? Math.min(60, Math.round(rawLimit)) : 15;
+    /*
+      顺带探一次远端（默认 45 秒最多一次）：动态要"新"，但也不能每次页面轮询都去问 GitHub。
+      探针本身在后台跑（见 fetchRemoteInBackground），这里不 await 它 ——
+      这一次读到的可能还是上一秒的记录，下一次轮询就新了。
+    */
+    if (url.searchParams.get('fetch') === '1') fetchRemoteInBackground(COLLAB_FETCH_GAP_MS);
+    let data = null;
+    try {
+      data = await activity({ limit, identity: whoami() });
+    } catch (err) {
+      return sendJson(res, 200, { ok: false, error: String(err?.message || err), commits: [], lastFetch, fetching });
+    }
+    return sendJson(res, 200, {
+      ok: true,
+      ...data,
+      fetching,
+      lastFetch,
+      /*
+        探针失败过（代理没开、断网）时如实标记：这份动态可能不是最新的，
+        页面上要写清楚，不能让用户以为"没人推流"。
+      */
+      stale: lastFetch.ok === false,
+    });
+  }
+
+  if (route === '/api/git/publish' && req.method === 'POST') {
+    const payload = await readBody(req);
+    const st = await runGitCli('status', { json: true, timeout: 30000 });
+    const paths = Array.isArray(st.result?.files) ? st.result.files : [];
+    const panels = panelsForFiles(paths);
+    const unclean = paths.length > 0;
+    let build = { skipped: true, why: '这次没让它构建' };
+    if (payload?.build !== false) {
+      build = await buildOrSkip();
+      if (build.failed) {
+        return sendJson(res, 200, {
+          ok: false,
+          code: 'build-failed',
+          error: build.error,
+          output: build.output,
+          panels,
+          files: paths,
+          message: '本机构建没过，这次没有推流（线上还是上一版）。把报错改掉再发一次。',
+        });
+      }
+    }
+    const message = String(payload?.message || '').trim() || defaultPublishMessage(panels);
+    const r = await runGitCli('publish', { json: true, timeout: 600000, extra: ['--message', message] });
+    const result = r.result ?? { code: 'error', err: r.output.slice(-500) };
+    return sendJson(res, 200, {
+      ok: result.code === 'ok',
+      ...result,
+      message: r.message,
+      output: r.output,
+      panels,
+      files: paths,
+      publishMessage: message,
+      unclean,
+      build,
+    });
+  }
+
+  if (route === '/api/versions' && req.method === 'GET') {
+    requireOwner();
+    const rawLimit = Number(url.searchParams.get('limit'));
+    const limit = Number.isFinite(rawLimit) && rawLimit > 0 ? Math.min(100, Math.round(rawLimit)) : 30;
+    const scope = url.searchParams.get('scope') === 'all' ? 'all' : 'data';
+    let data = null;
+    try {
+      data = listVersions({ limit, scope });
+    } catch (err) {
+      return sendJson(res, 200, { ok: false, error: String(err?.message || err), commits: [] });
+    }
+    return sendJson(res, 200, { ok: true, ...data });
+  }
+
+  if (route === '/api/versions/detail' && req.method === 'GET') {
+    requireOwner();
+    const sha = String(url.searchParams.get('sha') || '').trim();
+    let data = null;
+    try {
+      data = versionDetail(sha, { maxJson: 10 });
+    } catch (err) {
+      return sendJson(res, 200, { ok: false, error: String(err?.message || err) });
+    }
+    return sendJson(res, 200, data);
+  }
+
+  if (route === '/api/versions/rollback' && req.method === 'POST') {
+    requireOwner();
+    const payload = await readBody(req);
+    const sha = String(payload?.sha || '').trim();
+    const mode = ['to', 'commit', 'file'].includes(String(payload?.mode || '')) ? String(payload.mode) : 'to';
+    const file = String(payload?.file || '').trim();
+    if (!/^[0-9a-f]{6,40}$/i.test(sha)) return sendJson(res, 400, { ok: false, error: '这个提交号看起来不对' });
+    /*
+      ⚠ 回滚必须走子进程：它中间要 `git pull --ff-only`（联网，慢起来十几秒）
+      和 `git revert`，同步跑会把整个编辑器服务卡住 —— 和「拉远端」同一个道理。
+    */
+    const extra = ['--rollback', sha, '--mode', mode];
+    if (file) extra.push('--file', file);
+    const r = await runNodeTool(path.join(PROJECT_ROOT, 'tools', 'git', 'versions.mjs'), extra, { timeout: 300000 });
+    const result = r.result ?? { ok: false, error: r.output.slice(-400) || '回滚没跑起来' };
+    if (!result.ok) {
+      return sendJson(res, 200, { ok: false, ...result, message: r.message });
+    }
+    /*
+      回滚之后接着构建 + 发布上线（这一步才是"让它真的生效"）。
+      发布那条路照样是**先拉后推、永不强推**（tools/git/sync.mjs publish）。
+    */
+    const build = await buildOrSkip();
+    if (build.failed) {
+      return sendJson(res, 200, {
+        ok: false,
+        rolledBack: true,
+        code: 'build-failed',
+        error: build.error,
+        output: build.output,
+        message: '文件已经回滚了，但本机构建没过，**没有推流** —— 线上还是原来的样子。',
+        detail: result,
+      });
+    }
+    const pub = await runGitCli('publish', {
+      json: true,
+      timeout: 600000,
+      extra: ['--message', defaultPublishMessage(result.panels || [], mode === 'file' ? `恢复 ${file}` : `回滚到 ${sha.slice(0, 7)}`)],
+    });
+    const pubResult = pub.result ?? { code: 'error', err: pub.output.slice(-500) };
+    return sendJson(res, 200, {
+      ok: pubResult.code === 'ok',
+      ...pubResult,
+      rolledBack: true,
+      changed: result.changed,
+      detail: result,
+      build,
+      message: `${result.message || '已回滚'}（改了 ${(result.changed || []).length} 份文件）\n\n${pub.message || ''}`.trim(),
+    });
+  }
+
   /*
     上传图片。两条路共用同一个地址：
       · 原始二进制（**现在前端走这条**）：请求体就是图片本身，`?name=` 带文件名，
@@ -1340,7 +1783,8 @@ async function handleApi(req, res, url) {
   // 之所以不让编辑器去改 site.config.ts：那是 TypeScript 源码，
   // 用字符串替换很容易把文件弄坏，改 JSON 则安全得多。
   if (route === '/api/boards' && req.method === 'GET') {
-    return sendJson(res, 200, await readBoards());
+    /* rev = 这份数据此刻的指纹：页面保存时原样带回来，对不上就是"别人改过了"（见 checkDataStale） */
+    return sendJson(res, 200, { ...(await readBoards()), rev: await fileRev(BOARDS_FILE) });
   }
   if (route === '/api/boards' && req.method === 'POST') {
     const payload = await readBody(req);
@@ -1372,6 +1816,7 @@ async function handleApi(req, res, url) {
       music: { tracks: music.tracks, pages: music.pages },
       pages: await musicPages(),
       limits: { maxBytes: MAX_AUDIO_BYTES },
+      rev: await fileRev(MUSIC_FILE),
     });
   }
   // 整份写回 + 重新构建（要出现在网站上必须走这一步）
@@ -1413,7 +1858,7 @@ async function handleApi(req, res, url) {
 
   // ---- 时间轴（独立的一份数据，见上面 TIMELINES_FILE 那段的说明）----
   if (route === '/api/timelines' && req.method === 'GET') {
-    return sendJson(res, 200, await readTimelines());
+    return sendJson(res, 200, { ...(await readTimelines()), rev: await fileRev(TIMELINES_FILE) });
   }
   if (route === '/api/timelines' && req.method === 'POST') {
     const payload = await readBody(req);
@@ -1432,7 +1877,7 @@ async function handleApi(req, res, url) {
   // 和「音乐」一样，POST 会顺手重新构建：分类是给页面块引用的，
   // 改一次要让所有引用它的页面一起变，不重建的话页面还是旧的。
   if (route === '/api/navs' && req.method === 'GET') {
-    return sendJson(res, 200, { ok: true, navs: await readNavs(), pages: await navRefs() });
+    return sendJson(res, 200, { ok: true, navs: await readNavs(), pages: await navRefs(), rev: await fileRev(NAVS_FILE) });
   }
   if (route === '/api/navs' && req.method === 'POST') {
     const payload = await readBody(req);
@@ -1469,7 +1914,7 @@ async function handleApi(req, res, url) {
   // 「日历 / 关于我 / 冰室冰山 / 每日精华」三个面板都写这一个文件，所以
   // POST 是**逐块 merge**：只清洗请求里带来的那几块，daily 和 _readme 原样留着。
   if (route === '/api/widgets' && req.method === 'GET') {
-    return sendJson(res, 200, await readWidgets());
+    return sendJson(res, 200, { ...(await readWidgets()), rev: await fileRev(WIDGETS_FILE) });
   }
   if (route === '/api/widgets' && req.method === 'POST') {
     const payload = await readBody(req);
@@ -1516,7 +1961,7 @@ async function handleApi(req, res, url) {
   // 不重建的话预览里还是旧的（和导航 / 音乐 / 公告一个道理）。
   if (route === '/api/site-copy' && req.method === 'GET') {
     try {
-      return sendJson(res, 200, await readSiteCopy());
+      return sendJson(res, 200, { ...(await readSiteCopy()), rev: await fileRev(SITE_COPY_FILE) });
     } catch {
       /* 文件还没建 / 坏了：给一份空的 —— 面板自己按白名单画格子，不靠文件长什么样 */
       return sendJson(res, 200, {});
@@ -1554,7 +1999,7 @@ async function handleApi(req, res, url) {
   // 「公告」面板写这一个文件。写完就重建：首页那一块和 /zongxian/ 都是这份数据画的，
   // 不重建的话预览里还是旧的（和导航 / 音乐 / 冰山图一个道理）。
   if (route === '/api/announcements' && req.method === 'GET') {
-    return sendJson(res, 200, await readAnnouncements());
+    return sendJson(res, 200, { ...(await readAnnouncements()), rev: await fileRev(ANNOUNCEMENTS_FILE) });
   }
   if (route === '/api/announcements' && req.method === 'POST') {
     const payload = await readBody(req);
@@ -1830,7 +2275,7 @@ async function handleApi(req, res, url) {
   // 「冰山图」面板写这一个文件。写完就重建：那一页的正文就是这份数据画的，
   // 不重建的话预览里还是旧的（和导航 / 音乐一个道理）。
   if (route === '/api/iceberg' && req.method === 'GET') {
-    return sendJson(res, 200, await readIceberg());
+    return sendJson(res, 200, { ...(await readIceberg()), rev: await fileRev(ICEBERG_FILE) });
   }
   if (route === '/api/iceberg' && req.method === 'POST') {
     const payload = await readBody(req);
@@ -1876,7 +2321,7 @@ async function handleApi(req, res, url) {
   // 名字和头像全在 members 里现查），所以这里也是**逐块 merge**：
   // 请求里没带的块（比如只管成员时的那 735 条精华）原样保留，绝不凭空清空。
   if (route === '/api/salon' && req.method === 'GET') {
-    return sendJson(res, 200, await readSalon());
+    return sendJson(res, 200, { ...(await readSalon()), rev: await fileRev(SALON_FILE) });
   }
   if (route === '/api/salon' && req.method === 'POST') {
     const payload = await readBody(req);
@@ -2022,7 +2467,7 @@ async function handleApi(req, res, url) {
 
   // ---- 排版微调（首页元素的相对偏移与缩放）----
   if (route === '/api/layout' && req.method === 'GET') {
-    return sendJson(res, 200, await readLayout());
+    return sendJson(res, 200, { ...(await readLayout()), rev: await fileRev(LAYOUT_FILE) });
   }
   if (route === '/api/layout' && req.method === 'POST') {
     const payload = await readBody(req);
@@ -5714,6 +6159,19 @@ async function main() {
   const wantOpen = Boolean(openArg);
   const openMode = openArg && openArg.includes('=') ? openArg.split('=')[1] : '';
 
+  /*
+    `--port 4331`：**只试这一个端口**，占了就报错退出（不再往后顺延）。
+    验收脚本要的就是这份确定性 —— 默认那条"从 4322 开始找空位"的路子，
+    在站长自己的编辑器开着的时候会悄悄跑到 4323，脚本就不知道该敲哪个门了。
+  */
+  const portArg = argv.find((a) => a === '--port' || a.startsWith('--port='));
+  const pinned = portArg ? Number(portArg.includes('=') ? portArg.split('=')[1] : argv[argv.indexOf(portArg) + 1]) : 0;
+  const pinnedPort = Number.isInteger(pinned) && pinned > 0 && pinned < 65536 ? pinned : 0;
+  if (portArg && !pinnedPort) {
+    console.error('\n  --port 后面要给一个 1~65535 的端口号。\n');
+    process.exit(1);
+  }
+
   const server = http.createServer((req, res) => {
     handle(req, res).catch((err) => {
       const status = Number.isInteger(err?.status) ? err.status : 500;
@@ -5736,7 +6194,9 @@ async function main() {
   });
 
   let lastError = null;
-  for (let port = PORT_START; port <= PORT_END; port++) {
+  const firstPort = pinnedPort || PORT_START;
+  const lastPort = pinnedPort || PORT_END;
+  for (let port = firstPort; port <= lastPort; port++) {
     try {
       await listenOnce(server, port);
       lastError = null;
@@ -5744,6 +6204,7 @@ async function main() {
     } catch (err) {
       lastError = err;
       if (err && err.code === 'EADDRINUSE') {
+        if (pinnedPort) break;
         console.log(`  端口 ${port} 已被占用，换下一个……`);
         continue;
       }
@@ -5752,6 +6213,10 @@ async function main() {
   }
 
   if (lastError) {
+    if (pinnedPort) {
+      console.error(`\n  端口 ${pinnedPort} 已经被占用了（多半是另一个编辑器还开着）。\n`);
+      process.exit(1);
+    }
     console.error(`\n  启动失败：${PORT_START}-${PORT_END} 之间的端口都被占用了。`);
     console.error('  请关掉占用端口的程序后重试。\n');
     process.exit(1);

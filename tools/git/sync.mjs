@@ -18,7 +18,11 @@
  *   2. 把本地改动提交
  *   3. **先拉取**（`git pull --rebase --autostash`）—— 不同文件 / 同一文件不同行
  *      由 git 自己并行合并，谁的改动都不会丢
- *   4. 万一撞在同一行：停下来、把冲突文件列出来、把仓库恢复原状，**不推送**
+ *   4. 万一撞车：**先试一次「按 JSON 的结构自动合」**（2026-10-12 加，见下面
+ *      resolveRebaseConflicts 的说明）—— 站点的数据几乎全是 src/data/*.json，
+ *      一个在改第 4 条、一个在加第 9 条，git 按行看会判成冲突，按结构看根本不该冲突。
+ *      合成 → 接着 rebase、继续推；合不动（真的改到同一个字段）→ 照老规矩：
+ *      停下来、把冲突文件列出来、把仓库恢复原状，**不推送**
  *   5. 最后才推；被拒绝也**不是**灾难 —— 那是 git 在保护对方的提交，
  *      我们再拉一次重推一遍就好
  *
@@ -36,9 +40,10 @@
  *        或本地还有没发布的提交 / 4 连不上 GitHub / 5 没有远端 / 1 其它错误
  */
 import { execFileSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { mergeJson3 } from './merge-json.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 
@@ -199,6 +204,121 @@ export function rebaseInProgress() {
     || existsSync(path.join(ROOT, '.git', 'rebase-apply'));
 }
 
+/* ------------------------------------------------------------------
+ * 撞车之后先试一次「按 JSON 结构合」（2026-10-12 加，共享编辑器）
+ *
+ * 用户 2026-10-12 的要求（原话）：
+ *   「因为有许多条目 冰山 页面等进行编写 … 并且因为可能会有多人实时同步进行编辑」
+ *
+ * 站点的数据几乎全是**一份大 JSON**（src/data/iceberg.json、home-boards.json、salon.json…）。
+ * 两个人同一时间改同一份文件，git 的按行合并十有八九判成冲突 —— 明明一个在改第 4 条、
+ * 一个在加第 9 条。老规矩（中止、恢复原状、让人手动合）对这种情况太重了：
+ * 谁也没错，只是机器不认得 JSON 的结构。
+ *
+ * 所以撞车时先走这一步：把三方（共同祖先 / 远端 / 我）拿出来按结构合（merge-json.mjs），
+ * **全都合得动才落地** —— 只要有一份合不动（真的改了同一个字段），就一个字节都不动，
+ * 老老实实回到老路（中止 + 列文件 + 还原），让人来决定。
+ *
+ * ⚠ 谁是谁：`git rebase` 里 git 的称呼和常理是反的 ——
+ *   `:1:` 共同祖先、`:2:` **ours = 远端那一方**、`:3:` **theirs = 我这次的提交**。
+ *   （冲突标记里 `<<<<<<< HEAD` 那一半是远端。）所以 mergeJson3 的 ours 传 :2:。
+ * ------------------------------------------------------------------ */
+
+/** 从 git 的暂存区里把三方内容取出来（取不到给 null） */
+function conflictStages(file) {
+  const read = (n) => {
+    const r = git(['show', `:${n}:${file}`], { timeout: 30000 });
+    return r.ok ? r.out : null;
+  };
+  return { base: read(1), ours: read(2), theirs: read(3) };
+}
+
+/** 照原文件的样子猜缩进（别因为我们合了一次，整份 JSON 的格式就变了） */
+function detectIndent(text) {
+  const m = /\n(\s+)"/.exec(String(text || ''));
+  return m ? m[1] : '  ';
+}
+
+/** 把这一轮所有冲突文件按 JSON 结构合掉（全成 → 写盘 + git add；有一份不成 → 什么都不动） */
+function mergeConflictRound(files, { log }) {
+  const merged = [];
+  const blocked = [];
+  for (const file of files) {
+    if (!/\.json$/i.test(file)) {
+      blocked.push({ file, why: '不是 JSON（对照不上结构）' });
+      continue;
+    }
+    const { base, ours, theirs } = conflictStages(file);
+    if (ours === null || theirs === null) {
+      blocked.push({ file, why: '有一边的版本取不到' });
+      continue;
+    }
+    let b = {};
+    let o;
+    let t;
+    try {
+      if (base !== null) b = JSON.parse(base);
+      o = JSON.parse(ours);
+      t = JSON.parse(theirs);
+    } catch {
+      blocked.push({ file, why: '内容不是合法的 JSON（可能被人手改过）' });
+      continue;
+    }
+    const res = mergeJson3(b, o, t);
+    if (!res.ok) {
+      blocked.push({ file, why: `两边改到了同一处：${res.conflicts.slice(0, 6).map((c) => c.path).join('、')}`, conflicts: res.conflicts });
+      continue;
+    }
+    const indent = detectIndent(theirs) || detectIndent(ours) || '  ';
+    merged.push({ file, text: `${JSON.stringify(res.value, null, indent)}\n`, notes: res.notes });
+  }
+  if (blocked.length) return { ok: false, blocked, merged: [] };
+  for (const m of merged) {
+    try {
+      writeFileSync(path.join(ROOT, m.file), m.text, 'utf8');
+    } catch (err) {
+      return { ok: false, blocked: [{ file: m.file, why: `写不进去：${err?.message || err}` }], merged: [] };
+    }
+    const add = git(['add', '--', m.file], { timeout: 30000 });
+    if (!add.ok) return { ok: false, blocked: [{ file: m.file, why: `git add 失败：${add.err.slice(0, 120)}` }], merged: [] };
+  }
+  for (const m of merged) log(`   · ${m.file} —— 按 JSON 结构合好了（不是按行）`);
+  return { ok: true, merged: merged.map((m) => m.file), blocked: [] };
+}
+
+/**
+ * 撞车后把整个 rebase 走完（可能要合好几轮：每次 continue 都可能撞上下一个提交）。
+ * 返回 { ok, merged:[文件名], blocked:[{file,why}] }。
+ * **不负责 abort** —— 合不动时交给调用方按老规矩中止、还原。
+ */
+function resolveRebaseConflicts({ log = () => {}, maxRounds = 20 } = {}) {
+  const allMerged = [];
+  for (let round = 0; round < maxRounds; round++) {
+    const files = conflictedFiles();
+    if (!files.length) return { ok: true, merged: allMerged };
+
+    log(`   有 ${files.length} 份文件撞在一起，先试试能不能按 JSON 的结构自动合（不是按行）：`);
+    const res = mergeConflictRound(files, { log });
+    if (!res.ok) return { ok: false, merged: allMerged, blocked: res.blocked };
+    allMerged.push(...res.merged);
+
+    const cont = git(['-c', 'core.editor=true', 'rebase', '--continue'], { timeout: 120000 });
+    if (!cont.ok) {
+      /*
+        continue 不成功有两种：① 下一个提交又撞了（还没合完，继续循环）；
+        ② 真出错了（比如 add 漏了哪份）—— 那时候 rebase 还在，conflictedFiles 还列得出来，
+        多转一圈也无害；转不动了（循环上限）就交给调用方中止。
+      */
+      if (!rebaseInProgress()) return { ok: false, merged: allMerged, blocked: [{ file: '', why: (cont.err || '').slice(0, 200) || 'rebase --continue 没成功' }] };
+      if (!conflictedFiles().length) {
+        log('   合并动作没能继续下去（没有冲突文件可合了），停下来。');
+        return { ok: false, merged: allMerged, blocked: [{ file: '', why: 'rebase 卡住了' }] };
+      }
+    }
+  }
+  return { ok: false, merged: allMerged, blocked: [{ file: '', why: `合了 ${maxRounds} 轮还没合完` }] };
+}
+
 /**
  * 先拉后推的那一步：`git pull --rebase --autostash`。
  *
@@ -211,7 +331,7 @@ export function rebaseInProgress() {
  * （本地提交、未提交的改动、autostash 里的东西原封不动地回来），再由上层告诉用户
  * 是哪几个文件撞了 —— 谁的内容都没丢，只是需要人来决定怎么合。
  */
-export function pullRebase({ log = () => {}, timeout = 120000 } = {}) {
+export function pullRebase({ log = () => {}, timeout = 120000, jsonMerge = true } = {}) {
   log('   正在先拉取远端的改动…');
   const r = git(['pull', '--rebase', '--autostash'], { timeout });
   if (r.ok) {
@@ -222,13 +342,31 @@ export function pullRebase({ log = () => {}, timeout = 120000 } = {}) {
 
   const files = conflictedFiles();
   const inRebase = rebaseInProgress();
+  let jsonBlocked = null;
+
+  /*
+    先试「按 JSON 结构自动合」（见上面那段说明）。
+    合成了就接着把 rebase 走完 —— 这条路上谁的内容都不会丢，而且是机器能判断的那部分，
+    不该丢给用户手动清 `<<<<<<<`。
+  */
+  if (inRebase && files.length && jsonMerge) {
+    const res = resolveRebaseConflicts({ log });
+    if (res.ok) {
+      log('   撞在一起的是同一份数据里的**不同内容** —— 已经按 JSON 的结构自动合好了，谁的东西都没丢。');
+      return { ok: true, jsonMerged: res.merged };
+    }
+    jsonBlocked = res.blocked;
+    log('   有内容是真的撞在同一处了（不是按行、是按字段），这一步不能替你们决定：');
+    for (const b of res.blocked.slice(0, 8)) log(`     ⛔ ${b.file || '(合并动作)'} —— ${b.why}`);
+  }
+
   if (inRebase) {
     const abort = git(['rebase', '--abort'], { timeout: 60000 });
     log(abort.ok
       ? '   已经把这个合并动作安全撤回了（你本地的提交和改动都还在）。'
       : `   撤回时出了点问题：${abort.err.slice(0, 200)}`);
   }
-  return { ok: false, conflict: inRebase || files.length > 0, files, err: r.err };
+  return { ok: false, conflict: inRebase || files.length > 0, files, jsonBlocked, err: r.err };
 }
 
 // ---------------------------------------------------------------- 推送
@@ -290,6 +428,8 @@ export function publish({ message, log = () => {} } = {}) {
   const remote = remoteUrl();
   if (!remote) return { code: 'noremote' };
   const up = upstream();
+  /** 这一次发布里，有哪些数据文件是"按 JSON 结构自动合"的（如实告诉用户） */
+  const jsonMerged = [];
 
   log('   正在检查能否连上 GitHub…');
   const probe = probeRemote();
@@ -318,7 +458,8 @@ export function publish({ message, log = () => {} } = {}) {
   */
   if (up) {
     const pull = pullRebase({ log });
-    if (!pull.ok) return { code: 'conflict', files: pull.files, err: pull.err };
+    if (!pull.ok) return { code: 'conflict', files: pull.files, jsonBlocked: pull.jsonBlocked, err: pull.err };
+    if (pull.jsonMerged?.length) jsonMerged.push(...pull.jsonMerged);
   } else {
     log('   本地分支还没和远端关联过，这次会顺便关联上。');
   }
@@ -335,13 +476,14 @@ export function publish({ message, log = () => {} } = {}) {
     log('   推送被拒了 —— 这是好事：说明远端的别人刚推了东西，git 在拦着不让覆盖。');
     log('   现在再拉一次，把对方的内容合进来再推。');
     const pull2 = pullRebase({ log });
-    if (!pull2.ok) return { code: 'conflict', files: pull2.files, err: pull2.err, retried: true };
+    if (!pull2.ok) return { code: 'conflict', files: pull2.files, jsonBlocked: pull2.jsonBlocked, err: pull2.err, retried: true };
+    if (pull2.jsonMerged?.length) jsonMerged.push(...pull2.jsonMerged);
     log('   再推一次…');
     res = push({ log, setUpstream: false });
-    if (res.ok) return { code: 'ok', merged: true };
+    if (res.ok) return { code: 'ok', merged: true, jsonMerged };
   }
 
-  if (res.ok) return { code: 'ok' };
+  if (res.ok) return { code: 'ok', jsonMerged };
   if (res.kind === 'offline') return { code: 'offline', err: res.err };
   if (res.kind === 'no-upstream') {
     /* 分支还没关联过（第一次推）：关联上再推一次，这不是失败 */
@@ -462,7 +604,28 @@ function blockedFiles(err) {
  * 菜单/状态栏用：不联网，只读本地记录。
  * `light: true` 时跳过分支名 / 工作区那些**菜单用不到**的字段 —— 画一次菜单
  * 就要起好几个 git 子进程，Windows 上一个二三十毫秒，能省则省。
+ *
+ * `files`（2026-10-12 加，共享编辑器）：这次改了**哪几个文件**。
+ * 「发布上线」要在提交前就知道"改了哪几块"（写进提交说明、也回给页面显示），
+ * 而它本来就要读一次状态，顺手一起给出来，省一次子进程。
  */
+export function changedPaths() {
+  const r = git(['status', '--porcelain'], { timeout: 15000 });
+  if (!r.ok) return [];
+  return r.out
+    .split('\n')
+    .map((l) => l.replace(/\s+$/, ''))
+    .filter(Boolean)
+    /*
+      porcelain 的格式是「XY<空格>路径」：前两个字符是状态码
+      （` M`、`??`、`A `…），从第 3 个字符起才是路径。
+    */
+    .map((l) => l.slice(3).trim())
+    /* 改名会写成 `old -> new`，取新的那个（要提交的就是它） */
+    .map((p) => (p.includes(' -> ') ? p.split(' -> ').pop().trim() : p))
+    .filter(Boolean);
+}
+
 export function status({ light = false } = {}) {
   const remote = remoteUrl();
   const c = counts();
@@ -474,6 +637,7 @@ export function status({ light = false } = {}) {
     behind: c.behind,
     ahead: c.ahead,
     dirty: light ? null : dirty(),
+    files: light ? null : changedPaths(),
   };
 }
 
@@ -512,6 +676,11 @@ function explainBase(res = {}) {
     case 'ok':
       if (res.uptodate) return '远端没有新东西，本地已经是最新的。';
       if (res.pulled > 0) return `已拉取 ${res.pulled} 个提交 —— 别人的新内容已经在本机了。`;
+      if (res.jsonMerged?.length) {
+        return '推送成功！'
+          + `\n   期间有人在改同一份数据（${res.jsonMerged.join('、')}），已经**按 JSON 的结构**自动合好了：`
+          + '\n   你改的和对方改的都在，谁的东西都没丢。';
+      }
       return res.merged
         ? '推送成功！别人刚推的内容已经合进来了，谁的东西都没丢。'
         : '推送成功！';
@@ -536,10 +705,15 @@ function explainBase(res = {}) {
     case 'nogit':
       return '没有找到 git，没办法发布。';
     case 'conflict':
-      return '拉取的时候撞上了：你和别人改了同一个文件的同一处。\n'
+      return '拉取的时候撞上了：你和别人改了**同一处**内容。\n'
         + (list ? `   撞在一起的文件：\n${list}\n` : '')
+        + (res.jsonBlocked?.length
+          ? `   ${res.jsonBlocked.slice(0, 6).map((b) => `   · ${b.file || '合并动作'}：${b.why}`).join('\n')}\n`
+          : '')
         + '   为了不覆盖对方的内容，这次没有推送，仓库也已经恢复成拉取之前的样子 ——\n'
         + '   你本地的改动一个都没丢，对方的提交也原封不动。\n'
+        + '   （同一份数据里"你改这条、他加那条"的情况，程序会**按 JSON 的结构自动合**，\n'
+        + '     走到这一句说明是真的改到了同一个字段，需要人来决定。）\n'
         + '   这种情况需要人来决定怎么合：把上面这几个文件发给另一位（或我），\n'
         + '   挑一个版本、或者两边的内容拼在一起，然后再发布一次。';
     case 'rejected':
