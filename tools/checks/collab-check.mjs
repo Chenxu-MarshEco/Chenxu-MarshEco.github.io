@@ -212,6 +212,22 @@ fs.rmSync(path.join(A, 'tools', 'editor', '.editor-identity.json'), { force: tru
 fs.rmSync(path.join(A, '.tmp'), { recursive: true, force: true });
 must(['remote', 'set-url', 'origin', ORIGIN], A);
 
+/*
+  origin 不是 GitHub 地址（本地克隆 / 镜像 / 自己搭的 git 服务）时，认不出仓库所属者。
+  这时候**不能**一口咬定"你不是站长"（第一版在本地克隆上就是那么误报的），应该说"不知道"，
+  并且给站长留一条出路：在本机身份文件里自己声明一句（编辑器「协作」面板里那个勾）。
+*/
+const ghostId = path.join(A, 'tools', 'editor', '.editor-identity.json');
+writeJson(ghostId, { login: 'Chenxu-MarshEco', name: '阿煦' });
+const meLocal = tool(A, 'whoami.mjs').result;
+check('★ origin 不是 GitHub 地址时，owner 是"不知道"，不是"你不是站长"',
+  meLocal?.owner === null && meLocal?.ownerSource === '', JSON.stringify({ owner: meLocal?.owner, src: meLocal?.ownerSource }));
+writeJson(ghostId, { login: 'Chenxu-MarshEco', name: '阿煦', owner: true });
+const meDecl = tool(A, 'whoami.mjs').result;
+check('★ 本机可以自己声明"这台机器就是站长"（认不出所属者时的出路）',
+  meDecl?.owner === true && meDecl?.ownerSource === 'identity', JSON.stringify({ owner: meDecl?.owner, src: meDecl?.ownerSource }));
+fs.rmSync(ghostId, { force: true });
+
 /* ---- 推流动态：A 推完，B 那边看得见 ---- */
 const a1 = readJson(ICE(A));
 a1.items[0].title = '第一条（A 改的）';
@@ -515,8 +531,8 @@ try {
   check('★ 协作面板四块都在：我是谁 / 推流动态 / 发布上线 / 这台机器',
     (C?.boxes || []).join(',') === '我是谁,推流动态,发布上线,这台机器', JSON.stringify(C?.boxes));
   check('★ 推流动态列出来了（≥3 条）', (C?.feed || 0) >= 3, `feed=${C?.feed}`);
-  check('★ 三个身份输入框都在（用户名 / 显示名 / 邮箱）',
-    (C?.fields || []).join(',') === 'login,name,email', JSON.stringify(C?.fields));
+  check('★ 身份输入框都在（用户名 / 显示名 / 邮箱 + 「这台机器就是站长」那个勾）',
+    (C?.fields || []).join(',') === 'login,name,email,owner', JSON.stringify(C?.fields));
   check('★ 面板上写清了"你是站长"', /站长/.test(C?.status || ''), C?.status);
 
   const vopened = await ev(`(() => {

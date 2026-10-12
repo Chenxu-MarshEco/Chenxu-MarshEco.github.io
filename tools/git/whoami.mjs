@@ -162,10 +162,24 @@ export function me({ refresh = false } = {}) {
 
   const ownerLogin = origin.owner;
   /*
-    没问出用户名时 owner 是 null（不知道），不是 false。
-    调用方（编辑器）一律按"不是站长"处理，但界面上要能说清"填上用户名才会出现回滚面板"。
+    「是不是站长」：
+      ① 本机身份文件里**明确写过** owner（true/false）→ 以它为准。
+         为什么要有这一条：origin 不一定是 GitHub 地址（本地克隆、镜像、自己搭的 git 服务…），
+         那时候从地址里根本认不出仓库所属者 —— 与其一口咬定"你不是站长"，
+         不如让这台机器自己声明（编辑器「协作」面板里有一个勾）。
+      ② 问出了用户名、地址里也有 owner → 两边比一下（大小写不敏感）。
+      ③ 缺一个就 **不知道**（null），不是 false —— 界面上要能说清"为什么不知道"，
+         而不是显示成"你是协作者"（第一次在本地克隆上跑就是这么误报的）。
   */
-  const owner = login ? login.toLowerCase() === ownerLogin.toLowerCase() : null;
+  let owner = null;
+  let ownerSource = '';
+  if (typeof saved.owner === 'boolean') {
+    owner = saved.owner;
+    ownerSource = 'identity';
+  } else if (login && ownerLogin) {
+    owner = login.toLowerCase() === ownerLogin.toLowerCase();
+    ownerSource = 'remote';
+  }
 
   return {
     login,
@@ -174,6 +188,7 @@ export function me({ refresh = false } = {}) {
     avatar: login ? `https://github.com/${login}.png?size=64` : '',
     profile: login ? `https://github.com/${login}` : '',
     owner,
+    ownerSource,
     ownerLogin,
     origin,
     source: { login: loginFrom, name: fromFile(saved.name) ? 'identity' : (gName ? 'git config' : ''), email: fromFile(saved.email) ? 'identity' : (gEmail ? 'git config' : '') },
@@ -196,11 +211,21 @@ export function saveIdentity(patch = {}) {
     if (email && (!email.includes('@') || /\s/.test(email) || email.length > 120)) throw new Error(`邮箱不像邮箱：${email}`);
     next.email = email;
   }
+  /*
+    `owner`：手动声明"这台机器就是站长"。
+    只在"从 origin 认不出仓库所属者"时才需要它（本地克隆 / 镜像 / 自己搭的 git 服务），
+    传 null 表示撤销声明（回到自动判断）。
+  */
+  if (patch.owner !== undefined) {
+    if (patch.owner === null) delete next.owner;
+    else next.owner = patch.owner === true;
+  }
   next._readme = [
     '本机身份：共享编辑器用它显示「你是谁」（推流动态里的名字和头像），',
     '也用它判断这台机器是不是站长本人（只有站长会看到「版本」回滚面板）。',
     '⚠ 这个文件故意不进仓库（.gitignore 里排掉了）：每台机器填自己的。',
     '想改：编辑器 →「协作」面板 → 我是谁；或者 node tools/git/whoami.mjs --set --login 你的用户名',
+    'owner: true/false 是手写的"这台机器就是站长"（只有 origin 认不出仓库所属者时才需要）。',
   ];
   writeJson(IDENTITY_FILE, next);
   return me({ refresh: true });
@@ -214,9 +239,18 @@ function usage() {
     '  node tools/git/whoami.mjs                                 看现在是谁',
     '  node tools/git/whoami.mjs --json                          机读一行（编辑器服务用）',
     '  node tools/git/whoami.mjs --set --login someone --name 昵称  写进本机身份文件',
+    '  node tools/git/whoami.mjs --set --owner                   声明「这台机器就是站长」（撤销：--no-owner）',
     '',
     '身份文件：tools/editor/.editor-identity.json（不进仓库）',
   ].join('\n');
+}
+
+function ownerText(info) {
+  if (info.owner === true) return info.ownerSource === 'identity' ? '是（本机自己声明的）' : '是';
+  if (info.owner === false) return '不是';
+  if (!info.login) return '不知道（还没填用户名）';
+  if (!info.origin.owner) return '不知道（origin 不是 GitHub 地址，认不出仓库所属者）';
+  return '不知道';
 }
 
 function main() {
@@ -230,11 +264,14 @@ function main() {
 
   if (argv.includes('--set')) {
     try {
-      const info = saveIdentity({ login: flag('login'), name: flag('name'), email: flag('email') });
+      const patch = { login: flag('login'), name: flag('name'), email: flag('email') };
+      if (argv.includes('--owner')) patch.owner = true;
+      if (argv.includes('--no-owner')) patch.owner = null;
+      const info = saveIdentity(patch);
       if (!asJson) {
         console.log(`\n  身份已写到 ${IDENTITY_FILE}`);
         console.log(`  用户名：${info.login || '（空）'}    名字：${info.name}`);
-        console.log(`  站长：${info.owner === true ? '是' : info.owner === null ? '不知道（没填用户名）' : '不是'}\n`);
+        console.log(`  站长：${ownerText(info)}\n`);
       }
       mark(info);
       process.exitCode = 0;
@@ -255,8 +292,8 @@ function main() {
     console.log(`  用户名：${info.login || '（没问出来 —— 在编辑器「协作」面板里填一下）'}`);
     console.log(`  名字：  ${info.name}`);
     console.log(`  邮箱：  ${info.email || '（空）'}`);
-    console.log(`  远端：  ${info.origin.owner ? `${info.origin.owner}/${info.origin.repo}` : '（没有 origin）'}`);
-    console.log(`  站长：  ${info.owner === true ? '是' : info.owner === null ? '不知道（没填用户名）' : '不是'}`);
+    console.log(`  远端：  ${info.origin.owner ? `${info.origin.owner}/${info.origin.repo}` : '（origin 不是 GitHub 地址）'}`);
+    console.log(`  站长：  ${ownerText(info)}`);
     console.log(`  身份文件：${IDENTITY_FILE}`);
     console.log('  ========================');
     console.log('');

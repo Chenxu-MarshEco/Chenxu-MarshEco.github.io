@@ -1117,6 +1117,9 @@ Clash 一关，git 就一直去敲那个没人接的端口（`Failed to connect 
 身份从哪来（按可信度）：本机身份文件 → `gh api user`（装了 GitHub CLI 且登录过，答案缓存 12 小时）
 → `git config user.name` / noreply 邮箱里抠出的用户名。**都问不出来也不拦人**，只是动态里显示提交署名。
 「是不是站长」= 用户名和 origin 里的 owner 比一下；**问不出用户名时一律按"不是站长"**。
+如果 **origin 不是 GitHub 地址**（本地克隆、镜像、自己搭的 git 服务），从地址里认不出仓库所属者 ——
+那时候面板上那个勾「**这台机器就是站长**」就是站长的出路（写进本机身份文件的 `owner: true`；
+命令行等价物是 `node tools/git/whoami.mjs --set --owner`）。
 
 ### 「版本」面板（**只有站长**）
 

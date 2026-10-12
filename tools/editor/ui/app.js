@@ -11368,6 +11368,45 @@ function renderCollabPanel() {
     input.dataset.collabField = key;
     whoBox.appendChild(panelRow(label, input, hint));
   }
+  /*
+    「这台机器就是站长」：只有一种情况需要它 —— origin 不是 GitHub 地址
+    （本地克隆 / 镜像 / 自己搭的 git 服务），那时从地址里认不出仓库所属者。
+    gh / git config 也问不出来的时候，让人自己声明一句，比显示成"你是协作者"强。
+  */
+  const ownerBox = document.createElement('label');
+  ownerBox.className = 'checkrow';
+  const ownerTick = document.createElement('input');
+  ownerTick.type = 'checkbox';
+  ownerTick.id = 'collab-owner';
+  ownerTick.checked = me?.owner === true && me?.ownerSource === 'identity';
+  ownerTick.dataset.collabField = 'owner';
+  ownerTick.addEventListener('change', async () => {
+    ownerTick.disabled = true;
+    try {
+      const r = await apiPost('/api/collab/me', { owner: ownerTick.checked ? true : null });
+      state.collab = r;
+      toast(ownerTick.checked ? '已把这台机器标成站长（「版本」面板会出现）' : '已撤销"我是站长"的声明');
+      /* 工作台里有没有「版本」这一项跟着变，两个入口都要重画 */
+      buildHubMenu();
+      paintWorkspaceSwitch();
+      paintCollabBadges();
+      renderCollabPanel();
+    } catch (err) {
+      ownerTick.checked = !ownerTick.checked;
+      toast(`没改成：${err.message}`, true);
+    } finally {
+      ownerTick.disabled = false;
+    }
+  });
+  const ownerTextEl = document.createElement('span');
+  ownerTextEl.textContent = '这台机器就是站长';
+  const ownerHint = document.createElement('span');
+  ownerHint.className = 'hint';
+  ownerHint.textContent = state.collab?.ownerUnknown
+    ? '（origin 不是 GitHub 地址，认不出仓库所属者 —— 你是站长的话就勾上）'
+    : '（一般不用手动勾：用户名和仓库所属者一对上就会自动认出来）';
+  ownerBox.append(ownerTick, ownerTextEl, ownerHint);
+  whoBox.appendChild(ownerBox);
   body.appendChild(whoBox);
 
   /* ---------- 推流动态 ---------- */

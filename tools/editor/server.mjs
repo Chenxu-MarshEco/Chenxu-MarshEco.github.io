@@ -372,9 +372,14 @@ async function buildOrSkip() {
 function requireOwner() {
   const who = whoami();
   if (who.owner !== true) {
-    throw httpError(403, '版本回滚只有站长本人的编辑器能用'
-      + `（这台机器认到的身份是「${who.login || '还没填用户名'}」，仓库所属者是「${who.ownerLogin || '未知'}」）。`
-      + '如果你是站长：在「协作」面板里把 GitHub 用户名填对就行。');
+    const why = !who.login
+      ? '这台机器还没填 GitHub 用户名'
+      : !who.origin.owner
+        ? `这个仓库的 origin 不是 GitHub 地址（现在是「${who.origin.url || '空'}」），认不出仓库所属者`
+        : `这台机器认到的身份是「${who.login}」，仓库所属者是「${who.ownerLogin}」`;
+    throw httpError(403, `版本回滚只有站长本人的编辑器能用（${why}）。`
+      + '如果你是站长：在「协作」面板里把 GitHub 用户名填对；'
+      + '如果 origin 不是 GitHub 地址（本地克隆 / 镜像），勾上那个「这台机器就是站长」。');
   }
   return who;
 }
@@ -1525,12 +1530,18 @@ async function handleApi(req, res, url) {
         avatar: who.avatar,
         profile: who.profile,
         owner: who.owner,
+        ownerSource: who.ownerSource,
         ownerLogin: who.ownerLogin,
         source: who.source,
         identityFile: who.identityFile,
       },
       origin: who.origin,
       rollback: who.owner === true,
+      /*
+        「认不出仓库所属者」= origin 不是 GitHub 地址（本地克隆 / 镜像 / 自己搭的 git 服务）。
+        这时候界面上要提示站长：可以自己勾一下"这台机器就是站长"（见身份文件的 owner 字段）。
+      */
+      ownerUnknown: who.owner === null && Boolean(who.login) && !who.origin.owner,
       buildEnv: await hasBuildEnv(),
       lastFetch,
     });
@@ -1539,7 +1550,13 @@ async function handleApi(req, res, url) {
   if (route === '/api/collab/me' && req.method === 'POST') {
     const payload = await readBody(req);
     try {
-      const who = saveIdentity({ login: payload.login, name: payload.name, email: payload.email });
+      const who = saveIdentity({
+        login: payload.login,
+        name: payload.name,
+        email: payload.email,
+        /* null = 撤销"我是站长"的手动声明（回到自动判断）；这个字段没传就一个字都不动 */
+        owner: 'owner' in payload ? (payload.owner === null ? null : payload.owner === true) : undefined,
+      });
       return sendJson(res, 200, {
         ok: true,
         me: {
@@ -1549,11 +1566,14 @@ async function handleApi(req, res, url) {
           avatar: who.avatar,
           profile: who.profile,
           owner: who.owner,
+          ownerSource: who.ownerSource,
           ownerLogin: who.ownerLogin,
           source: who.source,
           identityFile: who.identityFile,
         },
+        origin: who.origin,
         rollback: who.owner === true,
+        ownerUnknown: who.owner === null && Boolean(who.login) && !who.origin.owner,
       });
     } catch (err) {
       return sendJson(res, 400, { ok: false, error: String(err?.message || err) });
