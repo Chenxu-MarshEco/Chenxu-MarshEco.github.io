@@ -25,6 +25,7 @@ import http from 'node:http';
 import path from 'node:path';
 import zlib from 'node:zlib';
 import { spawn, execSync } from 'node:child_process';
+import { chromePath } from './lib/chrome.mjs';
 
 const SRC = String.raw`D:\曼沫砾总线\Chenxu-MarshEco.github.io`;
 const ROOT = path.resolve(
@@ -36,7 +37,7 @@ const ROOT = path.resolve(
   抢输的那个会连上**别人的浏览器**，然后整场都在跟另一个页面说话。
   这里让 Chrome 自己挑（`--remote-debugging-port=0`），端口从 DevToolsActivePort 里读回来。
 */
-const CHROME = String.raw`C:\Users\煦\AppData\Local\ms-playwright\chromium-1243\chrome-win64\chrome.exe`;
+const CHROME = chromePath();
 const SHOTS = path.join(SRC, '.tmp', 'shots');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 

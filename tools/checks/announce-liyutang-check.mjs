@@ -33,12 +33,13 @@ import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
 import { spawn, execSync } from 'node:child_process';
+import { chromePath } from './lib/chrome.mjs';
 
 const SRC = String.raw`D:\曼沫砾总线\Chenxu-MarshEco.github.io`;
 const DST = path.join(SRC, '.tmp', 'announce-proj');
 const PORT = 4389;
 const DEBUG_PORT = 9371;
-const CHROME = String.raw`C:\Users\煦\AppData\Local\ms-playwright\chromium-1243\chrome-win64\chrome.exe`;
+const CHROME = chromePath();
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 let pass = 0;

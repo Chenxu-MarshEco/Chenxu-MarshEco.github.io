@@ -24,12 +24,13 @@ import path from 'node:path';
 import http from 'node:http';
 import { pathToFileURL } from 'node:url';
 import { spawn, execSync } from 'node:child_process';
+import { chromePath } from './lib/chrome.mjs';
 
 const SRC = String.raw`D:\曼沫砾总线\Chenxu-MarshEco.github.io`;
 const ROOT = path.resolve(process.argv[2] ?? path.join(SRC, 'dist'));
 const PORT = 4393;
 const DEBUG_PORT = 9363;
-const CHROME = String.raw`C:\Users\煦\AppData\Local\ms-playwright\chromium-1243\chrome-win64\chrome.exe`;
+const CHROME = chromePath();
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const MIME = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css',

@@ -31,13 +31,14 @@ import path from 'node:path';
 import http from 'node:http';
 import { fileURLToPath } from 'node:url';
 import { spawn, execSync } from 'node:child_process';
+import { chromePath } from './lib/chrome.mjs';
 
 const SRC = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const COPY_FILE = path.join(SRC, 'src', 'data', 'site-copy.json');
 const SERVER = path.join(SRC, 'tools', 'editor', 'server.mjs');
 const APPJS = path.join(SRC, 'tools', 'editor', 'ui', 'app.js');
 const DIST = path.join(SRC, 'dist');
-const CHROME = String.raw`C:\Users\煦\AppData\Local\ms-playwright\chromium-1243\chrome-win64\chrome.exe`;
+const CHROME = chromePath();
 const EDITOR = 'http://127.0.0.1:4322';
 const DEBUG_PORT = 9413;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));

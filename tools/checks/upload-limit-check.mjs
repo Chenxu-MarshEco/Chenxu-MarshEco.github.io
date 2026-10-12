@@ -36,13 +36,14 @@ import http from 'node:http';
 import { spawn, execSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import sharp from 'sharp';
+import { chromePath } from './lib/chrome.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const SRC = path.resolve(here, '..', '..');
 const DST = path.join(SRC, '.tmp', 'upload-proj');
 const FILES = path.join(SRC, '.tmp', 'upload-check-files');
 const DEBUG_PORT = 9365;
-const CHROME = String.raw`C:\Users\煦\AppData\Local\ms-playwright\chromium-1243\chrome-win64\chrome.exe`;
+const CHROME = chromePath();
 const MB = 1024 * 1024;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const mb = (n) => `${(n / MB).toFixed(2)}MB`;

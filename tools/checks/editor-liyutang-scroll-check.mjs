@@ -47,6 +47,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawn, execSync } from 'node:child_process';
+import { chromePath } from './lib/chrome.mjs';
 
 const SRC = String.raw`D:\曼沫砾总线\Chenxu-MarshEco.github.io`;
 const HOST = '127.0.0.1';
@@ -55,7 +56,7 @@ const EDITOR_PORT = 4322;
 const ADMIN = `http://${HOST}:${EDITOR_PORT}/liyutang-admin`;
 const HOME = `http://${HOST}:${EDITOR_PORT}/`;
 const DEBUG_PORT = 9470;
-const CHROME = String.raw`C:\Users\煦\AppData\Local\ms-playwright\chromium-1243\chrome-win64\chrome.exe`;
+const CHROME = chromePath();
 const VIEW = { width: 1280, height: 900 };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 

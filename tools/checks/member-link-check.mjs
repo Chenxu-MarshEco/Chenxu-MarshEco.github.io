@@ -33,13 +33,14 @@ import http from 'node:http';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { buildMatcher, rewriteHtml, faceUrlOf, cardHtml } from '../memlink/index.mjs';
+import { chromePath } from './lib/chrome.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const proj = path.resolve(here, '..', '..');
 const root = process.argv[2] ? path.resolve(process.argv[2]) : path.join(proj, 'dist');
 const PORT = 4419;
 const DEBUG_PORT = 9389;
-const CHROME = String.raw`C:\Users\煦\AppData\Local\ms-playwright\chromium-1243\chrome-win64\chrome.exe`;
+const CHROME = chromePath();
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const MIME = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css',

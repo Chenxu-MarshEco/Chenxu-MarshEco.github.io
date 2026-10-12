@@ -29,6 +29,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawn, execSync, execFileSync, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { chromePath } from './lib/chrome.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const SRC = path.resolve(here, '..', '..');
@@ -37,7 +38,7 @@ const ORIGIN = path.join(TMP, 'pull-origin.git');
 const DST = path.join(TMP, 'pull-copy');        // 编辑器所在的那一份（「我」）
 const OTHER = path.join(TMP, 'pull-ssw');       // 机器人 / 另一位
 const DEBUG_PORT = 9469;
-const CHROME = String.raw`C:\Users\煦\AppData\Local\ms-playwright\chromium-1243\chrome-win64\chrome.exe`;
+const CHROME = chromePath();
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 let pass = 0;

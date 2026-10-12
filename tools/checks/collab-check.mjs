@@ -33,6 +33,7 @@ import path from 'node:path';
 import http from 'node:http';
 import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { chromePath } from './lib/chrome.mjs';
 
 const SRC = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const TMP = path.join(SRC, '.tmp', 'collab-test');
@@ -44,7 +45,7 @@ const APPJS = path.join(SRC, 'tools', 'editor', 'ui', 'app.js');
 const INDEX = path.join(SRC, 'tools', 'editor', 'ui', 'index.html');
 const IDENTITY = path.join(SRC, 'tools', 'editor', '.editor-identity.json');
 const ICEBERG = path.join(SRC, 'src', 'data', 'iceberg.json');
-const CHROME = String.raw`C:\Users\煦\AppData\Local\ms-playwright\chromium-1243\chrome-win64\chrome.exe`;
+const CHROME = chromePath();
 const PORT = 4337;
 /** 「拉到编辑器新代码」那条用一个**副本**量（改副本里的文件，绝不碰真仓库） */
 const STALE_PORT = 4339;
@@ -510,13 +511,26 @@ try {
     check('★ 冷机器上第一次问身份不卡（服务端绝不在请求里起 gh）',
       cold.status === 200 && ms < 900, `${ms} ms`);
     let warmed = '';
-    for (let i = 0; i < 14 && !warmed; i += 1) {
+    for (let i = 0; i < 24 && !warmed; i += 1) {
       await sleep(500);
       const r = await api('/api/collab/me');
       if (r.json?.me?.login) warmed = r.json.me.login;
     }
-    check('★ 后台那次 CLI 把用户名捂热了（过几秒就有身份了，界面不用刷新）',
-      Boolean(warmed), warmed || '（没等到，可能这台机器没登录 gh）');
+    /*
+      ⚠ 这条依赖「这台机器能问出 GitHub 用户名」= 装了 gh + 登录了 + 网络通。
+      协作者机器上不一定三者都齐（2026-10-12 反馈回来：只跑得通不依赖 gh 的那几条）。
+      那种情况下"捂不热"是**环境事实**，不是回归 —— 先探一次，探不出来就照实跳过，
+      别给人一个假的红灯；探得出来还是捂不热，那才是真出问题了。
+    */
+    const ghProbe = spawnSync('gh', ['api', 'user', '--jq', '.login'], { encoding: 'utf8', timeout: 12000 });
+    const canAskGh = ghProbe.status === 0 && String(ghProbe.stdout || '').trim() !== '';
+    if (canAskGh) {
+      check('★ 后台那次 CLI 把用户名捂热了（过几秒就有身份了，界面不用刷新）',
+        Boolean(warmed), warmed || '（gh 能问出用户名，但后台那次没把缓存捂热）');
+    } else {
+      info(`这台机器上 gh 问不出用户名（没装 / 没登录 / 网络不通：${String(ghProbe.stderr || ghProbe.error?.message || '无输出').trim().split('\n')[0].slice(0, 60)}）`);
+      info('「后台 CLI 把用户名捂热」这条**跳过**（不计红）—— 它量的是"有 gh 的机器上传给快"，没 gh 就无从谈起');
+    }
   } finally {
     if (idCacheSaved === null) fs.rmSync(idCacheFile, { force: true });
     else fs.writeFileSync(idCacheFile, idCacheSaved, 'utf8');

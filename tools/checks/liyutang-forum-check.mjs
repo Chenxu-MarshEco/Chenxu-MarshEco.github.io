@@ -19,12 +19,13 @@ import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
 import { spawn, execSync } from 'node:child_process';
+import { chromePath } from './lib/chrome.mjs';
 
 const SRC = String.raw`D:\曼沫砾总线\Chenxu-MarshEco.github.io`;
 const ROOT = path.resolve(process.argv[2] && !process.argv[2].startsWith('--') ? process.argv[2] : path.join(SRC, 'dist'));
 const PORT = 4397;
 const DEBUG_PORT = 9395;
-const CHROME = String.raw`C:\Users\煦\AppData\Local\ms-playwright\chromium-1243\chrome-win64\chrome.exe`;
+const CHROME = chromePath();
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 let pass = 0;

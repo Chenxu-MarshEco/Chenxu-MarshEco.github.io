@@ -11,11 +11,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import http from 'node:http';
 import { spawn } from 'node:child_process';
+import { chromePath } from './lib/chrome.mjs';
 
 const root = path.resolve('dist');
 const PORT = 4444;
 const DEBUG_PORT = 9414;
-const CHROME = String.raw`C:\Users\煦\AppData\Local\ms-playwright\chromium-1243\chrome-win64\chrome.exe`;
+const CHROME = chromePath();
 const ALLOW = process.argv.includes('--allow-autoplay');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const MIME = {

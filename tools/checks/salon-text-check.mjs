@@ -17,11 +17,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import http from 'node:http';
 import { spawn } from 'node:child_process';
+import { chromePath } from './lib/chrome.mjs';
 
 const root = process.argv[2] ? path.resolve(process.argv[2]) : path.resolve('dist');
 const PORT = 4414;
 const DEBUG_PORT = 9384;
-const CHROME = String.raw`C:\Users\煦\AppData\Local\ms-playwright\chromium-1243\chrome-win64\chrome.exe`;
+const CHROME = chromePath();
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 /** 真鼠标点一下（展开 / 收起要真的点得到才算数） */
 const cdpClick = async (send, x, y) => {

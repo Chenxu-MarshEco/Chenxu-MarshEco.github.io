@@ -29,6 +29,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { chromePath } from './lib/chrome.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const SRC = path.resolve(here, '..', '..');
@@ -38,7 +39,7 @@ const TMP = path.join(SRC, '.tmp', 'lyt-save-copy');
 const PORT_START = 4401;
 const PORT_END = 4406;
 const DEBUG_PORT = 9481;
-const CHROME = String.raw`C:\Users\煦\AppData\Local\ms-playwright\chromium-1243\chrome-win64\chrome.exe`;
+const CHROME = chromePath();
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 let pass = 0;

@@ -11,12 +11,13 @@ import fs from 'node:fs';
 import path from 'node:path';
 import http from 'node:http';
 import { spawn, execSync } from 'node:child_process';
+import { chromePath } from './lib/chrome.mjs';
 
 const SRC = String.raw`D:\曼沫砾总线\Chenxu-MarshEco.github.io`;
 const DST = path.join(SRC, '.tmp', 'bind-proj');
 const PORT = 4386;
 const DEBUG_PORT = 9357;
-const CHROME = String.raw`C:\Users\煦\AppData\Local\ms-playwright\chromium-1243\chrome-win64\chrome.exe`;
+const CHROME = chromePath();
 const NEW_NAME = 'Raw-验收';
 const AVATAR = '/img/home/logo.png';
 /** 页面上的头像走图片管线（/img/opt/home/logo-384.webp 这种），比对时用文件名主干 */

@@ -25,7 +25,13 @@
  *
  *   D. 那两份本机文件确实进不了仓库（git 自己说它们被忽略了）
  *
- * ⚠ 收尾一定要把它们删掉：留着的话站长自己的编辑器外观就被这个脚本改掉了。
+ * ⚠ 这台机器上如果**本来就有**本机外观层（改外观的那个人就是有）：脚本会先把它整份
+ *   备份到 `.tmp/local-layer-backup-<时间戳>/`、跑完**原样放回**并核对字节 —— 不用你手动挪走
+ *   （2026-10-12：协作者那边复验时正是这种情况，原来那版是直接拒绝跑）。
+ *   临时文件绝不留在盘上改掉别人的外观。
+ *
+ * 浏览器路径不再写死：见 tools/checks/lib/chrome.mjs（环境变量 DSH_CHROME，或自动找
+ * Playwright / Chrome / Edge），所以协作者机器上也能跑。
  *
  * 用法：node tools/checks/editor-local-layer-check.mjs
  * ============================================================================
@@ -36,6 +42,7 @@ import http from 'node:http';
 import crypto from 'node:crypto';
 import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { chromePath } from './lib/chrome.mjs';
 
 const SRC = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const SERVER = path.join(SRC, 'tools', 'editor', 'server.mjs');
@@ -46,7 +53,7 @@ const CSS_FILE = path.join(SRC, 'tools', 'editor', 'local-style.css');
 const ICON_DIR = path.join(SRC, 'tools', 'editor', 'local-icons');
 const APPLY_FILE = path.join(ICON_DIR, 'apply-icons.js');
 const PNG_FILE = path.join(ICON_DIR, 'icon-imageUrl.png');
-const CHROME = String.raw`C:\Users\煦\AppData\Local\ms-playwright\chromium-1243\chrome-win64\chrome.exe`;
+const CHROME = chromePath();
 
 const PORT = 4341; // A 档：默认端口 + 没有本机文件
 const PORT2 = 4342; // B 档：编辑器自己的端口（故意与预览端口不同）
@@ -63,6 +70,26 @@ const check = (n, ok, d = '') => {
 const info = (s) => console.log(`      · ${s}`);
 const sha = (b) => crypto.createHash('sha256').update(b).digest('hex').slice(0, 16);
 
+/** 一个目录的内容指纹（相对路径 + 内容）—— 用来核对"备份放回后一个字节没变" */
+function dirDigest(dir) {
+  const walk = (d, base = '') => {
+    const out = [];
+    let entries = [];
+    try {
+      entries = fs.readdirSync(d, { withFileTypes: true });
+    } catch {
+      return out;
+    }
+    for (const e of entries.sort((x, y) => x.name.localeCompare(y.name))) {
+      const rel = base ? `${base}/${e.name}` : e.name;
+      if (e.isDirectory()) out.push(...walk(path.join(d, e.name), rel));
+      else out.push(`${rel}:${sha(fs.readFileSync(path.join(d, e.name)))}`);
+    }
+    return out;
+  };
+  return crypto.createHash('sha256').update(walk(dir).join('\n')).digest('hex').slice(0, 16);
+}
+
 /** 一个 1×1 的透明 PNG —— 只用来量「原样发回来没有」，画的是什么无所谓 */
 const PNG_STUB = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg==',
@@ -72,12 +99,26 @@ const CSS_STUB = '/* 本机外观层（测试用，跑完会删） */\n:root { -
 const APPLY_STUB = '/* 本机图标挂载（测试用，跑完会删） */\nwindow.__DSH_LOCAL_ICONS_RAN__ = true;\n';
 
 const htmlBefore = fs.readFileSync(HTML);
-const cssExisted = fs.existsSync(CSS_FILE);
-const iconsExisted = fs.existsSync(ICON_DIR);
-if (cssExisted || iconsExisted) {
-  console.error(`⚠ 这台机器上已经有本机外观层了（${cssExisted ? CSS_FILE : ICON_DIR}）——`);
-  console.error('  这个脚本会临时覆盖它，为了不毁掉你的东西，先自己挪走再跑。');
-  process.exit(2);
+
+/*
+  这台机器上**本来就有**本机外观层怎么办？
+  （谁就是那个改外观的人，谁就有 —— 协作者那边跑这个脚本时正是这种情况。）
+  这个脚本必须在同一组路径上放自己的临时文件，才量得出「放了文件会怎样」。
+
+  以前是发现有就直接拒绝跑，让人"先自己挪走再跑" —— 太不友好，而且手动挪走、
+  手动放回的中间崩一次，人家那份外观就丢了。现在改成**整份备份 + 原样放回**：
+  备份到 `.tmp/local-layer-backup-<时间戳>/`，跑完写回去，并核对字节一致（最后有一条断言）。
+*/
+const backupDir = path.join(SRC, '.tmp', `local-layer-backup-${Date.now()}`);
+const hadCss = fs.existsSync(CSS_FILE);
+const hadIcons = fs.existsSync(ICON_DIR);
+const backupCss = hadCss ? fs.readFileSync(CSS_FILE) : null;
+if (hadCss || hadIcons) {
+  fs.mkdirSync(backupDir, { recursive: true });
+  if (hadCss) fs.copyFileSync(CSS_FILE, path.join(backupDir, 'local-style.css'));
+  if (hadIcons) fs.cpSync(ICON_DIR, path.join(backupDir, 'local-icons'), { recursive: true });
+  if (hadCss) fs.rmSync(CSS_FILE, { force: true });
+  if (hadIcons) fs.rmSync(ICON_DIR, { recursive: true, force: true });
 }
 
 /** 发一个 GET，把状态、头、原始字节都拿回来 */
@@ -409,14 +450,33 @@ try {
   try { a?.kill(); } catch { /* 忽略 */ }
   try { b?.kill(); } catch { /* 忽略 */ }
   await sleep(800);
+  /* 把跑之前备份的那份**人自己的**外观层放回去（备份目录留着，下面核对完再删） */
+  try {
+    if (hadCss) fs.writeFileSync(CSS_FILE, backupCss);
+    if (hadIcons) fs.cpSync(path.join(backupDir, 'local-icons'), ICON_DIR, { recursive: true });
+  } catch (err) {
+    info(`⚠ 你原来那份外观层没放回去，备份还在：${backupDir}（${err?.message || err}）`);
+  }
   try { fs.rmSync(profile, { recursive: true, force: true }); } catch { /* Chrome 还占着就算了 */ }
 }
 
 /* ---- 收尾核对：仓库里那份 index.html 没被动过、本机外观层也清干净了 ---- */
 check('跑完 index.html 一个字节没变（这个脚本从不改前端文件）',
   fs.readFileSync(HTML).equals(htmlBefore));
-check('★ 收尾：临时放的那两份本机文件已经删掉（不留在站长机器上改外观）',
-  !fs.existsSync(CSS_FILE) && !fs.existsSync(ICON_DIR));
+if (hadCss || hadIcons) {
+  /* 这台机器本来就有人家自己那份：核对"原样放回" */
+  const sameCss = !hadCss || (fs.existsSync(CSS_FILE) && fs.readFileSync(CSS_FILE).equals(backupCss));
+  const sameIcons = !hadIcons || dirDigest(ICON_DIR) === dirDigest(path.join(backupDir, 'local-icons'));
+  info(`这台机器上本来就有本机外观层（${hadCss ? 'local-style.css' : ''}${hadCss && hadIcons ? ' + ' : ''}${hadIcons ? 'local-icons/' : ''}），已原样放回`);
+  check('★ 你原来那份本机外观层跑完还是原样（一个字节没动，不用你手动挪来挪去）',
+    sameCss && sameIcons, sameCss && sameIcons ? '字节一致' : `放回不一致；备份留在 ${backupDir}`);
+  if (sameCss && sameIcons) {
+    try { fs.rmSync(backupDir, { recursive: true, force: true }); } catch { /* 留着也不碍事 */ }
+  }
+} else {
+  check('★ 收尾：临时放的那两份本机文件已经删掉（不留在站长机器上改外观）',
+    !fs.existsSync(CSS_FILE) && !fs.existsSync(ICON_DIR));
+}
 const gitSt = spawnSync('git', ['status', '--porcelain'], { cwd: SRC, encoding: 'utf8' });
 check('收尾：git 的待提交列表里没有本机外观层的影子',
   !String(gitSt.stdout ?? '').includes('local-style.css') && !String(gitSt.stdout ?? '').includes('local-icons'),

@@ -1269,7 +1269,10 @@ EDITOR_PREVIEW_PORT=4323 花娅陌质流.cmd                  # 启动器：看�
   `..` 和 `/` 不在允许字符里），跳不出去。
 - **按请求判定**，不是启动时读一次：文件放上/删掉，刷新页面就变，不用重启编辑器。
 
-验收：`node tools/checks/editor-local-layer-check.mjs`（32 项，真服务端 + 真浏览器）。
+验收：`node tools/checks/editor-local-layer-check.mjs`（33 项，真服务端 + 真浏览器）。
+它自己找浏览器（见 `tools/checks/lib/chrome.mjs`，要指定就设 `DSH_CHROME`）；
+如果你这机器上**本来就有**本机外观层，它会先整份备份、跑完**原样放回**并核对字节，
+不用你手动挪走（这条是 2026-10-12 协作者复验时反馈回来才改的）。
 
 
 ## 安全边界

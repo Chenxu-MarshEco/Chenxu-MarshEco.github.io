@@ -22,10 +22,11 @@ import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
 import { spawn, execSync } from 'node:child_process';
+import { chromePath } from './lib/chrome.mjs';
 
 const SRC = String.raw`D:\曼沫砾总线\Chenxu-MarshEco.github.io`;
 const ROOT = path.join(SRC, 'dist');
-const CHROME = String.raw`C:\Users\煦\AppData\Local\ms-playwright\chromium-1243\chrome-win64\chrome.exe`;
+const CHROME = chromePath();
 const DEBUG_PORT = 9408;
 const PAGE = process.argv.find((a) => a.startsWith('/')) || '/liyutang/';
 const staticOnly = process.argv.includes('--static');

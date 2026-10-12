@@ -29,13 +29,14 @@ import Module, { createRequire } from 'node:module';
 import { createHash } from 'node:crypto';
 import { spawn, execSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
+import { chromePath } from './lib/chrome.mjs';
 
 const SRC = String.raw`D:\曼沫砾总线\Chenxu-MarshEco.github.io`;
 const BACKEND = path.join(SRC, 'tools', 'liyutang-backend', 'index.js');
 const ROOT = path.resolve(
   process.argv[2] && !process.argv[2].startsWith('--') ? process.argv[2] : path.join(SRC, 'dist')
 );
-const CHROME = String.raw`C:\Users\煦\AppData\Local\ms-playwright\chromium-1243\chrome-win64\chrome.exe`;
+const CHROME = chromePath();
 const DEBUG_PORT = 9403;
 const PAPER = '#fbf6ee';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));

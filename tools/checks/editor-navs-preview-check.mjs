@@ -27,11 +27,12 @@ import path from 'node:path';
 import http from 'node:http';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { chromePath } from './lib/chrome.mjs';
 
 const SRC = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const SERVER = path.join(SRC, 'tools', 'editor', 'server.mjs');
 const NAVS_FILE = path.join(SRC, 'src', 'data', 'navs.json');
-const CHROME = String.raw`C:\Users\煦\AppData\Local\ms-playwright\chromium-1243\chrome-win64\chrome.exe`;
+const CHROME = chromePath();
 const PORT = 4338;
 const DEBUG_PORT = 9417;
 const EDITOR = `http://127.0.0.1:${PORT}`;

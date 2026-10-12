@@ -62,6 +62,7 @@ import http from 'node:http';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import sharp from 'sharp';
+import { chromePath } from '../checks/lib/chrome.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, '..', '..');
@@ -72,7 +73,7 @@ const FULL = path.join(HOME, 'statue-full.png');
 const SKY = path.join(HOME, 'skyline.png');
 /** 线上真正渲染的那一档（页面用的是 variantUrl(skyline.png, 1600)）*/
 const SKY1600 = path.join(ROOT, 'public/img/opt/home/skyline-1600.webp');
-const CHROME = String.raw`C:\Users\煦\AppData\Local\ms-playwright\chromium-1243\chrome-win64\chrome.exe`;
+const CHROME = chromePath();
 
 const argv = process.argv.slice(2);
 const argOf = (name, dflt) => {

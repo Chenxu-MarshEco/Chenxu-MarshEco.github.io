@@ -23,12 +23,13 @@ import fs from 'node:fs';
 import path from 'node:path';
 import http from 'node:http';
 import { spawn, execSync } from 'node:child_process';
+import { chromePath } from './lib/chrome.mjs';
 
 const SRC = String.raw`D:\曼沫砾总线\Chenxu-MarshEco.github.io`;
 const DST = path.join(SRC, '.tmp', 'e2e-panels');
 const STATIC_PORT = 4391;
 const DEBUG_PORT = 9361;
-const CHROME = String.raw`C:\Users\煦\AppData\Local\ms-playwright\chromium-1243\chrome-win64\chrome.exe`;
+const CHROME = chromePath();
 const NEW_NAME = '验收改名';
 const NEW_MEMBER = '验收新成员';
 const ESS_TEXT = '验收新增精华 e2e';

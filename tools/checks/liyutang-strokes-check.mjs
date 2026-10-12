@@ -14,6 +14,7 @@
  */
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+import { chromePath } from './lib/chrome.mjs';
 
 const SRC = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const mod = await import(new URL(`file:///${path.join(SRC, 'src', 'utils', 'liyutang-strokes.mjs').replace(/\\/g, '/')}`).href);
@@ -184,7 +185,7 @@ console.log('\n=== ⑦ 真浏览器：把这张存档 SVG 渲染出来，量像�
     · (500,300) 红线**被擦到**的地方 → 变成纸色（这说明遮罩真的挖下去了）；
     · (500,450) erase **之后**画的蓝线 → 还在（顺序是对的，没被"擦前面"误伤）。
 */
-const CHROME = String.raw`C:\Users\煦\AppData\Local\ms-playwright\chromium-1243\chrome-win64\chrome.exe`;
+const CHROME = chromePath();
 const DEBUG_PORT = 9411;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 let chrome = null;

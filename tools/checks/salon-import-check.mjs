@@ -27,6 +27,7 @@ import { fileURLToPath } from 'node:url';
 import { importEssenceFile } from '../salon/import-more.mjs';
 import { parseMonthHtml } from '../salon/month-html.mjs';
 import { essenceKey } from '../salon/merge.mjs';
+import { chromePath } from './lib/chrome.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const SRC = path.resolve(here, '..', '..');
@@ -160,7 +161,7 @@ info(`副本先摘掉这份文件贡献过的 ${rolledBack.removed} 条 → 副�
    点「导入最新精华」→ 用 CDP 把压缩包真的塞进那个 file input → 等它导完。
    （不是直接打接口 —— 那是下一段，用来顺便再验一次"重复导入 0 新增"。） */
 const DEBUG_PORT = 9378;
-const CHROME = String.raw`C:\Users\煦\AppData\Local\ms-playwright\chromium-1243\chrome-win64\chrome.exe`;
+const CHROME = chromePath();
 let chrome = null;
 async function startChrome() {
   const profile = path.join(process.env.TEMP ?? '.', `dsh-salonimp-${Date.now()}`);

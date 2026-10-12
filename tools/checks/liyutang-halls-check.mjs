@@ -24,12 +24,13 @@ import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
 import { spawn, execSync } from 'node:child_process';
+import { chromePath } from './lib/chrome.mjs';
 
 const SRC = String.raw`D:\曼沫砾总线\Chenxu-MarshEco.github.io`;
 const ROOT = path.resolve(
   process.argv[2] && !process.argv[2].startsWith('--') ? process.argv[2] : path.join(SRC, 'dist')
 );
-const CHROME = String.raw`C:\Users\煦\AppData\Local\ms-playwright\chromium-1243\chrome-win64\chrome.exe`;
+const CHROME = chromePath();
 /*
   ⚠ 调试端口写死就够了（一个浏览器进程用完就杀），但**静态服务用系统随便给的端口** ——
   2026-10-08 那晚连撞两次 EADDRINUSE（一次是别的实验占着、一次是自己上一次没收干净），

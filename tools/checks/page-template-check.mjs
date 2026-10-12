@@ -25,6 +25,7 @@ import path from 'node:path';
 import http from 'node:http';
 import { spawn, execSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { chromePath } from './lib/chrome.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const SRC = path.resolve(here, '..', '..');
@@ -32,7 +33,7 @@ const DST = path.join(SRC, '.tmp', 'tpl-copy');
 const DIST = path.join(SRC, 'dist');
 const PORT = 4488;
 const DEBUG_PORT = 9458;
-const CHROME = String.raw`C:\Users\煦\AppData\Local\ms-playwright\chromium-1243\chrome-win64\chrome.exe`;
+const CHROME = chromePath();
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 let pass = 0;
