@@ -46,6 +46,8 @@ const IDENTITY = path.join(SRC, 'tools', 'editor', '.editor-identity.json');
 const ICEBERG = path.join(SRC, 'src', 'data', 'iceberg.json');
 const CHROME = String.raw`C:\Users\煦\AppData\Local\ms-playwright\chromium-1243\chrome-win64\chrome.exe`;
 const PORT = 4337;
+/** 「拉到编辑器新代码」那条用一个**副本**量（改副本里的文件，绝不碰真仓库） */
+const STALE_PORT = 4339;
 const DEBUG_PORT = 9415;
 const EDITOR = `http://127.0.0.1:${PORT}`;
 const GIT_TOOLS = ['whoami.mjs', 'activity.mjs', 'merge-json.mjs', 'versions.mjs', 'sync.mjs'];
@@ -373,11 +375,11 @@ let editor = null;
 let chrome = null;
 let profile = '';
 
-const api = (p, body) =>
+const api = (p, body, port = PORT) =>
   new Promise((resolve, reject) => {
     const data = body ? JSON.stringify(body) : '';
     const req = http.request(
-      `${EDITOR}${p}`,
+      `http://127.0.0.1:${port}${p}`,
       { method: body ? 'POST' : 'GET', headers: body ? { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) } : {} },
       (res) => {
         const chunks = [];
@@ -416,6 +418,15 @@ try {
   check('★ /api/collab/me：这台机器是谁 + 是不是站长 + 有没有构建环境',
     me.status === 200 && typeof me.json?.me?.login === 'string' && typeof me.json.rollback === 'boolean' && typeof me.json.buildEnv === 'boolean',
     JSON.stringify({ login: me.json?.me?.login, owner: me.json?.me?.owner, rollback: me.json?.rollback }));
+
+  /*
+    「我是不是旧代码」：加了新功能之后协作者怎么知道要重启（见 server.mjs 的 editorCodeState）。
+    这条先量"正常情况"：刚起来的编辑器当然不是旧的。
+    "盘上真的变了"那一种在下面用一份**副本**量（绝不能去动真仓库里的源码文件）。
+  */
+  check('★ /api/collab/me 带上编辑器自己的代码版本（正常时 stale=false）',
+    typeof me.json?.editor?.rev === 'string' && me.json.editor.rev.length >= 6 && me.json.editor.stale === false,
+    JSON.stringify(me.json?.editor));
 
   /*
     「冷机器」那条路（2026-10-12 修的一个真 bug）：
@@ -601,6 +612,104 @@ try {
   check('★ 身份输入框都在（用户名 / 显示名 / 邮箱 + 「这台机器就是站长」那个勾）',
     (C?.fields || []).join(',') === 'login,name,email,owner', JSON.stringify(C?.fields));
   check('★ 面板上写清了"你是站长"', /站长/.test(C?.status || ''), C?.status);
+  check('★ 没动过代码时：协作面板里没有那条"该重启"的提醒',
+    (await ev(`!!document.querySelector('#collab-editor [data-editor-stale]')`)) === false);
+
+  /* ------------------------------------------------------------------
+     「拉到编辑器的新代码」→ 协作者怎么知道要重启（2026-10-12 加）
+     ------------------------------------------------------------------
+     量法：把 tools/ 拷进一份**副本**、在副本里起一个编辑器，然后改副本里的一个服务端文件
+     （假装协作者刚拉到了新功能），再看**真浏览器**里那条提醒出没出来。
+     ⚠ 绝不能改真仓库里的源码 —— 那才是"验收自己成了噪声"。
+     ------------------------------------------------------------------ */
+  const staleCopy = path.join(TMP, 'editor-stale');
+  let staleEditor = null;
+  const openCollabAt = async (port) => {
+    await send('Page.navigate', { url: `http://127.0.0.1:${port}/` });
+    for (let i = 0; i < 150; i += 1) {
+      await sleep(120);
+      try {
+        if ((await ev('document.readyState')) === 'complete') break;
+      } catch {
+        /* 还在导航 */
+      }
+    }
+    await sleep(1800);
+    await ev(`(() => {
+      const hub = document.querySelector('#btn-hub');
+      if (hub) hub.click();
+      const b = document.querySelector('#hub-menu-list button[data-ws="collab"]');
+      if (b) b.click();
+      return 'ok';
+    })()`);
+    await sleep(2400);
+  };
+  try {
+    fs.rmSync(staleCopy, { recursive: true, force: true });
+    fs.mkdirSync(staleCopy, { recursive: true });
+    /*
+      ⚠ 副本里**要有 src/**：编辑器一打开就要拉文章列表（`/api/list` → src/content/posts），
+      少了它 init() 会当场抛错、后面那串（包括拉身份）根本不跑 —— 面板自然也不会有提醒
+      （第一版只拷了 tools/，浏览器那条就这么红的）。
+    */
+    for (const item of ['src', 'tools']) {
+      fs.cpSync(path.join(SRC, item), path.join(staleCopy, item), { recursive: true });
+    }
+    staleEditor = spawn(NODE, [path.join(staleCopy, 'tools', 'editor', 'server.mjs'), '--port', String(STALE_PORT)], {
+      /*
+        ⚠ cwd 用仓库根、**不要用那份副本**：Windows 上进程会占住自己的 cwd，
+        收尾时 rmSync 会 EPERM（这个检查第一次跑就是这么在最后一步炸的）。
+        副本编辑器算 PROJECT_ROOT 是看**自己文件的位置**，和 cwd 无关。
+      */
+      cwd: SRC,
+      stdio: 'ignore',
+    });
+    let upStale = false;
+    for (let i = 0; i < 60 && !upStale; i += 1) {
+      await sleep(400);
+      try {
+        upStale = (await api('/api/collab/me', null, STALE_PORT)).status === 200;
+      } catch {
+        /* 还没起来 */
+      }
+    }
+    const beforeStale = await api('/api/collab/me', null, STALE_PORT);
+    check('★ （副本）刚起来的编辑器：不认为自己是旧代码',
+      beforeStale.json?.editor?.stale === false, JSON.stringify(beforeStale.json?.editor));
+
+    /* 假装"拉了远端、带下来编辑器的新代码"：只改这份副本里的一个服务端文件 */
+    fs.appendFileSync(
+      path.join(staleCopy, 'tools', 'git', 'whoami.mjs'),
+      '\n// 验收：假装拉到编辑器的新功能（只动这份副本）\n',
+      'utf8',
+    );
+    const afterStale = await api('/api/collab/me', null, STALE_PORT);
+    check('★★ 盘上的服务端代码变了（= 协作者拉到了新功能）→ 编辑器如实说"我是旧代码"，并给出能照着做的一句话',
+      afterStale.json?.editor?.stale === true
+      && (afterStale.json.editor.changed || []).some((f) => /whoami\.mjs$/.test(f))
+      /* 文案要具体到动作（关掉窗口 + 重新双击那个 .cmd），只写"重启"对协作者不够 */
+      && /关掉/.test(afterStale.json.editor.restartHint || '')
+      && /一起写\.cmd/.test(afterStale.json.editor.restartHint || ''),
+      JSON.stringify(afterStale.json?.editor));
+    check('★ 而且正在跑的进程不受影响（改的是盘上的文件，进程里还是启动那份）—— 所以必须重启',
+      afterStale.status === 200 && afterStale.json?.editor?.rev === beforeStale.json?.editor?.rev,
+      `${beforeStale.json?.editor?.rev} → ${afterStale.json?.editor?.rev}`);
+
+    /* 真浏览器：那条提醒真的摆在「协作」面板最上面，而且写清是哪个文件变了 */
+    await openCollabAt(STALE_PORT);
+    const staleBanner = await ev(`(() => {
+      const el = document.querySelector('#collab-editor [data-editor-stale]');
+      return el ? el.textContent : '';
+    })()`);
+    check('★★ 浏览器里：那条黄字提醒真的出来了，还写清了是哪个文件变了',
+      /whoami\.mjs/.test(staleBanner) && /关掉/.test(staleBanner), String(staleBanner).slice(0, 160));
+  } finally {
+    try { staleEditor?.kill(); } catch { /* 忽略 */ }
+    await sleep(800);   // 等它真的退出再删目录（Windows 上进程没退干净会占着文件）
+    try { fs.rmSync(staleCopy, { recursive: true, force: true }); } catch { /* 下一轮 setupRepos 会清 */ }
+    /* 浏览器回到真编辑器那一份（下面就接着用它量协作者视角） */
+    await loadPage();
+  }
 
   const vopened = await ev(`(() => {
       document.querySelector('#btn-hub').click();

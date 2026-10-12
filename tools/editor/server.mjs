@@ -22,7 +22,7 @@
 
 import http from 'node:http';
 import fs from 'node:fs/promises';
-import { createWriteStream } from 'node:fs';
+import { createWriteStream, readFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -185,6 +185,71 @@ function sendText(res, status, text, contentType = 'text/plain; charset=utf-8') 
 
 function ok(res, payload = { ok: true }) {
   sendJson(res, 200, payload);
+}
+
+/* ------------------------------------------------------------------
+   编辑器自己的「我是不是旧代码」（2026-10-12 加）
+   ------------------------------------------------------------------
+   背景：编辑器就住在仓库里（tools/editor + tools/git），所以"给编辑器加新功能"这件事，
+   对协作者来说就是**拉一次远端**。可是拉完之后：
+     · 界面文件（ui/*.js|css|html）是**每次请求现读盘**的 → 刷新一下浏览器就是新的；
+     · 服务端那几份（server.mjs / tools/git/*.mjs）是**进程启动时 import 进来的** →
+     不重启，它就还是旧代码，页面上新按钮点下去可能 404 或者干脆看不见。
+
+   问题在于**协作者不知道自己是旧的**（他也不会天天想着"要不要重启一下编辑器"）。
+   所以这里算一份"启动那一刻的代码指纹"，之后每次问身份时顺手比一次：
+   盘上的文件变了 = 你刚拉到了新功能 = 该重启了。
+
+   ⚠ 为什么**不自动重启**：面板里没保存的草稿都在**内存**里（关面板不丢、进程一没就没了）。
+   自动重启会把别人正在写的东西弄丢 —— 这种"方便"不能要，只能提醒，让人自己挑时候。
+   ------------------------------------------------------------------ */
+/** 启动时算指纹要覆盖的文件：编辑器的服务端 + 它跑的那几个工具 */
+const EDITOR_CODE_FILES = [
+  'tools/editor/server.mjs',
+  'tools/git/sync.mjs',
+  'tools/git/whoami.mjs',
+  'tools/git/activity.mjs',
+  'tools/git/merge-json.mjs',
+  'tools/git/versions.mjs',
+];
+
+/** 每个文件的内容指纹（读不到就记 "(缺)"，别让一个文件缺失把整件事弄崩） */
+function editorCodeHashes() {
+  const map = new Map();
+  for (const rel of EDITOR_CODE_FILES) {
+    let hash = '(缺)';
+    try {
+      hash = createHash('sha1').update(readFileSync(path.join(PROJECT_ROOT, rel))).digest('hex').slice(0, 12);
+    } catch {
+      /* 文件不在：也算一种状态，改了/补上了都会被看出来 */
+    }
+    map.set(rel, hash);
+  }
+  return map;
+}
+
+/** 启动那一刻的快照（模块加载时算一次，之后不再动） */
+const EDITOR_CODE_AT_BOOT = editorCodeHashes();
+const EDITOR_CODE_REV = createHash('sha1')
+  .update([...EDITOR_CODE_AT_BOOT].map(([f, h]) => `${f}:${h}`).join('\n'))
+  .digest('hex')
+  .slice(0, 8);
+
+/**
+ * 现在盘上的代码和启动时比，变了没。
+ * @returns {{rev:string, stale:boolean, changed:string[], restartHint:string}}
+ */
+function editorCodeState() {
+  const now = editorCodeHashes();
+  const changed = [...now].filter(([f, h]) => EDITOR_CODE_AT_BOOT.get(f) !== h).map(([f]) => f);
+  return {
+    rev: EDITOR_CODE_REV,
+    stale: changed.length > 0,
+    changed,
+    restartHint: changed.length
+      ? '这台机器上的编辑器**拉到了新代码**（或者手动改过）：关掉这个编辑器窗口、重新双击 一起写.cmd 才会生效。'
+      : '',
+  };
 }
 
 /* ------------------------------------------------------------------
@@ -1529,6 +1594,12 @@ async function handleApi(req, res, url) {
     return sendJson(res, 200, {
       ok: result.code === 'ok',
       ...result,
+      /*
+        拉下来的东西里**可能就有编辑器自己的新代码**（它住在 tools/ 里）。
+        顺手把"我是不是旧代码"一起回给页面 —— 刚拉完那一刻提醒"要重启"最有效，
+        不然用户只会觉得"网站更新了，编辑器怎么没反应"。
+      */
+      editor: editorCodeState(),
       message: r.message,
       output: r.output,
     });
@@ -1580,6 +1651,8 @@ async function handleApi(req, res, url) {
         这时候界面上要提示站长：可以自己勾一下"这台机器就是站长"（见身份文件的 owner 字段）。
       */
       ownerUnknown: who.owner === null && Boolean(who.login) && !who.origin.owner,
+      /* 「我是不是旧代码」：拉了远端之后就得重启编辑器（见上面 editorCodeState 那段） */
+      editor: editorCodeState(),
       buildEnv: await hasBuildEnv(),
       lastFetch,
     });

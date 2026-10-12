@@ -5191,3 +5191,18 @@ body.pblock-dragging * {
   color: var(--text);
 }
 
+/*
+  「这台机器上的编辑器拉到新代码了，得重启才生效」那条提醒（2026-10-12 加）。
+  要显眼但别用红色（不是错误，是"该重启一下"），所以走 warn 那套色。
+*/
+.nv-stale {
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--warn);
+  border-left-width: 3px;
+  border-radius: var(--r-sm);
+  background: var(--warn-soft);
+  color: var(--text);
+  line-height: 1.7;
+}
+

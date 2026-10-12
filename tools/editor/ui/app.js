@@ -275,6 +275,8 @@ const state = {
   lastToastSha: '',
   /** 每分钟看一次远端的定时器 */
   collabTimer: null,
+  /** 「拉到新代码了、该重启编辑器」这句提醒只说一次 */
+  editorStaleTold: false,
   publishing: false,
   rollingBack: false,
   /**
@@ -9582,9 +9584,18 @@ async function doPullRemote() {
     const code = String(r?.code || '');
     if (code === 'ok') {
       if (Number(r.pulled) > 0) {
+        /*
+          拉下来的东西里**可能就有编辑器自己的新代码**（它住在 tools/ 里）——
+          刚拉完那一刻提醒"要重启"最有效：界面文件刷新页面就是新的，
+          服务端那几份（server.mjs / tools/git/*）必须重启进程才生效。
+        */
+        const tail = r.editor?.stale
+          ? '；里面还有**编辑器自己的新代码** —— 关掉这个窗口、重新双击 一起写.cmd 才生效（界面刷新一下就是新的）'
+          : '';
+        if (r.editor?.stale) state.editorStaleTold = true;
         toast(r.direct
-          ? `已拉取 ${r.pulled} 个提交（代理没通，自动走的直连）`
-          : `已拉取 ${r.pulled} 个提交 —— 别人的新内容已经在本机了`);
+          ? `已拉取 ${r.pulled} 个提交（代理没通，自动走的直连）${tail}`
+          : `已拉取 ${r.pulled} 个提交 —— 别人的新内容已经在本机了${tail}`);
         // 拉进来的可能就是新文章 / 改过的文章，列表要跟着刷新
         await refreshList(state.type);
       } else {
@@ -11272,6 +11283,15 @@ async function loadCollabInfo() {
     collabRetryLeft -= 1;
     collabRetryTimer = setTimeout(() => { collabRetryTimer = null; void loadCollabInfo(); }, 2600);
   }
+  /*
+    「我是不是旧代码」：盘上的 server.mjs / tools/git/* 变了（= 拉到编辑器的新功能了），
+    而**正在跑的这个进程还是旧的**（服务端代码是启动时 import 进来的）。
+    这里提醒一次就够（每次打开页面都弹会烦），真正的解释和做法写在「协作」面板里。
+  */
+  if (state.collab?.editor?.stale && !state.editorStaleTold) {
+    state.editorStaleTold = true;
+    toast('编辑器拉到新代码了：关掉这个窗口重新双击 一起写.cmd 才会生效（界面刷新一下就是新的）');
+  }
   return state.collab;
 }
 
@@ -11452,6 +11472,21 @@ function renderCollabPanel() {
     name: me?.name || collabDraft.name || '',
     email: me?.email || collabDraft.email || '',
   };
+
+  /*
+    拉到编辑器的新代码了（盘上的 server.mjs / tools/git/* 变了），但**正在跑的进程还是旧的**：
+    摆在最上面说清楚，别让人回头去猜"怎么界面变了、按钮点了没反应"。
+    为什么不自动重启：面板里没保存的草稿都在内存里（见 server.mjs 的 editorCodeState 那段）。
+  */
+  const ed = state.collab?.editor;
+  if (ed?.stale) {
+    const warn = document.createElement('p');
+    warn.className = 'hint nv-stale';
+    warn.dataset.editorStale = '1';
+    warn.textContent = `⚠ ${ed.restartHint}变了的是：${(ed.changed || []).join('、')}`
+      + '（界面文件是每次现读盘的，刷新页面就是新的；服务端那几份必须重启进程。）';
+    body.appendChild(warn);
+  }
 
   /* ---------- 我是谁 ---------- */
   const whoBox = panelBox('我是谁', '用户名决定两件事：推流动态里显示的是谁，以及这台机器有没有「版本」回滚面板（只有站长有）。');

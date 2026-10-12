@@ -1028,8 +1028,13 @@ try {
   await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: pt.x, y: pt.y, button: 'none' });
   await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: pt.x, y: pt.y, button: 'left', buttons: 1, clickCount: 1 });
   await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: pt.x, y: pt.y, button: 'left', buttons: 0, clickCount: 1 });
-  await sleep(1400);
-  const jump = await cdp.ev(`(() => {
+  /*
+    ⚠ 跳过去是**平滑滚动**（807 条精华、目标可能在很下面），固定等 1.4 秒不够稳：
+    2026-10-12 这一条就是"找到刻度、也跳对了最近那条（#e0053），但读数时还在滚"——
+    top 2403、inView=false，假红。改成"等到它真的落在视口里为止"（最多 5 秒），
+    量还是那条：跳到最近的那一条、而且落在视口里。
+  */
+  const readJump = () => cdp.ev(`(() => {
     const h = location.hash; const el = h && document.querySelector(h); const r = el && el.getBoundingClientRect();
     /* "最近"= param 差最小的那条 */
     const want = ${JSON.stringify(pt.param)};
@@ -1042,6 +1047,12 @@ try {
     }
     return { hash: h, picked: ${JSON.stringify(pt.label)}, isItem: !!(el && el.classList.contains('salon__item')),
       isNearest: nearest ? h === '#' + nearest.id : false, top: r && Math.round(r.top), inView: !!(r && r.top > -60 && r.top < innerHeight) }; })()`);
+  let jump = null;
+  for (let i = 0; i < 14; i += 1) {
+    await sleep(400);
+    jump = await readJump();
+    if (jump?.inView === true && jump?.isNearest === true) break;
+  }
   check('精华页：点一个刻度 → 跳到**离它最近**的那条精华（落在视口里，不是跳去别的页）',
     /^#e\d+$/.test(jump.hash) && jump.isItem === true && jump.isNearest === true && jump.inView === true, JSON.stringify(jump));
   }
