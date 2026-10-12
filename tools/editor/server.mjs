@@ -149,13 +149,18 @@ const STATIC_FILES = new Map([
       tools/editor/local-style.css        —— 覆盖样式，可选，缺了就是原样
       tools/editor/local-icons/*.png      —— Fugue 图标，可选
       tools/editor/local-icons/apply-icons.js —— 把图标挂到按钮上，可选
-    这三样都**不进仓库**（.gitignore 里排掉了），只在本机生效；
-    不存在时静默 404，页面照常。
+    这三样都**不进仓库**（.gitignore 里排掉了），只在本机生效。
+
+    ⚠ 这两条标 `optional`：它们**本来就可以没有**，缺了要回一个干净的 404，
+      不能掉进下面那个「找不到前端资源，请确认 tools/editor/ui 目录完整」的
+      500 —— 那句是给真丢了 ui 文件的人看的，用在这儿会把人带去查错方向。
+      （2026-10-12：补丁原样打进来时确实是 500，是编辑器本机外观层那份
+        检查 tools/checks/editor-local-layer-check.mjs 量出来的。）
   */
-  ['/local-style.css', { file: '../local-style.css', type: 'text/css; charset=utf-8' }],
+  ['/local-style.css', { file: '../local-style.css', type: 'text/css; charset=utf-8', optional: true }],
   [
     '/local-icons/apply-icons.js',
-    { file: '../local-icons/apply-icons.js', type: 'text/javascript; charset=utf-8' },
+    { file: '../local-icons/apply-icons.js', type: 'text/javascript; charset=utf-8', optional: true },
   ],
 ]);
 
@@ -6169,10 +6174,11 @@ async function serveAudio(res, pathname) {
 
 async function serveStatic(res, pathname) {
   /*
-    本机外观覆盖层的图标：/local-icons/icon-<名>(-shadowless).png
-    文件名收得很紧（只有字母、数字和连字符），不做目录遍历。
-    注意大小写：图标名里有 `imageUrl` 这种驼峰，所以匹配不区分大小写，
-    但读盘时用捕获到的原样名字。
+    本机外观覆盖层的图标：/local-icons/icon-<名>.png
+    文件名收得很紧（只有字母、数字和连字符），**不认子目录**：`..` 和 `/`
+    都不在白名单字符里，所以拼出来的路径跳不出 local-icons/。
+    注意大小写：图标名里有 `imageUrl` 这种驼峰，所以字母两种大小写都收，
+    读盘时用捕获到的原样名字；扩展名只认小写 .png。
   */
   const iconMatch = /^\/local-icons\/(icon-[A-Za-z0-9-]+\.png)$/.exec(pathname);
   if (iconMatch) {
@@ -6238,7 +6244,12 @@ async function serveStatic(res, pathname) {
     });
     res.end(buf);
   } catch {
-    sendText(res, 500, '找不到前端资源，请确认 tools/editor/ui 目录完整');
+    /* 本机外观层缺了是**常态**（大部分人就没放这两个文件），不是「前端资源丢了」 */
+    if (entry.optional) {
+      sendText(res, 404, '这台机器上没有本机外观层（local-style.css / local-icons）');
+    } else {
+      sendText(res, 500, '找不到前端资源，请确认 tools/editor/ui 目录完整');
+    }
   }
   return true;
 }

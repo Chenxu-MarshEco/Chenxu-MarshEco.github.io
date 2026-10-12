@@ -1228,6 +1228,50 @@ node tools/git/sync.mjs publish --message "说明"   # 发布上线（先拉后�
 细节和机器人该怎么推见根目录 `README.md` 的「两个人（或者一个机器人）一起改这个仓库」。
 
 
+## 预览端口可配 + 本机外观层（2026-10-12 加，协作者 Arcarlight 的补丁）
+
+两件事都做成「**不设就不用、不放文件就不生效**」：默认使用者那边等于不存在
+（服务端吐的 `index.html` 与仓库里那份逐字节相同，不多一个请求、不多一条 404）。
+
+### ① 预览端口：`EDITOR_PREVIEW_PORT`
+
+编辑器默认去 `http://127.0.0.1:4321` 取预览。一台机器上可能不止一个本地站点 ——
+4321 被别的项目占着时，astro dev **不会报错，它会自己往后挪一个端口**，
+而编辑器还指着 4321，表现就是「连不上本地预览服务」、重启多少次都一样。
+
+```bash
+EDITOR_PREVIEW_PORT=4323 node tools/editor/server.mjs   # 编辑器这一端
+EDITOR_PREVIEW_PORT=4323 花娅陌质流.cmd                  # 启动器：看效果也起在 4323
+```
+
+`ui/app.js` / `ui/liyutang.js` 那颗「预览」地址读的是服务端注入的
+`window.__DSH_PREVIEW_PORT__`（**只有不是 4321 时才注入**，所以默认档页面不变）；
+启动器 `tools/studio/studio.py` 读同一个环境变量，端口非默认时才给 `pnpm dev`
+加 `--port`（**必须显式钉住**：不钉的话 astro 又自己挪走了，等于白配）。
+默认档命令行与从前逐字相同。
+
+### ② 本机外观层：`tools/editor/local-style.css` + `tools/editor/local-icons/`
+
+只想改**自己这台机器**的长相（配色、图标）时，别去改仓库里的 `ui/style.css`
+（一拉远端就撞车）。往这两处放：
+
+| 地址 | 是什么 |
+| --- | --- |
+| `/local-style.css` | 你那份覆盖样式；挂在 `</body>` 前面（在所有原样式**之后**，所以盖得住） |
+| `/local-icons/apply-icons.js` | 你的挂载脚本（ES module），想怎么挂图标都行 |
+| `/local-icons/icon-<名字>.png` | 图标本身。名字只收字母、数字、连字符（`imageUrl` 这种驼峰可以），扩展名只认小写 `.png` |
+
+- 这三样的路径都在 `.gitignore` 里（第 42~43 行）：**各人改各人的外观，互不撞车**。
+- 盘上没有它们时，页面里**一个字节都不加**；真去手敲那两条地址，回的是
+  **404「这台机器上没有本机外观层」**。⚠ 补丁原样打进来时这里是 **500**
+  （掉进了"ui 目录不完整"那个分支），是 `editor-local-layer-check` 量出来的，已修。
+- 图标名不合法 / 不存在也都是 404：读盘路径收得很紧（只认 `local-icons/` 这一层，
+  `..` 和 `/` 不在允许字符里），跳不出去。
+- **按请求判定**，不是启动时读一次：文件放上/删掉，刷新页面就变，不用重启编辑器。
+
+验收：`node tools/checks/editor-local-layer-check.mjs`（32 项，真服务端 + 真浏览器）。
+
+
 ## 安全边界
 
 虽然只是本地工具，该拦的还是拦：
@@ -1271,8 +1315,11 @@ tools/editor/
 │   ├── style.css   # 样式，颜色集中在 CSS 变量里
 │   ├── liyutang.html  # 黎语堂自己的管理页（/liyutang-admin），独立于上面那套界面
 │   └── liyutang.js    # 它的逻辑：大厅 + 版块 + 评论系统，只读写 /api/liyutang
+├── local-style.css  # 【可选 · 不进仓库】本机外观覆盖样式（见上面那一节）
+├── local-icons/     # 【可选 · 不进仓库】本机图标 + apply-icons.js
 └── README.md
 ```
 
 改完 `ui/` 里的东西，刷新浏览器即可生效（服务端对这些文件禁用了缓存）。
 改 `server.mjs` 需要 `Ctrl+C` 后重新启动。
+`local-style.css` / `local-icons/` 是**按请求**判定的：放上或删掉，刷新就变，不用重启。

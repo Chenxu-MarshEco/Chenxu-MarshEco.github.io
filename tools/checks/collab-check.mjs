@@ -703,7 +703,8 @@ try {
       if (b) b.click();
       return 'ok';
     })()`);
-    await sleep(2400);
+    /* 面板是"读完动态才画"的：这里只等一会儿，真正的等待交给下面那次轮询 */
+    await sleep(600);
   };
   try {
     fs.rmSync(staleCopy, { recursive: true, force: true });
@@ -715,6 +716,21 @@ try {
     */
     for (const item of ['src', 'tools']) {
       fs.cpSync(path.join(SRC, item), path.join(staleCopy, item), { recursive: true });
+    }
+    /*
+      ⚠ 顺带把「邮箱 → GitHub 用户名」那份缓存也带进副本。
+      副本只拷了 src + tools，`.tmp/collab-actors.json` 不在里面 —— 空缓存意味着
+      **每个署名都是"没见过的邮箱"**，于是 activity() 会去联网问一次 GitHub
+      （`gh auth token` 最长 6 秒 + api.github.com 最长 9 秒）。
+      而「协作」面板要等推流动态读完才画（app.js 的 openCollabModal 里 `await refreshActivity`），
+      这一等就把下面那条浏览器断言变成了**和网速赛跑**：
+      2026-10-12 晚上它就是这么红的 —— 副本里冷缓存读一次动态要 2.6 秒起，
+      而那条断言只睡了固定 2400ms。验收要量的是"提醒出不出来"，不是网速。
+    */
+    const actorCache = path.join(SRC, '.tmp', 'collab-actors.json');
+    if (fs.existsSync(actorCache)) {
+      fs.mkdirSync(path.join(staleCopy, '.tmp'), { recursive: true });
+      fs.copyFileSync(actorCache, path.join(staleCopy, '.tmp', 'collab-actors.json'));
     }
     staleEditor = spawn(NODE, [path.join(staleCopy, 'tools', 'editor', 'server.mjs'), '--port', String(STALE_PORT)], {
       /*
@@ -758,10 +774,18 @@ try {
 
     /* 真浏览器：那条提醒真的摆在「协作」面板最上面，而且写清是哪个文件变了 */
     await openCollabAt(STALE_PORT);
-    const staleBanner = await ev(`(() => {
-      const el = document.querySelector('#collab-editor [data-editor-stale]');
-      return el ? el.textContent : '';
-    })()`);
+    /*
+      ⚠ 轮询等它画出来，**不用固定睡眠**（理由见上面"把缓存带进副本"那段：
+      打开面板要等动态读完，而动态那一步可能去联网）。最长等 20 秒。
+    */
+    let staleBanner = '';
+    for (let i = 0; i < 40 && !staleBanner; i += 1) {
+      staleBanner = await ev(`(() => {
+        const el = document.querySelector('#collab-editor [data-editor-stale]');
+        return el ? el.textContent : '';
+      })()`);
+      if (!staleBanner) await sleep(500);
+    }
     check('★★ 浏览器里：那条黄字提醒真的出来了，还写清了是哪个文件变了',
       /whoami\.mjs/.test(staleBanner) && /关掉/.test(staleBanner), String(staleBanner).slice(0, 160));
   } finally {

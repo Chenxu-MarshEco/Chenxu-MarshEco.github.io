@@ -50,7 +50,33 @@ NO_WINDOW = subprocess.CREATE_NO_WINDOW if IS_WIN else 0
 #      代理绕不绕过它都无所谓。梯子开着关着都一样。
 #
 # 编辑器（4322）那边本来就是这么做的（HOST = '127.0.0.1'），只有这一处漏了。
-PREVIEW_PORT = 4321
+#
+# 端口可配（2026-10-12 加，协作者那边真遇到的）：一台机器上可能不止一个本地站点
+# —— 比如另一个项目的编辑器也占着 4321。那时候 astro dev **不会报错，它会自己
+# 往后挪一个端口**，而编辑器里那颗「预览」还指着 4321，于是永远连不上。
+# 设环境变量 `EDITOR_PREVIEW_PORT` 就一起换：这里给 astro dev 显式 `--port`，
+# 编辑器那一端（tools/editor/server.mjs）读的是同一个变量，两边盯着同一个号。
+# 不设就是原来的 4321 —— 命令行一个字都不多，行为与从前完全一致。
+def _preview_port():
+    """读 EDITOR_PREVIEW_PORT；没设、写错、越界都退回默认的 4321。"""
+    raw = os.environ.get('EDITOR_PREVIEW_PORT', '').strip()
+    if raw.isdigit() and 1 <= int(raw) <= 65535:
+        return int(raw)
+    return 4321
+
+
+def dev_args(resolve):
+    """「看效果」那条命令：显式绑 IPv4；端口不是默认 4321 时才加 `--port`。
+
+    默认情况刻意**不加**这个参数：命令跟从前逐字一样，也就不会有新的行为差异。
+    """
+    args = [resolve('pnpm'), 'dev', '--host', '127.0.0.1']
+    if PREVIEW_PORT != 4321:
+        args += ['--port', str(PREVIEW_PORT)]
+    return args
+
+
+PREVIEW_PORT = _preview_port()
 PREVIEW_URL = f'http://127.0.0.1:{PREVIEW_PORT}'
 
 
@@ -840,21 +866,19 @@ class Studio:
             if not self.need_deps():
                 return
             # 编辑器要连着预览一起开。
-            # 编辑器里的「排版」模式需要预览服务（4321）在场才能取到页面，
+            # 编辑器里的「排版」模式需要预览服务在场才能取到页面，
             # 只开编辑器的话排版会报「先打开看效果」。预览放后台、不弹浏览器。
-            # 显式 --host 127.0.0.1：astro dev 默认只绑 localhost（Windows 上
-            # 常解析成 IPv6 ::1），那样 127.0.0.1 连不上，代理会失败。
-            self.spawn('preview',
-                       [self.resolve('pnpm'), 'dev', '--host', '127.0.0.1'],
+            # 命令由 dev_args 拼：显式 --host 127.0.0.1（astro dev 默认只绑
+            # localhost，Windows 上常解析成 IPv6 ::1，那样 127.0.0.1 连不上，
+            # 代理会失败），端口不是默认 4321 时再显式 --port。
+            self.spawn('preview', dev_args(self.resolve),
                        '看效果', show=False)
             self.spawn('editor', [self.resolve('pnpm'), 'editor', '--open'],
                        '写文章')
         elif key == 'preview':
             if not self.need_deps():
                 return
-            self.spawn('preview',
-                       [self.resolve('pnpm'), 'dev', '--host', '127.0.0.1'],
-                       '看效果')
+            self.spawn('preview', dev_args(self.resolve), '看效果')
             self.log_write(f'地址是 {PREVIEW_URL}'
                            '　（请用这个地址，不要用 localhost —— 开着代理/梯子时\n'
                            '   localhost 可能被解析到别的地址，那就会一直转圈打不开）\n\n')
