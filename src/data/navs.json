@@ -1012,6 +1012,98 @@
           ]
         }
       ]
+    },
+    {
+      "id": "navcat-mv6citfh172",
+      "title": "眠鱼路",
+      "groups": [
+        {
+          "id": "g-mv6cj0vp592",
+          "title": "空岛",
+          "items": [
+            {
+              "id": "i-mv6cmao734",
+              "text": "ai.（aiborg）"
+            },
+            {
+              "id": "i-mv6cmeva743",
+              "text": "CAT（无村落）"
+            },
+            {
+              "id": "i-mv6cmht3409",
+              "text": "Ciallo（Laststrand）"
+            },
+            {
+              "id": "i-mv6cml6e419",
+              "text": "Hoshi_burg（厚实村）"
+            },
+            {
+              "id": "i-mv6cmvd2706",
+              "text": "kokoro（Montpellier）"
+            },
+            {
+              "id": "i-mv6cmyof538",
+              "text": "LimbusBurger（Fairdenn）"
+            },
+            {
+              "id": "i-mv6cnj9i685",
+              "text": "Melfinkirim（Quickrun）"
+            },
+            {
+              "id": "i-mv6co5x3101",
+              "text": "Nikzeromlan（无村落）"
+            },
+            {
+              "id": "i-mv6cohhj445",
+              "text": "SunfIsBacon（无村落）"
+            },
+            {
+              "id": "i-mv6cpztz993",
+              "text": "Taroball（月落之地）"
+            },
+            {
+              "id": "i-mv6crgcg0",
+              "text": "The_Last_Cucumburgs（Glimmertide）"
+            },
+            {
+              "id": "i-mv6d721g282",
+              "text": "UNS（眠鱼路）"
+            },
+            {
+              "id": "i-mv6d7qq6255",
+              "text": "ZZLTWSS（Littleburgh）"
+            }
+          ],
+          "subgroups": [
+            {
+              "id": "s-mv6db6xx827",
+              "title": "村民",
+              "items": [
+                {
+                  "id": "i-mv6dbbcl816",
+                  "text": "Nataša"
+                },
+                {
+                  "id": "i-mv6dialy510",
+                  "text": "Dong-Qin"
+                },
+                {
+                  "id": "i-mv6dbsnh891",
+                  "text": "雨落"
+                },
+                {
+                  "id": "i-mv6dgkxi811",
+                  "text": "铃羽"
+                },
+                {
+                  "id": "i-mv6dilpa881",
+                  "text": "处暑（已死亡）"
+                }
+              ]
+            }
+          ]
+        }
+      ]
     }
   ]
 }
