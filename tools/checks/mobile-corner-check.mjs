@@ -391,6 +391,30 @@ check('★ 桌面（1440px）上宽卡还是原来那条横幅 —— 这条修�
   desktopCards.length > 0 && desktopCards.every((c) => c.h >= 200 && c.h / c.w <= 0.3),
   `${desktopCards.length} 张，高度 ${[...new Set(desktopCards.map((c) => c.h))].join('/')}`);
 
+/* ==========================================================================
+ *  ⑥ 分区版式（region）里的"框"在手机端不能被压扁（2026-10-13 用户报的）
+ * --------------------------------------------------------------------------
+ *  用户原话：「手机版确定修好了吗？还是完全看不到框啊」（截图里花娅编年史 /
+ *            花娅远位面只剩一条缝）。
+ *  真原因：桌面三列，第 3、4 块跨两行、靠行高撑开（align-self: stretch +
+ *  清单 flex: 1 1 0 + max-height: none）。塌成一列之后"跨两行"不存在了，
+ *  而 flex-basis: 0 配 max-height: none 让滚动区算成 **21px**（里面清单 1058px）——
+ *  只剩一条缝。现在窄屏把那一套撤掉：按内容高 + 34vh 封顶。
+ * ======================================================================== */
+console.log('\n================ ⑥ 分区版式的框 ================');
+const BOXES = `(() => [...document.querySelectorAll('.block__scroll')].map((el) => ({
+  h: Math.round(el.getBoundingClientRect().height), content: Math.round(el.scrollHeight) })))()`;
+for (const [w, label] of [[390, '手机'], [1440, '桌面']]) {
+  await open('/huaya/', w);
+  const boxes = await cdp.ev(BOXES);
+  const minH = Math.min(...boxes.map((b) => b.h));
+  check(`★ ${w}px（${label}）花娅陌域：分区版式里每个框都够高（不是只剩一条缝）`,
+    boxes.length >= 3 && boxes.every((b) => b.h >= 150),
+    `${boxes.length} 个框，最矮 ${minH}px（修之前手机端是 21px）`);
+}
+check('手机端那些框里内容比框长时在框里滚（不是把内容裁掉）',
+  (await cdp.ev(`(() => { const b = [...document.querySelectorAll('.block__scroll')].sort((x, y) => y.scrollHeight - x.scrollHeight)[0]; return !!b && b.scrollHeight > b.clientHeight + 20; })()`)) === true);
+
 check('这一趟没有 JS 报错', cdp.errors.length === 0, cdp.errors.slice(0, 2).join(' | '));
 
 try { await cdp.send('Browser.close'); } catch { /* ignore */ }

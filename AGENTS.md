@@ -22,6 +22,18 @@ node tools/memory/append-log.mjs 2026.10.12 .tmp/log.txt         # 真写
 node tools/checks/log-freshness.mjs                              # 自检
 ```
 
+### 每天第一次对话：先查前一天的日志字数
+
+```bash
+node tools/memory/log-length.mjs --yesterday
+```
+
+上限 **1000 字**（目标 ≤ 600）。退出码 1 就是前一天写太长了，按它给的步骤压缩：
+保留事实（改了什么 / 为什么 / 怎么验的），砍掉铺陈；**同一天再写一次 = 原地覆盖那一栏**，
+不会多出一条。压完再跑一次确认，然后才去干别的活。
+
+（`log-freshness.mjs` 也接了这条：今天 / 前一天超上限就会红，更早的日子只提示不拦发布。）
+
 - **一天只有一栏**：同一天再写一次 = 就地覆盖，别留三条同一天的。
 - 唯一位置是 `src/data/mianyu.json`。**不要**写进 `home-boards.json` 的「更新日志」页
   —— 编辑器一保存就覆盖（2026-09-28 出过这个事故）。
