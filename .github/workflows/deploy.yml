@@ -59,6 +59,11 @@ jobs:
     steps:
       - name: 拉取代码
         uses: actions/checkout@v4
+        with:
+          # ⚠ 必须是**完整历史**（2026-10-13 起）：站点构建要读 git log 才能算出
+          #   「近期更新」——页面名写在提交说明里（见 tools/git/recent-pages.mjs）。
+          #   默认 depth=1 的话 git log 只看得到一条提交，近期更新就只剩种子那点内容。
+          fetch-depth: 0
 
       - name: 准备 pnpm
         uses: pnpm/action-setup@v4

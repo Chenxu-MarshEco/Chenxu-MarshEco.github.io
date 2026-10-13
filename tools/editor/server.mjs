@@ -36,6 +36,10 @@ import { spawn } from 'node:child_process';
 import { me as whoamiMe, saveIdentity } from '../git/whoami.mjs';
 import { activity, panelsForFiles } from '../git/activity.mjs';
 import { listVersions, versionDetail } from '../git/versions.mjs';
+/*
+  「最近改过哪几页」的本地记录 + 提交说明那一段（2026-10-13 改，见 noteEdit 那段说明）
+*/
+import { clearSessionPages, formatPageBlock, readSessionPages, writeSessionPage } from '../git/recent-pages.mjs';
 
 // ---------------------------------------------------------------
 // 基本路径与常量
@@ -437,7 +441,15 @@ function beijingStamp(ms = Date.now()) {
 function defaultPublishMessage(panels = [], tail = '') {
   const list = (panels || []).filter(Boolean).slice(0, 4).join('、');
   const detail = [list, tail].filter(Boolean).join(' · ');
-  return `更新内容 ${beijingStamp()}${detail ? `：${detail}` : ''}`;
+  const head = `更新内容 ${beijingStamp()}${detail ? `：${detail}` : ''}`;
+  /*
+    顺手把「这次改过哪几页」拼进提交说明（2026-10-13 加）。
+    这一段就是「近期更新」的**数据来源** —— 站点构建时从 git log 里读它
+    （tools/git/recent-pages.mjs）。写进提交说明而不是写一份共享数据文件，
+    是为了让"两个人各改各的页面"从结构上不可能冲突：各写各的提交说明。
+  */
+  const block = formatPageBlock(readSessionPages());
+  return block ? `${head}\n\n${block}` : head;
 }
 
 /** 这台机器上有没有构建环境（node_modules 里的 astro） */
@@ -1761,6 +1773,12 @@ async function handleApi(req, res, url) {
     const message = String(payload?.message || '').trim() || defaultPublishMessage(panels);
     const r = await runGitCli('publish', { json: true, timeout: 600000, extra: ['--message', message] });
     const result = r.result ?? { code: 'error', err: r.output.slice(-500) };
+    /*
+      推上去了才清本机那份「这次改过哪几页」（2026-10-13）：页面名已经进了提交说明，
+      而「近期更新」以后是从 git log 读的 —— 再留着这份记录，下次发布会把同一批页面
+      重复写进新的提交说明里。没推成功就不清，免得那几页再也进不了"近期更新"。
+    */
+    if (result.code === 'ok') clearSessionPages();
     return sendJson(res, 200, {
       ok: result.code === 'ok',
       ...result,
@@ -2694,49 +2712,26 @@ let buildInFlight = null;
 let buildQueued = null;
 
 /* ------------------------------------------------------------------
-   「近期更新」：编辑器每次保存都记一笔
+   「近期更新」：保存时只记在**本机**（2026-10-13 改）
 
-   页面（/huaya/memory/update → 花涧堂更新 那一块）上要把"最近改过的三个页面"
-   列成卡片，所以得有个地方记"谁、什么时候"。
+   页面（/huaya/memory/update → 花涧堂更新 那一块）要列出"最近改过的几个页面"。
 
-   ⚠ 为什么不用文件的修改时间（mtime）：
-   部署是 GitHub Actions 里全新 clone 出来的，**所有源文件的 mtime 都是 clone 那一刻** ——
-   按 mtime 排出来的"最近更新"在线上就是一堆随机页面。所以必须**把这件事写进仓库**，
-   也就是写到 src/data/recent-edits.json 里（它会被一起提交、一起部署）。
+   以前是每一笔都写进仓库里的 src/data/recent-edits.json —— 那是**所有人共写的
+   同一份文件**：两个人各改各的页面，也会在同一份文件里撞车（群里反馈的
+   「update 还是需要手动处理冲突」，一半的锅在这儿），而且会越堆越多。
 
-   同一页只留最新一条（改十次不该占十个位置），最新的排最前，最多留 40 条。
+   现在改读 **git 的记录**：页面名写进**提交说明**，站点构建时从 git log 读回来
+   （tools/git/recent-pages.mjs；命令行 / 启动器发布走同一条规矩）。各人写各人的
+   提交说明，**结构上不可能冲突**。所以编辑器这边只需要：
+     · 保存时把"这一页"记在**本机**（tools/editor/.editor-edits.json，不进仓库）；
+     · 发布时把它拼进提交说明（见 defaultPublishMessage），发布成功后清掉。
+   老那份 recent-edits.json 留着当**种子**（只读、不再写），历史不丢。
    ------------------------------------------------------------------ */
-const RECENT_FILE = path.join(PROJECT_ROOT, 'src', 'data', 'recent-edits.json');
 const RECENT_MAX = 40;
 
-/** 同一个页面连续保存时不要刷屏：这条时间戳只精确到分钟也没关系 */
+/** 保存一页时记一笔（本地文件；发布时进提交说明） */
 async function noteEdit(page) {
-  const href = String(page?.href || '').trim();
-  const title = String(page?.title || '').trim();
-  if (!href || !title) return;
-  /* 站外链接 / 锚点不算"页面"（导航条目那种地方会传这些） */
-  if (!href.startsWith('/')) return;
-  let data = { edits: [] };
-  try {
-    const raw = JSON.parse(await fs.readFile(RECENT_FILE, 'utf8'));
-    if (Array.isArray(raw?.edits)) data = raw;
-  } catch {
-    /* 第一次还没有这个文件，正常 */
-  }
-  const norm = (v) => String(v || '').replace(/\/+$/, '') || '/';
-  const rest = (data.edits || []).filter((e) => norm(e?.href) !== norm(href));
-  data.edits = [{ href, title, at: new Date().toISOString() }, ...rest].slice(0, RECENT_MAX);
-  data.updated = new Date().toISOString();
-  /* 说明写在文件里（和别的数据文件一个规矩）：手改也行，但一般不用管 */
-  if (!Array.isArray(data._readme)) {
-    data._readme = [
-      '「近期更新」的数据：编辑器每次保存成功就往 edits 里记一笔（页面地址 + 页面名 + 时间）。',
-      '页面 /huaya/memory/update（花涧堂更新 那一块）用它列出"最近改过的几个页面"。',
-      '⚠ 故意存进仓库、而不是用文件修改时间：线上是全新 clone 出来的，mtime 全是同一刻，排不出先后。',
-      '同一页只留最新一条，最新的排最前，最多 40 条。手改这个文件也行（改完要重新构建）。',
-    ];
-  }
-  await fs.writeFile(RECENT_FILE, `${JSON.stringify(data, null, 2)}\n`, 'utf8');
+  writeSessionPage(page);
 }
 
 /**

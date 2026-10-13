@@ -44,6 +44,8 @@ import { existsSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { mergeJson3 } from './merge-json.mjs';
+/* 「近期更新」改读 git 的记录：页面名写进提交说明，见那个文件的头上 */
+import { PAGE_BLOCK_HEADER, clearSessionPages, formatPageBlock, readSessionPages } from './recent-pages.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 
@@ -53,6 +55,7 @@ export const CODES = {
   error: 1,
   conflict: 2,
   blocked: 2,
+  busy: 2,
   rejected: 3,
   ahead: 3,
   offline: 4,
@@ -202,6 +205,15 @@ export function conflictedFiles() {
 export function rebaseInProgress() {
   return existsSync(path.join(ROOT, '.git', 'rebase-merge'))
     || existsSync(path.join(ROOT, '.git', 'rebase-apply'));
+}
+
+/**
+ * 正在 merge（2026-10-13 加）：有人手动 `git merge` 过、还停在冲突里。
+ * `.git/MERGE_HEAD` 存在就是这个状态 —— 这时候**不要**在上面叠 rebase，
+ * 先把话说清楚（拉远端会返回 `{ code: 'busy' }`）。
+ */
+export function mergeInProgress() {
+  return existsSync(path.join(ROOT, '.git', 'MERGE_HEAD'));
 }
 
 /* ------------------------------------------------------------------
@@ -430,13 +442,35 @@ export function publish({ message, log = () => {} } = {}) {
   const up = upstream();
   /** 这一次发布里，有哪些数据文件是"按 JSON 结构自动合"的（如实告诉用户） */
   const jsonMerged = [];
+  /**
+   * 发布成功的统一出口（2026-10-13）：顺手清掉本机那份「这次改过哪几页」——
+   * 页面名已经进了提交说明，「近期更新」以后从 git log 读；不清的话下次发布会重复写一遍。
+   * 失败路径**不清**（免得那几页再也进不了"近期更新"）。
+   */
+  const done = (extra = {}) => {
+    clearSessionPages();
+    return { code: 'ok', ...extra };
+  };
 
   log('   正在检查能否连上 GitHub…');
   const probe = probeRemote();
   if (!probe.ok) return { code: 'offline', err: probe.err };
   log('   连接正常。');
 
-  const committed = commitAll(String(message || '更新内容'), log);
+  /*
+    提交说明里补上「这次改过哪几页」（2026-10-13 加）。
+    这一段就是「近期更新」的**数据来源**（站点构建时从 git log 读，见 recent-pages.mjs）：
+    编辑器保存过的页面记在本机 tools/editor/.editor-edits.json 里，发布时搬到提交说明、
+    发布成功后清掉。调用方（编辑器 / 启动器 / 命令行）自己已经写了这一段就不重复补。
+  */
+  const commitMessage = (() => {
+    const msg = String(message || '更新内容');
+    if (msg.includes(PAGE_BLOCK_HEADER)) return msg;
+    const block = formatPageBlock(readSessionPages());
+    return block ? `${msg}\n\n${block}` : msg;
+  })();
+
+  const committed = commitAll(commitMessage, log);
   if (!committed.ok) return { code: 'error', err: committed.err };
   if (committed.nothing) {
     /*
@@ -480,15 +514,15 @@ export function publish({ message, log = () => {} } = {}) {
     if (pull2.jsonMerged?.length) jsonMerged.push(...pull2.jsonMerged);
     log('   再推一次…');
     res = push({ log, setUpstream: false });
-    if (res.ok) return { code: 'ok', merged: true, jsonMerged };
+    if (res.ok) return done({ merged: true, jsonMerged });
   }
 
-  if (res.ok) return { code: 'ok', jsonMerged };
+  if (res.ok) return done({ jsonMerged });
   if (res.kind === 'offline') return { code: 'offline', err: res.err };
   if (res.kind === 'no-upstream') {
     /* 分支还没关联过（第一次推）：关联上再推一次，这不是失败 */
     const retry = push({ log, setUpstream: true });
-    if (retry.ok) return { code: 'ok' };
+    if (retry.ok) return done();
     return { code: 'rejected', kind: retry.kind, err: retry.err };
   }
   return { code: 'rejected', kind: res.kind, err: res.err };
@@ -560,24 +594,117 @@ export function pullRemote({ log = () => {} } = {}) {
     log('   远端没有新东西，本地已经是最新的。');
     return { code: 'ok', uptodate: true, pulled: 0, behind: 0, ahead: c.ahead };
   }
-  if (c.ahead > 0) {
-    log(`   远端有 ${c.behind} 个提交，你本地还有 ${c.ahead} 个没发布。`);
-    return { code: 'ahead', behind: c.behind, ahead: c.ahead };
+
+  /*
+    ⚠ 正在进行的合并动作（有人手动 merge、或者 rebase 停在半路）不硬来：
+    这时候再叠一个 rebase 会把人家半个合并动作搅坏，只会更难收拾。
+    照实说清楚，让人先把手上这个合并收尾（`git merge --abort` / `git rebase --abort`）。
+  */
+  if (rebaseInProgress() || mergeInProgress()) {
+    const what = rebaseInProgress() ? 'rebase' : 'merge';
+    log(`   ⚠ 这个仓库正停在一个没做完的 ${what} 里 —— 先把它收尾（或中止）再拉，我不动它。`);
+    return { code: 'busy', what, behind: c.behind, ahead: c.ahead };
   }
 
-  log(`   远端有 ${c.behind} 个提交，正在快进拉取…`);
-  const r = git(['pull', '--ff-only'], { timeout: 120000 });
-  if (r.ok) {
-    log('   拉取完成。');
-    return { code: 'ok', pulled: c.behind, behind: c.behind };
+  if (c.ahead === 0) {
+    log(`   远端有 ${c.behind} 个提交，正在快进拉取…`);
+    const r = git(['pull', '--ff-only'], { timeout: 120000 });
+    if (r.ok) {
+      log('   拉取完成。');
+      return { code: 'ok', pulled: c.behind, behind: c.behind };
+    }
+    const files = blockedFiles(r.err);
+    if (!files.length) {
+      return { code: 'error', behind: c.behind, files, err: r.err };
+    }
+    /*
+      ⚠ 是本地没提交的改动挡着，而且**远端动的正是这几份**（git 那句话列的就是重叠的那几份）。
+      这种情况**不能**硬拉：`--autostash` 把改动收起来、拉完再 pop 回来时会撞在同一处，
+      工作区里会留下 `<<<<<<<` 冲突标记 —— 比"拒绝"更糟（2026-10-13 验收逮到的）。
+      照旧拒绝，点名这几份文件，让人自己决定。
+    */
+    log('   远端动的正是你手上改过、还没提交的这几份：');
+    for (const f of files.slice(0, 8)) log(`     ⛔ ${f}`);
+    log('   为了不覆盖你的改动，这次**一个字节都没拉** —— 先点「发布上线」（它会先提交再拉）。');
+    return { code: 'blocked', behind: c.behind, files, stashKept: false };
   }
-  const files = blockedFiles(r.err);
-  return {
-    code: files.length ? 'blocked' : 'error',
-    behind: c.behind,
-    files,
-    err: r.err,
-  };
+
+  /*
+    2026-10-13 改：本地还有没发布的提交时，以前这里**直接不拉**
+    （回 `{ code: 'ahead' }`，界面上就是「远端有 N 个提交，你本地还有 M 个没发布」然后就卡住）——
+    群里反馈的「update 还是需要手动处理冲突」就是这一句死胡同。
+    现在走 git 的标准做法：把自己的提交**接到**远端后面（rebase），
+    撞在同一份数据的不同字段时按 JSON 结构自动合（和「发布上线」同一条实现）。
+    ⚠ 只拉**不推**：这几笔仍然算"你没发布的"，要不要推由「发布上线」决定。
+  */
+  log(`   远端有 ${c.behind} 个提交，你本地还有 ${c.ahead} 个没发布 —— 先把你自己的接到远端后面，再拉。`);
+
+  /*
+    ⚠ 就是有提交，工作区里也可能还堆着没提交的改动（rebase 会用 `--autostash` 收起来、拉完放回）。
+    只在"远端这次动的文件"和"我手上改过还没提交的文件"**不重叠**时才敢这么做：
+    重叠时 pop 回来会撞在同一处、在工作区留下 `<<<<<<<` 标记 —— 比直接拒绝更糟
+    （2026-10-13 验收逮到的）。重叠就照旧拒绝、点名文件。
+  */
+  const overlap = dirtyIncomingOverlap();
+  if (overlap.length) {
+    log('   远端动的正是你手上改过、还没提交的这几份：');
+    for (const f of overlap.slice(0, 8)) log(`     ⛔ ${f}`);
+    log('   这次**一个字节都没拉**（先点「发布上线」：它会先提交再拉）。');
+    return { code: 'blocked', behind: c.behind, ahead: c.ahead, files: overlap, stashKept: false };
+  }
+
+  const pr = pullRebase({ log });
+  if (pr.ok) {
+    return {
+      code: 'ok',
+      pulled: c.behind,
+      behind: c.behind,
+      rebased: c.ahead > 0,
+      moved: c.ahead,
+      jsonMerged: pr.jsonMerged,
+    };
+  }
+  if (pr.conflict) {
+    /*
+      有两种撞法：① rebase 撞车（pullRebase 里已经 abort、原样还原了）；
+      ② `--autostash` 的 pop 回来时撞车 —— 这种**没有** rebase 在跑，但工作区里留着冲突标记。
+      ②必须收拾干净：清掉标记（你那份改动还在 stash 里，一个字没丢），然后照实说清楚。
+    */
+    const unmerged = git(['ls-files', '-u'], { timeout: 20000 }).out
+      .split('\n').map((l) => l.trim().split('\t').pop()).filter(Boolean);
+    if (!rebaseInProgress() && unmerged.length) {
+      git(['checkout', '--', '.'], { timeout: 30000 });
+      log('   你手上改的和远端撞在同一处 —— 已经把工作区收拾回"远端的版本"，你那份收在 stash 里没丢。');
+      return {
+        code: 'blocked',
+        behind: c.behind,
+        ahead: c.ahead,
+        files: [...new Set(unmerged)],
+        stashKept: true,
+      };
+    }
+    return { code: 'blocked', behind: c.behind, ahead: c.ahead, files: pr.files, jsonBlocked: pr.jsonBlocked };
+  }
+  return { code: 'error', behind: c.behind, ahead: c.ahead, files: pr.files, err: pr.err };
+}
+
+/**
+ * 「我手上改过还没提交的文件」∩「远端这次动的文件」。
+ * 这两者重叠时**不能**用 `--autostash` 硬拉：pop 回来会撞在同一处、在工作区留下冲突标记。
+ * @returns {string[]}
+ */
+function dirtyIncomingOverlap() {
+  const dirty = new Set([
+    ...git(['diff', '--name-only'], { timeout: 20000 }).out.split('\n'),
+    ...git(['ls-files', '--others', '--exclude-standard'], { timeout: 20000 }).out.split('\n'),
+  ].map((s) => s.trim()).filter(Boolean));
+  if (!dirty.size) return [];
+  const base = git(['merge-base', 'HEAD', '@{u}'], { timeout: 20000 }).out.trim();
+  if (!base) return [];
+  const incoming = new Set(
+    git(['diff', '--name-only', `${base}..@{u}`], { timeout: 30000 }).out.split('\n').map((s) => s.trim()).filter(Boolean),
+  );
+  return [...dirty].filter((f) => incoming.has(f));
 }
 
 /**
@@ -685,8 +812,11 @@ function explainBase(res = {}) {
         ? '推送成功！别人刚推的内容已经合进来了，谁的东西都没丢。'
         : '推送成功！';
     case 'ahead':
-      return `本地还有 ${res.ahead} 个提交没发布，这时候直接拉容易把没提交的改动搅乱。\n`
-        + '   先点一次「发布上线」——它会把改动提交上去、先拉取、再推送，一条路走完。';
+      return `本地还有 ${res.ahead} 个提交没发布，远端又来了 ${res.behind} 个 ——`
+        + '\n   先点一次「发布上线」：它会把你的改动提交上去、先拉取（rebase）、再推送，一条路走完。';
+    case 'busy':
+      return `这个仓库正停在一个没做完的 ${res.what === 'merge' ? '合并（merge）' : '变基（rebase）'}里，我不动它。\n`
+        + `   先把它收尾或者中止（\`git ${res.what === 'merge' ? 'merge --abort' : 'rebase --abort'}\`），然后再拉。`;
     case 'blocked':
       return `远端有 ${res.behind} 个提交，但其中动了你本地也改过、还没发布的这几份文件：\n`
         + (list ? `${list}\n` : '')

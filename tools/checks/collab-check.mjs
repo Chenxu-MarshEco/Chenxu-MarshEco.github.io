@@ -51,7 +51,9 @@ const PORT = 4337;
 const STALE_PORT = 4339;
 const DEBUG_PORT = 9415;
 const EDITOR = `http://127.0.0.1:${PORT}`;
-const GIT_TOOLS = ['whoami.mjs', 'activity.mjs', 'merge-json.mjs', 'versions.mjs', 'sync.mjs'];
+/* ⚠ 这份清单要和 tools/git/ 里**真被互相 import 的那几个**保持一致：漏一个，临时仓库里的*
+sync.mjs 就加载不起来（*2026-10-13 加 recent-pages.mjs* 时就漏过一次，整段验收跟着崩） */
+const GIT_TOOLS = ['whoami.mjs', 'activity.mjs', 'merge-json.mjs', 'versions.mjs', 'sync.mjs', 'recent-pages.mjs'];
 const NODE = process.execPath;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 

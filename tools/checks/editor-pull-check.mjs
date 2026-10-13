@@ -99,10 +99,24 @@ check('★ 探不到远端时角标如实说「这个数字可能不是最新的
   && /is-stale/.test(fs.readFileSync(path.join(SRC, 'tools/editor/ui/style.css'), 'utf8')));
 check('★ 代理连不上时自动改直连（机器人这 3 个提交就是靠它拉下来的）',
   /isProxyTrouble/.test(syncJs) && /'http\.proxy='/.test(syncJs));
-check('★ 拉取只做**快进**：不会产生合并提交、也不会在没提交的改动上 rebase',
-  /git\(\['pull', '--ff-only'\]/.test(syncJs)
-  && /export function pullRemote\(/.test(syncJs)
-  && !/pullRemote[\s\S]{0,2000}?rebase/.test(syncJs));
+/* 2026-10-13 改：拉取不再"只做快进" —— 本地有没发布的提交时会接到远端后面（rebase + 按结构合），
+   只拉不推。这里改成扫源码上的四条红线。 */
+const pullSection = (() => {
+  const from = syncJs.indexOf('export function pullRemote(');
+  const to = syncJs.indexOf('function blockedFiles(');
+  return from >= 0 && to > from ? syncJs.slice(from, to) : '';
+})();
+check('★ 拉取的两条路都在：本地干净时**只做快进**；本地有没发布的提交时**接到远端后面**（rebase）',
+  /git\(\['pull', '--ff-only'\]/.test(pullSection)
+  && /pullRebase\(\{ log \}\)/.test(pullSection)
+  && /'pull', '--rebase', '--autostash'/.test(syncJs),
+  `pullRemote 长度 ${pullSection.length}`);
+check('★ 而且**只拉不推**：拉取那条路里一次 push( 都没有（要不要发出去由「发布上线」决定）',
+  pullSection.length > 0 && !/\bpush\(/.test(pullSection));
+check('★ 重叠保护：远端动的正是你手上改过还没提交的那几份 → 拒绝（不把冲突标记带进工作区）',
+  /dirtyIncomingOverlap/.test(syncJs) && /stashKept/.test(syncJs));
+check('★ 正在一个没做完的 merge / rebase 里 → 明确拒绝、什么都不动',
+  /mergeInProgress\(\)/.test(syncJs) && /code: 'busy'/.test(syncJs));
 check('★ 页面上真有那个按钮', /id="btn-pull"/.test(html) && /btnPull: \$\('btn-pull'\)/.test(appJs));
 check('★ 按钮点了会掉接口、而且角标在 loading 时不会乱跳',
   /els\.btnPull\.addEventListener\('click', doPullRemote\)/.test(appJs)
@@ -413,13 +427,23 @@ if (base) {
     /发布上线/.test(String(r.json?.message || '')),
     String(r.json?.message || '').split('\n')[0].slice(0, 42));
 
-  /* ⑦ 我本地有没发布的提交时：不在编辑器里乱 rebase */
+  /* ⑦ 我本地有没发布的提交时：**接到远端后面**（rebase），而不是卡住不动
+        （2026-10-13 改 —— 以前这里是"直接不拉"，群里反馈的「update 还是需要手动处理冲突」就是它） */
+  /*
+    ⚠ 上一段（⑥）我改的正是远端也改的那一份 → 拉取被拦下（重叠保护，正确行为）。
+    这一段要量的是"本地有没发布的提交时能不能拉"，所以**先把我那份改回去**
+    （这是临时仓库），再提交一份**别人没动过**的文件 —— 这样它是一个干净的 rebase。
+  */
+  gitOK(['checkout', '--', `src/content/posts/${SHARED}`], DST);
+  fs.writeFileSync(path.join(DST, '我自己的草稿.txt'), '只在本地攒着的一笔\n', 'utf8');
   gitOK(['add', '-A'], DST);
-  gitOK(['commit', '-m', '我把标题改了'], DST);
+  gitOK(['commit', '-m', '我攒了一笔没发布的'], DST);
   const r2 = await postJson('/api/git/pull');
-  check('★ 本地有没发布的提交时如实说「先去发布上线」，不在编辑器里乱 rebase',
-    r2.json?.code === 'ahead' && /发布上线/.test(String(r2.json?.message || '')),
-    `code=${r2.json?.code}`);
+  check('★ 本地有没发布的提交时**照样能拉**：把自己的提交接到远端后面（rebase），不再是死胡同',
+    r2.json?.code === 'ok' && r2.json?.rebased === true && Number(r2.json?.moved) >= 1,
+    `code=${r2.json?.code} rebased=${r2.json?.rebased} moved=${r2.json?.moved}`);
+  check('★ 只拉不推：自己那一笔仍然没发布（要不要发由「发布上线」决定）',
+    Number((await getJson('/api/git/status')).ahead) >= 1);
   check('★ 这时候也没有产生任何合并提交 / 冲突标记',
     Number(gitOK(['rev-list', '--count', '--merges', 'HEAD'])) === 0
     && !/^<<<<<<<|^>>>>>>>/m.test(fs.readFileSync(SHARED_ABS, 'utf8')));

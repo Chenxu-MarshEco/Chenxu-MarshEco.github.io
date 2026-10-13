@@ -9536,11 +9536,13 @@ function closeLayoutModal() {
 
      · 角标上的数字来自「本地记录」（/api/git/status 不联网，很便宜），
        编辑器启动时也在后台 fetch 过一次，所以它反映的是上一次看到的情况；
-     · 点一下才真去联网 fetch + 快进拉取，结果照实说（已经最新 / 拉了 N 个 /
-       你本地改过的那几份挡住了 / 你本地还有没发布的提交）；
-     · 拉取只做**快进**：不会产生合并提交，也不会在你没提交的改动上做 rebase。
-       万一远端动的正是你改过还没发布的文件，它会**一个字节都不动**地拒绝，
-       让你先去「发布上线」（那条路会先提交再拉，撞车了有完整的处理）。
+     · 点一下才真去联网 fetch + 拉取，结果照实说（已经最新 / 拉了 N 个 /
+       你自己的提交被接到远端后面 / 你本地改过的那几份挡住了 / 正在一个没做完的 merge 里）；
+     · 本地没有自己的提交时**只做快进**（不产生合并提交）。本地还有没发布的提交时，
+       会把它们**接到**远端后面（rebase）—— 撞在同一份数据的不同字段就按 JSON 结构自动合。
+       ⚠ 2026-10-13 之前这一步是"直接不拉"（只回一句"你本地还有 M 个没发布"），
+       协作者就此卡住 —— 群里反馈的「update 还是需要手动处理冲突」就是这一句死胡同。
+       ⚠ 这条路**只拉不推**：你自己的那几笔仍然算"还没发布的"，要不要推由「发布上线」决定。
    --------------------------------------------------------------- */
 
 async function refreshPullBadge() {
@@ -9567,6 +9569,7 @@ function renderPullButton() {
   const probe = state.git?.lastFetch ?? null;
   const stale = hasRemote && probe && probe.ok === false;
 
+  const ahead = Number(state.git?.ahead || 0);
   els.btnPull.textContent = behind > 0 ? `拉远端 (${behind})` : '拉远端';
   els.btnPull.classList.toggle('is-behind', behind > 0);
   els.btnPull.classList.toggle('is-stale', Boolean(stale));
@@ -9576,7 +9579,11 @@ function renderPullButton() {
       ? '最近一次探远端没成功（代理和直连都不通），这个数字可能不是最新的。点一下会再探一次。'
       : behind > 0
         ? `远端有 ${behind} 个提交还没拉（另一位或者机器人推上来的）。点一下拉下来。`
-        : '把远端（另一位 / 机器人）的新内容拉到本机';
+          + (ahead > 0
+            ? `你自己还有 ${ahead} 个没发布的：会先把你自己的接到远端后面（rebase），不会帮你推出去。`
+            : '')
+        : '把远端（另一位 / 机器人）的新内容拉到本机'
+          + (ahead > 0 ? `（你本地有 ${ahead} 个没发布的，需要时会把它们接到远端后面）` : '');
 }
 
 async function doPullRemote() {

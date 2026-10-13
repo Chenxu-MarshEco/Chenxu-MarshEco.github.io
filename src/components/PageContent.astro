@@ -46,7 +46,8 @@ import site from '../site.config';
   分开两份文件之后，助手只写 mianyu.json、编辑器只写 recent-edits.json，谁也不碰谁。
 */
 import mianyuLog from '../data/mianyu.json';
-import recentEdits from '../data/recent-edits.json';
+/* 「近期更新」的排序 / 去重 / 封顶都在这个 util 里（合并之后顺序不能信文件） */
+import { recentPageEdits } from '../utils/recent-edits';
 /* 「子页面都摆完了 / 这一层还没有子页面」那两句归「文案」面板（site-copy.json 的 board.*） */
 import { copy as siteCopy, text as copyText } from '../utils/site-copy';
 
@@ -326,7 +327,12 @@ const normHref = (v: string) => String(v || '').replace(/\/+$/, '') || '/';
 const recentOf = (b: PageBlock) => {
   const count = b.type === 'recent' ? Math.max(1, Math.min(12, Number(b.count) || 3)) : 3;
   const out: { href: string; title: string; at: string; when: string }[] = [];
-  for (const e of recentEdits.edits ?? []) {
+  /*
+    ⚠ 用 utils/recent-edits.ts 现排一次序（2026-10-13 加）：这份记账表是大家一起写的，
+    两个人同时各改一个页面时，发布那边合出来的数组顺序是"我的在前、对方的接后面"——
+    **不按时间**。所以"最新的排最前"在这里定，别信文件里的顺序。
+  */
+  for (const e of recentPageEdits(12)) {
     const href = normHref(String(e.href ?? ''));
     if (!href) continue;
     const hit = flatPages.find((f) => !f.external && normHref(f.url) === href);

@@ -302,6 +302,8 @@ info('副本里的编辑器在 ' + base);
 
 const copyBoardsFile = path.join(DST, 'src/data/home-boards.json');
 const copyRecentFile = path.join(DST, 'src/data/recent-edits.json');
+/* 保存前先记下它的样子：2026-10-13 起编辑器**不该**再写这份共享文件了（见 ⑤-2） */
+const recentBefore = fs.readFileSync(copyRecentFile, 'utf8');
 const copyMianyuFile = path.join(DST, 'src/data/mianyu.json');
 const post = async (p, body) => {
   const r = await fetch(base + p, {
@@ -351,14 +353,21 @@ const post = async (p, body) => {
     fs.readFileSync(copyMianyuFile, 'utf8') === fs.readFileSync(MIANYU, 'utf8'));
 }
 
-/* ⑤-2 带 touched 保存一次：记的是"真改了的那一页" */
+/* ⑤-2 带 touched 保存一次：记的是"真改了的那一页" —— 2026-10-13 起记在**本机** */
 {
   const tree = JSON.parse(fs.readFileSync(copyBoardsFile, 'utf8'));
   const bing = find(tree.boards, 'huaya-hishitsu');
   bing.subtitle = `验收改了一下 ${Date.now()}`;
   const r = await post('/api/boards', { boards: tree.boards, touched: ['huaya-hishitsu'] });
-  const rec = JSON.parse(fs.readFileSync(copyRecentFile, 'utf8'));
-  check('带 touched 保存之后，「近期更新」记下了改的那一页（冰室 → /huaya/bingshi）',
+  /*
+    ⚠ 2026-10-13 改了数据流：页面名不再写进仓库里的 src/data/recent-edits.json（那是
+    所有人共写的同一份文件，两个人各改各的页面也会撞车），而是记在**本机**
+    tools/editor/.editor-edits.json，发布时拼进提交说明；站点构建时从 git log 读回来。
+    所以这里改成量"本机那份记录"，并且**顺便盯住仓库里那份不再被写**。
+  */
+  const sessionFile = path.join(DST, 'tools', 'editor', '.editor-edits.json');
+  const rec = fs.existsSync(sessionFile) ? JSON.parse(fs.readFileSync(sessionFile, 'utf8')) : { edits: [] };
+  check('★ 带 touched 保存之后，"这一页"记进了**本机**记录（冰室 → /huaya/bingshi）',
     r.status === 200 && rec.edits?.[0]?.href === '/huaya/bingshi' && rec.edits?.[0]?.title === '冰室',
     JSON.stringify(rec.edits?.[0]));
   check('记的是"页面名 + 时间"，时间是刚写进去的（不是种子那几条）',
@@ -367,9 +376,12 @@ const post = async (p, body) => {
     String(rec.edits?.[0]?.at));
   check('同一页只留最新一条（不是每次保存都堆一条）',
     (rec.edits ?? []).filter((e) => e.href === '/huaya/bingshi').length === 1);
+  check('★ 仓库里那份 recent-edits.json **一个字节都没变**（不再被编辑器写）',
+    fs.readFileSync(copyRecentFile, 'utf8') === recentBefore,
+    fs.readFileSync(copyRecentFile, 'utf8') === recentBefore ? '原样' : '被改了！');
 }
 
-/* ⑤-3 重建副本：卡片要跟着变成刚改的那一页 */
+/* ⑤-3 重建副本：卡片跟着本机记录走不了（要发布才进 git），所以改量"提交说明那段" */
 {
   const built = spawn(process.execPath, [path.join(SRC, 'node_modules/astro/bin/astro.mjs'), 'build'], {
     cwd: DST,
@@ -383,10 +395,16 @@ const post = async (p, body) => {
   if (ok) {
     const recentRel = (recentNode && recentNode.href) || '/huaya/memory/update';
     const html = fs.readFileSync(path.join(DST, `dist${recentRel}/index.html`.replace(/\/+/g, '/')), 'utf8');
-    const first = /<a class="precent__card" href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/.exec(html);
-    check('★ 重建之后，第一张卡就是刚在编辑器里改的那一页（冰室）',
-      !!first && first[1] === '/huaya/bingshi' && firstName(first[2]) === '冰室',
-      first ? `${firstName(first[2])} → ${first[1]}` : '没找到卡片');
+    /*
+      2026-10-13 起「近期更新」= git 记录（页面名写在提交说明里）+ 老数据文件当种子。
+      这份一次性副本的 git 历史里没有"新花娅地/冰室"那几条带 `改过这些页面：` 的提交，
+      所以这里只量"卡片照旧画得出来、指得到真页面"，页面级的新增留给
+      tools/checks/recent-pages-check.mjs 去量（那边真造 git 提交）。
+    */
+    const cards = [...html.matchAll(/<a class="precent__card" href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/g)];
+    check('★ 重建之后「近期更新」照旧画得出卡片（读的是 git 记录 + 老数据种子）',
+      cards.length > 0 && cards.every((m) => m[1].startsWith('/')),
+      `${cards.length} 张：${cards.slice(0, 3).map((m) => `${firstName(m[2])}→${m[1]}`).join('  ')}`);
     const days = (fs.readFileSync(path.join(DST, 'dist/huaya/memory/mianyu/index.html'), 'utf8')).match(/data-log-date="/g) || [];
     check('重建之后眠鱼志还是那么多天（没被谁清掉）', days.length === dates.length, `${days.length} 天`);
   }
