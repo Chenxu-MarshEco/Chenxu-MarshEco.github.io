@@ -2,12 +2,14 @@
 import BaseLayout from '../../layouts/BaseLayout.astro';
 import CrtScreen from '../../components/CrtScreen.astro';
 import PostItem from '../../components/PostItem.astro';
+import Pager from '../../components/Pager.astro';
 import { groupByYear, getPosts } from '../../utils/content';
 /*
   页头那句说明是「文案」面板里的（src/data/site-copy.json 的 posts.lead，留空 = 只剩"共 N 篇。"）。
   这一页只留数字，句子归站长 —— 2026-10-10 之前它写死在这里。
 */
 import { copy, text } from '../../utils/site-copy';
+import { PAGE_SIZE } from '../../utils/pager';
 
 const posts = await getPosts();
 const groups = groupByYear(posts);
@@ -31,17 +33,26 @@ const empty = text(copy.posts?.empty);
       posts.length === 0 ? (
         <p class="empty" data-copy="posts.empty">{empty}</p>
       ) : (
-        groups.map((group) => (
-          <section class="archive-year">
-            <h2 class="archive-year__label">{group.year}</h2>
-            <ul class="post-list">
-              {group.items.map((entry) => (
-                <PostItem entry={entry} />
-              ))}
-            </ul>
-          </section>
-        ))
+        /*
+          翻页（2026-10-12）：条目整份都在 HTML 里，脚本只把不在本页的藏起来
+          （见 components/Pager.astro 头上那段说明）。`#posts-list` 是翻页条要盯的容器，
+          每个年份的 `<section>` 标成一组 —— 本页一条都没有的年份，连标题一起藏掉。
+        */
+        <div id="posts-list">
+          {groups.map((group) => (
+            <section class="archive-year" data-pager-group>
+              <h2 class="archive-year__label">{group.year}</h2>
+              <ul class="post-list">
+                {group.items.map((entry) => (
+                  <PostItem entry={entry} />
+                ))}
+              </ul>
+            </section>
+          ))}
+        </div>
       )
     }
+
+    <Pager target="#posts-list" total={posts.length} pageSize={PAGE_SIZE} label="文章翻页" />
   </div>
 </BaseLayout>

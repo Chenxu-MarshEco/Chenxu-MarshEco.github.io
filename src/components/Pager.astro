@@ -1,0 +1,347 @@
+---
+/**
+ * 翻页条（2026-10-12 加）。
+ *
+ * 用户原话：
+ *   「对于一个页面里不断加入文章会让页面越来越长的问题 进行一下优化
+ *    超过一定长度以后就会开始出现翻页 翻页可以点击左右按钮也可以直接点击对应
+ *    数字也可以在框内输入数字 就像大部分网站的翻页一样」
+ *
+ * 怎么做的（以及为什么不生成 `/posts/2/` 那种真页面）：
+ *   列表里的条目**整份都在 HTML 里**，只把不在本页的那些藏起来。这样：
+ *     · 版块页那种由数据驱动、地址随时会被站长改的页面也能用同一套（不用为每个
+ *       地址提前生成一堆分页路由）；
+ *     · 不刷新、不重新请求，切换是瞬时的；
+ *     · 页码状态放在 `?page=N` 里 —— 刷新、前进后退、复制给别人，看到的都是同一页。
+ *   代价是首屏 HTML 里仍然带着全部条目。一页 37 条，几页的量级完全划算；
+ *   真长到几百页时再换成分页路由也不迟（那时这个小脚本原地就能换成跳转）。
+ *
+ * 服务端只画一次：**页码数字全部直接写进 HTML**（不做首屏看不到的"省略号窗口"）。
+ * 一页 37 条时，三四年的日志也就十几页 —— 十几颗数字按钮完全放得下；
+ * 真要跳很远，右边那个输入框就是干这个的。少一层客户端拼 DOM，少一堆边界情况。
+ *
+ * 「超过一定长度以后才会出现翻页」：总条数没超过一页时，这个组件**什么都不渲染**。
+ */
+interface Props {
+  /** 要分页的那个容器（选择器），例如 '#posts-list' */
+  target: string;
+  /** 一共多少条（用来算有几页） */
+  total: number;
+  /** 一页几条，默认 37 —— 站长 2026-10-12 定的数 */
+  pageSize?: number;
+  /** 无障碍名字：一页上不止一个翻页条时要说清是哪一个 */
+  label?: string;
+}
+
+const { target, total, pageSize = 37, label = '翻页' } = Astro.props;
+const pages = Math.max(1, Math.ceil(Math.max(0, total) / Math.max(1, pageSize)));
+/* 选择器里那些字符不能进 id，洗一下就好（同一个页面上按 target 唯一） */
+const uid = `pager-${target.replace(/[^A-Za-z0-9_-]+/g, '')}`;
+const href = (n: number) => (n === 1 ? '?' : `?page=${n}`);
+---
+
+{
+  pages > 1 && (
+    <nav
+      class="pager"
+      id={uid}
+      data-pager="1"
+      data-target={target}
+      data-size={String(pageSize)}
+      aria-label={label}
+    >
+      <p class="pager__status">
+        共 {total} 条 · 第 <b data-pager-cur>1</b> / {pages} 页
+      </p>
+
+      <div class="pager__controls">
+        <a class="pager__step is-off" data-pager-prev data-page="1" href={href(1)} aria-label="上一页">
+          ← 上一页
+        </a>
+
+        <span class="pager__nums">
+          {Array.from({ length: pages }, (_, i) => i + 1).map((n) => (
+            <a
+              class:list={['pager__num', n === 1 && 'is-current']}
+              data-page={String(n)}
+              href={href(n)}
+              aria-current={n === 1 ? 'page' : undefined}
+              aria-label={`第 ${n} 页`}
+            >
+              {n}
+            </a>
+          ))}
+        </span>
+
+        <a class="pager__step" data-pager-next data-page="2" href={href(2)} aria-label="下一页">
+          下一页 →
+        </a>
+      </div>
+
+      {/*
+        `novalidate` 是必须的：框里带 min/max，浏览器会在提交前先做一遍原生校验，
+        填个超范围的数（999）**提交事件根本不会触发** —— 表现是"点了跳转没反应"。
+        这里改成自己兜底：超范围一律夹到第一页 / 最后一页，和 URL 上写 ?page=99
+        的处理保持一致。min/max 留着给读屏和数字微调用。
+      */}
+      <form class="pager__jump" data-pager-jump novalidate>
+        <label class="pager__jumplabel" for={`${uid}-input`}>
+          跳到
+        </label>
+        <input
+          class="pager__input"
+          id={`${uid}-input`}
+          type="number"
+          inputmode="numeric"
+          min="1"
+          max={String(pages)}
+          step="1"
+          value="1"
+          aria-label={`跳到第几页（共 ${pages} 页）`}
+        />
+        <span class="pager__jumplabel">页</span>
+        <button class="pager__go" type="submit">跳转</button>
+      </form>
+    </nav>
+  )
+}
+
+<script>
+  /*
+    一个脚本管全页所有翻页条（Astro 会把同一份脚本去重，所以这里
+    **不能**只盯着自己那一个 nav —— 要点名把页面上每个 [data-pager] 都启起来）。
+  */
+  const boot = (nav: HTMLElement) => {
+    if (nav.dataset.pagerReady === '1') return;
+    const list = document.querySelector(nav.dataset.target || '');
+    if (!(list instanceof HTMLElement)) return;
+    nav.dataset.pagerReady = '1';
+
+    const items = Array.from(list.querySelectorAll<HTMLElement>('[data-pager-item]'));
+    /* 年份那种分组壳：本页一条都没有就把整组（含年份标题）藏掉 */
+    const groups = Array.from(list.querySelectorAll<HTMLElement>('[data-pager-group]'));
+    const size = Math.max(1, Number(nav.dataset.size) || 37);
+    const pages = Math.max(1, Math.ceil(items.length / size));
+    const nums = Array.from(nav.querySelectorAll<HTMLAnchorElement>('.pager__num'));
+    const prev = nav.querySelector<HTMLAnchorElement>('[data-pager-prev]');
+    const next = nav.querySelector<HTMLAnchorElement>('[data-pager-next]');
+    const cur = nav.querySelector<HTMLElement>('[data-pager-cur]');
+    const input = nav.querySelector<HTMLInputElement>('.pager__input');
+    const form = nav.querySelector<HTMLFormElement>('[data-pager-jump]');
+    let page = 1;
+
+    const setStep = (el: HTMLAnchorElement | null, on: boolean, n: number) => {
+      if (!el) return;
+      el.dataset.page = String(n);
+      el.classList.toggle('is-off', !on);
+      if (on) el.setAttribute('href', n === 1 ? '?' : `?page=${n}`);
+      else el.setAttribute('href', '#');
+    };
+
+    const apply = (n: number, scroll = false) => {
+      page = Math.min(Math.max(1, Math.round(n) || 1), pages);
+      const start = (page - 1) * size;
+      items.forEach((el, i) => {
+        el.hidden = i < start || i >= start + size;
+      });
+      for (const g of groups) g.hidden = !g.querySelector('[data-pager-item]:not([hidden])');
+
+      nums.forEach((a) => {
+        const on = Number(a.dataset.page) === page;
+        a.classList.toggle('is-current', on);
+        if (on) a.setAttribute('aria-current', 'page');
+        else a.removeAttribute('aria-current');
+      });
+      setStep(prev, page > 1, page - 1);
+      setStep(next, page < pages, page + 1);
+      if (cur) cur.textContent = String(page);
+      if (input) input.value = String(page);
+
+      /* 页码进 URL：刷新 / 前进后退 / 发给别人，落到的都是同一页 */
+      const url = new URL(location.href);
+      if (page === 1) url.searchParams.delete('page');
+      else url.searchParams.set('page', String(page));
+      history.replaceState(null, '', url);
+
+      if (scroll) {
+        const top = list.getBoundingClientRect().top + window.scrollY - 84;
+        window.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
+      }
+    };
+
+    /* 数字和上/下页都是真链接（中键、复制链接、没有 JS 时都还是链接），
+       点左键才拦下来换成不刷新的切换 */
+    nav.addEventListener('click', (e) => {
+      const a = (e.target as HTMLElement | null)?.closest?.('a[data-page]');
+      if (!(a instanceof HTMLAnchorElement) || a.classList.contains('is-off')) return;
+      e.preventDefault();
+      apply(Number(a.dataset.page), true);
+    });
+
+    form?.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const v = Number(input?.value);
+      if (Number.isFinite(v) && v >= 1) apply(v, true);
+      else if (input) input.value = String(page);
+    });
+
+    /* 地址里的 ?page=N（可能还带着 #某一天）*/
+    const fromUrl = () => {
+      const n = Number(new URLSearchParams(location.search).get('page'));
+      apply(Number.isFinite(n) && n >= 1 ? n : 1);
+    };
+    /*
+      旧链接是带锚点的（`/huaya/memory/mianyu#2026914`，时间轴的点、编辑器导出的
+      anchors.json 都用这种）。分页之后那一天的条目可能在第 3 页上 ——
+      所以锚点一进来就先把它所在的那一页翻出来，否则「跳到了但看不见」。
+      ⚠ 用 getElementById：id 是 `2026914` 这种**数字开头**的，
+      `querySelector('#2026914')` 会直接抛语法错。
+    */
+    const revealHash = () => {
+      const hash = location.hash.slice(1);
+      if (!hash) return false;
+      const el = document.getElementById(decodeURIComponent(hash));
+      if (!el || !list.contains(el)) return false;
+      const target = el.closest<HTMLElement>('[data-pager-item]');
+      const i = target ? items.indexOf(target) : -1;
+      if (i < 0) return false;
+      apply(Math.floor(i / size) + 1);
+      return true;
+    };
+
+    fromUrl();
+    revealHash();
+    window.addEventListener('hashchange', () => {
+      if (!revealHash()) fromUrl();
+    });
+  };
+
+  const bootAll = () => document.querySelectorAll<HTMLElement>('[data-pager]').forEach(boot);
+  bootAll();
+  /* 目录 / 搜索那种"页面已经在了再插内容"的地方也不怕：DOM 变了再启一遍 */
+  document.addEventListener('astro:page-load', bootAll);
+</script>
+
+<style>
+  /*
+    藏起来的那两条必须写成 :global —— 条目不在这个组件里（它们是文章列表 / 日志
+    列表的 DOM），Astro 的样式作用域会给选择器挂上本组件的标记，那样一条都匹配不上。
+    `!important` 也是必须的：条目自己常常写着 `display:flex` 之类，
+    光靠 `[hidden]` 的浏览器默认样式压不住。
+  */
+  :global([data-pager-item][hidden]),
+  :global([data-pager-group][hidden]) {
+    display: none !important;
+  }
+
+  .pager {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--sp-2, 0.5rem) var(--sp-4, 1rem);
+    margin: clamp(1.2rem, 3vw, 2rem) 0 0;
+    padding-top: var(--sp-4, 1rem);
+    border-top: 1px solid var(--c-line, rgba(255, 255, 255, 0.12));
+    font-size: var(--fs-sm, 0.9rem);
+  }
+  .pager__status {
+    margin: 0;
+    color: var(--c-text-faint, #b3a5cd);
+    font-size: var(--fs-xs, 0.8rem);
+    letter-spacing: 0.04em;
+  }
+  .pager__status b {
+    color: var(--c-accent, #ffb547);
+    font-weight: 600;
+  }
+  .pager__controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4rem;
+  }
+  .pager__nums {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+  }
+  .pager__step,
+  .pager__num,
+  .pager__go {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 34px;
+    padding: 0 0.7rem;
+    border: 1px solid var(--c-line, rgba(255, 255, 255, 0.16));
+    border-radius: var(--r-sm, 6px);
+    background: transparent;
+    color: var(--c-text, #f2e9ff);
+    font: inherit;
+    text-decoration: none;
+    cursor: pointer;
+    transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
+  }
+  .pager__num {
+    min-width: 34px;
+    padding: 0 0.45rem;
+    font-variant-numeric: tabular-nums;
+  }
+  .pager__step:hover,
+  .pager__num:hover,
+  .pager__go:hover {
+    border-color: var(--c-accent, #ffb547);
+    color: var(--c-accent, #ffb547);
+  }
+  .pager__num.is-current {
+    border-color: var(--c-accent, #ffb547);
+    background: var(--c-accent-soft, rgba(255, 181, 71, 0.12));
+    color: var(--c-accent, #ffb547);
+    font-weight: 600;
+  }
+  /* 到头了：留着位置但不可点 */
+  .pager__step.is-off {
+    opacity: 0.4;
+    cursor: default;
+    pointer-events: none;
+  }
+  .pager__jump {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    color: var(--c-text-faint, #b3a5cd);
+    font-size: var(--fs-xs, 0.8rem);
+  }
+  .pager__jumplabel {
+    white-space: nowrap;
+  }
+  .pager__input {
+    width: 4.2rem;
+    min-height: 34px;
+    padding: 0 0.45rem;
+    border: 1px solid var(--c-line, rgba(255, 255, 255, 0.16));
+    border-radius: var(--r-sm, 6px);
+    background: rgba(255, 255, 255, 0.04);
+    color: var(--c-text, #f2e9ff);
+    font: inherit;
+    font-variant-numeric: tabular-nums;
+    text-align: center;
+  }
+  .pager__input:focus,
+  .pager__step:focus-visible,
+  .pager__num:focus-visible,
+  .pager__go:focus-visible {
+    outline: 2px solid var(--c-accent, #ffb547);
+    outline-offset: 2px;
+  }
+  @media (max-width: 46rem) {
+    .pager {
+      justify-content: center;
+    }
+    .pager__status {
+      flex: 1 0 100%;
+      text-align: center;
+    }
+  }
+</style>

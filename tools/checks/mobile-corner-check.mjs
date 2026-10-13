@@ -362,6 +362,35 @@ for (const [url, label] of PAGES) {
     JSON.stringify({ 压住: s.overlap, 站名: s.brandHit, 域主: s.pillHit, 搜索: s.search?.shown, 展开: s.more?.shown, 面板: s.fold?.shown }));
 }
 
+/* ==========================================================================
+ *  ⑤ 窄屏下「宽卡」不能被压成细条（2026-10-13 修的那条）
+ * --------------------------------------------------------------------------
+ *  用户原话：「上次优化花娅编年史和花娅远位面的框后 电脑端正常了
+ *            但是手机端这两个缩得非常矮 几乎无法正常使用」
+ *  量出来的原因：三个形状的 min-height 都按 vw 算（18vw/22vw/30vw），
+ *  390px 手机上只剩 70/86/117px，全被下限兜住 —— 于是 16:3 的宽卡被压成
+ *  **342×120 的细条**。现在窄屏单独给形状（宽卡 3:2 → 342×228）。
+ * ======================================================================== */
+console.log('\n================ ⑤ 窄屏的卡片形状 ================');
+const CARD_SHAPE = `(() => [...document.querySelectorAll('.card--wide')].map((el) => {
+  const r = el.getBoundingClientRect();
+  return { w: Math.round(r.width), h: Math.round(r.height) };
+}))()`;
+for (const [url, label] of [['/huaya/years/', '花娅编年史'], ['/huaya/farland/', '花娅远位面']]) {
+  await open(url, 390);
+  const cards = await cdp.ev(CARD_SHAPE);
+  const minH = Math.min(...cards.map((c) => c.h));
+  const minRatio = Math.min(...cards.map((c) => c.h / c.w));
+  check(`★ 390px ${label}：宽卡不是细条（够高、比例够"厚"，图看得清）`,
+    cards.length > 0 && cards.every((c) => c.h >= 170 && c.h / c.w >= 0.5),
+    `${cards.length} 张，最矮 ${minH}px，最扁比例 ${minRatio.toFixed(2)}（修之前是 120px / 0.35）`);
+}
+await open('/huaya/years/', 1440);
+const desktopCards = await cdp.ev(CARD_SHAPE);
+check('★ 桌面（1440px）上宽卡还是原来那条横幅 —— 这条修复只动窄屏，桌面一个像素没变',
+  desktopCards.length > 0 && desktopCards.every((c) => c.h >= 200 && c.h / c.w <= 0.3),
+  `${desktopCards.length} 张，高度 ${[...new Set(desktopCards.map((c) => c.h))].join('/')}`);
+
 check('这一趟没有 JS 报错', cdp.errors.length === 0, cdp.errors.slice(0, 2).join(' | '));
 
 try { await cdp.send('Browser.close'); } catch { /* ignore */ }

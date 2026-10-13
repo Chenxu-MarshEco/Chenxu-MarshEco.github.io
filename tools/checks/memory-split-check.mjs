@@ -14,7 +14,7 @@
  * 五段：
  *   ① 数据分家：日志搬进 src/data/mianyu.json，home-boards.json 那一页清空、内容一字不少
  *   ② 两个新子版块：眠鱼志 / 花涧堂更新（左卡右卡并排），冰室古闻考 在花涧堂更新下面
- *   ③ 眠鱼志页面：11 天全在、一天一个锚点（能深链接到某一天）
+ *   ③ 眠鱼志页面：每天一张卡（日期 + 摘要 + 「读这一天」）+ 一天一个单日页，锚点照旧
  *   ④ 近期更新：3 张卡、名字 + 时间、地址点得开（真产物里量）
  *   ⑤ 编辑器那条链路（在副本里真跑）：
  *        · 打开编辑器 → 原样保存一次 → 三个新节点一个都没丢（这就是用户报的那个坑）
@@ -183,13 +183,37 @@ console.log('\n================ ③ 眠鱼志页面 ================');
 const mi = fs.readFileSync(path.join(DIST, 'huaya/memory/mianyu/index.html'), 'utf8');
 const dayCount = (mi.match(/data-log-date="/g) || []).length;
 info(`页面里 ${dayCount} 天；日期锚点 ${[...mi.matchAll(/<h2 class="plogs__date" id="([^"]+)"/g)].map((m) => m[1]).join(' ')}`);
-check('★ 所有日志都在这一页上（11 天，一天一栏）', dayCount === dates.length, `${dayCount} vs ${dates.length}`);
+check('★ 所有日志都在这一页上（一天一栏；超过一页的天数由翻页脚本藏着，但仍在 HTML 里）',
+  dayCount === dates.length, `${dayCount} vs ${dates.length}`);
 check('★ 每天一个锚点（能深链接到某一天）',
   (mi.match(/<h2 class="plogs__date" id="/g) || []).length === dates.length);
-check('正文照旧按 Markdown 渲染（粗体 / 段落是标签，不是原样的星号）',
-  !/\*\*[^*]+\*\*/.test(strip(mi).replace(/[\s\S]*<div class="plogs__body"/, '').slice(0, 200)) &&
-    /<div class="plogs__body"/.test(mi),
-  '日志正文里不该剩裸的 ** 记号');
+/*
+  2026-10-12 改了版式：列表里**不再**堆整篇正文（那样会越堆越长），
+  改成"一天一张卡"——日期 + 头一段摘要 + 一个"读这一天"，正文搬到单日页。
+  所以这里量的三件事变了：卡片齐不齐、摘要是不是纯文本、正文到底在不在单日页。
+*/
+const cardCount = (mi.match(/class="plogs__excerpt"/g) || []).length;
+const moreCount = (mi.match(/class="plogs__more"/g) || []).length;
+check('★ 每天一张卡：日期 + 摘要 + 「读这一天」，列表里不再有整篇正文',
+  cardCount === dates.length && moreCount === dates.length && !/class="plogs__body"/.test(mi),
+  `卡片 ${dayCount} 天 / 摘要 ${cardCount} / 链接 ${moreCount} / 正文块 ${(mi.match(/class="plogs__body"/g) || []).length}`);
+check('摘要里不剩裸的 ** 记号（摘要是纯文本，不是半截 Markdown）',
+  !/\*\*[^*]+\*\*/.test((mi.match(/<p class="plogs__excerpt">[\s\S]*?<\/p>/g) || []).join('')),
+  '日志摘要里不该剩裸的 ** 记号');
+{
+  const dayDirs = fs.existsSync(path.join(DIST, 'logs'))
+    ? fs.readdirSync(path.join(DIST, 'logs')).filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d))
+    : [];
+  check('★ 一天一个页面：dist/logs/<日期>/ 的个数和天数对得上',
+    dayDirs.length === dates.length, `${dayDirs.length} 个 vs ${dates.length} 天`);
+  const oneDay = dayDirs.length
+    ? fs.readFileSync(path.join(DIST, 'logs', dayDirs.at(-1), 'index.html'), 'utf8')
+    : '';
+  check('★ 单日页里是**完整正文**（不是摘要），而且正文照旧按 Markdown 渲染',
+    /class="prose/.test(oneDay) && oneDay.length > mi.length / 4
+      && !/\*\*[^*]+\*\*/.test(strip(oneDay).replace(/[\s\S]*class="prose"/, '').slice(0, 400)),
+    `${dayDirs.at(-1) || '(没生成)'}：${oneDay.length} 字节`);
+}
 
 /* ================================================================
  * ④ 近期更新（真产物）

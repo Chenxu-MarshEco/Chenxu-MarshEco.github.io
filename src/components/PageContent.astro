@@ -29,12 +29,15 @@ import { marked } from 'marked';
 import Img from './Img.astro';
 import SubCard from './SubCard.astro';
 import NavBlock from './NavBlock.astro';
+import Pager from './Pager.astro';
 import { withBase } from '../utils/url';
 import { enhanceHtml, variantUrl, viewUrls } from '../utils/images';
 import type { BlockItem, SubPost } from '../utils/boardPage';
 import { DEFAULT_LINE_COLOR, flattenBoards, isBlankBlock, isLinkUrl, mapPages, type BoardNode, type PageBlock } from '../utils/boards';
 import { headingRe, makeSlugger, plainText } from '../utils/anchors';
 import { refParam, type Timeline } from '../utils/timelines';
+import { logDays } from '../utils/logs';
+import { PAGE_SIZE } from '../utils/pager';
 import site from '../site.config';
 /*
   「助手日志」和「近期更新」两块的数据（2026-09-28 加的）。
@@ -217,12 +220,12 @@ function renderTracked(text: string, collect: boolean): string {
 const textHtml = new Map<number, string>();
 const columnsHtml = new Map<number, { left: string; right: string }>();
 /**
- * 助手日志块渲染好的内容：块下标 → 每一天（日期 + 锚点 id + 正文 HTML）。
+ * 助手日志块渲染好的内容：块下标 → 每一天（日期 + 锚点 id + 摘要 + 单日页地址）。
  * 一天的锚点 id 在这里就算好（用**这一页统一那把** slugger），
  * 于是目录、深链接（`/huaya/memory/mianyu#2026-9-28`）、以及
  * dist/anchors.json 里编辑器能挑的那一条，指的是同一个位置。
  */
-const logsHtml = new Map<number, { date: string; slug: string; body: string }[]>();
+const logsHtml = new Map<number, { date: string; slug: string; excerpt: string; href: string }[]>();
 blocks.forEach((b, i) => {
   if (b.type === 'text') {
     textHtml.set(i, renderTracked(b.text, true));
@@ -232,16 +235,20 @@ blocks.forEach((b, i) => {
       right: renderTracked(b.right, true),
     });
   } else if (b.type === 'logs') {
+    /*
+      一天一条（2026-10-12 改的）：列表里只放**日期 + 头一段摘要 + 一个"读这一天"**，
+      正文在单日页 `/logs/<日期>/` 里 —— 所以这一页不会再被日志越撑越长。
+      顺序是**最新在前**（和手记列表一个规矩），目录也跟着这个顺序。
+      锚点 id 仍然是 `slugify(日期)`（`2026914` 这种）—— 时间轴的点、地图图钉、
+      编辑器导出的 anchors.json 全指着它，不能动。
+    */
     logsHtml.set(
       i,
-      (mianyuLog.entries ?? []).map((e) => {
-        const date = String(e.date ?? '').trim();
-        const slug = uniqueSlug(date);
-        /* 日期也进目录：11 天的日志没有目录很难翻（日期本身就是 h2 一级） */
-        tocEntries.push({ depth: 2, slug, text: date });
-        /* 正文按普通 Markdown 渲染：粗体、段落、链接、悬停卡片都照旧；
-           不 collect —— 日志正文里的小标题不进目录（目录是"哪一天"） */
-        return { date, slug, body: renderTracked(String(e.text ?? ''), false) };
+      logDays().map((d) => {
+        const slug = uniqueSlug(d.date);
+        /* 日期也进目录：日志多了没有目录很难翻（日期本身就是 h2 一级） */
+        tocEntries.push({ depth: 2, slug, text: d.date });
+        return { date: d.date, slug, excerpt: d.excerpt, href: d.href };
       })
     );
   }
@@ -534,19 +541,25 @@ function cardsForBlock(b: PageBlock): { list: BlockItem[]; missing: string[] } {
               return (
                 <section class="plogs" aria-label={b.text || mianyuLog.title || '眠鱼志'} data-logs="1">
                   {b.text ? <h2 class="plogs__title">{b.text}</h2> : null}
-                  <ol class="plogs__list">
+                  <ol class="plogs__list" id={`plogs-${bi}`}>
                     {days.map((d) => (
-                      <li class="plogs__item" data-log-date={d.date}>
-                        {/* 日期本身就是锚点：时间轴的点、导航条目、别人的链接都能落到某一天 */}
+                      <li class="plogs__item" data-log-date={d.date} data-pager-item>
+                        {/* 日期本身就是锚点：时间轴的点、导航条目、别人的链接都能落到某一天
+                            （那条旧链接落在第几页，翻页脚本会自己把那一页翻出来） */}
                         <h2 class="plogs__date" id={d.slug}>
-                          <a class="plogs__datelink" href={`#${d.slug}`}>
+                          <a class="plogs__datelink" href={d.href}>
                             {d.date}
                           </a>
                         </h2>
-                        <div class="plogs__body" set:html={d.body} />
+                        <p class="plogs__excerpt">{d.excerpt}</p>
+                        <a class="plogs__more" href={d.href}>
+                          读这一天 ↗
+                        </a>
                       </li>
                     ))}
                   </ol>
+                  {/* 一页 37 天（utils/pager.ts 里那一个数）；没超过一页时它自己什么都不画 */}
+                  <Pager target={`#plogs-${bi}`} total={days.length} pageSize={PAGE_SIZE} label="日志翻页" />
                 </section>
               );
             })()}
@@ -1354,7 +1367,7 @@ function cardsForBlock(b: PageBlock): { list: BlockItem[]; missing: string[] } {
     padding: 0;
   }
   .plogs__item {
-    padding: 1.05rem 0;
+    padding: 0.85rem 0;
     border-top: 1px dashed rgba(255, 120, 190, 0.22);
   }
   .plogs__item:first-child {
@@ -1362,7 +1375,7 @@ function cardsForBlock(b: PageBlock): { list: BlockItem[]; missing: string[] } {
     border-top: 0;
   }
   .plogs__date {
-    margin: 0 0 0.4rem;
+    margin: 0 0 0.35rem;
     font-size: 1rem;
     font-family: var(--font-display);
     letter-spacing: 0.1em;
@@ -1375,26 +1388,29 @@ function cardsForBlock(b: PageBlock): { list: BlockItem[]; missing: string[] } {
     color: #fff;
     text-shadow: 0 0 10px rgba(255, 79, 163, 0.9);
   }
-  .plogs__body {
-    font-size: 0.94rem;
-    line-height: 1.85;
-    color: rgba(255, 236, 248, 0.86);
+  /*
+    列表里只放头一段摘要（正文在单日页 /logs/<日期>/ 里）——
+    一页 37 天也不会把这页撑长。摘要刻意是**纯文本**，不带 Markdown 记号。
+  */
+  .plogs__excerpt {
+    margin: 0;
+    font-size: 0.9rem;
+    line-height: 1.75;
     letter-spacing: 0.02em;
+    color: rgba(255, 236, 248, 0.72);
   }
-  .plogs__body :global(p) {
-    margin: 0 0 0.6em;
-  }
-  .plogs__body :global(p:last-child) {
-    margin-bottom: 0;
-  }
-  .plogs__body :global(a) {
+  .plogs__more {
+    display: inline-block;
+    margin-top: 0.4rem;
+    font-size: 0.84rem;
+    letter-spacing: 0.04em;
     color: #ff8ec4;
+    text-decoration: none;
+    border-bottom: 1px dashed rgba(255, 142, 196, 0.45);
   }
-  .plogs__body :global(code) {
-    font-size: 0.86em;
-    padding: 0 0.28em;
-    border-radius: 4px;
-    background: rgba(20, 0, 30, 0.5);
+  .plogs__more:hover {
+    color: #fff;
+    border-bottom-color: #fff;
   }
   .plogs__empty {
     margin: 0;

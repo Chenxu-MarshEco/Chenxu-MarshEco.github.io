@@ -1,0 +1,130 @@
+---
+/**
+ * 某一天的助手日志 —— `/logs/2026-09-14/`（2026-10-12 加）。
+ *
+ * 用户原话：
+ *   「优化一下日志页面 现在这样会越堆越长 可以把每一天都改为一篇手记
+ *    就像铃忆的冰室日记一样」
+ *
+ * 所以日志和手记一样**一天一页**：列表（眠鱼志那页）里一天一张卡、只放摘要，
+ * 正文在这一页里；这一页能单独分享、能被搜索引擎收、能挂到时间轴上。
+ * 版式和手记页刻意用同一套（`.post-header` / `.prose` / `.post-nav` 都是全站类）——
+ * 用户要的就是"像手记一样"。
+ *
+ * 数据仍然来自 `src/data/mianyu.json`（助手写的那一份），这一页只负责画。
+ */
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import CrtScreen from '../../components/CrtScreen.astro';
+import { marked } from 'marked';
+import { enhanceHtml } from '../../utils/images';
+import { logDays, logDay, logNeighbors, logBoardHref } from '../../utils/logs';
+import { formatDateFull } from '../../utils/date';
+
+export function getStaticPaths() {
+  return logDays().map((d) => ({ params: { date: d.iso }, props: { iso: d.iso } }));
+}
+
+const { iso } = Astro.props;
+const day = logDay(iso);
+if (!day) throw new Error(`没有这一天的日志：${iso}`);
+
+const { prev, next } = logNeighbors(iso);
+const board = logBoardHref();
+const total = logDays().length;
+/* 和版块页里的日志块同一套渲染（marked + 站内的图片/悬停处理），观感一致 */
+const body = enhanceHtml(marked.parse(day.text ?? '', { async: false }) as string);
+/* 日期串是 YYYY-MM-DD；用 UTC 解析，和站里其他按日期生成的页面一个口径。
+   ⚠ BaseLayout 的 publishedTime 要的是 **Date**（它自己会 toISOString），给字符串会构建失败 */
+const when = new Date(`${iso}T00:00:00Z`);
+---
+
+<BaseLayout
+  title={`${day.date} 的日志`}
+  description={day.excerpt || `眠鱼志：${day.date}`}
+  type="article"
+  publishedTime={when}
+  narrow
+  layoutPage="post"
+  bodyClass="is-crt"
+>
+  <CrtScreen />
+  <article class="crt-screen">
+    <header class="post-header">
+      <p class="log-header__kicker">
+        {board ? <a href={board}>眠鱼志</a> : '眠鱼志'}
+        <span class="log-header__sep">·</span>
+        <span>助手日志</span>
+      </p>
+      <h1 class="post-header__title" data-edit="title">{day.date}</h1>
+      <div class="post-header__meta">
+        <time datetime={iso}>{formatDateFull(when)}</time>
+        <span>第 {total} 天里的一天</span>
+      </div>
+    </header>
+
+    <div class="prose log-body" set:html={body} />
+
+    <nav class="post-nav" aria-label="相邻的日志">
+      {
+        prev ? (
+          <a class="post-nav__link" href={prev.href}>
+            <span class="post-nav__label">← 前一天</span>
+            <span class="post-nav__title">{prev.date}</span>
+          </a>
+        ) : (
+          <span />
+        )
+      }
+      {board && (
+        <a class="post-nav__link log-nav__all" href={board}>
+          <span class="post-nav__label">全部日志</span>
+          <span class="post-nav__title">眠鱼志 · 共 {total} 天</span>
+        </a>
+      )}
+      {
+        next ? (
+          <a class="post-nav__link" href={next.href} style="text-align:right">
+            <span class="post-nav__label">后一天 →</span>
+            <span class="post-nav__title">{next.date}</span>
+          </a>
+        ) : (
+          <span />
+        )
+      }
+    </nav>
+  </article>
+</BaseLayout>
+
+<style>
+  /* 这一页多出来的只有头顶那行"来路"（手记页用 PostTrail，日志没有版块链） */
+  .log-header__kicker {
+    margin: 0 0 0.5rem;
+    font-size: var(--fs-xs, 0.8rem);
+    letter-spacing: 0.16em;
+    color: var(--c-text-faint, #b3a5cd);
+  }
+  .log-header__kicker a {
+    color: var(--c-accent, #ffb547);
+    text-decoration: none;
+  }
+  .log-header__kicker a:hover {
+    text-decoration: underline;
+  }
+  .log-header__sep {
+    margin: 0 0.35rem;
+    opacity: 0.6;
+  }
+  /* 日志正文比手记更"流水账"一点：段落之间留白足一些，读着不挤 */
+  .log-body :global(p) {
+    margin-bottom: 1.05em;
+  }
+  .log-nav__all {
+    flex: 0 1 auto;
+    text-align: center;
+  }
+  @media (max-width: 46rem) {
+    .post-nav {
+      flex-wrap: wrap;
+    }
+  }
+</style>

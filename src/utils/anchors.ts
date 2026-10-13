@@ -18,6 +18,7 @@
 import { marked } from 'marked';
 import { enhanceHtml } from './images';
 import { isBlankBlock, type PageBlock } from './boards';
+import { logDays } from './logs';
 import mianyuLog from '../data/mianyu.json';
 
 /**
@@ -180,15 +181,14 @@ export function blockAnchors(
       takeHeadings(renderForAnchors(b.right));
     } else if (b.type === 'logs') {
       /*
-        助手日志：一天一个锚点（`/huaya/memory/mianyu#2026-9-28` 这种），
+        助手日志：一天一个锚点（`/huaya/memory/mianyu#2026914` 这种），
         这样时间轴的点 / 地图图钉 / 导航条目都能直接落到某一天。
-        ⚠ 日期那行的 id 是**页面渲染时用同一套 slugger 现算的**（PageContent.astro），
-        这里也必须按同样的顺序、同样的算法算一遍，否则挑出来的锚点跳不到。
+        ⚠ 条数和顺序必须和页面渲染那边**完全一致**：两边都走 utils/logs.ts 的
+        logDays()（最新在前、同一天去重）；日期那行的 id 也是同一套 slugger 现算的。
+        分页之后锚点照旧能用 —— 那一天落在第几页，翻页脚本会自己把那一页翻出来。
       */
-      for (const entry of mianyuLog.entries ?? []) {
-        const text = String(entry.date ?? '').trim();
-        if (!text) continue;
-        out.push({ id: slug(text), text, kind: 'log' });
+      for (const day of logDays()) {
+        out.push({ id: slug(day.date), text: day.date, kind: 'log' });
       }
     }
   }

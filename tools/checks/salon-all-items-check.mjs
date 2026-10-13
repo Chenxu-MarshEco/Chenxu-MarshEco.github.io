@@ -191,7 +191,12 @@ try {
   check('多成员的名字是「、」连起来的（名字不写死：数据里怎么改这儿都跟着）',
     page.allMultiNames.every((s) => /、/.test(s)), page.allMultiNames.slice(0, 5).join(' | '));
   check(`每条都有头像位（没传头像的用首字占位圆）`, page.noFace === 0, `没头像位的 ${page.noFace} 条；占位圆 ${page.noneNames} 条写「冰室群成员」`);
-  check(`16 条 OCR 转录的完美对话挂了「OCR 转录」标签`, page.badges === 16, `badge = ${page.badges}`);
+  /*
+    ⚠ 条数**从数据现算**，别写死：原来写的是 16，后来站长又让助手转了几条，
+    数字一变这条就假红（2026-10-13 实测：数据里已经是 19 条 ocr: true）。
+  */
+  const ocrCount = data.essences.filter((e) => e.ocr === true).length;
+  check(`${ocrCount} 条 OCR 转录的完美对话挂了「OCR 转录」标签`, page.badges === ocrCount, `badge = ${page.badges}（数据里 ${ocrCount} 条）`);
   check('日期小标题 + 5 个年代大标题 + 每条都有时间', page.dates > 400 && page.eras === 5 && page.time === total,
     JSON.stringify({ dates: page.dates, eras: page.eras, time: page.time, pics: page.pics }));
   /* 编辑器保存时**不重排**（照客户端给的顺序写回），排序靠站点渲染时排 —— 所以这里量页面 */
@@ -361,9 +366,22 @@ try {
         window.Date = F; })();`,
     });
     await cdp.goto('/', 1200);
-    const card = await cdp.ev(`(() => { const n = document.querySelector('.daily__name'); const faces = [...document.querySelectorAll('.daily__face')];
-      return { asked: ${JSON.stringify(key)}, built: (document.querySelector('[data-daily]') || {}).dataset?.built, name: n && n.innerText, faces: faces.length,
-        names: faces.map((f) => f.getAttribute('title')), time: (document.querySelector('.daily__time') || {}).textContent, hasText: !!document.querySelector('.daily__text') }; })()`);
+    /*
+      ⚠ 头像和名字要**只看可见的那一组**（`.daily__who`）：
+      那张卡上还有一团悬停弹层的头（`.daily__popHead`），里面把头像和名字又画了一遍 ——
+      全页数 `.daily__face` 会得到两倍（3 个成员 = 6 个头像位），这条断言就会假红
+      （2026-10-13 实测）。
+    */
+    const card = await cdp.ev(`(() => {
+      const who = document.querySelector('.daily__who') || document;
+      const faces = [...who.querySelectorAll('.daily__face')];
+      return { asked: ${JSON.stringify(key)}, built: (document.querySelector('[data-daily]') || {}).dataset?.built,
+        name: (who.querySelector('.daily__name') || {}).innerText || '',
+        faces: faces.length, names: faces.map((f) => f.getAttribute('title')),
+        /* 卡片上那颗链接指着哪一条精华（形如 /salon/ 加井号 e0557）—— 对账按 **id** 走，
+           别按"日期 + 时间"：806 条里同一分钟有好几条，按时间查会查到别人头上（实测假红） */
+        id: decodeURIComponent((document.querySelector('[data-daily-link]') || {}).getAttribute?.('href') || '').split('#')[1] || '',
+        time: (document.querySelector('.daily__time') || {}).textContent, hasText: !!document.querySelector('.daily__text') }; })()`);
     await cdp.send('Page.removeScriptToEvaluateOnNewDocument', { identifier });
     return card;
   };
@@ -378,9 +396,17 @@ try {
   const probes = [];
   for (const key of probeDates) probes.push(await readCard(key));
   const jByTime = new Map(j.essences.map((e) => [`${e.date} ${e.time}`.trim(), e]));
+  const jById = new Map(j.essences.map((e) => [e.id, e]));
+  /*
+    ⚠ 头像位要按「members 数组，没有就退回单成员 1 个」算：
+    单成员那条数据里根本没有 members 字段，`(e.members ?? []).length` 会算成 0，
+    和页面上的 1 个头像位对不上 —— 抽到那种日子的探针就假红（2026-10-13 实测）。
+    ⚠ 对账按**卡片指的那条 id**走：同一分钟有好几条精华时，按"日期 + 时间"查会查到别人。
+  */
+  const wantFaces = (e) => (Array.isArray(e.members) ? e.members.length : e.member ? 1 : 0);
   const bad = probes.filter((p) => {
-    const e = jByTime.get((p.time || '').trim());
-    return e && (e.member !== p.name || (e.members ?? []).length !== p.faces);
+    const e = jById.get(p.id) ?? jByTime.get((p.time || '').trim());
+    return !e || e.member !== p.name || wantFaces(e) !== p.faces;
   });
   check(`首页每日精华：另外 ${probes.length} 天逐条对账（名字 + 头像个数和 /salon.json 一致）`,
     bad.length === 0, bad.length ? JSON.stringify(bad.slice(0, 2)) : JSON.stringify(probes.slice(0, 3)));
@@ -413,9 +439,26 @@ try {
   console.log('默认落点：', JSON.stringify(entry));
   check('★ 不带 hash 进 /salon/：默认**不在**顶上（最早的精华处），页面确实滚下去了',
     entry.scrollY > 1000 && entry.firstVisible === false, `scrollY=${entry.scrollY}｜第一条还在视口里=${entry.firstVisible}`);
+  /*
+    ⚠ 最后一条的 id **从数据现算**，别写死：原来写的是 e0784，站长后来又往精华里加了条目，
+    最晚的那条变成了 e0803，写死的 id 就假红了（2026-10-13 实测）。
+    判据本来就是"时间最晚"，id 只是拿来点名，所以按同一个口径算出来即可。
+  */
+  const latestId = (() => {
+    let best = '';
+    let bestKey = '';
+    for (const e of data.essences) {
+      const key = `${e.date}T${e.time ?? ''}`;
+      if (key > bestKey) {
+        bestKey = key;
+        best = e.id;
+      }
+    }
+    return best;
+  })();
   check('★ 落在的是**最后一条**（= 数据里最晚的那一条），而且就在视口里',
-    entry.lastVisible === true && entry.lastDt === entry.maxDt && entry.lastId === 'e0784',
-    `${entry.lastId}（${entry.lastDt}）｜页面最晚 ${entry.maxDt}｜顶边 ${entry.lastTop}px`);
+    entry.lastVisible === true && entry.lastDt === entry.maxDt && entry.lastId === latestId,
+    `${entry.lastId}（${entry.lastDt}）｜数据里最晚的是 ${latestId}｜页面最晚 ${entry.maxDt}｜顶边 ${entry.lastTop}px`);
   check('★ 判据是"时间最晚"而不是"页面最下面"：最后一条的 datetime 就是全部条目里最大的那个',
     entry.maxDt === entry.lastDt && entry.items === total, `${entry.lastDt === entry.maxDt}`);
 

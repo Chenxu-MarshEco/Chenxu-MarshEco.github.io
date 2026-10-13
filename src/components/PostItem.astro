@@ -22,6 +22,7 @@ const minutes = readingTime((entry as { body?: string }).body);
 <li
   class:list={['post-item', pinned && 'post-item--pinned']}
   data-collection={entry.collection}
+  data-pager-item
 >
   <a class="post-item__link" href={withBase(href)}>
     <div class="post-item__head">

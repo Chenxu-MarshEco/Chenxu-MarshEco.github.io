@@ -2,9 +2,11 @@
 import BaseLayout from '../../layouts/BaseLayout.astro';
 import CrtScreen from '../../components/CrtScreen.astro';
 import PostItem from '../../components/PostItem.astro';
+import Pager from '../../components/Pager.astro';
 import { getNotes } from '../../utils/content';
 /* 页头说明和"还没有手记"那句都归「文案」面板（site-copy.json 的 notes.lead / notes.empty） */
 import { copy, text } from '../../utils/site-copy';
+import { PAGE_SIZE } from '../../utils/pager';
 
 const notes = await getNotes();
 const lead = text(copy.notes?.lead);
@@ -27,12 +29,15 @@ const empty = text(copy.notes?.empty);
       notes.length === 0 ? (
         <p class="empty" data-copy="notes.empty">{empty}</p>
       ) : (
-        <ul class="post-list">
+        /* 翻页见 components/Pager.astro；手记是平铺的，没有年份分组 */
+        <ul class="post-list" id="notes-list">
           {notes.map((entry) => (
             <PostItem entry={entry} showReadingTime={false} />
           ))}
         </ul>
       )
     }
+
+    <Pager target="#notes-list" total={notes.length} pageSize={PAGE_SIZE} label="手记翻页" />
   </div>
 </BaseLayout>
