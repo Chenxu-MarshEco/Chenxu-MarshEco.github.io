@@ -240,7 +240,26 @@ const readAll = () => files.map((f) => [f, fs.readFileSync(f, 'utf8')]);
    正好写着 <span class="mem__zoom"> 当例子 —— 不剥掉就会把它们当成名片数进去。 */
 const stripCode = (h) =>
   h.replace(/<script\b[\s\S]*?<\/script>/gi, ' ').replace(/<style\b[\s\S]*?<\/style>/gi, ' ');
-const pages = readAll().map(([f, h]) => [f, stripCode(h)]);
+const pages = readAll().map(([f, h]) => [
+  f,
+  /*
+    ⚠ 2026-10-13：冰山图的条目把"链好成员名的那份描述"放在 `data-desc-html` 属性里
+    （提示卡 innerHTML 出来用），它是**可见正文的隐藏副本**，而且属性里的引号是
+    `&quot;`、正文里的计数正则只认真引号 —— 不剥掉的话会统计出
+    「花花出现 66 次只链了 64 次」这种假象，落日那两条也会差 13。
+  */
+  /*
+    ⚠ 冰山图那两个属性都是**提示卡的隐藏素材**，不是可见正文：
+      · `data-desc`     —— 纯文本描述（提示卡渲染时若没有下面那份就用它，名字当然没链）；
+      · `data-desc-html` —— 构建期链好名字的那一份（提示卡 innerHTML 出来用）。
+    可见的那一份在提示卡里（真浏览器量的：tools/checks/iceberg-tip-members-check.mjs）。
+    这里不排除的话会数出「花花出现 65 次只链了 64 次」这种假象（属性里的引号是 &quot;，
+    正文的计数正则只认真引号，根本认不出来）。
+  */
+  stripCode(h)
+    .replace(/data-desc-html="[^"]*"/g, 'data-desc-html=""')
+    .replace(/data-desc="[^"]*"/g, 'data-desc=""'),
+]);
 const countAll = (re) => pages.reduce((n, [, h]) => n + (h.match(re) || []).length, 0);
 
 const totalMem = countAll(/class="mem[ "]/g);

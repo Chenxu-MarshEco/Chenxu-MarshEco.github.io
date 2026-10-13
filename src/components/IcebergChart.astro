@@ -24,6 +24,8 @@
 import Img from './Img.astro';
 import { DEFAULT_CATEGORY_COLOR, categoriesOf, chipInk, iceberg, itemInk } from '../utils/iceberg';
 import { withBase } from '../utils/url';
+/* 把描述里的成员名链上（构建期算好、塞进属性，提示卡那边 innerHTML 出来）—— 见下面 descHtml */
+import { linkifyText } from '../../tools/memlink/index.mjs';
 
 const { layers, categories, tags } = iceberg;
 
@@ -36,11 +38,35 @@ const hasLoose = layers.some((l) => l.items.some((it) => it.categoryIds.length =
 if (hasLoose) legend.push({ id: '', name: '未分类', color: DEFAULT_CATEGORY_COLOR, emoji: '', desc: '', hidden: false });
 
 const hrefOf = (href: string) => (/^https?:/i.test(href) ? href : withBase(href));
+
+/*
+  描述里出现的成员名要能浮名片、能点进介绍页（2026-10-13 用户报的）。
+
+  为什么在这里算：这一页的描述**不在 HTML 文字里**，而在 `data-desc` 属性上，
+  构建期"逐页重写 HTML"那一步看不见属性里的字 —— 所以 /iceberg/ 一直整页跳过
+  （当初跳过的三个理由见 astro.config 那段注释）。现在把描述**另算一份链好名字的 HTML**
+  放进 `data-desc-html`，让**提示卡**（一个独立浮层，不在条目里面）去 innerHTML：
+    · 名片进的是提示卡，不是条目文字 → 不会把条目文字拆开；
+    · 条目本身是 `<a>` 的那几条也不会套链接（名片在提示卡里，跟它没有包含关系）。
+  `data-desc` 那份纯文本保留不动 —— 无障碍名、验收读数、复制都还照旧。
+*/
+const descHtml = (desc: string) => {
+  if (!desc) return '';
+  const html = linkifyText(desc, { root: process.cwd(), base: import.meta.env.BASE_URL });
+  /*
+    ⚠ 只在**真链到名字**时才把这份 HTML 放进属性（2026-10-13）：
+    这一页有一百多条，绝大多数描述里没有成员名 —— 全都塞一份等于白白多几十 KB
+    （量过：全塞 +34KB，只塞链到的 +9KB）。没链到的返回空串，提示卡那边退回纯文本。
+  */
+  return html.includes('class="mem') ? html : '';
+};
+
 /** 条目上给 JS 读的那些东西：标签用 0x1f 拼起来（正文里不会出现这个字符） */
 const dataOf = (it: { name: string; tags: string[]; desc: string }, tagNames: string[]) => ({
   'data-name': it.name,
   'data-tags': tagNames.join('\u001f'),
   'data-desc': it.desc,
+  'data-desc-html': descHtml(it.desc),
 });
 ---
 
@@ -138,6 +164,7 @@ const dataOf = (it: { name: string; tags: string[]; desc: string }, tagNames: st
                               data-cat={c.id}
                               data-name={c.name}
                               data-desc={c.desc}
+                              data-desc-html={descHtml(c.desc)}
                               tabindex="0"
                               role="img"
                               aria-label={c.desc ? `${c.name}：${c.desc}` : c.name}
@@ -517,7 +544,14 @@ const dataOf = (it: { name: string; tags: string[]; desc: string }, tagNames: st
     border-radius: var(--r-md);
     background: linear-gradient(180deg, rgb(42 8 60 / 0.97), rgb(20 3 32 / 0.98));
     box-shadow: 0 18px 40px -18px rgb(0 0 0 / 0.9);
-    pointer-events: none;
+    /*
+      ⚠ 2026-10-13 起是 `auto`：卡片里会出现**成员名**（描述里链好的），
+      用户要能"把鼠标移进卡片、悬停那个名字、看名片"，所以卡片必须吃指针。
+      （以前是 none —— 鼠标一进去就穿透，名字也就永远悬不到。）
+      代价：卡片盖住的条目在卡片开着时点不到 —— 收起本身有 200ms 宽限，
+      鼠标离开卡片就收回，正常浏览不受影响。
+    */
+    pointer-events: auto;
   }
   .ibk__tip[hidden] {
     display: none;
@@ -563,7 +597,8 @@ const dataOf = (it: { name: string; tags: string[]; desc: string }, tagNames: st
     border-radius: var(--r-md);
     background: linear-gradient(180deg, rgb(42 8 60 / 0.97), rgb(20 3 32 / 0.98));
     box-shadow: 0 18px 40px -18px rgb(0 0 0 / 0.9);
-    pointer-events: none;
+    /* 同条目卡片：描述里可能有成员名，鼠标要能移进来悬停（2026-10-13） */
+    pointer-events: auto;
   }
   .ibk__cattip[hidden] {
     display: none;
@@ -722,6 +757,47 @@ const dataOf = (it: { name: string; tags: string[]; desc: string }, tagNames: st
       current = null;
     };
 
+    /*
+      收起给 200ms 宽限（2026-10-13 用户报的「移出卡片之前别消失」）：
+      鼠标从条目挪到卡片上、或从卡片挪到成员名片上时，指针会短暂离开那一个元素；
+      没有宽限的话卡片当场就没了，名字根本悬不到、更点不到。
+    */
+    let hideTimer = 0;
+    const cancelHide = () => {
+      if (hideTimer) {
+        clearTimeout(hideTimer);
+        hideTimer = 0;
+      }
+    };
+    const scheduleHide = () => {
+      cancelHide();
+      hideTimer = window.setTimeout(() => {
+        hideTimer = 0;
+        hide();
+      }, 200);
+    };
+    tip.addEventListener('pointerenter', cancelHide);
+    tip.addEventListener('pointerleave', scheduleHide);
+    /*
+      指针一动就重新判一次"还算不算在谁身上"，谁开着就该由谁来判断要不要收：
+        · 在条目卡片 / 成员名片上 → 条目卡片别收；
+        · 在分类卡 / emoji / 成员名片上 → 分类卡别收；
+        · 不在那一类该待的地方 → 安排收起（200ms 宽限）。
+      ⚠ 一定要**分类型**判：早先写成"只要指针在卡片或条目上就两个都取消"，
+      结果是"从 emoji 挪到正文"时分类卡被取消收起、**永远不消失**，两张卡叠着
+      （2026-10-13 验收逮到：指针在正文上时 cat 还是 true）。
+      ⚠ cancelCatHide / scheduleCatHide 写在下面那一段里（同一个作用域），
+      事件触发时早就初始化完了，这里引用是安全的。
+    */
+    document.addEventListener('pointerover', (ev) => {
+      const t = ev.target instanceof Element ? ev.target : null;
+      if (!t) return;
+      if (t.closest('[data-ibk-tip], .memlayer')) cancelHide();
+      if (t.closest('[data-ibk-cattip], .memlayer, .ibk__emoji')) cancelCatHide();
+      if (!tip.hidden && !t.closest('[data-ibk-tip], .memlayer, .ibk__item')) scheduleHide();
+      if (catTip && !catTip.hidden && !t.closest('[data-ibk-cattip], .memlayer, .ibk__emoji')) scheduleCatHide();
+    });
+
     /** 把卡片摆到条目上方；顶不下就翻到下方，左右夹在视口里 */
     const place = (el: HTMLElement) => {
       const r = el.getBoundingClientRect();
@@ -737,8 +813,10 @@ const dataOf = (it: { name: string; tags: string[]; desc: string }, tagNames: st
     };
 
     const show = (el: HTMLElement) => {
+      cancelHide();
       const name = el.dataset.name || '';
       const desc = el.dataset.desc || '';
+      const descLinked = el.dataset.descHtml || '';
       const tags = (el.dataset.tags || '').split('\u001f').filter(Boolean);
       /* 标签和描述都没有 —— 这张卡片没有任何内容，不弹（不然是个空框） */
       if (!desc && tags.length === 0) {
@@ -755,7 +833,14 @@ const dataOf = (it: { name: string; tags: string[]; desc: string }, tagNames: st
         chip.textContent = t;
         tagsBox.appendChild(chip);
       }
-      descBox.textContent = desc;
+      /*
+        描述里出现的成员名要能浮名片、能点进介绍页（2026-10-13 用户报的）：
+        `data-desc-html` 是构建期链好名字的那一份（名片那坨 DOM 就在这张卡片里，
+        跟条目文字没关系 —— 所以不会把条目文字拆开、也不会链接套链接）。
+        没有那一份就退回纯文本（老数据 / 别的调用方）。
+      */
+      if (descLinked) descBox.innerHTML = descLinked;
+      else descBox.textContent = desc;
       descBox.hidden = desc === '';
       tip.hidden = false;
       current = el;
@@ -832,12 +917,32 @@ const dataOf = (it: { name: string; tags: string[]; desc: string }, tagNames: st
     function hideCatTip() {
       if (catTip) catTip.hidden = true;
     }
+    /* 分类卡也一样给 200ms 宽限：它的描述里也可能有成员名（2026-10-13） */
+    let catHideTimer = 0;
+    const cancelCatHide = () => {
+      if (catHideTimer) {
+        clearTimeout(catHideTimer);
+        catHideTimer = 0;
+      }
+    };
+    const scheduleCatHide = () => {
+      cancelCatHide();
+      catHideTimer = window.setTimeout(() => {
+        catHideTimer = 0;
+        hideCatTip();
+      }, 200);
+    };
+    catTip?.addEventListener('pointerenter', cancelCatHide);
+    catTip?.addEventListener('pointerleave', scheduleCatHide);
     function showCatTip(em: HTMLElement) {
       if (!catTip || !catTipName || !catTipDesc) return;
+      cancelHide();
       const name = em.dataset.name || '';
       const desc = em.dataset.desc || '';
       catTipName.textContent = name;
-      catTipDesc.textContent = desc;
+      /* 分类描述里也可能有成员名：同一份链好的 HTML（见 show 里那段说明） */
+      if (em.dataset.descHtml) catTipDesc.innerHTML = em.dataset.descHtml;
+      else catTipDesc.textContent = desc;
       catTipDesc.hidden = desc === '';
       catTip.hidden = false;
       /* 摆在 emoji 上方；顶不下就翻到下面，左右夹在视口里 */
@@ -865,8 +970,16 @@ const dataOf = (it: { name: string; tags: string[]; desc: string }, tagNames: st
     root.addEventListener('pointerout', (ev) => {
       const em = emojiOf(ev.target);
       if (!em) return;
-      if (em.contains(ev.relatedTarget as Node | null)) return;
-      hideCatTip();
+      const to = ev.relatedTarget as Node | null;
+      if (em.contains(to)) return;
+      /*
+        ⚠ 分类卡的 `pointer-events` 2026-10-13 打开之后（为了让鼠标能进卡片悬停成员名），
+        卡片一出现就可能正好压在指针下面 —— 这一下 pointerout 的 relatedTarget 就落在
+        卡片里。这时候**不能**安排收起，否则卡片刚弹出来就把自己收掉
+        （验收逮到的：「指到 emoji 依然弹出这一类」变成 shown:false）。
+      */
+      if (to instanceof Node && ((catTip && catTip.contains(to)) || tip.contains(to))) return;
+      scheduleCatHide();
     });
     root.addEventListener('focusin', (ev) => {
       const em = emojiOf(ev.target);
@@ -905,15 +1018,19 @@ const dataOf = (it: { name: string; tags: string[]; desc: string }, tagNames: st
     root.addEventListener('pointerout', (ev) => {
       const el = itemOf(ev.target);
       if (!el || pinned) return;
-      if (el.contains(ev.relatedTarget as Node | null)) return;
-      hide();
+      const to = ev.relatedTarget as Node | null;
+      if (el.contains(to)) return;
+      /* 指针挪进卡片自己 / 分类卡 / 成员名片里：不收（卡片现在吃指针，见 pointer-events 那段） */
+      if (to instanceof Node && (tip.contains(to) || (catTip && catTip.contains(to)))) return;
+      /* 宽限收起：鼠标可能正往卡片上挪（见 scheduleHide 那段说明） */
+      scheduleHide();
     });
     root.addEventListener('focusin', (ev) => {
       const el = itemOf(ev.target);
       if (el) show(el);
     });
     root.addEventListener('focusout', () => {
-      if (!pinned) hide();
+      if (!pinned) scheduleHide();
     });
 
     /*
@@ -936,9 +1053,14 @@ const dataOf = (it: { name: string; tags: string[]; desc: string }, tagNames: st
       }
     });
 
-    /* 点别处 / 滚动 / 缩放：收起来（不然卡片会停在半空中） */
+    /* 点别处 / 滚动 / 缩放：收起来（不然卡片会停在半空中）。
+       ⚠ 点在**卡片自己里面**（比如链好的成员名）不算"别处" —— 不然卡片会在链接
+       打开之前被抽走（2026-10-13 加）。 */
     document.addEventListener('pointerdown', (ev) => {
+      const t = ev.target instanceof Element ? ev.target : null;
+      if (t?.closest('[data-ibk-tip], [data-ibk-cattip]')) return;
       if (!tip.hidden && !itemOf(ev.target)) hide();
+      if (catTip && !catTip.hidden && !emojiOf(ev.target)) hideCatTip();
     });
     window.addEventListener('scroll', () => {
       if (!tip.hidden && current && !pinned) hide();

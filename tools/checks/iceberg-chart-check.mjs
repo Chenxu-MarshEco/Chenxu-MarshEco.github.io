@@ -900,15 +900,26 @@ await cdp.move(target.x, target.y);
 const tip = await cdp.ev(`(() => {
   const t = document.querySelector('[data-ibk-tip]');
   const r = t.getBoundingClientRect();
-  return { hidden: t.hidden, text: t.textContent.trim(), tags: [...t.querySelectorAll('.ibk__tipTag')].map((x) => x.textContent),
+  /*
+    描述里现在可能带着**成员名名片**（.mem）——名片那坨 DOM（名字/头衔/「介绍页 →」）
+    平时 display:none、也标了 aria-hidden，但 textContent 会把它算进去。
+    这里只取"看得见的那部分文字"：把 .mem__card 摘掉再读。
+  */
+  const descOnly = (node) => {
+    const copy = node.cloneNode(true);
+    for (const c of copy.querySelectorAll('.mem__card')) c.remove();
+    return (copy.textContent || '').trim();
+  };
+  return { hidden: t.hidden, text: t.textContent.trim(), descText: descOnly(t), tags: [...t.querySelectorAll('.ibk__tipTag')].map((x) => x.textContent),
     rect: { l: Math.round(r.left), t: Math.round(r.top), r: Math.round(r.right), b: Math.round(r.bottom) }, vw: innerWidth, vh: innerHeight };
 })()`);
 console.log('\n================ 悬停卡片 ================');
 console.log(JSON.stringify({ name: target.name, tipHidden: tip.hidden, tags: tip.tags, text: tip.text.slice(0, 60) }));
 check('★ 鼠标移到「有描述」的条目上 → 详情卡片出现',
   target !== null && tip.hidden === false, `条目「${target?.name}」`);
-check('★ 卡片里有那一条的详细描述（一字不差）',
-  tip.text.includes(target.desc), `卡片 ${tip.text.length} 字 / 数据里 ${target.desc.length} 字`);
+check('★ 卡片里有那一条的详细描述（一字不差；成员名名片那坨 DOM 不算）',
+  String(tip.descText || '').includes(target.desc),
+  `卡片可见文字 ${String(tip.descText || '').length} 字 / 数据里 ${target.desc.length} 字`);
 check('卡片顶部是 tag（勾了几个显示几个）',
   target.tags.length === 0 || (tip.tags.length === target.tags.length && tip.tags.every((t, i) => t === target.tags[i])),
   `数据 ${JSON.stringify(target.tags)} vs 卡片 ${JSON.stringify(tip.tags)}`);

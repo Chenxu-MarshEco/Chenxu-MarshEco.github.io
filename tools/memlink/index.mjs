@@ -367,6 +367,59 @@ const readJson = (file, dflt) => {
   }
 };
 
+/** 成员表的规范化（读文件和 linkifyText 共用一份，免得两处各写一遍、早晚走样） */
+function normalizeMembers(data) {
+  return (Array.isArray(data?.members) ? data.members : [])
+    .filter((m) => m && m.id && m.name)
+    .map((m) => ({
+      id: String(m.id),
+      name: String(m.name).trim(),
+      avatar: String(m.avatar || '').trim(),
+      url: String(m.url || '').trim(),
+      title: String(m.title || '').trim(),
+      zoom: String(m.zoom || '').trim(),
+      sun: m.sun === true,
+      aliases: (Array.isArray(m.aliases) ? m.aliases : []).map((a) => String(a ?? '').trim()).filter(Boolean),
+    }));
+}
+
+/** linkifyText 的记忆表（一次构建 / 一次 dev 请求里，同一段描述只算一遍） */
+const linkifyCache = new Map();
+
+/**
+ * 把一个**纯文本**片段里的成员名链上 —— 给「文字不在 HTML 里、而在属性里」的地方用
+ * （2026-10-13 加：冰山图条目那张悬停详情卡，描述存在 `data-desc` 属性上，
+ * 构建期逐页重写 HTML 那一步**看不见属性里的字**，所以那一页一直整页跳过、名字也就没链）。
+ *
+ * ⚠ 这里的产物要塞进**属性**里、再由页面脚本 `innerHTML` 出来：
+ *   · 所以先把纯文本转义一遍（`&` `<` `>`），再匹配名字；
+ *   · 名片那坨 DOM 进的是**提示卡**、不是条目文字本身 —— 所以不会出现
+ *     "把条目文字拆开"和"链接套链接"（当初整页跳过 /iceberg/ 的三个理由里的两个）。
+ *
+ * @param {string} text 纯文本（比如冰山图条目的描述）
+ * @param {{root?:string, base?:string}} [opts]
+ * @returns {string} 链好名字的 HTML；没有成员表时返回转义后的原文本
+ */
+export function linkifyText(text, opts = {}) {
+  const root = opts.root ?? process.cwd();
+  const base = opts.base ?? '/';
+  const raw = String(text ?? '');
+  if (!raw) return '';
+  const escaped = raw.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const key = `${root}\u0000${base}\u0000${escaped}`;
+  if (linkifyCache.has(key)) return linkifyCache.get(key);
+  const members = normalizeMembers(readJson(path.join(root, 'src/data/salon.json'), {}));
+  let out = escaped;
+  if (members.length) {
+    const manifest = readJson(path.join(root, 'public/img/opt/manifest.json'), null);
+    const match = buildMatcher(members);
+    /* ⚠ rewriteHtml 返回的是 `{ html, count, perMember }`，不是字符串 */
+    out = rewriteHtml(escaped, match, (m, name, inLink) => cardHtml(m, name, manifest, base, inLink)).html;
+  }
+  linkifyCache.set(key, out);
+  return out;
+}
+
 export default function memlink(opts = {}) {
   const skipPrefixes = opts.skip ?? ['/salon/'];
   const dataFile = opts.data ?? 'src/data/salon.json';
@@ -375,18 +428,7 @@ export default function memlink(opts = {}) {
   /** 读成员表、建匹配器、渲染器（build 和 dev 共用） */
   function prepare(root) {
     const data = readJson(path.join(root, dataFile), {});
-    const members = (Array.isArray(data.members) ? data.members : [])
-      .filter((m) => m && m.id && m.name)
-      .map((m) => ({
-        id: String(m.id),
-        name: String(m.name).trim(),
-        avatar: String(m.avatar || '').trim(),
-        url: String(m.url || '').trim(),
-        title: String(m.title || '').trim(),
-        zoom: String(m.zoom || '').trim(),
-        sun: m.sun === true,
-        aliases: (Array.isArray(m.aliases) ? m.aliases : []).map((a) => String(a ?? '').trim()).filter(Boolean),
-      }));
+    const members = normalizeMembers(data);
     if (!members.length) return null;
     const manifest = readJson(path.join(root, 'public/img/opt/manifest.json'), null);
     return {

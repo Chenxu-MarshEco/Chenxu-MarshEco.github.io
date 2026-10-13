@@ -462,12 +462,21 @@ const hoverEmoji = async (selector) => {
   })()`);
   if (c) {
     await cdp.move(c.x, c.y);
-    await sleep(400);
-    const both = await cdp.ev(`(() => {
-      const t = document.querySelector('[data-ibk-tip]');
-      const ct = document.querySelector('[data-ibk-cattip]');
-      return { item: !!t && !t.hidden, cat: !!ct && !ct.hidden, text: t ? (t.textContent || '').trim().slice(0, 30) : '' };
-    })()`);
+    /*
+      ⚠ 2026-10-13 起两张卡的收起都有 **200ms 宽限**（为了让鼠标能移进卡片悬停成员名），
+      所以这里不能睡固定 400ms 读一次、指望分类卡已经没了 —— 要**轮询等它收**（最长 1.2 秒），
+      量的还是"两张卡不抢"这件事。
+    */
+    let both = null;
+    for (let i = 0; i < 12; i += 1) {
+      await sleep(100);
+      both = await cdp.ev(`(() => {
+        const t = document.querySelector('[data-ibk-tip]');
+        const ct = document.querySelector('[data-ibk-cattip]');
+        return { item: !!t && !t.hidden, cat: !!ct && !ct.hidden, text: t ? (t.textContent || '').trim().slice(0, 30) : '' };
+      })()`);
+      if (both.item === true && both.cat === false) break;
+    }
     info(`指到正文「${c.name}」：` + JSON.stringify(both));
     check('★ 指针在正文上时出的是条目卡片、分类描述的浮层收着（两张卡不抢）',
       both.item === true && both.cat === false, JSON.stringify(both));
