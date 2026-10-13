@@ -642,6 +642,33 @@ const layout = wantLayout === 'region' && children.length >= 4 ? 'region' : 'sta
     .blocks[data-layout='region'] > :nth-child(n) {
       grid-area: auto;
     }
+    /*
+      ⚠ 手机端必须把"跨两行撑满"那一套**撤掉**（2026-10-13 用户报的：
+      「手机版…完全看不到框啊」，截图里花娅编年史 / 花娅远位面只剩一条缝）。
+
+      桌面是三列，第 3、4 块跨两行、**靠行高撑开**：`align-self: stretch` +
+      清单 `flex: 1 1 0` + `max-height: none`。塌成一列之后"跨两行"这件事不存在了，
+      行高由内容决定 —— 而 `flex-basis: 0` 配上 `max-height: none`，滚动区算出来
+      只有 **21px**（实测：块 76px = 头 54 + 滚动区 21，里面清单 1058px），
+      于是那两块只剩一条缝，卡片一张都看不见。
+
+      手机上改回"按内容高 + 封顶"（和另外两块一个规矩）：框高 34vh 上下，
+      里面正常滚，至少能看见三张卡。桌面那套底边齐平的算法一个字节没动。
+    */
+    .blocks[data-layout='region'] > :nth-child(3),
+    .blocks[data-layout='region'] > :nth-child(4) {
+      align-self: start;
+    }
+    .blocks[data-layout='region'] > :nth-child(3) .block__scroll,
+    .blocks[data-layout='region'] > :nth-child(4) .block__scroll {
+      flex: 0 0 auto;
+      max-height: clamp(180px, 34vh, 360px);
+    }
+    .blocks[data-layout='region'] > :nth-child(3) .block__list,
+    .blocks[data-layout='region'] > :nth-child(4) .block__list {
+      min-height: 0;
+      justify-content: flex-start;
+    }
   }
 
   @media (prefers-reduced-motion: reduce) {

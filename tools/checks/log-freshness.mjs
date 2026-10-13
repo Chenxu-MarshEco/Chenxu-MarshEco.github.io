@@ -24,7 +24,7 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const SRC = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -139,6 +139,33 @@ if (strictToday || changedToday) {
 const future = stamps.filter((v) => v > stamp(today));
 check('没有"未来日期"的日志（写错年份最常见）',
   future.length === 0, future.length ? `往后写了：${future.join(' ')}` : '没有');
+
+/*
+  字数规矩（站长 2026-10-13 的原话：「每天第一次与你对话时自动检查前一天的日志字数
+  并自动压缩」）。上限、压缩步骤、那个 --yesterday 的每日仪式都写在
+  tools/memory/log-length.mjs 里 —— 那是**唯一**说这件事的地方，这里只把结果接进常规自检：
+  「今天 / 前一天」两栏超了就红（更早的日子只提示、不拦发布 —— 那是历史）。
+*/
+const lenRun = spawnSync(process.execPath, [path.join(SRC, 'tools', 'memory', 'log-length.mjs'), '--json'], {
+  cwd: SRC, encoding: 'utf8',
+});
+const lenLine = String(lenRun.stdout ?? '').split('\n').reverse().find((l) => l.startsWith('[result] '));
+const len = lenLine ? JSON.parse(lenLine.slice('[result] '.length)) : null;
+if (!len) {
+  info('字数那条没读到（tools/memory/log-length.mjs 没跑起来），跳过');
+} else {
+  const y = new Date();
+  y.setDate(y.getDate() - 1);
+  const yKey = ymd(y);
+  const watch = (len.recent ?? []).filter((d) => d.over && (d.date === today || d.date === yKey));
+  const older = (len.recent ?? []).filter((d) => d.over && d.date !== today && d.date !== yKey);
+  check(`★ 今天 / 前一天的日志没超过字数上限（${len.limit} 字，超了就该压缩）`,
+    watch.length === 0,
+    watch.length
+      ? `${watch.map((d) => `${d.date} ${d.chars} 字`).join('、')} —— 跑 node tools/memory/log-length.mjs --yesterday 看压缩步骤`
+      : '都在上限内');
+  if (older.length) info(`更早的日子还有 ${older.length} 栏偏长（${older.map((d) => `${d.date} ${d.chars} 字`).join('、')}）—— 不拦发布，顺手压了更好`);
+}
 
 console.log('\n================ 结果 ================');
 console.log(`PASS ${pass}   FAIL ${fail}`);
