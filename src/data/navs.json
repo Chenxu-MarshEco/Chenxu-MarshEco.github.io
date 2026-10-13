@@ -453,7 +453,7 @@
       "groups": [
         {
           "id": "g-mu9dgecb94",
-          "title": "建筑",
+          "title": "区域",
           "items": [
             {
               "id": "i-mu9fozxc460",
@@ -679,6 +679,66 @@
                   "text": "弧光旧地"
                 }
               ]
+            },
+            {
+              "id": "s-mv61ba3y339",
+              "title": "本岛之外",
+              "items": [
+                {
+                  "id": "i-mv61bhhi818",
+                  "text": "新周原"
+                },
+                {
+                  "id": "i-mv61ccqu88",
+                  "text": "SSW家"
+                },
+                {
+                  "id": "i-mv61csye316",
+                  "text": "北风聚地"
+                },
+                {
+                  "id": "i-mv61mtz5536",
+                  "text": "桑芙家"
+                },
+                {
+                  "id": "i-mv61mx8k751",
+                  "text": "马斯家"
+                },
+                {
+                  "id": "i-mv61ngt5550",
+                  "text": "Hina家"
+                },
+                {
+                  "id": "i-mv61nk1e923",
+                  "text": "WQ家"
+                },
+                {
+                  "id": "i-mv61nmg4264",
+                  "text": "迭代器·俯瞰丛花"
+                }
+              ]
+            },
+            {
+              "id": "s-mv61ps2b541",
+              "title": "后室街区",
+              "items": [
+                {
+                  "id": "i-mv61qgsa879",
+                  "text": "其声的永恒街道"
+                },
+                {
+                  "id": "i-mv61qnnu236",
+                  "text": "数学的背荫面"
+                },
+                {
+                  "id": "i-mv61qyfm702",
+                  "text": "熵圣维界"
+                },
+                {
+                  "id": "i-mv61rbl0707",
+                  "text": "花涧后室街区"
+                }
+              ]
             }
           ]
         },
@@ -693,6 +753,43 @@
             {
               "id": "i-mv4zp30p419",
               "text": "花娅体"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "navcat-mv61ycyk972",
+      "title": "绮花娅域",
+      "groups": [
+        {
+          "id": "g-mv61yi04863",
+          "title": "区域",
+          "items": [],
+          "subgroups": [
+            {
+              "id": "s-mv61yy4s980",
+              "title": "绮花娅域",
+              "items": []
+            },
+            {
+              "id": "s-mv61z6oc975",
+              "title": "迭代器·花涧涣愿",
+              "items": []
+            },
+            {
+              "id": "s-mv61zvfw989",
+              "title": "通讯期许",
+              "items": [
+                {
+                  "id": "i-mv620nxg788",
+                  "text": "通讯期许地"
+                },
+                {
+                  "id": "i-mv620ujx483",
+                  "text": "迭代器·"
+                }
+              ]
             }
           ]
         }
