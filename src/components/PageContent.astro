@@ -108,12 +108,20 @@ const tocEntries: TocEntry[] = [];
    正文里直接写，两栏块里也一样：
      [[文字|图片地址]]             鼠标指上去，文字上方弹出这张图
      [[文字|图片地址|链接地址]]     同上，而且点文字会跳到这个地址
+     [[文字|ico:图片地址|链接地址]] 同上，而且**文字旁边带一个小图标**（像导航条目那样）
 
    为什么不用现成的 Markdown 语法：
    `[文字](地址)` 已经被链接占了，再往里面塞图片就没法区分
    「这张图是拿来悬停看的」还是「点了要打开这张图」。
    而 `[[ ]]` 在 Markdown 里本来就不是语法，以前是原样显示的，
    拿来用正好，也完全不影响已经写好的内容。
+
+   ⚠ `ico:` 这个前缀是 2026-10-13 加的（用户原话：「可以在+文字的文字中插入类似导航
+   条目的东西 …… 重点是那个条目索引会带一个小图片在一旁 就像导航栏里的一样」）。
+   写成**图片字段的前缀**而不是第 4 个字段：没有链接时也能单独用它
+   （`[[文字|ico:图]]`），第 4 个字段那种写法就必须写成 `[[文字|图||ico]]`，很别扭。
+   不写前缀 = 老样子（只有悬停大图），所以已有内容一个字都不用改。
+   小图标走 variantUrl(…, 40)：和导航条目的图标同一档，别为了一个 1em 的角标去下原图。
    ------------------------------------------------------------------ */
 
 /** 往 HTML 属性里塞内容前必须转义，否则一个引号就能把标签撑破 */
@@ -123,8 +131,14 @@ const escAttr = (s: string) =>
 /** 站内路径补上 base，站外原样 */
 const asSrc = (raw: string) => (/^https?:\/\//i.test(raw) ? raw : withBase(raw));
 
+/** 图片字段里 `ico:` 前缀 = 文字旁边还要一个小图标（见上面那段说明） */
+const ICO_PREFIX = /^ico:/i;
+
 function hoverCardHtml(label: string, img: string, href: string): string {
-  const src = img.trim();
+  const raw = img.trim();
+  if (!raw) return '';
+  const asIcon = ICO_PREFIX.test(raw);
+  const src = asIcon ? raw.replace(ICO_PREFIX, '').trim() : raw;
   if (!src) return '';
   // 文字里允许写 **粗体**、`代码` 这类行内标记，单独渲染一遍
   const text = marked.parseInline(label.trim(), { async: false }) as string;
@@ -132,6 +146,10 @@ function hoverCardHtml(label: string, img: string, href: string): string {
     `<img class="phover__img" src="${escAttr(asSrc(src))}" alt="" loading="lazy" decoding="async" />`,
     { sizes: '320px' }
   );
+  /* 小图标：alt 留空（旁边的文字已经在说它是谁了），和导航条目一个规矩 */
+  const ico = asIcon
+    ? `<img class="phover__ico" src="${escAttr(asSrc(variantUrl(src, 40)))}" alt="" loading="lazy" decoding="async" />`
+    : '';
 
   const url = href.trim();
   /*
@@ -139,11 +157,11 @@ function hoverCardHtml(label: string, img: string, href: string): string {
     给它一个 tabindex：只认鼠标的话，键盘用户永远看不到这张图。
   */
   if (!url || !isLinkUrl(url)) {
-    return `<span class="phover" tabindex="0"><span class="phover__label">${text}</span><span class="phover__pop">${picture}</span></span>`;
+    return `<span class="phover" tabindex="0">${ico}<span class="phover__label">${text}</span><span class="phover__pop">${picture}</span></span>`;
   }
   const external = /^https?:/i.test(url);
   const anchor = `<a class="phover__label" href="${escAttr(asSrc(url))}"${external ? ' target="_blank" rel="noopener"' : ''}>${text}</a>`;
-  return `<span class="phover">${anchor}<span class="phover__pop">${picture}</span></span>`;
+  return `<span class="phover">${ico}${anchor}<span class="phover__pop">${picture}</span></span>`;
 }
 
 /*
@@ -2051,6 +2069,24 @@ function cardsForBlock(b: PageBlock): { list: BlockItem[]; missing: string[] } {
     text-decoration-color: rgba(255, 179, 221, 0.55);
     text-underline-offset: 0.22em;
     cursor: help;
+  }
+
+  /*
+    小图标（`[[文字|ico:图|链接]]`，2026-10-13 加）：像导航条目那样挂在文字左边。
+    · 行内基线对齐用 vertical-align，别用 flex —— 这一块是正文里的一个行内元素，
+      改成 flex 会把行高和换行都带跑（导航条目那边是独立一行，所以它能用 flex）。
+    · 大小跟着字号走（1.15em），编辑里换个字号也不用回来改这里。
+  */
+  .ptext :global(.phover__ico),
+  .pcols__col :global(.phover__ico) {
+    display: inline-block;
+    width: 1.15em;
+    height: 1.15em;
+    margin-right: 0.28em;
+    border-radius: 0.22em;
+    object-fit: contain;
+    vertical-align: -0.22em;
+    image-rendering: pixelated;
   }
   .ptext :global(a.phover__label),
   .pcols__col :global(a.phover__label) {

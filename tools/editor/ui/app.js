@@ -2215,7 +2215,10 @@ const BLOCK_LABEL = {
   recent: '近期更新',
 };
 const TEXT_HINT =
-  '支持 Markdown：**粗体**、[链接](地址)、- 列表、![图](/img/uploads/x.png)、## 小标题、[[文字|图片地址]]（悬停出图）、[[文字|图片地址|链接地址]]（悬停出图 + 点击跳转）';
+  '支持 Markdown：**粗体**、[链接](地址)、- 列表、![图](/img/uploads/x.png)、## 小标题、'
+  + '[[文字|图片地址]]（悬停出大图）、[[文字|图片地址|链接地址]]（悬停出大图 + 点击跳转）、'
+  + '[[文字|ico:图片地址|链接地址]]（悬停出大图，而且**文字旁边带一个小图标**，像导航条目）'
+  + ' —— 后两种不用背：点下面的「＋ 行内条目」填一填就插进去了';
 /* 「窄」的说明：连着几张窄图会横着排开、排满一行再换行（见 PageContent.astro 的 .pblock--flow） */
 const IMG_WIDTHS = [['full', '全宽'], ['wide', '宽'], ['half', '半宽'], ['third', '窄（连着放会并排）']];
 const CARD_SHAPES = [['wide', '横（16:3）'], ['square', '方（1:1）'], ['tall', '竖（3:4）']];
@@ -4071,6 +4074,117 @@ function navBlockFields(block) {
   return wrap;
 }
 
+/**
+ * 「＋ 行内条目」：在文字里插一个**带小图标**的小块（像导航条目那样）。
+ *
+ * 用户 2026-10-13 的原话：
+ *   「可以在+文字的文字中插入类似导航条目的东西 重点是这个条目索引会带一个小图片
+ *    在一旁 就像导航栏里的一样 目前无法做到编辑出这种东西」
+ *
+ * 站点那边本来就有这个语法（`[[文字|图]]` 悬停出大图；`[[文字|ico:图|链接]]` 文字旁
+ * 再挂一个小图标），缺的只是"编辑器里怎么做得出来" —— 让人背语法、还得自己翻图片
+ * 地址，没人愿意干。所以给一个小表单：文字 + 小图标 + 可选链接，插到光标处。
+ */
+function inlineItemTool(ta) {
+  const box = document.createElement('div');
+  box.className = 'pblock-edit__row';
+
+  const toggle = document.createElement('button');
+  toggle.type = 'button';
+  toggle.className = 'btn btn--ghost boardedit__mini';
+  toggle.textContent = '＋ 行内条目（带小图）';
+  toggle.title = '在光标处插一个像导航条目那样的小块：文字 + 旁边一个小图标（可选链接）';
+
+  const form = document.createElement('div');
+  form.className = 'pblock-edit__row';
+  form.hidden = true;
+
+  /** 表单里正在编的那一条：图标走 boardCoverControl（它认 .image 这个字段） */
+  const draft = { image: '' };
+  const textIn = boardInput('', '文字（比如「魔法蘑菇」）', () => paint());
+  const iconCtl = boardCoverControl(draft, () => paint(), {
+    pick: draft.image ? '换小图标' : '选小图标',
+    pickTitle: '文字旁边那个小图标（展示时只有 1.15em 大，小图最好）',
+    empty: '还没有小图标',
+    clear: '去掉小图标',
+  });
+  const hrefIn = linkField('', '地址（可选：/huaya/xxx 或 https://…）', (v) => {
+    draft.href = v;
+    paint();
+  }, { anchor: true });
+
+  const useIco = document.createElement('input');
+  useIco.type = 'checkbox';
+  useIco.checked = true;                     // 用户要的就是"文字旁带小图"，默认勾上
+  useIco.addEventListener('change', () => paint());
+  const useIcoLabel = document.createElement('label');
+  useIcoLabel.append(useIco, document.createTextNode(' 文字旁边显示小图标（像导航条目）'));
+
+  const preview = document.createElement('p');
+  preview.className = 'pblock-edit__hint';
+
+  /** 现在这份表单会插出什么（还没填齐就返回空串） */
+  const syntax = () => {
+    const label = textIn.value.trim();
+    const img = (draft.image || '').trim();
+    if (!label || !img) return '';
+    const href = String(draft.href || '').trim();
+    return `[[${label}|${useIco.checked ? 'ico:' : ''}${img}${href ? `|${href}` : ''}]]`;
+  };
+
+  /** 预览就用真的 <img>，所见即所得（不做第二套渲染，免得和站点不一致） */
+  function paint() {
+    preview.textContent = '';
+    const label = textIn.value.trim();
+    const img = (draft.image || '').trim();
+    if (!label || !img) {
+      preview.textContent = '填「文字」和「小图标」就能插了'
+        + (useIco.checked ? '（不勾小图标也可以，那就只有悬停大图）' : '');
+      return;
+    }
+    preview.append(document.createTextNode('会插成这样：'));
+    if (useIco.checked) {
+      const im = document.createElement('img');
+      im.src = img;
+      im.alt = '';
+      im.className = 'boardedit__thumb';
+      im.style.cssText = 'width:1.15em;height:1.15em;object-fit:contain;border-radius:.22em;vertical-align:-.2em;margin:0 .25em';
+      preview.append(im);
+    }
+    const b = document.createElement('b');
+    b.textContent = ` ${label} `;
+    preview.append(b);
+    if (draft.href) preview.append(document.createTextNode('（点了跳走）'));
+    preview.append(document.createTextNode('（鼠标指上去弹大图）'));
+  }
+
+  const insert = document.createElement('button');
+  insert.type = 'button';
+  insert.className = 'btn boardedit__mini';
+  insert.textContent = '插入到光标处';
+  insert.addEventListener('click', () => {
+    const s = syntax();
+    if (!s) {
+      toast('先把「文字」和「小图标」填上', true);
+      return;
+    }
+    insertIntoTextarea(ta, s);
+    toast('已插入这个行内条目');
+  });
+
+  form.append(textIn, iconCtl, hrefIn, useIcoLabel, preview, insert);
+  toggle.addEventListener('click', () => {
+    form.hidden = !form.hidden;
+    if (!form.hidden) {
+      paint();
+      textIn.focus();
+    }
+  });
+  box.append(toggle, form);
+  paint();
+  return box;
+}
+
 /** 一个块的字段区 */
 function blockFields(block) {
   const wrap = document.createElement('div');
@@ -4123,6 +4237,8 @@ function blockFields(block) {
     hint.className = 'pblock-edit__hint';
     hint.textContent = TEXT_HINT;
     wrap.appendChild(hint);
+    /* 「＋ 行内条目」：不想背语法的人也能做出"文字 + 旁边一个小图标" */
+    wrap.appendChild(inlineItemTool(ta));
     return wrap;
   }
 
