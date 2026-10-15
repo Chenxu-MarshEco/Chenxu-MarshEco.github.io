@@ -387,7 +387,7 @@ const chrome = spawn(
     '--remote-debugging-port=0',
     'about:blank',
   ],
-  { stdio: 'ignore' }
+  { windowsHide: true, stdio: 'ignore' }
 );
 /*
   整体兜底：以前没有这一条，页面那边一卡（比如别人正在改画板、渲染进程死在死循环里），
@@ -396,7 +396,7 @@ const chrome = spawn(
 const watchdog = setTimeout(() => {
   console.log('FAIL  整体超时（10 分钟）—— 页面那边多半卡住了');
   try {
-    execSync(`taskkill /pid ${chrome.pid} /T /F`, { stdio: 'ignore' });
+    execSync(`taskkill /pid ${chrome.pid} /T /F`, { windowsHide: true, stdio: 'ignore' });
   } catch {
     /* 已经退了 */
   }
@@ -935,7 +935,7 @@ try {
 } finally {
   clearTimeout(watchdog);
   try {
-    execSync(`taskkill /pid ${chrome.pid} /T /F`, { stdio: 'ignore' });
+    execSync(`taskkill /pid ${chrome.pid} /T /F`, { windowsHide: true, stdio: 'ignore' });
   } catch {
     /* 已经退了 */
   }

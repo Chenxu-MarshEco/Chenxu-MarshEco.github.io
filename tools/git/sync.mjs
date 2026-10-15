@@ -129,7 +129,7 @@ function gitOnce(prefix, args, { cwd, timeout, input }) {
         一个没人能回答的密码提示（pythonw 拉起来的窗口里尤其看不见它）。
         图形化的凭据管理器（GCM）不受这个影响，该弹的窗口还是会弹。
       */
-      env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
+      env: { windowsHide: true, ...process.env, GIT_TERMINAL_PROMPT: '0' },
     });
     return { ok: true, out: String(out).replace(/\s+$/, ''), err: '' };
   } catch (err) {

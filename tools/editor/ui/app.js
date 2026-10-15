@@ -2213,6 +2213,7 @@ const BLOCK_LABEL = {
   nav: '导航',
   logs: '助手日志',
   recent: '近期更新',
+  sidebar: '侧边栏',
 };
 const TEXT_HINT =
   '支持 Markdown：**粗体**、[链接](地址)、- 列表、![图](/img/uploads/x.png)、## 小标题、'
@@ -4185,6 +4186,185 @@ function inlineItemTool(ta) {
   return box;
 }
 
+/** 侧边栏格子的内容类型（和站点侧 src/utils/boards.ts 的 SidebarRowKind 一一对应） */
+const SIDEBAR_KINDS = [
+  ['text', '文字'],
+  ['image', '图片'],
+  ['link', '链接'],
+  ['items', '条目列表（带图标）'],
+];
+
+/**
+ * 「侧边栏」块的编辑器（2026-10-15）
+ *
+ * 用户原话：「可以自由编辑其分为几个格子 格子里的内容表现形式类似于导航 但也可以上传
+ * 文字或图片 也可以把文图挂为链接等 侧边栏的高度应当可以自由编辑横跨哪几个板块」。
+ * 所以每一格都能换类型、写标题、上下挪、删掉，末尾还能「＋ 加一格」；
+ * 条目列表那一格就是导航条目那套（文字 + 小图标 + 地址）。
+ *
+ * ⚠ 为什么不复用导航面板的 navItemRow：那个函数写死了 `renderNavEditor()` 和导航的
+ * 预览元素（`paintNavPreview`），搬到这里会去重画**导航面板**。与其去改那个大家都在用
+ * 的函数，不如在这儿写一份小一号的 —— 两边要的字段本来也只有「文字 / 图标 / 地址」重合。
+ */
+function sidebarRowsEditor(block) {
+  const box = document.createElement('div');
+  const redraw = () => renderPageEditor();
+
+  const mini = (label, title, fn, cls = '') => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = `btn btn--ghost boardedit__mini ${cls}`.trim();
+    b.textContent = label;
+    b.title = title;
+    b.addEventListener('click', fn);
+    return b;
+  };
+  const move = (arr, i, d) => {
+    const j = i + d;
+    if (j < 0 || j >= arr.length) return;
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+    redraw();
+  };
+
+  (block.rows ?? []).forEach((row, i) => {
+    const card = document.createElement('div');
+    card.className = 'nv-item';
+
+    const top = document.createElement('div');
+    top.className = 'nv-item__top';
+
+    const kind = document.createElement('select');
+    kind.className = 'input';
+    kind.style.maxWidth = '9rem';
+    kind.title = '这一格放什么';
+    for (const [v, t] of SIDEBAR_KINDS) {
+      const o = document.createElement('option');
+      o.value = v;
+      o.textContent = t;
+      kind.append(o);
+    }
+    kind.value = row.kind ?? 'text';
+    kind.addEventListener('change', () => {
+      row.kind = kind.value;
+      redraw();
+    });
+
+    const label = boardInput(row.label ?? '', '标题（左边那一小格；留空就是整格内容）', (v) => {
+      if (v.trim()) row.label = v;
+      else delete row.label;
+    });
+
+    top.append(
+      kind,
+      label,
+      mini('↑', '往前挪一格', () => move(block.rows, i, -1)),
+      mini('↓', '往后挪一格', () => move(block.rows, i, 1)),
+      mini('删除', '删掉这一格', () => {
+        block.rows.splice(i, 1);
+        redraw();
+      }, 'boardedit__del')
+    );
+    card.append(top);
+
+    const body = document.createElement('div');
+    body.className = 'nv-item__bar';
+
+    if (row.kind === 'text') {
+      const ta = document.createElement('textarea');
+      ta.className = 'input nv-item__text';
+      ta.rows = 3;
+      ta.value = row.text ?? '';
+      ta.placeholder = '这一格的文字（支持 **粗体**、[链接](地址)、[[文字|ico:图|链接]] 行内条目）';
+      ta.addEventListener('input', () => {
+        row.text = ta.value;
+      });
+      body.append(ta, inlineItemTool(ta));
+    } else if (row.kind === 'image') {
+      /*
+        boardCoverControl 只认 `node.image` 这个字段（它本来是版块封面的控件）。
+        这里拿一个**代理对象**接一下，选完图再搬回 row.src —— 比为了一个字段名
+        去改那个控件（好几个地方在用）稳。
+      */
+      const proxy = { image: row.src ?? '' };
+      body.append(boardCoverControl(proxy, () => {
+        row.src = proxy.image;
+      }, {
+        pick: row.src ? '换图' : '选图',
+        pickTitle: '这一格的图（栏子窄，竖图或方图最好看）',
+        empty: '还没有图',
+        clear: '去掉图',
+      }));
+      const alt = boardInput(row.alt ?? '', '图的说明（可选，读屏会念）', (v) => {
+        if (v.trim()) row.alt = v;
+        else delete row.alt;
+      });
+      alt.style.minWidth = '12rem';
+      body.append(alt);
+    } else if (row.kind === 'link') {
+      const text = boardInput(row.text ?? '', '显示文字（留空就直接显示地址）', (v) => {
+        if (v.trim()) row.text = v;
+        else delete row.text;
+      });
+      const href = linkField(row.href ?? '', '地址（/huaya/xxx 或 https://…）', (v) => {
+        if (v.trim()) row.href = v;
+        else delete row.href;
+      }, { anchor: true });
+      body.append(text, href);
+    } else {
+      /* 条目列表：文字 + 小图标 + 地址（站点上渲染成导航条目那个样子） */
+      row.items = row.items ?? [];
+      const list = document.createElement('div');
+      row.items.forEach((it, ii) => {
+        const line = document.createElement('div');
+        line.className = 'nv-item__top';
+        const text = boardInput(it.text ?? '', '条目文字', (v) => {
+          it.text = v;
+        });
+        const href = linkField(it.href ?? '', '地址（/huaya/xxx 或 https://…）', (v) => {
+          if (v.trim()) it.href = v;
+          else delete it.href;
+        }, { anchor: true });
+        const proxy = { image: it.image ?? '' };
+        const ico = boardCoverControl(proxy, () => {
+          if (proxy.image) it.image = proxy.image;
+          else delete it.image;
+        }, {
+          pick: it.image ? '换图标' : '图标',
+          pickTitle: '条目左边那个小图标（可选）',
+          empty: '还没有图标',
+          clear: '去掉图标',
+        });
+        line.append(
+          text,
+          href,
+          ico,
+          mini('↑', '往前挪', () => move(row.items, ii, -1)),
+          mini('↓', '往后挪', () => move(row.items, ii, 1)),
+          mini('✕', '删掉这一条', () => {
+            row.items.splice(ii, 1);
+            redraw();
+          }, 'boardedit__del')
+        );
+        list.append(line);
+      });
+      body.append(list, mini('＋ 加一条', '往这一格加一个带图标的条目', () => {
+        row.items.push({ id: newBlockId(block.id), text: '新条目' });
+        redraw();
+      }));
+    }
+
+    card.append(body);
+    box.append(card);
+  });
+
+  box.append(mini('＋ 加一格', '给侧边栏加一格', () => {
+    block.rows = block.rows ?? [];
+    block.rows.push({ id: newBlockId(block.id), kind: 'text', label: '标题', text: '' });
+    redraw();
+  }));
+  return box;
+}
+
 /** 一个块的字段区 */
 function blockFields(block) {
   const wrap = document.createElement('div');
@@ -4427,6 +4607,30 @@ function blockFields(block) {
     hint.textContent =
       '把「眠鱼志」那份日志（src/data/mianyu.json）按天铺在这里：一天一栏，日期自动带锚点（能深层链接到某一天）。日志由助手的工具写（node tools/memory/append-log.mjs），和这个页面数据是分开的两份文件 —— 编辑器保存版块树不会覆盖它，助手写日志也不会覆盖你的改动。';
     wrap.append(row, hint);
+    return wrap;
+  }
+
+  if (block.type === 'sidebar') {
+    const row = document.createElement('div');
+    row.className = 'pblock-edit__row';
+    const head = boardInput(block.text ?? '', '这一栏的标题（可留空）', (v) => {
+      block.text = v;
+    });
+    const span = boardInput(String(block.span ?? 3), '跨几个板块（默认 3）', (v) => {
+      const n = Number(v);
+      block.span = Number.isFinite(n) && n >= 1 ? Math.min(20, Math.round(n)) : 3;
+    });
+    span.style.maxWidth = '9rem';
+    row.append(head, span);
+
+    const hint = document.createElement('p');
+    hint.className = 'pblock-edit__hint';
+    hint.textContent =
+      '侧边栏排在页面右侧，纵向跨「几个板块」那么多块；它比那几个块高时行高会跟着长'
+      + '（自适应，不用你算）。手机上没有右侧那一栏，它会落在正文里的同一位置。'
+      + '格子 = 左边小标题 + 右边内容，可自由增删；「条目列表」那一格就是导航条目那个样子'
+      + '（文字 + 小图标 + 地址），图会缩成栏子那么宽。';
+    wrap.append(row, hint, sidebarRowsEditor(block));
     return wrap;
   }
 
@@ -5199,6 +5403,9 @@ function renderPageEditor() {
       '把「眠鱼志」那份日志（src/data/mianyu.json）按天铺在这里：一天一栏，日期自动带锚点'],
     ['recent', '近期更新', () => ({ id: newBlockId(pageNode.id), type: 'recent', text: '', count: 3 }),
       '列出最近在编辑器里改过的几个页面（默认 3 个），点卡片跳过去'],
+    /* 侧边栏（2026-10-15）：页面右侧那条信息栏，格子可自由增删（见 sidebarRowsEditor） */
+    ['sidebar', '侧边栏', () => ({ id: newBlockId(pageNode.id), type: 'sidebar', text: '', rows: [{ id: newBlockId(pageNode.id) + '-r1', kind: 'text', label: '标题', text: '' }], span: 3 }),
+      '页面右侧一条信息栏：格子可增删，放文字 / 图片 / 链接 / 带图标的条目列表，还能设它跨几个板块'],
     // 地图是分页的，新建时就直接建成分页形状（别再造老那种 src+markers 挂在块上的了）
     ['map', '地图', () => ({ id: newBlockId(pageNode.id), type: 'map', pages: [] })],
   ];
@@ -5448,6 +5655,8 @@ function commitPageBlocks() {
          一保存就把它删掉的话，用户会以为"加了块它自己没了" */
       b.type === 'logs' ||
       b.type === 'recent' ||
+      /* 侧边栏：刚加进来还没填格子时也得留着（不然「先加栏、再填格」中间保存一次就没了） */
+      b.type === 'sidebar' ||
       /* 单张卡 / 卡片框本身就是作者特意放的结构：还没挑子页面也得留着，
          不然「先加个框、再去挑卡」中间保存一次，框就没了 */
       b.type === 'card' ||

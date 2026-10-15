@@ -58,7 +58,7 @@ function run(cmd, args, { cwd = ROOT } = {}) {
       process.stdin.pause();
     }
     const [file, argv, shell] = spawnArgs(cmd, args);
-    const child = spawn(file, argv, { cwd, stdio: 'inherit', shell });
+    const child = spawn(file, argv, { windowsHide: true, cwd, stdio: 'inherit', shell });
     child.on('exit', (code) => resolve(code ?? 0));
     child.on('error', () => resolve(1));
   });
@@ -70,7 +70,7 @@ function capture(cmd, args, { cwd = ROOT, timeout = 15000 } = {}) {
   try {
     return {
       ok: true,
-      out: execFileSync(file, argv, {
+      out: execFileSync(file, argv, { windowsHide: true,
         cwd,
         timeout,
         encoding: 'utf8',
@@ -87,7 +87,7 @@ function capture(cmd, args, { cwd = ROOT, timeout = 15000 } = {}) {
 // ---------- 提交。说明文字从 stdin 进，避免任何转义问题 ----------
 function commit(message) {
   return new Promise((resolve) => {
-    const child = spawn('git', ['commit', '-F', '-'], { cwd: ROOT });
+    const child = spawn('git', ['commit', '-F', '-'], { windowsHide: true, cwd: ROOT });
     let out = '';
     let err = '';
     child.stdout.on('data', (d) => (out += d));
@@ -316,8 +316,8 @@ async function doPreview() {
       await new Promise((r) => setTimeout(r, 500));
     }
     if (stopped) return; // 预览已经停了就别再开浏览器了
-    if (IS_WIN) spawn('cmd', ['/c', 'start', '', url], { detached: true, stdio: 'ignore' }).unref();
-    else spawn('open', [url], { detached: true, stdio: 'ignore' }).unref();
+    if (IS_WIN) spawn('cmd', ['/c', 'start', '', url], { windowsHide: true, detached: true, stdio: 'ignore' }).unref();
+    else spawn('open', [url], { windowsHide: true, detached: true, stdio: 'ignore' }).unref();
   })();
   void opener;
 

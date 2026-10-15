@@ -29,7 +29,7 @@ if (fs.existsSync(DST)) {
   for (const j of ['node_modules', 'public']) {
     const p = path.join(DST, j);
     if (fs.existsSync(p)) {
-      try { execSync(`cmd /c rmdir "${p}"`, { stdio: 'ignore' }); } catch {}
+      try { execSync(`cmd /c rmdir "${p}"`, { windowsHide: true, stdio: 'ignore' }); } catch {}
     }
   }
   fs.rmSync(DST, { recursive: true, force: true });
@@ -40,8 +40,8 @@ for (const e of fs.readdirSync(SRC, { withFileTypes: true })) {
   if (skip.has(e.name)) continue;
   fs.cpSync(path.join(SRC, e.name), path.join(DST, e.name), { recursive: true });
 }
-execSync(`cmd /c mklink /J "${path.join(DST, 'node_modules')}" "${path.join(SRC, 'node_modules')}"`, { stdio: 'ignore' });
-execSync(`cmd /c mklink /J "${path.join(DST, 'public')}" "${path.join(SRC, 'public')}"`, { stdio: 'ignore' });
+execSync(`cmd /c mklink /J "${path.join(DST, 'node_modules')}" "${path.join(SRC, 'node_modules')}"`, { windowsHide: true, stdio: 'ignore' });
+execSync(`cmd /c mklink /J "${path.join(DST, 'public')}" "${path.join(SRC, 'public')}"`, { windowsHide: true, stdio: 'ignore' });
 
 const now = new Date();
 const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -56,7 +56,7 @@ const birthKey = `2004-${today.slice(5)}`;
 const w = JSON.parse(fs.readFileSync(path.join(DST, 'src', 'data', 'home-widgets.json'), 'utf8'));
 w.calendar.events = { [birthKey]: { title: '验收用的纪念日', href: '/salon/' } };
 fs.writeFileSync(path.join(DST, 'src', 'data', 'home-widgets.json'), JSON.stringify(w, null, 2) + '\n', 'utf8');
-execSync(`node "${path.join(SRC, 'node_modules', 'astro', 'bin', 'astro.mjs')}" build --root "${DST}"`, { stdio: 'ignore' });
+execSync(`node "${path.join(SRC, 'node_modules', 'astro', 'bin', 'astro.mjs')}" build --root "${DST}"`, { windowsHide: true, stdio: 'ignore' });
 console.log('副本 + 数据就绪：今天 =', today, '｜事件挂在', birthKey, '（年份不同、月日相同）');
 
 /* ---------- 2. 起静态服务 + 真浏览器 ---------- */
@@ -76,7 +76,7 @@ const server = http.createServer((req, res) => {
 await new Promise((r) => server.listen(PORT, '127.0.0.1', r));
 
 const profile = path.join(process.env.TEMP ?? '.', `dsh-cal-${Date.now()}`);
-const chrome = spawn(CHROME, ['--headless=new', '--no-sandbox', '--mute-audio', '--disable-gpu', '--enable-unsafe-swiftshader', '--disable-breakpad', `--user-data-dir=${profile}`, `--remote-debugging-port=${DEBUG_PORT}`, 'about:blank'], { stdio: 'ignore' });
+const chrome = spawn(CHROME, ['--headless=new', '--no-sandbox', '--mute-audio', '--disable-gpu', '--enable-unsafe-swiftshader', '--disable-breakpad', `--user-data-dir=${profile}`, `--remote-debugging-port=${DEBUG_PORT}`, 'about:blank'], { windowsHide: true, stdio: 'ignore' });
 
 class CDP {
   constructor(ws) { this.ws = ws; this.id = 0; this.pending = new Map(); this.errors = []; ws.addEventListener('message', (ev) => { const m = JSON.parse(ev.data); if (m.id && this.pending.has(m.id)) { const { resolve, reject } = this.pending.get(m.id); this.pending.delete(m.id); m.error ? reject(new Error(m.error.message)) : resolve(m.result); } if (m.method === 'Runtime.exceptionThrown') this.errors.push(m.params.exceptionDetails?.exception?.description ?? m.params.exceptionDetails?.text); if (m.method === 'Runtime.consoleAPICalled' && m.params.type === 'error') this.errors.push(m.params.args.map((a) => a.value ?? a.description).join(' ')); }); }
@@ -300,7 +300,7 @@ try {
   fail++;
   console.log('FAIL  脚本异常: ' + (err?.stack ?? err));
 } finally {
-  try { execSync(`taskkill /pid ${chrome.pid} /T /F`, { stdio: 'ignore' }); } catch {}
+  try { execSync(`taskkill /pid ${chrome.pid} /T /F`, { windowsHide: true, stdio: 'ignore' }); } catch {}
   server.close();
   await sleep(250);
   try { fs.rmSync(profile, { recursive: true, force: true }); } catch {}
@@ -308,7 +308,7 @@ try {
   for (const j of ['node_modules', 'public']) {
     const p = path.join(DST, j);
     if (fs.existsSync(p)) {
-      try { execSync(`cmd /c rmdir "${p}"`, { stdio: 'ignore' }); } catch {}
+      try { execSync(`cmd /c rmdir "${p}"`, { windowsHide: true, stdio: 'ignore' }); } catch {}
     }
   }
   try { fs.rmSync(DST, { recursive: true, force: true }); } catch {}

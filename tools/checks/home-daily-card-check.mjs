@@ -59,7 +59,7 @@ await new Promise((r) => server.listen(PORT, '127.0.0.1', r));
 const profile = path.join(process.env.TEMP ?? '.', `dsh-daily-${Date.now()}`);
 const chrome = spawn(CHROME, ['--headless=new', '--no-sandbox', '--mute-audio', '--disable-gpu',
   '--enable-unsafe-swiftshader', '--hide-scrollbars', '--disable-breakpad',
-  `--user-data-dir=${profile}`, `--remote-debugging-port=${DEBUG_PORT}`, 'about:blank'], { stdio: 'ignore' });
+  `--user-data-dir=${profile}`, `--remote-debugging-port=${DEBUG_PORT}`, 'about:blank'], { windowsHide: true, stdio: 'ignore' });
 
 class CDP {
   constructor(ws) {
@@ -415,7 +415,7 @@ await cdp.open('/');
 check('★ 首页这一趟没有 JS 报错', cdp.errors.length === 0, cdp.errors.slice(0, 2).join(' | '));
 
 /* ================================================================ */
-try { execSync(`taskkill /pid ${chrome.pid} /T /F`, { stdio: 'ignore' }); } catch { /* 已经退了 */ }
+try { execSync(`taskkill /pid ${chrome.pid} /T /F`, { windowsHide: true, stdio: 'ignore' }); } catch { /* 已经退了 */ }
 server.close();
 await sleep(200);
 try { fs.rmSync(profile, { recursive: true, force: true }); } catch { /* 删不掉就算了 */ }

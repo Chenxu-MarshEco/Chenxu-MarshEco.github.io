@@ -37,13 +37,13 @@ const IMG_DIR = path.join(PROJ, 'public', 'img', 'salon');
 function unzip(zipPath) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'salon-import-'));
   try {
-    execFileSync('tar', ['-xf', zipPath, '-C', dir], { stdio: 'ignore' });
+    execFileSync('tar', ['-xf', zipPath, '-C', dir], { windowsHide: true, stdio: 'ignore' });
   } catch (err) {
     /* 有些精简系统没有 tar：退到 PowerShell（只在 Windows 上有） */
     try {
       execFileSync('powershell', ['-NoProfile', '-Command',
         `Expand-Archive -LiteralPath '${zipPath.replace(/'/g, "''")}' -DestinationPath '${dir.replace(/'/g, "''")}' -Force`],
-      { stdio: 'ignore' });
+      { windowsHide: true, stdio: 'ignore' });
     } catch {
       throw new Error(`解不开这个压缩包（tar 和 Expand-Archive 都失败了）：${String(err?.message || err)}`);
     }

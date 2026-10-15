@@ -48,7 +48,7 @@ info(`先构建一份小页数的站点（PAGER_SIZE=${SIZE}）到 .tmp/pager-di
 const built = spawnSync(
   process.execPath,
   [path.join(SRC, 'node_modules', 'astro', 'bin', 'astro.mjs'), 'build', '--outDir', '.tmp/pager-dist'],
-  { cwd: SRC, encoding: 'utf8', env: { ...process.env, PAGER_SIZE: String(SIZE) } },
+  { cwd: SRC, encoding: 'utf8', env: { ...process.env, PAGER_SIZE: String(SIZE) }, windowsHide: true },
 );
 check('★ 小页数构建能过（真实组件、真实页面，只是"一页几条"临时调小）',
   built.status === 0 && fs.existsSync(path.join(OUT, 'posts', 'index.html')),
@@ -110,7 +110,7 @@ class CDP {
 
 const profile = path.join(process.env.TEMP ?? '.', `dsh-pager-${Date.now()}`);
 const chrome = spawn(CHROME, ['--headless=new', '--no-sandbox', '--mute-audio', '--disable-gpu', '--enable-unsafe-swiftshader',
-  '--disable-breakpad', `--user-data-dir=${profile}`, `--remote-debugging-port=${DEBUG_PORT}`, 'about:blank'], { stdio: 'ignore' });
+  '--disable-breakpad', `--user-data-dir=${profile}`, `--remote-debugging-port=${DEBUG_PORT}`, 'about:blank'], { windowsHide: true, stdio: 'ignore' });
 
 let cdp = null;
 try {

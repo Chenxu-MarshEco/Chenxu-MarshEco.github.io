@@ -51,7 +51,7 @@ const info = (s) => console.log(`      · ${s}`);
 
 /** 跑一条 git 命令（作用对象一律是副本，绝不碰真仓库） */
 function git(args, cwd = DST) {
-  const r = spawnSync('git', args, { cwd, encoding: 'utf8' });
+  const r = spawnSync('git', args, { windowsHide: true, cwd, encoding: 'utf8' });
   return { ok: r.status === 0, out: (r.stdout || '').trim(), err: (r.stderr || '').trim(), code: r.status };
 }
 
@@ -138,7 +138,7 @@ for (const item of ['src', 'tools', 'package.json', 'astro.config.mjs', 'tsconfi
 }
 try {
   execFileSync('cmd', ['/c', 'mklink', '/J', path.join(DST, 'node_modules'),
-    path.join(SRC, 'node_modules')], { stdio: 'ignore' });
+    path.join(SRC, 'node_modules')], { windowsHide: true, stdio: 'ignore' });
 } catch { /* 已经有了 */ }
 
 gitOK(['init', '-b', 'main'], DST);
@@ -175,7 +175,7 @@ const SHARED = fs.readdirSync(postsDir).filter((f) => f.endsWith('.md')).sort()[
 const SHARED_ABS = path.join(postsDir, SHARED);
 info(`（「同一个文件」用 ${SHARED} 来演）`);
 
-const editor = spawn(process.execPath, [path.join(DST, 'tools/editor/server.mjs')], {
+const editor = spawn(process.execPath, [path.join(DST, 'tools/editor/server.mjs')], { windowsHide: true,
   cwd: DST, stdio: ['ignore', 'pipe', 'pipe'],
 });
 let elog = '';
@@ -245,7 +245,7 @@ if (base) {
   spawn(CHROME, ['--headless=new', '--no-sandbox', '--mute-audio', '--disable-gpu',
     '--enable-unsafe-swiftshader', '--disable-breakpad', '--window-size=1440,960',
     `--user-data-dir=${profile}`, `--remote-debugging-port=${DEBUG_PORT}`, 'about:blank'],
-  { stdio: 'ignore' });
+  { windowsHide: true, stdio: 'ignore' });
 
   class CDP {
     constructor(ws) {
@@ -387,7 +387,7 @@ console.log('\n================ ⑤ 命令行那条路 ================');
     'src/content/posts/robot-pull-note3.md': ['---', 'title: 机器人推的第三篇', 'date: 2026-10-05', 'tags: [机器人]', 'subs: []', '---', '', '正文。', ''].join('\n'),
   }, '机器人：第三篇');
   const r = spawnSync(process.execPath, [path.join(DST, 'tools/git', 'sync.mjs'), 'pull', '--json'],
-    { cwd: DST, encoding: 'utf8', timeout: 120000 });
+    { windowsHide: true, cwd: DST, encoding: 'utf8', timeout: 120000 });
   const out = `${r.stdout || ''}${r.stderr || ''}`;
   const line = out.split('\n').reverse().find((l) => l.startsWith('[result] '));
   let parsed = null;
@@ -553,10 +553,10 @@ if (base) {
 
 /* ================================================================ */
 try { editor.kill(); } catch { /* 已经退出 */ }
-try { execSync('taskkill /F /T /IM chrome.exe', { stdio: 'ignore' }); } catch { /* 没有就算了 */ }
+try { execSync('taskkill /F /T /IM chrome.exe', { windowsHide: true, stdio: 'ignore' }); } catch { /* 没有就算了 */ }
 try {
   const j = path.join(DST, 'node_modules');
-  if (fs.existsSync(j)) execFileSync('cmd', ['/c', 'rmdir', j], { stdio: 'ignore' });
+  if (fs.existsSync(j)) execFileSync('cmd', ['/c', 'rmdir', j], { windowsHide: true, stdio: 'ignore' });
   for (const p of [DST, OTHER, ORIGIN]) fs.rmSync(p, { recursive: true, force: true });
   console.log(`副本已清理: ${!fs.existsSync(DST) && !fs.existsSync(OTHER) && !fs.existsSync(ORIGIN)}`);
 } catch (err) {

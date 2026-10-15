@@ -48,7 +48,7 @@ const stamp = (d) => {
 const ymd = (date) => `${date.getFullYear()}.${date.getMonth() + 1}.${date.getDate()}`;
 const git = (args) => {
   try {
-    return execFileSync('git', args, { cwd: SRC, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+    return execFileSync('git', args, { windowsHide: true, cwd: SRC, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
   } catch {
     return '';
   }
@@ -146,7 +146,7 @@ check('没有"未来日期"的日志（写错年份最常见）',
   tools/memory/log-length.mjs 里 —— 那是**唯一**说这件事的地方，这里只把结果接进常规自检：
   「今天 / 前一天」两栏超了就红（更早的日子只提示、不拦发布 —— 那是历史）。
 */
-const lenRun = spawnSync(process.execPath, [path.join(SRC, 'tools', 'memory', 'log-length.mjs'), '--json'], {
+const lenRun = spawnSync(process.execPath, [path.join(SRC, 'tools', 'memory', 'log-length.mjs'), '--json'], { windowsHide: true,
   cwd: SRC, encoding: 'utf8',
 });
 const lenLine = String(lenRun.stdout ?? '').split('\n').reverse().find((l) => l.startsWith('[result] '));

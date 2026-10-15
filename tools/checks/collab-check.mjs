@@ -166,7 +166,7 @@ if (fs.existsSync(tutorialPath)) {
 console.log('\n===== ② 一个 bare 远端 + 站长 A / 协作者 B（真 git）=====');
 
 function run(cmd, args, cwd) {
-  const r = spawnSync(cmd, args, { cwd, encoding: 'utf8' });
+  const r = spawnSync(cmd, args, { windowsHide: true, cwd, encoding: 'utf8' });
   return { ok: r.status === 0, out: (r.stdout || '').trim(), err: (r.stderr || '').trim(), code: r.status };
 }
 const git = (args, cwd) => run('git', args, cwd);
@@ -465,7 +465,7 @@ const api = (p, body, port = PORT) =>
   });
 
 try {
-  editor = spawn(NODE, [SERVER, '--port', String(PORT)], { cwd: SRC, stdio: 'ignore' });
+  editor = spawn(NODE, [SERVER, '--port', String(PORT)], { windowsHide: true, cwd: SRC, stdio: 'ignore' });
   let up = false;
   for (let i = 0; i < 60 && !up; i += 1) {
     await sleep(400);
@@ -524,7 +524,7 @@ try {
       那种情况下"捂不热"是**环境事实**，不是回归 —— 先探一次，探不出来就照实跳过，
       别给人一个假的红灯；探得出来还是捂不热，那才是真出问题了。
     */
-    const ghProbe = spawnSync('gh', ['api', 'user', '--jq', '.login'], { encoding: 'utf8', timeout: 12000 });
+    const ghProbe = spawnSync('gh', ['api', 'user', '--jq', '.login'], { windowsHide: true, encoding: 'utf8', timeout: 12000 });
     const canAskGh = ghProbe.status === 0 && String(ghProbe.stdout || '').trim() !== '';
     if (canAskGh) {
       check('★ 后台那次 CLI 把用户名捂热了（过几秒就有身份了，界面不用刷新）',
@@ -600,7 +600,7 @@ try {
     ['--headless=new', '--no-sandbox', '--disable-gpu', '--enable-unsafe-swiftshader', '--mute-audio', '--disable-breakpad',
       `--user-data-dir=${profile}`,
       `--remote-debugging-port=${DEBUG_PORT}`, 'about:blank'],
-    { stdio: 'ignore' },
+    { windowsHide: true, stdio: 'ignore' },
   );
   let target = null;
   for (let i = 0; i < 60 && !target; i += 1) {
@@ -748,7 +748,7 @@ try {
       fs.mkdirSync(path.join(staleCopy, '.tmp'), { recursive: true });
       fs.copyFileSync(actorCache, path.join(staleCopy, '.tmp', 'collab-actors.json'));
     }
-    staleEditor = spawn(NODE, [path.join(staleCopy, 'tools', 'editor', 'server.mjs'), '--port', String(STALE_PORT)], {
+    staleEditor = spawn(NODE, [path.join(staleCopy, 'tools', 'editor', 'server.mjs'), '--port', String(STALE_PORT)], { windowsHide: true,
       /*
         ⚠ cwd 用仓库根、**不要用那份副本**：Windows 上进程会占住自己的 cwd，
         收尾时 rmSync 会 EPERM（这个检查第一次跑就是这么在最后一步炸的）。

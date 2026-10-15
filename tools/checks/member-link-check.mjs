@@ -624,7 +624,7 @@ await new Promise((r) => server.listen(PORT, '127.0.0.1', r));
 const profileDir = path.join(process.env.TEMP ?? '.', `dsh-memlink-${Date.now()}`);
 const chrome = spawn(CHROME, ['--headless=new', '--no-sandbox', '--mute-audio', '--disable-gpu',
   '--enable-unsafe-swiftshader', '--disable-breakpad', '--window-size=1440,900',
-  `--user-data-dir=${profileDir}`, `--remote-debugging-port=${DEBUG_PORT}`, 'about:blank'], { stdio: 'ignore' });
+  `--user-data-dir=${profileDir}`, `--remote-debugging-port=${DEBUG_PORT}`, 'about:blank'], { windowsHide: true, stdio: 'ignore' });
 
 class CDP {
   constructor(ws) {
@@ -1243,7 +1243,7 @@ const hong = findMember(copy.members, '虹星');
 const hongAlias = hong ? (hong.aliases || []).find((a) => a === '亚卡莱特') ?? (hong.aliases || [])[0] ?? '' : '';
 const xiId = (findMember(copy.members, pickName) || {}).id || '';
 info(`副本里动了这几处：${applied.join('、')}，重新构建…`);
-const built = spawn(process.execPath, [path.join(proj, 'node_modules/astro/bin/astro.mjs'), 'build'], {
+const built = spawn(process.execPath, [path.join(proj, 'node_modules/astro/bin/astro.mjs'), 'build'], { windowsHide: true,
   cwd: tmp, stdio: ['ignore', 'pipe', 'pipe'],
 });
 let buildOut = '';
@@ -1356,7 +1356,7 @@ check('服务端清洗会留住 aliases（去空、去重、上限 20）',
 /* 真跑一遍：起**副本**里的编辑器服务（工作区那个 4322 一根汗毛都不碰），
    存一次成员表，看 url 有没有原样落盘、脏协议有没有被挡掉 */
 console.log('\n---- 真存一次（副本里的编辑器）----');
-const editor = spawn(process.execPath, [path.join(tmp, 'tools/editor/server.mjs')], {
+const editor = spawn(process.execPath, [path.join(tmp, 'tools/editor/server.mjs')], { windowsHide: true,
   cwd: tmp, stdio: ['ignore', 'pipe', 'pipe'],
 });
 let elog = '';
@@ -1441,7 +1441,7 @@ editor.kill();
  * 真起一个 astro dev，抓 HTML 看有没有链上。 */
 console.log('\n================ F. dev 模式（astro dev，看效果那条路）================');
 const devPort = 4345;
-const dev = spawn(process.execPath, [path.join(proj, 'node_modules/astro/bin/astro.mjs'), 'dev', '--port', String(devPort), '--host', '127.0.0.1'], {
+const dev = spawn(process.execPath, [path.join(proj, 'node_modules/astro/bin/astro.mjs'), 'dev', '--port', String(devPort), '--host', '127.0.0.1'], { windowsHide: true,
   cwd: tmp, stdio: ['ignore', 'pipe', 'pipe'],
 });
 let devlog = '';

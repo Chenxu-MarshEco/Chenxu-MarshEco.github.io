@@ -69,7 +69,7 @@ check('★ 保存成功后把新指纹存回去（不然下一次保存会被自
 console.log('\n================ 准备副本 ================');
 if (fs.existsSync(DST)) {
   const j = path.join(DST, 'node_modules');
-  if (fs.existsSync(j)) { try { execSync(`cmd /c rmdir "${j}"`, { stdio: 'ignore' }); } catch { /* 不是 junction */ } }
+  if (fs.existsSync(j)) { try { execSync(`cmd /c rmdir "${j}"`, { windowsHide: true, stdio: 'ignore' }); } catch { /* 不是 junction */ } }
   fs.rmSync(DST, { recursive: true, force: true });
 }
 fs.mkdirSync(DST, { recursive: true });
@@ -77,7 +77,7 @@ for (const item of ['src', 'tools', 'package.json', 'astro.config.mjs', 'tsconfi
   fs.cpSync(path.join(SRC, item), path.join(DST, item), { recursive: true });
 }
 try {
-  execSync(`cmd /c mklink /J "${path.join(DST, 'node_modules')}" "${path.join(SRC, 'node_modules')}"`, { stdio: 'ignore' });
+  execSync(`cmd /c mklink /J "${path.join(DST, 'node_modules')}" "${path.join(SRC, 'node_modules')}"`, { windowsHide: true, stdio: 'ignore' });
 } catch { /* 已经有了 */ }
 
 const postsDir = path.join(DST, 'src/content/posts');
@@ -86,7 +86,7 @@ const POST_ABS = path.join(postsDir, POST);
 const disk = () => fs.readFileSync(POST_ABS, 'utf8');
 check('副本里挑得到一篇文章来试', Boolean(POST), POST);
 
-const editor = spawn(process.execPath, [path.join(DST, 'tools/editor/server.mjs')], {
+const editor = spawn(process.execPath, [path.join(DST, 'tools/editor/server.mjs')], { windowsHide: true,
   cwd: DST, stdio: ['ignore', 'pipe', 'pipe'],
 });
 let elog = '';
@@ -187,7 +187,7 @@ if (base) {
   spawn(CHROME, ['--headless=new', '--no-sandbox', '--mute-audio', '--disable-gpu',
     '--enable-unsafe-swiftshader', '--disable-breakpad', '--window-size=1440,960',
     `--user-data-dir=${profile}`, `--remote-debugging-port=${DEBUG_PORT}`, 'about:blank'],
-  { stdio: 'ignore' });
+  { windowsHide: true, stdio: 'ignore' });
 }
 
 class CDP {
@@ -347,12 +347,12 @@ if (cdp) {
 
 /* ================================================================ */
 try { editor.kill(); } catch { /* 已经退出 */ }
-try { execSync('taskkill /F /T /IM chrome.exe', { stdio: 'ignore' }); } catch { /* 没有就算了 */ }
+try { execSync('taskkill /F /T /IM chrome.exe', { windowsHide: true, stdio: 'ignore' }); } catch { /* 没有就算了 */ }
 
 /* 收摊：先摘掉 node_modules 那个 junction（rmSync 会顺着它删掉真依赖！），再删副本 */
 try {
   const j = path.join(DST, 'node_modules');
-  if (fs.existsSync(j)) execSync(`cmd /c rmdir "${j}"`, { stdio: 'ignore' });
+  if (fs.existsSync(j)) execSync(`cmd /c rmdir "${j}"`, { windowsHide: true, stdio: 'ignore' });
   fs.rmSync(DST, { recursive: true, force: true });
   fs.rmSync(profile, { recursive: true, force: true, maxRetries: 3 });
   console.log('副本已清理:', !fs.existsSync(DST));

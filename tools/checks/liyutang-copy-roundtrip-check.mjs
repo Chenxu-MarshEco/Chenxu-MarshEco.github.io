@@ -46,7 +46,7 @@ const setBoard = (lead, empty) => {
   writeJson(j);
 };
 const build = () => {
-  const out = execFileSync(process.execPath, ['node_modules/astro/bin/astro.mjs', 'build'], {
+  const out = execFileSync(process.execPath, ['node_modules/astro/bin/astro.mjs', 'build'], { windowsHide: true,
     cwd: ROOT,
     encoding: 'utf8',
     maxBuffer: 64 * 1024 * 1024,

@@ -287,7 +287,7 @@ async function measureRendered(width, height) {
   const profDir = path.join(process.env.TEMP ?? '.', `dsh-statuefit-${width}-${Date.now()}`);
   const chrome = spawn(CHROME, ['--headless=new', '--no-sandbox', '--mute-audio', '--disable-gpu',
     '--enable-unsafe-swiftshader', '--disable-breakpad', `--window-size=${width},${height}`,
-    `--user-data-dir=${profDir}`, `--remote-debugging-port=${dport}`, 'about:blank'], { stdio: 'ignore' });
+    `--user-data-dir=${profDir}`, `--remote-debugging-port=${dport}`, 'about:blank'], { windowsHide: true, stdio: 'ignore' });
   let out = null;
   try {
     let ws = null;

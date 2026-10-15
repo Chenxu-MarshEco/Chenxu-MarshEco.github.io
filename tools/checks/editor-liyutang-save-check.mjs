@@ -277,11 +277,11 @@ check('副本四处都改上了（PROJECT_ROOT / LIYUTANG_FILE / 端口 / 假构
 fs.writeFileSync(path.join(TMP, 'tools', 'editor', 'server.mjs'), patched, 'utf8');
 fs.writeFileSync(FILE, `${JSON.stringify(FIXTURE, null, 2)}\n`, 'utf8');
 
-const syntax = spawnSync(process.execPath, ['--check', path.join(TMP, 'tools', 'editor', 'server.mjs')], { encoding: 'utf8' });
+const syntax = spawnSync(process.execPath, ['--check', path.join(TMP, 'tools', 'editor', 'server.mjs')], { windowsHide: true, encoding: 'utf8' });
 check('副本那份 server.mjs 语法没问题（改坏了就什么也测不了）', syntax.status === 0, String(syntax.stderr || '').slice(0, 200));
 
 /* ---------- 起副本的编辑器 ---------- */
-const editor = spawn(process.execPath, [path.join(TMP, 'tools', 'editor', 'server.mjs')], {
+const editor = spawn(process.execPath, [path.join(TMP, 'tools', 'editor', 'server.mjs')], { windowsHide: true,
   cwd: TMP,
   stdio: ['ignore', 'pipe', 'pipe'],
 });
@@ -542,7 +542,7 @@ if (!base) {
   chrome = spawn(CHROME, ['--headless=new', '--no-sandbox', '--mute-audio', '--disable-gpu',
     '--enable-unsafe-swiftshader', '--disable-breakpad', '--window-size=1440,1000',
     `--user-data-dir=${profile}`, `--remote-debugging-port=${DEBUG_PORT}`, 'about:blank'],
-  { stdio: 'ignore' });
+  { windowsHide: true, stdio: 'ignore' });
   for (let i = 0; i < 80 && !cdp; i++) {
     await sleep(250);
     try {

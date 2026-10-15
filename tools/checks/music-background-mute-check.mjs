@@ -65,7 +65,7 @@ const chrome = spawn(CHROME, [
   '--headless=new', '--no-sandbox', '--mute-audio', '--disable-gpu', '--enable-unsafe-swiftshader',
   '--disable-breakpad', '--window-size=1440,900', '--autoplay-policy=no-user-gesture-required',
   `--user-data-dir=${profile}`, `--remote-debugging-port=${DEBUG_PORT}`, 'about:blank',
-], { stdio: 'ignore' });
+], { windowsHide: true, stdio: 'ignore' });
 
 class CDP {
   constructor(ws) {

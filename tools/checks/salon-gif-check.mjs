@@ -161,7 +161,7 @@ const profile = path.join(process.env.TEMP ?? '.', `dsh-gif-${Date.now()}`);
 const chrome = spawn(CHROME, ['--headless=new', '--no-sandbox', '--mute-audio', '--disable-gpu',
   '--enable-unsafe-swiftshader', '--disable-breakpad', '--window-size=1200,900',
   '--force-device-scale-factor=1',
-  `--user-data-dir=${profile}`, `--remote-debugging-port=${DEBUG_PORT}`, 'about:blank'], { stdio: 'ignore' });
+  `--user-data-dir=${profile}`, `--remote-debugging-port=${DEBUG_PORT}`, 'about:blank'], { windowsHide: true, stdio: 'ignore' });
 
 class CDP {
   constructor(ws) {
@@ -308,7 +308,7 @@ console.log('\n================ ④ 编辑器里的 GIF 上传 ================'
   /* 副本：和别的验收一样，改坏了也不动真仓库 */
   if (fs.existsSync(DST)) {
     const j = path.join(DST, 'node_modules');
-    if (fs.existsSync(j)) { try { execSync(`cmd /c rmdir "${j}"`, { stdio: 'ignore' }); } catch { /* 不是 junction */ } }
+    if (fs.existsSync(j)) { try { execSync(`cmd /c rmdir "${j}"`, { windowsHide: true, stdio: 'ignore' }); } catch { /* 不是 junction */ } }
     fs.rmSync(DST, { recursive: true, force: true });
   }
   fs.mkdirSync(DST, { recursive: true });
@@ -316,14 +316,14 @@ console.log('\n================ ④ 编辑器里的 GIF 上传 ================'
     fs.cpSync(path.join(SRC, item), path.join(DST, item), { recursive: true });
   }
   fs.cpSync(path.join(SRC, 'public'), path.join(DST, 'public'), { recursive: true });
-  execSync(`cmd /c mklink /J "${path.join(DST, 'node_modules')}" "${path.join(SRC, 'node_modules')}"`, { stdio: 'ignore' });
+  execSync(`cmd /c mklink /J "${path.join(DST, 'node_modules')}" "${path.join(SRC, 'node_modules')}"`, { windowsHide: true, stdio: 'ignore' });
   console.log('副本就绪：', DST);
 
   const fixture = fs.readFileSync(FIXTURE);
   const fMeta = await framesOf(FIXTURE);
   info(`测试用的动图：${FIXTURE.split(path.sep).pop()} ${fMeta.w}×${fMeta.h} ${fMeta.frames} 帧 ${(fixture.length / 1024).toFixed(0)}KB`);
 
-  const editor = spawn(process.execPath, [path.join(DST, 'tools/editor/server.mjs')], {
+  const editor = spawn(process.execPath, [path.join(DST, 'tools/editor/server.mjs')], { windowsHide: true,
     cwd: DST,
     stdio: ['ignore', 'pipe', 'pipe'],
   });

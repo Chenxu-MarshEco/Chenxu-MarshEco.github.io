@@ -185,7 +185,7 @@ check('目录块也在（最上面那一块）', (home?.blocks ?? [])[0]?.type =
 console.log('\n================ ② 存 / 取 / 改名 / 删除 ================');
 if (fs.existsSync(DST)) {
   const j = path.join(DST, 'node_modules');
-  if (fs.existsSync(j)) { try { execSync(`cmd /c rmdir "${j}"`, { stdio: 'ignore' }); } catch { /* 不是 junction */ } }
+  if (fs.existsSync(j)) { try { execSync(`cmd /c rmdir "${j}"`, { stdio: 'ignore', windowsHide: true }); } catch { /* 不是 junction */ } }
   fs.rmSync(DST, { recursive: true, force: true });
 }
 fs.mkdirSync(DST, { recursive: true });
@@ -198,12 +198,12 @@ fs.cpSync(path.join(SRC, 'public'), path.join(DST, 'public'), {
 });
 fs.mkdirSync(path.join(DST, 'public/img/opt'), { recursive: true });
 fs.copyFileSync(path.join(SRC, 'public/img/opt/manifest.json'), path.join(DST, 'public/img/opt/manifest.json'));
-execSync(`cmd /c mklink /J "${path.join(DST, 'node_modules')}" "${path.join(SRC, 'node_modules')}"`, { stdio: 'ignore' });
+execSync(`cmd /c mklink /J "${path.join(DST, 'node_modules')}" "${path.join(SRC, 'node_modules')}"`, { stdio: 'ignore', windowsHide: true });
 console.log('副本就绪：', DST);
 
 const editor = spawn(process.execPath, [path.join(DST, 'tools/editor/server.mjs')], {
   cwd: DST,
-  stdio: ['ignore', 'pipe', 'pipe'],
+  stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true,
 });
 let elog = '';
 editor.stdout.on('data', (b) => { elog += b.toString('utf8'); });
@@ -367,7 +367,7 @@ console.log('\n================ ③ 拿模版建「吉吉家」 ================
 
   const built = spawn(process.execPath, [path.join(SRC, 'node_modules/astro/bin/astro.mjs'), 'build'], {
     cwd: DST,
-    stdio: ['ignore', 'pipe', 'pipe'],
+    stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true,
   });
   let out = '';
   built.stdout.on('data', (d) => { out += d; });
@@ -428,7 +428,7 @@ console.log('\n================ ④ 界面里点「存成模版 / 导入模版�
 const profile = path.join(process.env.TEMP ?? '.', `dsh-tpl-${Date.now()}`);
 const chrome = spawn(CHROME, ['--headless=new', '--no-sandbox', '--mute-audio', '--disable-gpu',
   '--enable-unsafe-swiftshader', '--disable-breakpad', '--window-size=1440,960',
-  `--user-data-dir=${profile}`, `--remote-debugging-port=${DEBUG_PORT}`, 'about:blank'], { stdio: 'ignore' });
+  `--user-data-dir=${profile}`, `--remote-debugging-port=${DEBUG_PORT}`, 'about:blank'], { stdio: 'ignore', windowsHide: true });
 
 class CDP {
   constructor(ws) {

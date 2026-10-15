@@ -196,7 +196,7 @@ try {
     ['--headless=new', '--no-sandbox', '--disable-gpu', '--enable-unsafe-swiftshader', '--mute-audio',
       '--disable-breakpad', `--user-data-dir=${path.join(process.env.TEMP ?? '.', `dsh-strokes-${Date.now()}`)}`,
       `--remote-debugging-port=${DEBUG_PORT}`, 'about:blank'],
-    { stdio: 'ignore' }
+    { windowsHide: true, stdio: 'ignore' }
   );
   let target = null;
   for (let i = 0; i < 60 && !target; i += 1) {
@@ -291,7 +291,7 @@ try {
   if (chrome) {
     try {
       const { execSync } = await import('node:child_process');
-      execSync(`taskkill /pid ${chrome.pid} /T /F`, { stdio: 'ignore' });
+      execSync(`taskkill /pid ${chrome.pid} /T /F`, { windowsHide: true, stdio: 'ignore' });
     } catch {
       /* 已退 */
     }

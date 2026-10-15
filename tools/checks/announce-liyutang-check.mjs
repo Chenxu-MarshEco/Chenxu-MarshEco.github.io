@@ -80,9 +80,9 @@ check('首页显示条数是 1~20 的整数', Number.isInteger(ann.latest) && an
 if (!process.env.SKIP_BUILD) {
   console.log('\n=== 构建站点（真仓库）===');
   const t0 = Date.now();
-  execSync('node tools/images/optimize.mjs', { cwd: SRC, stdio: 'ignore' });
-  execSync('node node_modules/astro/bin/astro.mjs build', { cwd: SRC, stdio: 'ignore' });
-  execSync('node tools/images/prune-dist.mjs', { cwd: SRC, stdio: 'ignore' });
+  execSync('node tools/images/optimize.mjs', { windowsHide: true, cwd: SRC, stdio: 'ignore' });
+  execSync('node node_modules/astro/bin/astro.mjs build', { windowsHide: true, cwd: SRC, stdio: 'ignore' });
+  execSync('node tools/images/prune-dist.mjs', { windowsHide: true, cwd: SRC, stdio: 'ignore' });
   info(`构建完成，${((Date.now() - t0) / 1000).toFixed(1)}s`);
 }
 
@@ -137,7 +137,7 @@ let chrome = spawn(CHROME, [
   `--user-data-dir=${profile}`,
   `--remote-debugging-port=${DEBUG_PORT}`,
   'about:blank',
-], { stdio: 'ignore' });
+], { windowsHide: true, stdio: 'ignore' });
 
 class CDP {
   constructor(ws) {
@@ -464,7 +464,7 @@ try {
   console.log('FAIL  站点那一段异常: ' + (err?.stack ?? err));
 } finally {
   try {
-    execSync(`taskkill /pid ${chrome.pid} /T /F`, { stdio: 'ignore' });
+    execSync(`taskkill /pid ${chrome.pid} /T /F`, { windowsHide: true, stdio: 'ignore' });
   } catch {
     /* 已经退了 */
   }
@@ -480,7 +480,7 @@ function rmCopy() {
   const j = path.join(DST, 'node_modules');
   if (fs.existsSync(j)) {
     try {
-      execSync(`cmd /c rmdir "${j}"`, { stdio: 'ignore' });
+      execSync(`cmd /c rmdir "${j}"`, { windowsHide: true, stdio: 'ignore' });
     } catch {
       /* 不是 junction */
     }
@@ -499,10 +499,10 @@ try {
     fs.cpSync(path.join(SRC, e.name), path.join(DST, e.name), { recursive: true });
   }
   /* 只 junction node_modules；public 是**真副本**，所以构建出来的东西不会写回真仓库 */
-  execSync(`cmd /c mklink /J "${path.join(DST, 'node_modules')}" "${path.join(SRC, 'node_modules')}"`, { stdio: 'ignore' });
+  execSync(`cmd /c mklink /J "${path.join(DST, 'node_modules')}" "${path.join(SRC, 'node_modules')}"`, { windowsHide: true, stdio: 'ignore' });
   info('副本就绪：' + DST);
 
-  editor = spawn(process.execPath, [path.join(DST, 'tools', 'editor', 'server.mjs')], {
+  editor = spawn(process.execPath, [path.join(DST, 'tools', 'editor', 'server.mjs')], { windowsHide: true,
     cwd: DST,
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -533,7 +533,7 @@ try {
     `--user-data-dir=${profile2}`,
     `--remote-debugging-port=${DEBUG_PORT + 1}`,
     'about:blank',
-  ], { stdio: 'ignore' });
+  ], { windowsHide: true, stdio: 'ignore' });
 
   let t2 = null;
   for (let i = 0; i < 60 && !t2; i++) {
@@ -965,14 +965,14 @@ try {
 } finally {
   if (chrome) {
     try {
-      execSync(`taskkill /pid ${chrome.pid} /T /F`, { stdio: 'ignore' });
+      execSync(`taskkill /pid ${chrome.pid} /T /F`, { windowsHide: true, stdio: 'ignore' });
     } catch {
       /* 已经退了 */
     }
   }
   if (editor) {
     try {
-      execSync(`taskkill /pid ${editor.pid} /T /F`, { stdio: 'ignore' });
+      execSync(`taskkill /pid ${editor.pid} /T /F`, { windowsHide: true, stdio: 'ignore' });
     } catch {
       /* 已经退了 */
     }

@@ -71,7 +71,7 @@ await new Promise((r) => server.listen(PORT, '127.0.0.1', r));
 
 const profile = path.join(process.env.TEMP ?? '.', `dsh-iceberg-tip-${Date.now()}`);
 const chrome = spawn(CHROME, ['--headless=new', '--no-sandbox', '--mute-audio', '--disable-gpu', '--enable-unsafe-swiftshader',
-  '--disable-breakpad', `--user-data-dir=${profile}`, `--remote-debugging-port=${DEBUG_PORT}`, 'about:blank'], { stdio: 'ignore' });
+  '--disable-breakpad', `--user-data-dir=${profile}`, `--remote-debugging-port=${DEBUG_PORT}`, 'about:blank'], { stdio: 'ignore', windowsHide: true });
 
 let ws = null;
 try {

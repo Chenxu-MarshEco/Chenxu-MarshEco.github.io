@@ -98,7 +98,7 @@ for (const item of ['src', 'tools', 'package.json', 'astro.config.mjs', 'tsconfi
   if (fs.existsSync(from)) fs.cpSync(from, path.join(COPY, item), { recursive: true });
 }
 for (const j of ['node_modules', 'public']) {
-  try { execFileSync('cmd', ['/c', 'mklink', '/J', path.join(COPY, j), path.join(SRC, j)], { stdio: 'ignore' }); } catch { /* 已经有了 */ }
+  try { execFileSync('cmd', ['/c', 'mklink', '/J', path.join(COPY, j), path.join(SRC, j)], { windowsHide: true, stdio: 'ignore' }); } catch { /* 已经有了 */ }
 }
 
 /* 造一篇四种版式齐全的文章（只用真仓库里已有的图，public 是 junction，地址都能取到） */
@@ -136,7 +136,7 @@ fs.writeFileSync(path.join(COPY, 'src', 'content', 'notes', FIXTURE),
   `---\ntitle: 验收：四种版式的图片\ndate: 2026-10-06\ndraft: false\n---\n\n${fixtureBody}`, 'utf8');
 
 const build = spawnSync(process.execPath, [path.join(COPY, 'node_modules', 'astro', 'bin', 'astro.mjs'), 'build'],
-  { cwd: COPY, encoding: 'utf8', timeout: 300000 });
+  { windowsHide: true, cwd: COPY, encoding: 'utf8', timeout: 300000 });
 const built = fs.existsSync(path.join(COPY, 'dist', 'notes', FIXTURE.replace(/\.md$/, ''), 'index.html'));
 check('★ 副本构建成功（带四种版式的那篇文章）', build.status === 0 && built,
   `exit=${build.status} ${String(build.stderr || '').split('\n').filter(Boolean).slice(-1)[0] ?? ''}`);
@@ -162,7 +162,7 @@ await new Promise((r) => server.listen(PORT, '127.0.0.1', r));
 const profile = path.join(process.env.TEMP ?? '.', `dsh-img-${Date.now()}`);
 const chrome = spawn(CHROME, ['--headless=new', '--no-sandbox', '--mute-audio', '--disable-gpu',
   '--enable-unsafe-swiftshader', '--hide-scrollbars', '--disable-breakpad',
-  `--user-data-dir=${profile}`, `--remote-debugging-port=${DEBUG_PORT}`, 'about:blank'], { stdio: 'ignore' });
+  `--user-data-dir=${profile}`, `--remote-debugging-port=${DEBUG_PORT}`, 'about:blank'], { windowsHide: true, stdio: 'ignore' });
 
 class CDP {
   constructor(ws) {
@@ -301,7 +301,7 @@ check('★ 没写版式的那张照旧（没有 title、也不浮动）',
  * ③ 编辑器那一列图：真点、真拖
  * ================================================================ */
 console.log('\n================ ③ 编辑器里的图片列表 ================');
-const editor = spawn(process.execPath, [path.join(COPY, 'tools', 'editor', 'server.mjs')], {
+const editor = spawn(process.execPath, [path.join(COPY, 'tools', 'editor', 'server.mjs')], { windowsHide: true,
   cwd: COPY, stdio: ['ignore', 'pipe', 'pipe'],
 });
 let elog = '';
@@ -427,13 +427,13 @@ if (base) {
 }
 
 /* ================================================================ */
-try { execSync(`taskkill /pid ${chrome.pid} /T /F`, { stdio: 'ignore' }); } catch { /* 已经退了 */ }
+try { execSync(`taskkill /pid ${chrome.pid} /T /F`, { windowsHide: true, stdio: 'ignore' }); } catch { /* 已经退了 */ }
 server.close();
 await sleep(200);
 try {
   for (const j of ['node_modules', 'public']) {
     const p = path.join(COPY, j);
-    if (fs.existsSync(p)) execFileSync('cmd', ['/c', 'rmdir', p], { stdio: 'ignore' });
+    if (fs.existsSync(p)) execFileSync('cmd', ['/c', 'rmdir', p], { windowsHide: true, stdio: 'ignore' });
   }
   fs.rmSync(COPY, { recursive: true, force: true });
   console.log(`副本已清理: ${!fs.existsSync(COPY)}`);

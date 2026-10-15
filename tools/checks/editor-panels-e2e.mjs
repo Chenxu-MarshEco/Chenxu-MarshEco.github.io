@@ -78,7 +78,7 @@ const MIME = {
 /* ================= 0. 造副本 ================= */
 if (fs.existsSync(DST)) {
   const nm = path.join(DST, 'node_modules');
-  if (fs.existsSync(nm)) { try { execSync(`cmd /c rmdir "${nm}"`, { stdio: 'ignore' }); } catch {} }
+  if (fs.existsSync(nm)) { try { execSync(`cmd /c rmdir "${nm}"`, { stdio: 'ignore', windowsHide: true }); } catch {} }
   fs.rmSync(DST, { recursive: true, force: true });
 }
 const skip = new Set(['node_modules', 'dist', '.git', '.tmp']);
@@ -87,7 +87,7 @@ for (const e of fs.readdirSync(SRC, { withFileTypes: true })) {
   if (skip.has(e.name)) continue;
   fs.cpSync(path.join(SRC, e.name), path.join(DST, e.name), { recursive: true });
 }
-execSync(`cmd /c mklink /J "${path.join(DST, 'node_modules')}" "${path.join(SRC, 'node_modules')}"`, { stdio: 'ignore' });
+execSync(`cmd /c mklink /J "${path.join(DST, 'node_modules')}" "${path.join(SRC, 'node_modules')}"`, { stdio: 'ignore', windowsHide: true });
 console.log(`副本就绪：${DST}（public 真拷贝 ${fs.readdirSync(path.join(DST, 'public')).length} 个子目录）`);
 console.log(`今天 = ${today}`);
 
@@ -102,7 +102,7 @@ console.log(`基线：精华 ${E0} 条 / 成员 ${M0} 个 / ${RAW_ID} 名下 ${R
 
 /* ================= 1. 起编辑器（副本自己的 server.mjs） ================= */
 const editor = spawn(process.execPath, [path.join(DST, 'tools', 'editor', 'server.mjs')], {
-  cwd: DST, stdio: ['ignore', 'pipe', 'pipe'],
+  cwd: DST, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true,
 });
 let elog = '';
 editor.stdout.on('data', (b) => { elog += b.toString('utf8'); });
@@ -676,7 +676,7 @@ try {
   await new Promise((r) => server.listen(STATIC_PORT, '127.0.0.1', r));
 
   const profile = path.join(process.env.TEMP ?? '.', `dsh-e2e-${Date.now()}`);
-  const chrome = spawn(CHROME, ['--headless=new', '--no-sandbox', '--mute-audio', '--disable-gpu', '--enable-unsafe-swiftshader', '--disable-breakpad', `--user-data-dir=${profile}`, `--remote-debugging-port=${DEBUG_PORT}`, 'about:blank'], { stdio: 'ignore' });
+  const chrome = spawn(CHROME, ['--headless=new', '--no-sandbox', '--mute-audio', '--disable-gpu', '--enable-unsafe-swiftshader', '--disable-breakpad', `--user-data-dir=${profile}`, `--remote-debugging-port=${DEBUG_PORT}`, 'about:blank'], { stdio: 'ignore', windowsHide: true });
 
   class CDP {
     constructor(ws) {
@@ -1130,7 +1130,7 @@ try {
   console.log('\n面板明细：');
   for (const p of panels) console.log(`   ${p.id}: boxes=${p.boxes} inputs=${p.inputs} buttons=${p.buttons} rows=${p.rows} h=${p.h} titles=${JSON.stringify(p.titles)}`);
 
-  try { execSync(`taskkill /pid ${chrome.pid} /T /F`, { stdio: 'ignore' }); } catch { /* 已退出 */ }
+  try { execSync(`taskkill /pid ${chrome.pid} /T /F`, { stdio: 'ignore', windowsHide: true }); } catch { /* 已退出 */ }
   server.close();
   await sleep(250);
   try { fs.rmSync(profile, { recursive: true, force: true }); } catch { /* ignore */ }
@@ -1139,11 +1139,11 @@ try {
   console.log('FAIL  脚本异常: ' + (err?.stack ?? err));
 } finally {
   try { editor.kill(); } catch { /* ignore */ }
-  try { execSync(`taskkill /pid ${editor.pid} /T /F`, { stdio: 'ignore' }); } catch { /* ignore */ }
+  try { execSync(`taskkill /pid ${editor.pid} /T /F`, { stdio: 'ignore', windowsHide: true }); } catch { /* ignore */ }
   await sleep(400);
   for (const j of ['node_modules']) {
     const p = path.join(DST, j);
-    if (fs.existsSync(p)) { try { execSync(`cmd /c rmdir "${p}"`, { stdio: 'ignore' }); } catch { /* ignore */ } }
+    if (fs.existsSync(p)) { try { execSync(`cmd /c rmdir "${p}"`, { stdio: 'ignore', windowsHide: true }); } catch { /* ignore */ } }
   }
   try { fs.rmSync(DST, { recursive: true, force: true }); } catch { /* ignore */ }
   console.log('副本已清理:', !fs.existsSync(DST));

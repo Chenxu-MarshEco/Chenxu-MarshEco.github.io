@@ -138,7 +138,7 @@ const spawnEditor = (port, previewPort) =>
     cwd: SRC,
     stdio: 'ignore',
     // 空串 = 「这一档没设」：两种写法（没这个变量 / 是空的）都该退回默认 4321
-    env: { ...process.env, EDITOR_PREVIEW_PORT: previewPort },
+    env: { windowsHide: true, ...process.env, EDITOR_PREVIEW_PORT: previewPort },
   });
 
 const waitUp = async (port) => {
@@ -174,7 +174,7 @@ const launchChrome = async () => {
     CHROME,
     ['--headless=new', '--no-sandbox', '--disable-gpu', '--enable-unsafe-swiftshader', '--mute-audio', '--disable-breakpad',
       '--window-size=1400,900', `--user-data-dir=${profile}`, `--remote-debugging-port=${DEBUG_PORT}`, 'about:blank'],
-    { stdio: 'ignore' },
+    { windowsHide: true, stdio: 'ignore' },
   );
   let target = null;
   for (let i = 0; i < 60 && !target; i += 1) {
@@ -406,7 +406,7 @@ try {
     for (const exe of ['python', 'py']) {
       const r = spawnSync(exe, ['-c', pyCode], {
         cwd: STUDIO_DIR,
-        env: { ...process.env, EDITOR_PREVIEW_PORT: v },
+        env: { windowsHide: true, ...process.env, EDITOR_PREVIEW_PORT: v },
         encoding: 'utf8',
       });
       if (!r.error) return r;
@@ -435,7 +435,7 @@ try {
   /* ======================================================================
      D 档：这两份本机文件确实进不了仓库
      ====================================================================== */
-  const gi = spawnSync('git', ['check-ignore', '-v', 'tools/editor/local-style.css', 'tools/editor/local-icons/apply-icons.js'], {
+  const gi = spawnSync('git', ['check-ignore', '-v', 'tools/editor/local-style.css', 'tools/editor/local-icons/apply-icons.js'], { windowsHide: true,
     cwd: SRC, encoding: 'utf8',
   });
   check('★ git 自己认为这两份本机文件是被忽略的（协作者不会把它们误提交上来）',
@@ -477,7 +477,7 @@ if (hadCss || hadIcons) {
   check('★ 收尾：临时放的那两份本机文件已经删掉（不留在站长机器上改外观）',
     !fs.existsSync(CSS_FILE) && !fs.existsSync(ICON_DIR));
 }
-const gitSt = spawnSync('git', ['status', '--porcelain'], { cwd: SRC, encoding: 'utf8' });
+const gitSt = spawnSync('git', ['status', '--porcelain'], { windowsHide: true, cwd: SRC, encoding: 'utf8' });
 check('收尾：git 的待提交列表里没有本机外观层的影子',
   !String(gitSt.stdout ?? '').includes('local-style.css') && !String(gitSt.stdout ?? '').includes('local-icons'),
   String(gitSt.stdout ?? '').trim().split('\n').filter((l) => l.includes('local-')).join(' | ') || '干净');

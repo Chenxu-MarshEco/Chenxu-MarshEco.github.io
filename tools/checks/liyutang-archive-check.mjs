@@ -301,7 +301,7 @@ const api = `http://127.0.0.1:${fakeFn.address().port}/fn`;
 const tmp3 = fs.mkdtempSync(path.join(os.tmpdir(), 'lyt-archive-cli-'));
 const run = (args) =>
   new Promise((resolve) => {
-    const p = spawn(process.execPath, [SCRIPT, ...args], { cwd: SRC, env: { ...process.env, LT_ADMIN_PASSWORD: '' } });
+    const p = spawn(process.execPath, [SCRIPT, ...args], { cwd: SRC, env: { windowsHide: true, ...process.env, LT_ADMIN_PASSWORD: '' } });
     let out = '';
     p.stdout.on('data', (d) => (out += d));
     p.stderr.on('data', (d) => (out += d));

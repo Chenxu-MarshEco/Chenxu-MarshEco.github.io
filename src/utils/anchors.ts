@@ -134,6 +134,11 @@ function blockLabel(b: PageBlock, html: string | null, titles?: Map<string, stri
     }
     case 'recent':
       return b.text && b.text !== '近期更新' ? `近期更新：${cut(b.text)}` : '近期更新';
+    /* 侧边栏（2026-10-15 加）：位置选择器 / 编辑器里那一条的名字 */
+    case 'sidebar': {
+      const rows = (b.rows ?? []).length;
+      return b.text ? `侧边栏：${cut(b.text)}` : `侧边栏（${rows} 格）`;
+    }
     default:
       return '内容块';
   }

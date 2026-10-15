@@ -87,7 +87,7 @@ const chrome = spawn(
     `--remote-debugging-port=${DEBUG_PORT}`,
     'about:blank',
   ],
-  { stdio: 'ignore' }
+  { windowsHide: true, stdio: 'ignore' }
 );
 
 class CDP {
@@ -245,7 +245,7 @@ try {
   console.log('FAIL  浏览器那一段异常: ' + (err?.stack ?? err));
 } finally {
   try {
-    execSync(`taskkill /pid ${chrome.pid} /T /F`, { stdio: 'ignore' });
+    execSync(`taskkill /pid ${chrome.pid} /T /F`, { windowsHide: true, stdio: 'ignore' });
   } catch {
     /* 已退 */
   }

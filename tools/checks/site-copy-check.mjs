@@ -164,7 +164,7 @@ const api = (p, body) =>
   });
 
 try {
-  editor = spawn(process.execPath, [SERVER], { cwd: SRC, stdio: 'ignore' });
+  editor = spawn(process.execPath, [SERVER], { windowsHide: true, cwd: SRC, stdio: 'ignore' });
   let up = false;
   for (let i = 0; i < 60 && !up; i += 1) {
     await sleep(400);
@@ -197,7 +197,7 @@ try {
     ['--headless=new', '--no-sandbox', '--disable-gpu', '--enable-unsafe-swiftshader', '--mute-audio', '--disable-breakpad',
       `--user-data-dir=${path.join(process.env.TEMP ?? '.', `dsh-sitecopy-${Date.now()}`)}`,
       `--remote-debugging-port=${DEBUG_PORT}`, 'about:blank'],
-    { stdio: 'ignore' }
+    { windowsHide: true, stdio: 'ignore' }
   );
   let target = null;
   for (let i = 0; i < 60 && !target; i += 1) {
@@ -331,21 +331,21 @@ try {
   /* 还原：这个脚本改过站点数据，跑完必须一模一样地放回去，再重新构建一次 */
   try {
     fs.writeFileSync(COPY_FILE, backup, 'utf8');
-    execSync(`node node_modules/astro/bin/astro.mjs build`, { cwd: SRC, stdio: 'ignore', timeout: 600000 });
+    execSync(`node node_modules/astro/bin/astro.mjs build`, { windowsHide: true, cwd: SRC, stdio: 'ignore', timeout: 600000 });
     info('已把 src/data/site-copy.json 还原并重新构建');
   } catch (err) {
     console.log('⚠ 还原/重建失败：' + String(err?.message ?? err));
   }
   if (chrome) {
     try {
-      execSync(`taskkill /pid ${chrome.pid} /T /F`, { stdio: 'ignore' });
+      execSync(`taskkill /pid ${chrome.pid} /T /F`, { windowsHide: true, stdio: 'ignore' });
     } catch {
       /* 已退 */
     }
   }
   if (editor) {
     try {
-      execSync(`taskkill /pid ${editor.pid} /T /F`, { stdio: 'ignore' });
+      execSync(`taskkill /pid ${editor.pid} /T /F`, { windowsHide: true, stdio: 'ignore' });
     } catch {
       /* 已退 */
     }

@@ -44,7 +44,7 @@ const dailyIndex = (dateStr, count) => {
 if (fs.existsSync(DST)) {
   for (const j of ['node_modules', 'public']) {
     const p = path.join(DST, j);
-    if (fs.existsSync(p)) { try { execSync(`cmd /c rmdir "${p}"`, { stdio: 'ignore' }); } catch {} }
+    if (fs.existsSync(p)) { try { execSync(`cmd /c rmdir "${p}"`, { windowsHide: true, stdio: 'ignore' }); } catch {} }
   }
   fs.rmSync(DST, { recursive: true, force: true });
 }
@@ -54,8 +54,8 @@ for (const e of fs.readdirSync(SRC, { withFileTypes: true })) {
   if (skip.has(e.name)) continue;
   fs.cpSync(path.join(SRC, e.name), path.join(DST, e.name), { recursive: true });
 }
-execSync(`cmd /c mklink /J "${path.join(DST, 'node_modules')}" "${path.join(SRC, 'node_modules')}"`, { stdio: 'ignore' });
-execSync(`cmd /c mklink /J "${path.join(DST, 'public')}" "${path.join(SRC, 'public')}"`, { stdio: 'ignore' });
+execSync(`cmd /c mklink /J "${path.join(DST, 'node_modules')}" "${path.join(SRC, 'node_modules')}"`, { windowsHide: true, stdio: 'ignore' });
+execSync(`cmd /c mklink /J "${path.join(DST, 'public')}" "${path.join(SRC, 'public')}"`, { windowsHide: true, stdio: 'ignore' });
 
 const salonPath = path.join(DST, 'src', 'data', 'salon.json');
 const salon = JSON.parse(fs.readFileSync(salonPath, 'utf8'));
@@ -64,7 +64,7 @@ console.log('目标成员:', JSON.stringify(before), ' 他名下的精华:', sal
 before.name = NEW_NAME;
 before.avatar = AVATAR;
 fs.writeFileSync(salonPath, JSON.stringify(salon, null, 2) + '\n', 'utf8');
-execSync(`node "${path.join(SRC, 'node_modules', 'astro', 'bin', 'astro.mjs')}" build --root "${DST}"`, { stdio: 'ignore' });
+execSync(`node "${path.join(SRC, 'node_modules', 'astro', 'bin', 'astro.mjs')}" build --root "${DST}"`, { windowsHide: true, stdio: 'ignore' });
 console.log('副本已改名换头像并重建完成');
 
 /* ---------- 2. 找一个"哈希会选中他"的日期（给首页每日精华用） ---------- */
@@ -94,7 +94,7 @@ const server = http.createServer((req, res) => {
 });
 await new Promise((r) => server.listen(PORT, '127.0.0.1', r));
 const profile = path.join(process.env.TEMP ?? '.', `dsh-bind-${Date.now()}`);
-const chrome = spawn(CHROME, ['--headless=new', '--no-sandbox', '--mute-audio', '--disable-gpu', '--enable-unsafe-swiftshader', '--disable-breakpad', `--user-data-dir=${profile}`, `--remote-debugging-port=${DEBUG_PORT}`, 'about:blank'], { stdio: 'ignore' });
+const chrome = spawn(CHROME, ['--headless=new', '--no-sandbox', '--mute-audio', '--disable-gpu', '--enable-unsafe-swiftshader', '--disable-breakpad', `--user-data-dir=${profile}`, `--remote-debugging-port=${DEBUG_PORT}`, 'about:blank'], { windowsHide: true, stdio: 'ignore' });
 
 class CDP {
   constructor(ws) { this.ws = ws; this.id = 0; this.pending = new Map(); this.errors = []; ws.addEventListener('message', (ev) => { const m = JSON.parse(ev.data); if (m.id && this.pending.has(m.id)) { const { resolve, reject } = this.pending.get(m.id); this.pending.delete(m.id); m.error ? reject(new Error(m.error.message)) : resolve(m.result); } if (m.method === 'Runtime.exceptionThrown') this.errors.push(m.params.exceptionDetails?.exception?.description ?? m.params.exceptionDetails?.text); if (m.method === 'Runtime.consoleAPICalled' && m.params.type === 'error') this.errors.push(m.params.args.map((a) => a.value ?? a.description).join(' ')); }); }
@@ -173,13 +173,13 @@ try {
   fail++;
   console.log('FAIL  脚本异常: ' + (err?.stack ?? err));
 } finally {
-  try { execSync(`taskkill /pid ${chrome.pid} /T /F`, { stdio: 'ignore' }); } catch {}
+  try { execSync(`taskkill /pid ${chrome.pid} /T /F`, { windowsHide: true, stdio: 'ignore' }); } catch {}
   server.close();
   await sleep(250);
   try { fs.rmSync(profile, { recursive: true, force: true }); } catch {}
   for (const j of ['node_modules', 'public']) {
     const p = path.join(DST, j);
-    if (fs.existsSync(p)) { try { execSync(`cmd /c rmdir "${p}"`, { stdio: 'ignore' }); } catch {} }
+    if (fs.existsSync(p)) { try { execSync(`cmd /c rmdir "${p}"`, { windowsHide: true, stdio: 'ignore' }); } catch {} }
   }
   try { fs.rmSync(DST, { recursive: true, force: true }); } catch {}
   console.log('副本已清理:', !fs.existsSync(DST));

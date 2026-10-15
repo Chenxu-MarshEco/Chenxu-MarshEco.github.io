@@ -61,7 +61,7 @@ check('★ 清单拉空时**一个都不剔**（接口挂了不该把文章的�
 console.log('\n================ 准备副本 ================');
 if (fs.existsSync(DST)) {
   const j = path.join(DST, 'node_modules');
-  if (fs.existsSync(j)) { try { execSync(`cmd /c rmdir "${j}"`, { stdio: 'ignore' }); } catch { /* 不是 junction */ } }
+  if (fs.existsSync(j)) { try { execSync(`cmd /c rmdir "${j}"`, { windowsHide: true, stdio: 'ignore' }); } catch { /* 不是 junction */ } }
   fs.rmSync(DST, { recursive: true, force: true });
 }
 fs.mkdirSync(DST, { recursive: true });
@@ -70,7 +70,7 @@ for (const item of ['src', 'tools', 'astro.config.mjs', 'package.json', 'tsconfi
 }
 /* public 整个拷过来（含 img/opt 变体）：这样副本里的构建只要几秒，不用重编四百张图 */
 fs.cpSync(path.join(SRC, 'public'), path.join(DST, 'public'), { recursive: true });
-execSync(`cmd /c mklink /J "${path.join(DST, 'node_modules')}" "${path.join(SRC, 'node_modules')}"`, { stdio: 'ignore' });
+execSync(`cmd /c mklink /J "${path.join(DST, 'node_modules')}" "${path.join(SRC, 'node_modules')}"`, { windowsHide: true, stdio: 'ignore' });
 console.log('副本就绪：', DST);
 
 const copyBoards = readJson(path.join(DST, 'src/data/home-boards.json'));
@@ -97,7 +97,7 @@ info(`拿这篇来试：「${postTitle}」（${postFile}）· 现在挂的 subs=
 /* ================================================================
  * 起编辑器 + 真浏览器
  * ================================================================ */
-const editor = spawn(process.execPath, [path.join(DST, 'tools/editor/server.mjs')], {
+const editor = spawn(process.execPath, [path.join(DST, 'tools/editor/server.mjs')], { windowsHide: true,
   cwd: DST,
   stdio: ['ignore', 'pipe', 'pipe'],
 });
@@ -115,7 +115,7 @@ check('副本里的编辑器起来了', !!base, base || elog.slice(-160));
 const profile = path.join(process.env.TEMP ?? '.', `dsh-solo-${Date.now()}`);
 const chrome = spawn(CHROME, ['--headless=new', '--no-sandbox', '--mute-audio', '--disable-gpu',
   '--enable-unsafe-swiftshader', '--disable-breakpad', '--window-size=1440,960',
-  `--user-data-dir=${profile}`, `--remote-debugging-port=${DEBUG_PORT}`, 'about:blank'], { stdio: 'ignore' });
+  `--user-data-dir=${profile}`, `--remote-debugging-port=${DEBUG_PORT}`, 'about:blank'], { windowsHide: true, stdio: 'ignore' });
 
 class CDP {
   constructor(ws) {
@@ -274,7 +274,7 @@ if (base && opened?.ok && target) {
    * ④ 真构建：那一页的产物里出现这篇文章
    * ================================================================ */
   console.log('\n================ ④ 真构建：独立页面下真的有这篇文章 ================');
-  const built = spawn(process.execPath, [path.join(SRC, 'node_modules/astro/bin/astro.mjs'), 'build'], {
+  const built = spawn(process.execPath, [path.join(SRC, 'node_modules/astro/bin/astro.mjs'), 'build'], { windowsHide: true,
     cwd: DST,
     stdio: ['ignore', 'pipe', 'pipe'],
   });

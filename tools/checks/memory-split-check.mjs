@@ -265,7 +265,7 @@ check('更新日志那一页上，两张子版块卡都在（几何留给浏览�
 console.log('\n================ ⑤ 编辑器保存不会把这些弄丢 ================');
 if (fs.existsSync(DST)) {
   const j = path.join(DST, 'node_modules');
-  if (fs.existsSync(j)) { try { execSync(`cmd /c rmdir "${j}"`, { stdio: 'ignore' }); } catch { /* 不是 junction */ } }
+  if (fs.existsSync(j)) { try { execSync(`cmd /c rmdir "${j}"`, { windowsHide: true, stdio: 'ignore' }); } catch { /* 不是 junction */ } }
   fs.rmSync(DST, { recursive: true, force: true });
 }
 fs.mkdirSync(DST, { recursive: true });
@@ -278,10 +278,10 @@ fs.cpSync(path.join(SRC, 'public'), path.join(DST, 'public'), {
 });
 fs.mkdirSync(path.join(DST, 'public/img/opt'), { recursive: true });
 fs.copyFileSync(path.join(SRC, 'public/img/opt/manifest.json'), path.join(DST, 'public/img/opt/manifest.json'));
-execSync(`cmd /c mklink /J "${path.join(DST, 'node_modules')}" "${path.join(SRC, 'node_modules')}"`, { stdio: 'ignore' });
+execSync(`cmd /c mklink /J "${path.join(DST, 'node_modules')}" "${path.join(SRC, 'node_modules')}"`, { windowsHide: true, stdio: 'ignore' });
 console.log('副本就绪：', DST);
 
-const editor = spawn(process.execPath, [path.join(DST, 'tools/editor/server.mjs')], {
+const editor = spawn(process.execPath, [path.join(DST, 'tools/editor/server.mjs')], { windowsHide: true,
   cwd: DST,
   stdio: ['ignore', 'pipe', 'pipe'],
 });
@@ -383,7 +383,7 @@ const post = async (p, body) => {
 
 /* ⑤-3 重建副本：卡片跟着本机记录走不了（要发布才进 git），所以改量"提交说明那段" */
 {
-  const built = spawn(process.execPath, [path.join(SRC, 'node_modules/astro/bin/astro.mjs'), 'build'], {
+  const built = spawn(process.execPath, [path.join(SRC, 'node_modules/astro/bin/astro.mjs'), 'build'], { windowsHide: true,
     cwd: DST,
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -414,7 +414,7 @@ const post = async (p, body) => {
 console.log('\n---- dev 模式：这三页也得是一样的 ----');
 {
   const devPort = 4346;
-  const dev = spawn(process.execPath, [path.join(SRC, 'node_modules/astro/bin/astro.mjs'), 'dev', '--port', String(devPort), '--host', '127.0.0.1'], {
+  const dev = spawn(process.execPath, [path.join(SRC, 'node_modules/astro/bin/astro.mjs'), 'dev', '--port', String(devPort), '--host', '127.0.0.1'], { windowsHide: true,
     cwd: DST,
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -452,7 +452,7 @@ console.log('\n---- dev 模式：这三页也得是一样的 ----');
   /* 天数按**现成**的算：日志每天都在长，写死 11/12 明天就红了 */
   const daysBefore = (JSON.parse(fs.readFileSync(copyMianyuFile, 'utf8')).entries ?? []).length;
   const run = (args) =>
-    execSync(`"${process.execPath}" "${path.join(DST, 'tools/memory/append-log.mjs')}" ${args}`, {
+    execSync(`"${process.execPath}" "${path.join(DST, 'tools/memory/append-log.mjs')}" ${args}`, { windowsHide: true,
       cwd: DST,
       encoding: 'utf8',
     });
@@ -485,7 +485,7 @@ console.log('\n---- 真浏览器：两张子版块卡的几何 ----');
 const profile = path.join(process.env.TEMP ?? '.', `dsh-memsplit-${Date.now()}`);
 const chrome = spawn(CHROME, ['--headless=new', '--no-sandbox', '--mute-audio', '--disable-gpu',
   '--enable-unsafe-swiftshader', '--disable-breakpad', '--window-size=1440,960',
-  `--user-data-dir=${profile}`, `--remote-debugging-port=${DEBUG_PORT}`, 'about:blank'], { stdio: 'ignore' });
+  `--user-data-dir=${profile}`, `--remote-debugging-port=${DEBUG_PORT}`, 'about:blank'], { windowsHide: true, stdio: 'ignore' });
 
 class CDP {
   constructor(ws) {

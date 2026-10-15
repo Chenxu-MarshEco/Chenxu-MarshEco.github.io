@@ -113,7 +113,7 @@ if (!rare) {
     ['--headless=new', '--no-sandbox', '--disable-gpu', '--enable-unsafe-swiftshader', '--window-size=1440,900',
      `--user-data-dir=${path.join(process.env.TEMP ?? '.', `dsh-salontxt-${Date.now()}`)}`,
      `--remote-debugging-port=${DEBUG_PORT}`, 'about:blank'],
-    { stdio: 'ignore' }
+    { windowsHide: true, stdio: 'ignore' }
   );
   let target = null;
   for (let i = 0; i < 80 && !target; i++) {

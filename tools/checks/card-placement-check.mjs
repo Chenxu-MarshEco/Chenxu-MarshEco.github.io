@@ -47,7 +47,7 @@ const check = (n, ok, d = '') => {
 /* ================= 0. 造副本 ================= */
 if (fs.existsSync(DST)) {
   const nm = path.join(DST, 'node_modules');
-  if (fs.existsSync(nm)) { try { execSync(`cmd /c rmdir "${nm}"`, { stdio: 'ignore' }); } catch { /* ignore */ } }
+  if (fs.existsSync(nm)) { try { execSync(`cmd /c rmdir "${nm}"`, { windowsHide: true, stdio: 'ignore' }); } catch { /* ignore */ } }
   fs.rmSync(DST, { recursive: true, force: true });
 }
 const skip = new Set(['node_modules', 'dist', '.git', '.tmp']);
@@ -56,7 +56,7 @@ for (const e of fs.readdirSync(SRC, { withFileTypes: true })) {
   if (skip.has(e.name)) continue;
   fs.cpSync(path.join(SRC, e.name), path.join(DST, e.name), { recursive: true });
 }
-execSync(`cmd /c mklink /J "${path.join(DST, 'node_modules')}" "${path.join(SRC, 'node_modules')}"`, { stdio: 'ignore' });
+execSync(`cmd /c mklink /J "${path.join(DST, 'node_modules')}" "${path.join(SRC, 'node_modules')}"`, { windowsHide: true, stdio: 'ignore' });
 console.log(`副本就绪：${DST}`);
 
 const boardsFile = path.join(DST, 'src', 'data', 'home-boards.json');
@@ -71,7 +71,7 @@ const findNode = (list, href) => {
 };
 
 /* ================= 1. 起副本自己的编辑器 ================= */
-const editor = spawn(process.execPath, [path.join(DST, 'tools', 'editor', 'server.mjs')], {
+const editor = spawn(process.execPath, [path.join(DST, 'tools', 'editor', 'server.mjs')], { windowsHide: true,
   cwd: DST, stdio: ['ignore', 'pipe', 'pipe'],
 });
 let elog = '';
@@ -261,7 +261,7 @@ try {
     '--headless=new', '--no-sandbox', '--mute-audio', '--disable-gpu', '--enable-unsafe-swiftshader',
     '--disable-breakpad', '--window-size=1440,900', `--user-data-dir=${profile}`,
     `--remote-debugging-port=${DEBUG_PORT}`, 'about:blank',
-  ], { stdio: 'ignore' });
+  ], { windowsHide: true, stdio: 'ignore' });
 
   class CDP {
     constructor(ws) {

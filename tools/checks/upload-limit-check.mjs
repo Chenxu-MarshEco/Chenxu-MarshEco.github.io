@@ -63,7 +63,7 @@ console.log('================ ⓪ 准备（副本 + 测试图）================
 if (fs.existsSync(DST)) {
   for (const j of ['node_modules']) {
     const p = path.join(DST, j);
-    if (fs.existsSync(p)) { try { execSync(`cmd /c rmdir "${p}"`, { stdio: 'ignore' }); } catch { /* 不是 junction */ } }
+    if (fs.existsSync(p)) { try { execSync(`cmd /c rmdir "${p}"`, { windowsHide: true, stdio: 'ignore' }); } catch { /* 不是 junction */ } }
   }
   fs.rmSync(DST, { recursive: true, force: true });
 }
@@ -82,7 +82,7 @@ fs.cpSync(path.join(SRC, 'public'), path.join(DST, 'public'), {
 });
 fs.mkdirSync(path.join(DST, 'public', 'img', 'opt'), { recursive: true });
 fs.copyFileSync(path.join(SRC, 'public', 'img', 'opt', 'manifest.json'), path.join(DST, 'public', 'img', 'opt', 'manifest.json'));
-execSync(`cmd /c mklink /J "${path.join(DST, 'node_modules')}" "${path.join(SRC, 'node_modules')}"`, { stdio: 'ignore' });
+execSync(`cmd /c mklink /J "${path.join(DST, 'node_modules')}" "${path.join(SRC, 'node_modules')}"`, { windowsHide: true, stdio: 'ignore' });
 console.log('副本就绪：', DST);
 
 /* ---- 造测试图 ---- */
@@ -178,7 +178,7 @@ check('动图 GIF 确实是被 sharp 认作多帧的（不是一帧假动图）'
   `pages=${(await sharp(bigGif, { animated: true }).metadata()).pages}`);
 
 /* ---- 起副本里的编辑器 ---- */
-const editor = spawn(process.execPath, [path.join(DST, 'tools', 'editor', 'server.mjs')], {
+const editor = spawn(process.execPath, [path.join(DST, 'tools', 'editor', 'server.mjs')], { windowsHide: true,
   cwd: DST,
   stdio: ['ignore', 'pipe', 'pipe'],
 });
@@ -326,7 +326,7 @@ console.log('\n================ ② 界面：真在编辑器里传一遍 9MB ===
 const profile = path.join(process.env.TEMP ?? '.', `dsh-profile-upload-${Date.now()}`);
 const chrome = spawn(CHROME, ['--headless=new', '--no-sandbox', '--mute-audio', '--disable-gpu',
   '--enable-unsafe-swiftshader', '--disable-breakpad', '--window-size=1440,960',
-  `--user-data-dir=${profile}`, `--remote-debugging-port=${DEBUG_PORT}`, 'about:blank'], { stdio: 'ignore' });
+  `--user-data-dir=${profile}`, `--remote-debugging-port=${DEBUG_PORT}`, 'about:blank'], { windowsHide: true, stdio: 'ignore' });
 
 class CDP {
   constructor(ws) {

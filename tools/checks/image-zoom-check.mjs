@@ -132,7 +132,7 @@ const chrome = spawn(
   ['--headless=new', '--no-sandbox', '--mute-audio', '--disable-gpu', '--enable-unsafe-swiftshader',
    '--disable-breakpad', '--window-size=1440,900', `--user-data-dir=${profile}`,
    `--remote-debugging-port=${DEBUG_PORT}`, 'about:blank'],
-  { stdio: 'ignore' }
+  { windowsHide: true, stdio: 'ignore' }
 );
 
 class CDP {

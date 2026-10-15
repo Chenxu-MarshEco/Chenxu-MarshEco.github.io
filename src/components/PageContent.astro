@@ -29,6 +29,7 @@ import { marked } from 'marked';
 import Img from './Img.astro';
 import SubCard from './SubCard.astro';
 import NavBlock from './NavBlock.astro';
+import NavItem from './NavItem.astro';
 import Pager from './Pager.astro';
 import { withBase } from '../utils/url';
 import { enhanceHtml, variantUrl, viewUrls } from '../utils/images';
@@ -101,6 +102,26 @@ const uniqueSlug = makeSlugger();
 
 const hasToc = blocks.some((b) => b.type === 'toc');
 const tocEntries: TocEntry[] = [];
+
+/* ------------------------------------------------------------------
+   侧边栏（2026-10-15）
+
+   用户原话：「侧边栏存在于页面的右侧 可以自由编辑其分为几个格子 格子里的内容表现形式
+   类似于导航 但也可以上传文字或图片 也可以把文图挂为链接等 侧边栏的高度应当可以自由
+   编辑横跨哪几个板块 并且会根据高度自行调节适配」。
+
+   实现只借了 .page 本来就有的栅格（宽屏上它是 `repeat(auto-fill, …)`）：
+   有侧边栏时多加**一列**（最右边那条），正文块占前几列、侧边栏占最后一列并纵向
+   `grid-row: span N` —— 于是"跨几个板块"就是 N，"高度自适应"是栅格自己算的
+   （侧边栏比那几个块高，那几行就一起变高，不会溢出、也不用 JS 量高度）。
+   手机（<720px）没有栅格，侧边栏就按它在列表里的位置老老实实排在正文之间。
+   ------------------------------------------------------------------ */
+const sideBlocks = blocks.filter((b) => b.type === 'sidebar') as (PageBlock & { type: 'sidebar' })[];
+const hasSide = sideBlocks.length > 0;
+/** 跨几个板块：不写给 3，夹在 1~20（手改数据写个 999 不该把栅格撑爆） */
+const sideSpan = (b: PageBlock & { type: 'sidebar' }) => Math.max(1, Math.min(20, Math.round(Number((b as { span?: number }).span) || 3)));
+/** 一格里能点的那一坨（link 用 text 当显示文字；没写文字就用地址） */
+const sideLinkText = (r: { text?: string; href?: string }) => String(r.text || '').trim() || String(r.href || '').trim();
 
 /* ------------------------------------------------------------------
    悬停图片（文字指上去，上方弹出一张图；可以顺带挂一个链接）
@@ -433,11 +454,56 @@ function cardsForBlock(b: PageBlock): { list: BlockItem[]; missing: string[] } {
 }
 ---
 
-<div class="page">
+<div class:list={['page', hasSide && 'page--side']}>
   {
     blocks.map((b, bi) => {
       /* 模版导入的空格子整块跳过（见上面 isBlankBlock） */
       if (isBlankBlock(b)) return null;
+      /* 侧边栏走自己那一条路：它不是 .pblock（`.page` 栅格里专门占最右一列，见上面那段说明） */
+      if (b.type === 'sidebar') {
+        const side = b as PageBlock & { type: 'sidebar' };
+        return (
+          <aside class="pside" id={`blk-${b.id}`} style={`--pside-span: ${sideSpan(side)}`} aria-label={side.text || '侧边栏'}>
+            {side.text ? <p class="pside__head">{side.text}</p> : null}
+            <dl class="pside__rows">
+              {(side.rows ?? []).map((r) => (
+                <div class:list={['pside__row', !r.label && 'pside__row--full']}>
+                  {r.label ? <dt class="pside__label">{r.label}</dt> : null}
+                  <dd class="pside__value">
+                    {/* 文字：和正文同一套渲染（粗体 / 链接 / [[文字|ico:图|链接]] 行内条目都认） */}
+                    {r.kind === 'text' && <div class="pside__text" set:html={renderTracked(String(r.text ?? ''), false)} />}
+                    {/* 图：和悬停卡片同一条路（enhanceHtml 顺手把 webp/avif 那些变体写进去） */}
+                    {r.kind === 'image' && String(r.src ?? '').trim() !== '' && (
+                      <span
+                        class="pside__figure"
+                        set:html={enhanceHtml(
+                          `<img class="pside__img" src="${escAttr(asSrc(String(r.src)))}" alt="${escAttr(String(r.alt ?? ''))}" loading="lazy" decoding="async" />`,
+                          { sizes: '320px' }
+                        )}
+                      />
+                    )}
+                    {r.kind === 'link' && String(r.href ?? '').trim() !== '' && (
+                      <a
+                        class="pside__link"
+                        href={/^https?:/i.test(String(r.href)) ? String(r.href) : withBase(String(r.href))}
+                        {.../^https?:/i.test(String(r.href)) ? { target: '_blank', rel: 'noopener' } : {}}
+                      >{sideLinkText(r)}</a>
+                    )}
+                    {/* 条目列表：直接复用导航条目那个组件（图标 + 文字 + 点着跳） */}
+                    {r.kind === 'items' && (
+                      <span class="pside__items">
+                        {(r.items ?? []).map((it) => (
+                          <NavItem text={it.text} href={it.href} image={it.image} />
+                        ))}
+                      </span>
+                    )}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          </aside>
+        );
+      }
       /* 单张卡自己的设置优先：子版块上设了 cardShape/cardSize 就用它，
          没设才用「子页面」块上的默认值 */
       const video = b.type === 'video' && String(b.src ?? '').trim() ? videoOf(b.src) : null;
@@ -1190,6 +1256,116 @@ function cardsForBlock(b: PageBlock): { list: BlockItem[]; missing: string[] } {
     }
     .pblock--flow .pfigure {
       width: 100%;
+    }
+
+    /*
+      有侧边栏时：**不往栅格里加列**，而是把正文整体让出一段右边距、侧边栏贴在那段空白里。
+      为什么不加一列（第一版就是那么写的，被验收逮住了）：栅格是 `auto-fill` 的，
+      带 `.pblock--flow` 的窄图会自动填满每一格 —— 它**照样会飘进侧边栏那一列**
+      （实测：63 块的长页上有 10 处窄图伸进了侧边栏底下）。
+      现在：正文在缩窄后的栅格里照旧并排，侧边栏绝对定位在保留出来的空白里，两边互不打扰。
+      「跨几个板块」= 一段可调的最小高度（.pside 的 min-height），高度仍随内容自适应。
+    */
+    .page--side {
+      position: relative;
+      padding-right: 19.5rem;      /* 18rem 栏宽 + 1.5rem 间隙 */
+    }
+    .page--side > .pside {
+      position: absolute;
+      top: 0;
+      right: 0;
+      width: 18rem;
+    }
+  }
+
+  /* ---------- 侧边栏 ---------- */
+  /*
+    手机（<720px）没有栅格：它按在列表里的位置老老实实排在正文之间，
+    所以这里只写"长什么样"，不写定位 —— 定位交给上面那段栅格规则。
+  */
+  .pside {
+    margin: 0 0 1.5rem;
+    /* 「跨几个板块」：一个可调的最小高度（一块按 6rem 估），内容多高它就多高 */
+    min-height: calc(var(--pside-span, 3) * 6rem);
+    border: 1px solid rgba(255, 120, 190, 0.35);
+    border-radius: var(--r-md, 12px);
+    background: rgba(38, 6, 56, 0.5);
+    overflow: hidden;
+  }
+  .pside__head {
+    margin: 0;
+    padding: 0.55rem 0.8rem;
+    font-size: 0.92rem;
+    letter-spacing: 0.04em;
+    color: #ffe6f4;
+    background: rgba(120, 16, 96, 0.55);
+    border-bottom: 1px solid rgba(255, 120, 190, 0.3);
+  }
+  .pside__rows {
+    margin: 0;
+  }
+  .pside__row {
+    display: flex;
+    align-items: stretch;
+    gap: 0;
+    border-top: 1px solid rgba(255, 120, 190, 0.18);
+  }
+  .pside__row:first-child {
+    border-top: 0;
+  }
+  /* 没写标题的格子：内容占满整宽（像"道具池"那一格） */
+  .pside__row--full .pside__value {
+    padding-left: 0.8rem;
+  }
+  .pside__label {
+    flex: 0 0 5.2rem;
+    padding: 0.5rem 0.6rem;
+    font-size: 0.82rem;
+    color: #ffd9ef;
+    background: rgba(70, 10, 96, 0.45);
+    border-right: 1px solid rgba(255, 120, 190, 0.22);
+    display: flex;
+    align-items: center;
+  }
+  .pside__value {
+    flex: 1 1 auto;
+    min-width: 0;
+    margin: 0;
+    padding: 0.5rem 0.8rem;
+    font-size: 0.84rem;
+    line-height: 1.7;
+    color: rgba(255, 240, 250, 0.92);
+    overflow-wrap: anywhere;
+  }
+  .pside__text :global(p) {
+    margin: 0 0 0.35rem;
+  }
+  .pside__text :global(p:last-child) {
+    margin-bottom: 0;
+  }
+  .pside__figure {
+    display: block;
+  }
+  .pside__img {
+    display: block;
+    width: 100%;
+    height: auto;
+    border-radius: 6px;
+  }
+  .pside__link {
+    color: #ffb3dd;
+  }
+  /* 一串条目：竖着排（格子本来就窄，横着会挤成一团） */
+  .pside__items {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    align-items: flex-start;
+  }
+  /* 手机上它是正文里的一整块，别让"跨 N 块"的最小高度把它撑得空空的 */
+  @media (max-width: 719px) {
+    .pside {
+      min-height: 0;
     }
   }
 

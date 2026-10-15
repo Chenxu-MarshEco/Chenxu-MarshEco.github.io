@@ -93,7 +93,7 @@ function tryCli(cmd, args, timeout = 4000) {
       timeout,
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'ignore'],
-      env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
+      env: { windowsHide: true, ...process.env, GIT_TERMINAL_PROMPT: '0' },
     });
     return String(out).trim() || null;
   } catch {

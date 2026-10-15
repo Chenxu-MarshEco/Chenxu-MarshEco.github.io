@@ -31,7 +31,7 @@ const check = (n, ok, d = '') => {
 if (fs.existsSync(DST)) {
   for (const j of ['node_modules', 'public']) {
     const p = path.join(DST, j);
-    if (fs.existsSync(p)) { try { execSync(`cmd /c rmdir "${p}"`, { stdio: 'ignore' }); } catch { /* 不是 junction */ } }
+    if (fs.existsSync(p)) { try { execSync(`cmd /c rmdir "${p}"`, { windowsHide: true, stdio: 'ignore' }); } catch { /* 不是 junction */ } }
   }
   fs.rmSync(DST, { recursive: true, force: true });
 }
@@ -41,11 +41,11 @@ for (const e of fs.readdirSync(SRC, { withFileTypes: true })) {
   if (skip.has(e.name)) continue;
   fs.cpSync(path.join(SRC, e.name), path.join(DST, e.name), { recursive: true });
 }
-execSync(`cmd /c mklink /J "${path.join(DST, 'node_modules')}" "${path.join(SRC, 'node_modules')}"`, { stdio: 'ignore' });
-execSync(`cmd /c mklink /J "${path.join(DST, 'public')}" "${path.join(SRC, 'public')}"`, { stdio: 'ignore' });
+execSync(`cmd /c mklink /J "${path.join(DST, 'node_modules')}" "${path.join(SRC, 'node_modules')}"`, { windowsHide: true, stdio: 'ignore' });
+execSync(`cmd /c mklink /J "${path.join(DST, 'public')}" "${path.join(SRC, 'public')}"`, { windowsHide: true, stdio: 'ignore' });
 
 /* ---------- 副本自己的编辑器 ---------- */
-const editor = spawn(process.execPath, [path.join(DST, 'tools', 'editor', 'server.mjs')], { cwd: DST, stdio: ['ignore', 'pipe', 'pipe'] });
+const editor = spawn(process.execPath, [path.join(DST, 'tools', 'editor', 'server.mjs')], { windowsHide: true, cwd: DST, stdio: ['ignore', 'pipe', 'pipe'] });
 let elog = '';
 editor.stdout.on('data', (b) => { elog += b.toString('utf8'); });
 editor.stderr.on('data', (b) => { elog += b.toString('utf8'); });
@@ -59,7 +59,7 @@ if (!base) { console.log('FAIL  编辑器没起来: ' + elog.slice(-500)); proce
 console.log('副本编辑器在', base);
 
 const profile = path.join(process.env.TEMP ?? '.', `dsh-date-${Date.now()}`);
-const chrome = spawn(CHROME, ['--headless=new', '--no-sandbox', '--mute-audio', '--disable-gpu', '--enable-unsafe-swiftshader', '--disable-breakpad', `--user-data-dir=${profile}`, `--remote-debugging-port=${DEBUG_PORT}`, 'about:blank'], { stdio: 'ignore' });
+const chrome = spawn(CHROME, ['--headless=new', '--no-sandbox', '--mute-audio', '--disable-gpu', '--enable-unsafe-swiftshader', '--disable-breakpad', `--user-data-dir=${profile}`, `--remote-debugging-port=${DEBUG_PORT}`, 'about:blank'], { windowsHide: true, stdio: 'ignore' });
 
 class CDP {
   constructor(ws) {
@@ -265,11 +265,11 @@ try {
   console.log('FAIL  脚本异常: ' + (err?.stack ?? err));
 } finally {
   try { await cdp.send('Browser.close'); } catch { /* ignore */ }
-  try { execSync(`taskkill /pid ${editor.pid} /T /F`, { stdio: 'ignore' }); } catch { /* ignore */ }
-  try { execSync(`taskkill /pid ${chrome.pid} /T /F`, { stdio: 'ignore' }); } catch { /* ignore */ }
+  try { execSync(`taskkill /pid ${editor.pid} /T /F`, { windowsHide: true, stdio: 'ignore' }); } catch { /* ignore */ }
+  try { execSync(`taskkill /pid ${chrome.pid} /T /F`, { windowsHide: true, stdio: 'ignore' }); } catch { /* ignore */ }
   for (const j of ['node_modules', 'public']) {
     const p = path.join(DST, j);
-    if (fs.existsSync(p)) { try { execSync(`cmd /c rmdir "${p}"`, { stdio: 'ignore' }); } catch { /* ignore */ } }
+    if (fs.existsSync(p)) { try { execSync(`cmd /c rmdir "${p}"`, { windowsHide: true, stdio: 'ignore' }); } catch { /* ignore */ } }
   }
   try { fs.rmSync(DST, { recursive: true, force: true }); } catch { /* ignore */ }
   console.log('副本已清理:', !fs.existsSync(DST));

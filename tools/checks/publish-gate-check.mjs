@@ -111,14 +111,14 @@ function runGate({ actor, event, files, before, after, token = '' }) {
   args.push('--json');
   const r = spawnSync(process.execPath, args, {
     encoding: 'utf8',
-    env: { ...process.env, GITHUB_REPOSITORY: REPO, GITHUB_TOKEN: token, GITHUB_ACTOR: '', GITHUB_EVENT_NAME: '' },
+    env: { windowsHide: true, ...process.env, GITHUB_REPOSITORY: REPO, GITHUB_TOKEN: token, GITHUB_ACTOR: '', GITHUB_EVENT_NAME: '' },
   });
   const m = /\[result\] (.*)/.exec(r.stdout ?? '');
   return { code: r.status, result: m ? JSON.parse(m[1]) : null, out: `${r.stdout ?? ''}${r.stderr ?? ''}` };
 }
 
 /* ---- 2a. 机器人历史上真的推过的每一次，都必须放行 ---- */
-const botLog = spawnSync('git', ['log', '--author=SSWTLZZ69', '--format=%H|%s', '-30'], { encoding: 'utf8' });
+const botLog = spawnSync('git', ['log', '--author=SSWTLZZ69', '--format=%H|%s', '-30'], { windowsHide: true, encoding: 'utf8' });
 const commits = (botLog.stdout ?? '')
   .split('\n')
   .map((l) => l.trim())
@@ -131,7 +131,7 @@ info(`git 历史里机器人（SSWTLZZ69）一共 ${commits.length} 次推送`);
 check('历史里找得到机器人的推送（不然这段验收是空的）', commits.length > 0, `${commits.length} 次`);
 let allReal = true;
 for (const c of commits) {
-  const show = spawnSync('git', ['show', '--name-only', '--format=', c.sha], { encoding: 'utf8' });
+  const show = spawnSync('git', ['show', '--name-only', '--format=', c.sha], { windowsHide: true, encoding: 'utf8' });
   const files = (show.stdout ?? '').split('\n').map((s) => s.trim()).filter(Boolean);
   const r = runGate({ actor: 'SSWTLZZ69', event: 'push', files, before: 'aaaa', after: 'bbbb' });
   const ok = r.code === 0 && r.result?.allow === true;

@@ -138,7 +138,7 @@ export function parsePageBlock(message) {
 /** 跑一条 git 命令；失败就返回空串（构建不该因为读不到历史而挂掉） */
 function git(args, cwd = ROOT) {
   try {
-    return execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 8 * 1024 * 1024 }).trim();
+    return execFileSync('git', args, { windowsHide: true, cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 8 * 1024 * 1024 }).trim();
   } catch {
     return '';
   }

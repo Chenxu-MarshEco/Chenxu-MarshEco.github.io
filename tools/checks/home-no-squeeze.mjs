@@ -50,7 +50,7 @@ function rmHead() {
   for (const j of ['node_modules', 'public']) {
     const p = path.join(HEAD, j);
     if (fs.existsSync(p)) {
-      try { execSync(`cmd /c rmdir "${p}"`, { stdio: 'ignore' }); } catch { /* 不是 junction */ }
+      try { execSync(`cmd /c rmdir "${p}"`, { windowsHide: true, stdio: 'ignore' }); } catch { /* 不是 junction */ }
     }
   }
   try { fs.rmSync(HEAD, { recursive: true, force: true }); } catch { /* ignore */ }
@@ -63,8 +63,8 @@ try {
 
   /* git archive -> tar 文件 -> 解开。全程用 spawnSync 传参数组，
      不走 cmd /c 的管道（那一路在带空格/中文的路径上会静默失败，踩过一次）。 */
-  const a = spawnSync('git', ['archive', REF, '-o', TAR], { cwd: SRC, encoding: 'utf8' });
-  const t = spawnSync('tar', ['-xf', TAR, '-C', HEAD], { encoding: 'utf8' });
+  const a = spawnSync('git', ['archive', REF, '-o', TAR], { windowsHide: true, cwd: SRC, encoding: 'utf8' });
+  const t = spawnSync('tar', ['-xf', TAR, '-C', HEAD], { windowsHide: true, encoding: 'utf8' });
   const hasIndex = fs.existsSync(path.join(HEAD, 'src', 'pages', 'index.astro'));
   const hasNew = fs.existsSync(path.join(HEAD, 'src', 'components', 'HomeWidgets.astro'));
   /* tar 在 Windows 上遇到个别它建不出来的条目会以 1 退出但仍然把该解的都解出来了，
@@ -84,19 +84,19 @@ try {
      让两份构建用**同一套图片产物**，量出来的差别才只来自布局改动。 */
   const headPublic = path.join(HEAD, 'public');
   if (fs.existsSync(headPublic)) fs.rmSync(headPublic, { recursive: true, force: true });
-  execSync(`cmd /c mklink /J "${path.join(HEAD, 'node_modules')}" "${path.join(SRC, 'node_modules')}"`, { stdio: 'ignore' });
-  execSync(`cmd /c mklink /J "${headPublic}" "${path.join(SRC, 'public')}"`, { stdio: 'ignore' });
+  execSync(`cmd /c mklink /J "${path.join(HEAD, 'node_modules')}" "${path.join(SRC, 'node_modules')}"`, { windowsHide: true, stdio: 'ignore' });
+  execSync(`cmd /c mklink /J "${headPublic}" "${path.join(SRC, 'public')}"`, { windowsHide: true, stdio: 'ignore' });
 
-  const b = spawnSync(process.execPath, [path.join(SRC, 'node_modules', 'astro', 'bin', 'astro.mjs'), 'build'], { cwd: HEAD, encoding: 'utf8' });
+  const b = spawnSync(process.execPath, [path.join(SRC, 'node_modules', 'astro', 'bin', 'astro.mjs'), 'build'], { windowsHide: true, cwd: HEAD, encoding: 'utf8' });
   const oldHome = path.join(HEAD, 'dist', 'index.html');
   check('改动前那份源码能构建出首页（对比才有意义）',
     b.status === 0 && fs.existsSync(oldHome),
     `${(b.stdout ?? '').trim().split('\n').slice(-1)[0] ?? ''} 首页 ${fs.existsSync(oldHome) ? fs.statSync(oldHome).size + 'B' : '缺失'}`);
 
   /* 量两份：改动前 / 现在。再跑一次 --compare 把逐项的 ✓/✗ 打出来当证据 */
-  const r1 = spawnSync(process.execPath, [CHECK, path.join(HEAD, 'dist'), '--save', OLD], { cwd: SRC, encoding: 'utf8' });
+  const r1 = spawnSync(process.execPath, [CHECK, path.join(HEAD, 'dist'), '--save', OLD], { windowsHide: true, cwd: SRC, encoding: 'utf8' });
   check('量到「改动前」首页几何', r1.status === 0 && fs.existsSync(OLD), fs.existsSync(OLD) ? fs.statSync(OLD).size + 'B' : '缺失');
-  const r2 = spawnSync(process.execPath, [CHECK, CUR, '--save', NOW], { cwd: SRC, encoding: 'utf8' });
+  const r2 = spawnSync(process.execPath, [CHECK, CUR, '--save', NOW], { windowsHide: true, cwd: SRC, encoding: 'utf8' });
   check('量到「现在」首页几何', r2.status === 0 && fs.existsSync(NOW), fs.existsSync(NOW) ? fs.statSync(NOW).size + 'B' : '缺失');
 
   const oldM = JSON.parse(fs.readFileSync(OLD, 'utf8'));
@@ -107,7 +107,7 @@ try {
     oldKeys.length >= 10 && oldM.scroll.height > 400,
     `旧 ${oldKeys.length} 项 / 高度 ${oldM.scroll.height}；新 ${nowKeys.length} 项 / 高度 ${nowM.scroll.height}`);
 
-  const cmp = spawnSync(process.execPath, [CHECK, CUR, '--compare', OLD], { cwd: SRC, encoding: 'utf8' });
+  const cmp = spawnSync(process.execPath, [CHECK, CUR, '--compare', OLD], { windowsHide: true, cwd: SRC, encoding: 'utf8' });
   console.log('\n' + (cmp.stdout ?? ''));
 
   const moved = [];

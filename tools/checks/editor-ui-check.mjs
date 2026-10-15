@@ -41,7 +41,7 @@ const info = (s) => console.log(`      · ${s}`);
 if (fs.existsSync(DST)) {
   for (const j of ['node_modules', 'public']) {
     const p = path.join(DST, j);
-    if (fs.existsSync(p)) { try { execSync(`cmd /c rmdir "${p}"`, { stdio: 'ignore' }); } catch { /* 不是 junction */ } }
+    if (fs.existsSync(p)) { try { execSync(`cmd /c rmdir "${p}"`, { windowsHide: true, stdio: 'ignore' }); } catch { /* 不是 junction */ } }
   }
   fs.rmSync(DST, { recursive: true, force: true });
 }
@@ -51,8 +51,8 @@ for (const e of fs.readdirSync(SRC, { withFileTypes: true })) {
   if (skip.has(e.name)) continue;
   fs.cpSync(path.join(SRC, e.name), path.join(DST, e.name), { recursive: true });
 }
-execSync(`cmd /c mklink /J "${path.join(DST, 'node_modules')}" "${path.join(SRC, 'node_modules')}"`, { stdio: 'ignore' });
-execSync(`cmd /c mklink /J "${path.join(DST, 'public')}" "${path.join(SRC, 'public')}"`, { stdio: 'ignore' });
+execSync(`cmd /c mklink /J "${path.join(DST, 'node_modules')}" "${path.join(SRC, 'node_modules')}"`, { windowsHide: true, stdio: 'ignore' });
+execSync(`cmd /c mklink /J "${path.join(DST, 'public')}" "${path.join(SRC, 'public')}"`, { windowsHide: true, stdio: 'ignore' });
 console.log('副本就绪（junction，不落盘）:', DST);
 
 const salon = JSON.parse(fs.readFileSync(path.join(DST, 'src', 'data', 'salon.json'), 'utf8'));
@@ -60,7 +60,7 @@ const rawRows = salon.essences.filter((e) => (e.memberIds ?? []).includes(RAW_ID
 console.log(`盘上数据：精华 ${salon.essences.length} 条 / 成员 ${salon.members.length} 个 / ${RAW_ID} 名下 ${rawRows} 条`);
 
 /* ---------- 编辑器（副本自己的 server.mjs） ---------- */
-const editor = spawn(process.execPath, [path.join(DST, 'tools', 'editor', 'server.mjs')], { cwd: DST, stdio: ['ignore', 'pipe', 'pipe'] });
+const editor = spawn(process.execPath, [path.join(DST, 'tools', 'editor', 'server.mjs')], { windowsHide: true, cwd: DST, stdio: ['ignore', 'pipe', 'pipe'] });
 let elog = '';
 editor.stdout.on('data', (b) => { elog += b.toString('utf8'); });
 editor.stderr.on('data', (b) => { elog += b.toString('utf8'); });
@@ -79,7 +79,7 @@ const api = async (p) => {
 };
 
 const profile = path.join(process.env.TEMP ?? '.', `dsh-ui-${Date.now()}`);
-const chrome = spawn(CHROME, ['--headless=new', '--no-sandbox', '--mute-audio', '--disable-gpu', '--enable-unsafe-swiftshader', '--disable-breakpad', `--user-data-dir=${profile}`, `--remote-debugging-port=${DEBUG_PORT}`, 'about:blank'], { stdio: 'ignore' });
+const chrome = spawn(CHROME, ['--headless=new', '--no-sandbox', '--mute-audio', '--disable-gpu', '--enable-unsafe-swiftshader', '--disable-breakpad', `--user-data-dir=${profile}`, `--remote-debugging-port=${DEBUG_PORT}`, 'about:blank'], { windowsHide: true, stdio: 'ignore' });
 
 class CDP {
   constructor(ws) {
@@ -1097,7 +1097,7 @@ try {
 
   check('这一趟没有 JS 报错', cdp.errors.length === 0, cdp.errors.slice(0, 3).join(' | '));
 
-  try { execSync(`taskkill /pid ${chrome.pid} /T /F`, { stdio: 'ignore' }); } catch { /* 已退出 */ }
+  try { execSync(`taskkill /pid ${chrome.pid} /T /F`, { windowsHide: true, stdio: 'ignore' }); } catch { /* 已退出 */ }
   await sleep(250);
   try { fs.rmSync(profile, { recursive: true, force: true }); } catch { /* ignore */ }
 } catch (err) {
@@ -1105,11 +1105,11 @@ try {
   console.log('FAIL  脚本异常: ' + (err?.stack ?? err));
 } finally {
   try { editor.kill(); } catch { /* ignore */ }
-  try { execSync(`taskkill /pid ${editor.pid} /T /F`, { stdio: 'ignore' }); } catch { /* ignore */ }
+  try { execSync(`taskkill /pid ${editor.pid} /T /F`, { windowsHide: true, stdio: 'ignore' }); } catch { /* ignore */ }
   await sleep(400);
   for (const j of ['node_modules', 'public']) {
     const p = path.join(DST, j);
-    if (fs.existsSync(p)) { try { execSync(`cmd /c rmdir "${p}"`, { stdio: 'ignore' }); } catch { /* ignore */ } }
+    if (fs.existsSync(p)) { try { execSync(`cmd /c rmdir "${p}"`, { windowsHide: true, stdio: 'ignore' }); } catch { /* ignore */ } }
   }
   try { fs.rmSync(DST, { recursive: true, force: true }); } catch { /* ignore */ }
   console.log('副本已清理:', !fs.existsSync(DST));

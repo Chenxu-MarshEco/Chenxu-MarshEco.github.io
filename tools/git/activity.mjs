@@ -158,7 +158,7 @@ async function enrich(cache, { limit = 30, log = () => {} } = {}) {
 
   const headers = { accept: 'application/vnd.github+json', 'user-agent': 'huajiantang-shared-editor' };
   try {
-    const token = execFileSync('gh', ['auth', 'token'], { encoding: 'utf8', timeout: 6000, stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+    const token = execFileSync('gh', ['auth', 'token'], { windowsHide: true, encoding: 'utf8', timeout: 6000, stdio: ['ignore', 'pipe', 'ignore'] }).trim();
     if (token) headers.authorization = `Bearer ${token}`;
   } catch {
     /* 没装 gh / 没登录：匿名问（只在冒出陌生邮箱时才问，够用） */

@@ -38,7 +38,7 @@ const info = (s) => console.log(`      · ${s}`);
 
 const g = (cwd, ...args) => {
   try {
-    return { ok: true, out: execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim() };
+    return { ok: true, out: execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true }).trim() };
   } catch (e) {
     return { ok: false, out: String(e.stdout || '').trim(), err: String(e.stderr || '').trim() };
   }
@@ -46,7 +46,7 @@ const g = (cwd, ...args) => {
 const write = (p, s) => { fs.mkdirSync(path.dirname(p), { recursive: true }); fs.writeFileSync(p, s); };
 const run = (cwd, args) => {
   try {
-    return { code: 0, out: execFileSync(process.execPath, args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim() };
+    return { code: 0, out: execFileSync(process.execPath, args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true }).trim() };
   } catch (e) {
     return { code: e.status ?? 1, out: `${e.stdout || ''}\n${e.stderr || ''}`.trim() };
   }
@@ -103,7 +103,7 @@ const commit = (subject, pages, at) => {
   const msg = pages?.length ? `${subject}\n\n${formatPageBlock(pages)}` : subject;
   const env = at ? { ...process.env, GIT_AUTHOR_DATE: at, GIT_COMMITTER_DATE: at } : process.env;
   try {
-    execFileSync('git', ['commit', '-m', msg], { cwd: repo, encoding: 'utf8', env, stdio: ['ignore', 'pipe', 'pipe'] });
+    execFileSync('git', ['commit', '-m', msg], { cwd: repo, encoding: 'utf8', env, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
     return true;
   } catch {
     return false;

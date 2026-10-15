@@ -127,7 +127,7 @@ if (before.status) {
 /* ------------------------------------------------------- ① 真编辑器 */
 
 console.log('\n=== ① 起真编辑器（4322） ===');
-const editor = spawn('node', ['tools/editor/server.mjs'], { cwd: SRC, stdio: 'ignore' });
+const editor = spawn('node', ['tools/editor/server.mjs'], { windowsHide: true, cwd: SRC, stdio: 'ignore' });
 
 let admin = null;
 for (let i = 0; i < 100 && !admin; i++) {
@@ -146,7 +146,7 @@ if (!admin) {
   info('常见原因：4322 被别的程序占着（server.mjs 会往后找端口，就不在 4322 了）、');
   info('node 不在 PATH 里、或 tools/editor/server.mjs 起不来（手动跑一遍看报错）。');
   try {
-    execSync(`taskkill /pid ${editor.pid} /T /F`, { stdio: 'ignore' });
+    execSync(`taskkill /pid ${editor.pid} /T /F`, { windowsHide: true, stdio: 'ignore' });
   } catch {
     /* 已退 */
   }
@@ -172,7 +172,7 @@ const chrome = spawn(
     `--remote-debugging-port=${DEBUG_PORT}`,
     'about:blank',
   ],
-  { stdio: 'ignore' }
+  { windowsHide: true, stdio: 'ignore' }
 );
 
 class CDP {
@@ -453,12 +453,12 @@ try {
   console.log('FAIL  浏览器那一段异常: ' + (err?.stack ?? err));
 } finally {
   try {
-    execSync(`taskkill /pid ${chrome.pid} /T /F`, { stdio: 'ignore' });
+    execSync(`taskkill /pid ${chrome.pid} /T /F`, { windowsHide: true, stdio: 'ignore' });
   } catch {
     /* 已退 */
   }
   try {
-    execSync(`taskkill /pid ${editor.pid} /T /F`, { stdio: 'ignore' });
+    execSync(`taskkill /pid ${editor.pid} /T /F`, { windowsHide: true, stdio: 'ignore' });
   } catch {
     /* 已退 */
   }

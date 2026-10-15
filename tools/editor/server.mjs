@@ -356,7 +356,7 @@ async function runNodeTool(script, args = [], { timeout = 180000 } = {}) {
   右上角那个按钮也就不亮 —— 用户看到的现象正是「网站都更新了，编辑器没反应」。
   现在：启动探一次，之后每 5 分钟静默探一次（只更新本地的远端记录，不碰工作区）。
 
-  ⚠ 走 CLI（tools/git/sync.mjs fetch）而不是裸 spawn('git', ['fetch'])：
+  ⚠ 走 CLI（tools/git/sync.mjs fetch）而不是裸 spawn('git', ['fetch'], { windowsHide: true })：
   那份实现里有「代理连不上就自动改直连」的处理 —— 本机 git config 里写着
   http.proxy=127.0.0.1:7890，Clash 一关，裸 git fetch 必然失败，角标就永远停在旧数字。
 */
@@ -2792,6 +2792,9 @@ const TEMPLATE_README = [
  */
 const withPlaceholder = (block) => ({ ...block, placeholder: true });
 
+/** 侧边栏格子认得的那几种内容（和 src/utils/boards.ts 的 SidebarRowKind 一一对应） */
+const SIDEBAR_KINDS = new Set(['text', 'image', 'link', 'items']);
+
 function stripBlockForTemplate(b) {
   if (!b || typeof b !== 'object') return null;
   const type = String(b.type || '');
@@ -2831,6 +2834,26 @@ function stripBlockForTemplate(b) {
       const n = Number(b.count);
       if (Number.isFinite(n) && n >= 1) out.count = Math.min(12, Math.round(n));
       return out;
+    }
+    case 'sidebar': {
+      /*
+        侧边栏（2026-10-15）：结构 = 「几个格子 + 每格的类型和标题 + 跨几块」，
+        内容（文字 / 图 / 地址 / 条目）全丢 —— 和别的块一个规矩（见 stripBlockForTemplate
+        上面那段：模版存的是结构，不是内容）。空格子打上 placeholder，导进来还在。
+      */
+      const rows = (Array.isArray(b.rows) ? b.rows : []).map((r, i) => {
+        const kind = SIDEBAR_KINDS.has(String(r?.kind)) ? String(r.kind) : 'text';
+        const out = { id: str(r?.id) || `r${i + 1}`, kind };
+        if (str(r?.label)) out.label = str(r.label);
+        return out;
+      });
+      const block = { type, rows };
+      if (str(b.text)) block.text = str(b.text);
+      const n = Number(b.span);
+      if (Number.isFinite(n) && n >= 1) block.span = Math.max(1, Math.min(20, Math.round(n)));
+      /* 格子内容全被剥掉了，所以整块打上"空格子"记号：不然用户导入模版后一保存，
+         这个侧边栏就因为"一行内容都没有"被 cleanBlocks 丢掉，结构白存 */
+      return withPlaceholder(block);
     }
     case 'nav': {
       /* 引用哪几个分类是结构（分类库是站点级的），保留 */
@@ -2942,7 +2965,7 @@ function runBuild() {
     }
 
     return await new Promise((resolve, reject) => {
-      const child = spawn(process.execPath, [entry, 'build'], {
+      const child = spawn(process.execPath, [entry, 'build'], { windowsHide: true,
         cwd: PROJECT_ROOT,
         stdio: ['ignore', 'pipe', 'pipe'],
       });
@@ -3688,6 +3711,67 @@ function cleanBlocks(raw, ownerId) {
       const block = { id, type };
       const text = String(b.text || '').trim();
       if (text) block.text = text;
+      pushBlock(block);
+      return;
+    }
+
+    if (type === 'sidebar') {
+      /*
+        侧边栏（2026-10-15 加）：rows = 格子，span = 跨几个板块。
+
+        ⚠ 这里是"认不认这个块"的唯一关口：漏一个分支，用户填好的侧边栏一保存就**静默消失**
+        （这个坑以前踩过好几次，见上面那段注释）。所以：
+          · 认不出的 kind 一律当 text（宁可当文字，也不要整块丢）；
+          · 每一格都按 kind 校验必需字段，缺了就跳过那一格（不是跳过整块）；
+          · 整块一格都不剩时才算空块 —— 但模版导入的空格子（placeholder）要留着。
+      */
+      const rows = [];
+      for (const r of Array.isArray(b.rows) ? b.rows : []) {
+        if (!r || typeof r !== 'object') continue;
+        const kind = SIDEBAR_KINDS.has(String(r.kind)) ? String(r.kind) : 'text';
+        const row = { id: String(r.id || '').trim() || `${id}-r${rows.length + 1}`, kind };
+        const label = String(r.label ?? '').trim();
+        if (label) row.label = label;                       // 左边那一小格的标题
+        if (kind === 'text') {
+          const text = String(r.text ?? '');
+          if (!text.trim() && b.placeholder !== true) continue;
+          row.text = text;
+        } else if (kind === 'image') {
+          const src = String(r.src || '').trim();
+          if (!src && b.placeholder !== true) continue;
+          row.src = src;
+          const alt = String(r.alt ?? '').trim();
+          if (alt) row.alt = alt;
+        } else if (kind === 'link') {
+          const href = String(r.href || '').trim();
+          if (!href && b.placeholder !== true) continue;
+          row.href = href;
+          const text = String(r.text ?? '').trim();
+          if (text) row.text = text;
+        } else {
+          const items = [];
+          for (const it of Array.isArray(r.items) ? r.items : []) {
+            if (!it || typeof it !== 'object') continue;
+            const text = String(it.text ?? '').trim();
+            if (!text) continue;
+            const one = { id: String(it.id || '').trim() || `${row.id}-i${items.length + 1}`, text };
+            const image = String(it.image || '').trim();
+            if (image) one.image = image;
+            const href = String(it.href || '').trim();
+            if (href) one.href = href;
+            items.push(one);
+          }
+          if (!items.length && b.placeholder !== true) continue;
+          row.items = items;
+        }
+        rows.push(row);
+      }
+      if (!rows.length && b.placeholder !== true) return;
+      const block = { id, type, rows };
+      const head = String(b.text || '').trim();
+      if (head) block.text = head;
+      const span = Number(b.span);
+      if (Number.isFinite(span) && span >= 1) block.span = Math.max(1, Math.min(20, Math.round(span)));
       pushBlock(block);
       return;
     }
@@ -6339,16 +6423,16 @@ function openBrowser(url) {
   try {
     if (process.platform === 'win32') {
       // 通过 cmd 的 start 打开默认浏览器；第一个 "" 是窗口标题占位
-      const child = spawn('cmd', ['/c', 'start', '', url], {
+      const child = spawn('cmd', ['/c', 'start', '', url], { windowsHide: true,
         detached: true,
         stdio: 'ignore',
         windowsVerbatimArguments: false,
       });
       child.unref();
     } else if (process.platform === 'darwin') {
-      spawn('open', [url], { detached: true, stdio: 'ignore' }).unref();
+      spawn('open', [url], { windowsHide: true, detached: true, stdio: 'ignore' }).unref();
     } else {
-      spawn('xdg-open', [url], { detached: true, stdio: 'ignore' }).unref();
+      spawn('xdg-open', [url], { windowsHide: true, detached: true, stdio: 'ignore' }).unref();
     }
     return true;
   } catch {

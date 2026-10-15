@@ -101,7 +101,7 @@ await new Promise((r) => server.listen(PORT, '127.0.0.1', r));
 const profile = path.join(process.env.TEMP ?? '.', `dsh-day-${Date.now()}`);
 const chrome = spawn(CHROME, ['--headless=new', '--no-sandbox', '--mute-audio', '--disable-gpu',
   '--enable-unsafe-swiftshader', '--hide-scrollbars', '--disable-breakpad',
-  `--user-data-dir=${profile}`, `--remote-debugging-port=${DEBUG_PORT}`, 'about:blank'], { stdio: 'ignore' });
+  `--user-data-dir=${profile}`, `--remote-debugging-port=${DEBUG_PORT}`, 'about:blank'], { windowsHide: true, stdio: 'ignore' });
 
 class CDP {
   constructor(ws) {
@@ -376,7 +376,7 @@ try {
     if (fs.existsSync(from)) fs.cpSync(from, path.join(COPY, item), { recursive: true });
   }
   for (const j of ['node_modules', 'public']) {
-    try { execFileSync('cmd', ['/c', 'mklink', '/J', path.join(COPY, j), path.join(SRC, j)], { stdio: 'ignore' }); } catch { /* 已经有了 */ }
+    try { execFileSync('cmd', ['/c', 'mklink', '/J', path.join(COPY, j), path.join(SRC, j)], { windowsHide: true, stdio: 'ignore' }); } catch { /* 已经有了 */ }
   }
 
   /* 造第二篇：和用户举的那个例子同一天（2026-10-04），也认领这一天 */
@@ -385,7 +385,7 @@ try {
   fs.writeFileSync(path.join(COPY, 'src', 'content', 'notes', 'zz-verify-same-day.md'), fixture, 'utf8');
 
   const r = spawnSync(process.execPath, [path.join(COPY, 'node_modules', 'astro', 'bin', 'astro.mjs'), 'build'],
-    { cwd: COPY, encoding: 'utf8', timeout: 300000 });
+    { windowsHide: true, cwd: COPY, encoding: 'utf8', timeout: 300000 });
   copyBuilt = fs.existsSync(path.join(COPY, 'dist', 'index.html'));
   check('★ 副本（多塞了一篇同一天的文章）构建成功', r.status === 0 && copyBuilt,
     `exit=${r.status} ${String(r.stderr || '').split('\n').filter(Boolean).slice(-1)[0] ?? ''}`);
@@ -432,7 +432,7 @@ if (copyBuilt) {
 
   const editor = spawn(process.execPath, [path.join(COPY, 'tools', 'editor', 'server.mjs')], {
     cwd: COPY, stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, PORT: String(EDITOR_PORT) },
-  });
+  }, { windowsHide: true });
   let elog = '';
   editor.stdout.on('data', (b) => { elog += b.toString('utf8'); });
   editor.stderr.on('data', (b) => { elog += b.toString('utf8'); });
@@ -468,13 +468,13 @@ if (copyBuilt) {
 }
 
 /* ================================================================ */
-try { execSync(`taskkill /pid ${chrome.pid} /T /F`, { stdio: 'ignore' }); } catch { /* 已经退了 */ }
+try { execSync(`taskkill /pid ${chrome.pid} /T /F`, { windowsHide: true, stdio: 'ignore' }); } catch { /* 已经退了 */ }
 server.close();
 await sleep(200);
 try {
   for (const j of ['node_modules', 'public']) {
     const p = path.join(COPY, j);
-    if (fs.existsSync(p)) execFileSync('cmd', ['/c', 'rmdir', p], { stdio: 'ignore' });
+    if (fs.existsSync(p)) execFileSync('cmd', ['/c', 'rmdir', p], { windowsHide: true, stdio: 'ignore' });
   }
   fs.rmSync(COPY, { recursive: true, force: true });
   console.log(`副本已清理: ${!fs.existsSync(COPY)}`);

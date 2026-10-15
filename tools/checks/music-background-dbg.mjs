@@ -44,7 +44,7 @@ const args = ['--headless=new', '--no-sandbox', '--mute-audio', '--disable-gpu',
 if (ALLOW) args.push('--autoplay-policy=no-user-gesture-required');
 const profile = path.join(process.env.TEMP ?? '.', `dsh-mute2-${Date.now()}`);
 const chrome = spawn(CHROME, [...args, `--user-data-dir=${profile}`, `--remote-debugging-port=${DEBUG_PORT}`, 'about:blank'],
-  { stdio: 'ignore' });
+  { windowsHide: true, stdio: 'ignore' });
 
 class CDP {
   constructor(ws) {

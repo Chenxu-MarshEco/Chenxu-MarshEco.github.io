@@ -72,7 +72,7 @@ let editor = null;
 let chrome = null;
 let profile = '';
 try {
-  editor = spawn(process.execPath, [SERVER, '--port', String(PORT)], { cwd: SRC, stdio: 'ignore' });
+  editor = spawn(process.execPath, [SERVER, '--port', String(PORT)], { windowsHide: true, cwd: SRC, stdio: 'ignore' });
   let up = false;
   for (let i = 0; i < 60 && !up; i += 1) {
     await sleep(400);
@@ -90,7 +90,7 @@ try {
     CHROME,
     ['--headless=new', '--no-sandbox', '--disable-gpu', '--enable-unsafe-swiftshader', '--mute-audio', '--disable-breakpad',
       '--window-size=1500,950', `--user-data-dir=${profile}`, `--remote-debugging-port=${DEBUG_PORT}`, 'about:blank'],
-    { stdio: 'ignore' },
+    { windowsHide: true, stdio: 'ignore' },
   );
   let target = null;
   for (let i = 0; i < 60 && !target; i += 1) {

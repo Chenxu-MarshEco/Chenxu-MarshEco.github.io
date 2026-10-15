@@ -176,9 +176,57 @@ export type PageBlock = (
    * （页面被删了/改名了就不再显示，卡片不会点空）。
    */
   | { id: string; type: 'recent'; text?: string; count?: number }
+  /**
+   * **侧边栏**块（2026-10-15 加的；用户发的参考图是 Minecraft wiki 右边那个信息栏）。
+   *
+   * 用户原话：「在页面中可以添加侧边栏 …… 侧边栏存在于页面的右侧 可以自由编辑其分为
+   * 几个格子 格子里的内容表现形式类似于导航 但也可以上传文字或图片 也可以把文图挂为
+   * 链接等 侧边栏的高度应当可以自由编辑横跨哪几个板块 并且会根据高度自行调节适配」
+   *
+   * 数据只有两份东西：
+   *   · `rows`  —— 格子（左标题 + 右内容），顺序就是显示顺序，可自由增删；
+   *   · `span`  —— 跨几个板块（宽屏上它占右侧一列、纵向跨 `span` 行）。
+   * 「高度自适应」不用算：`.page` 本来就是栅格，正文块和侧边栏在同一个栅格里，
+   * 谁高听谁的（见 PageContent.astro 的 .page--side）。
+   */
+  | { id: string; type: 'sidebar'; text?: string; rows: SidebarRow[]; span?: number }
 ) &
   TimeFields &
   PlaceholderField;
+
+/**
+ * 侧边栏里的一格内容类型：
+ *   text   一段文字（支持 `**粗体**`、链接、以及 `[[文字|ico:图|链接]]` 那种行内条目）
+ *   image  一张图
+ *   link   一条链接（显示文字在 `text`，地址在 `href`）
+ *   items  **一串带图标的条目**（参考图里「图鉴 / 道具池」那两格；样式就是导航条目）
+ */
+export type SidebarRowKind = 'text' | 'image' | 'link' | 'items';
+
+/** `items` 格子里的一条：和导航条目同形（文字 + 小图标 + 地址，都能缺） */
+export interface SidebarItem {
+  id: string;
+  text: string;
+  image?: string;
+  href?: string;
+}
+
+/** 侧边栏的一格 */
+export interface SidebarRow {
+  id: string;
+  /** 左边那一小格的标题（像「类型」「图鉴」）；不写就整格都是内容 */
+  label?: string;
+  kind: SidebarRowKind;
+  /** kind=text 的正文；kind=link 的显示文字 */
+  text?: string;
+  /** kind=image 的图 */
+  src?: string;
+  alt?: string;
+  /** kind=link 的地址 */
+  href?: string;
+  /** kind=items 的那些条目 */
+  items?: SidebarItem[];
+}
 
 /**
  * 图钉的两种类型。

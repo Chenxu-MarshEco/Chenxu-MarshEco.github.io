@@ -83,7 +83,7 @@ for (const item of ['src', 'tools', 'package.json', 'astro.config.mjs', 'tsconfi
   if (fs.existsSync(from)) fs.cpSync(from, path.join(COPY, item), { recursive: true });
 }
 const link = (target, at) => {
-  try { execSync(`cmd /c mklink /J "${at}" "${target}"`, { stdio: 'ignore' }); } catch { /* 已经有了 */ }
+  try { execSync(`cmd /c mklink /J "${at}" "${target}"`, { windowsHide: true, stdio: 'ignore' }); } catch { /* 已经有了 */ }
 };
 link(path.join(SRC, 'node_modules'), path.join(COPY, 'node_modules'));
 /*
@@ -101,7 +101,7 @@ fs.mkdirSync(path.join(PUB, 'img'), { recursive: true });
 for (const d of ['opt', 'uploads']) link(path.join(SRC, 'public', 'img', d), path.join(PUB, 'img', d));
 fs.mkdirSync(path.join(PUB, 'img', 'salon'), { recursive: true });
 
-const editor = spawn(process.execPath, [path.join(COPY, 'tools', 'editor', 'server.mjs')], {
+const editor = spawn(process.execPath, [path.join(COPY, 'tools', 'editor', 'server.mjs')], { windowsHide: true,
   cwd: COPY, stdio: ['ignore', 'pipe', 'pipe'],
 });
 let elog = '';
@@ -130,7 +130,7 @@ const monthParsed = parseMonthHtml(fs.readFileSync(
     const tmp = path.join(SRC, '.tmp', 'salon-peek');
     fs.rmSync(tmp, { recursive: true, force: true });
     fs.mkdirSync(tmp, { recursive: true });
-    execSync(`tar -xf "${ZIP}" -C "${tmp}"`, { stdio: 'ignore' });
+    execSync(`tar -xf "${ZIP}" -C "${tmp}"`, { windowsHide: true, stdio: 'ignore' });
     const hit = [];
     const walk = (d, depth = 0) => {
       if (depth > 4) return;
@@ -167,7 +167,7 @@ async function startChrome() {
   const profile = path.join(process.env.TEMP ?? '.', `dsh-salonimp-${Date.now()}`);
   chrome = spawn(CHROME, ['--headless=new', '--no-sandbox', '--mute-audio', '--disable-gpu',
     '--enable-unsafe-swiftshader', '--hide-scrollbars', '--disable-breakpad',
-    `--user-data-dir=${profile}`, `--remote-debugging-port=${DEBUG_PORT}`, 'about:blank'], { stdio: 'ignore' });
+    `--user-data-dir=${profile}`, `--remote-debugging-port=${DEBUG_PORT}`, 'about:blank'], { windowsHide: true, stdio: 'ignore' });
   for (let i = 0; i < 60; i++) {
     await sleep(300);
     try {
@@ -477,7 +477,7 @@ if (first?.ok) {
 console.log('\n================ ④ 站点这边：每日精华 / 随机 / 搜索 / 时间轴 ================');
 if (first?.ok) {
   const build = spawnSync(process.execPath, [path.join(COPY, 'node_modules', 'astro', 'bin', 'astro.mjs'), 'build'],
-    { cwd: COPY, encoding: 'utf8', timeout: 300000 });
+    { windowsHide: true, cwd: COPY, encoding: 'utf8', timeout: 300000 });
   const ok = build.status === 0 && fs.existsSync(path.join(COPY, 'dist', 'salon', 'index.html'));
   check('★ 副本重新构建成功', ok, `exit=${build.status} ${String(build.stderr || '').split('\n').filter(Boolean).slice(-1)[0] ?? ''}`);
 
@@ -528,14 +528,14 @@ check('★ 那个隐藏的 file input 是挂在文档里的（验收脚本靠 DO
 
 /* ================================================================ */
 if (base) { try { editor.kill(); } catch { /* 已经退了 */ } }
-if (chrome) { try { execSync(`taskkill /pid ${chrome.pid} /T /F`, { stdio: 'ignore' }); } catch { /* 已经退了 */ } }
+if (chrome) { try { execSync(`taskkill /pid ${chrome.pid} /T /F`, { windowsHide: true, stdio: 'ignore' }); } catch { /* 已经退了 */ } }
 if (chromeInfo?.profile) { try { fs.rmSync(chromeInfo.profile, { recursive: true, force: true }); } catch { /* 删不掉就算了 */ } }
 await sleep(300);
 try {
   /* junction 要先单独摘掉（不然 rmSync 会跟着删到真仓库里去） */
   for (const j of ['node_modules', 'public\\audio', 'public\\fonts', 'public\\secret', 'public\\img\\opt', 'public\\img\\uploads']) {
     const p = path.join(COPY, j);
-    try { if (fs.existsSync(p)) execSync(`cmd /c rmdir "${p}"`, { stdio: 'ignore' }); } catch { /* 不是 junction 就算了 */ }
+    try { if (fs.existsSync(p)) execSync(`cmd /c rmdir "${p}"`, { windowsHide: true, stdio: 'ignore' }); } catch { /* 不是 junction 就算了 */ }
   }
   fs.rmSync(COPY, { recursive: true, force: true });
   console.log(`副本已清理: ${!fs.existsSync(COPY)}`);

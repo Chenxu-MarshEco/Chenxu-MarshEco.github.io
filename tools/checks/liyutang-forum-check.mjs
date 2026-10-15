@@ -40,8 +40,8 @@ const info = (s) => console.log(`      · ${s}`);
 
 if (process.argv.includes('--build')) {
   console.log('=== 先构建一次 ===');
-  execSync('node tools/images/optimize.mjs', { cwd: SRC, stdio: 'ignore' });
-  execSync('node node_modules/astro/bin/astro.mjs build', { cwd: SRC, stdio: 'ignore' });
+  execSync('node tools/images/optimize.mjs', { windowsHide: true, cwd: SRC, stdio: 'ignore' });
+  execSync('node node_modules/astro/bin/astro.mjs build', { windowsHide: true, cwd: SRC, stdio: 'ignore' });
   console.log('      构建完成');
 }
 
@@ -170,7 +170,7 @@ const server = http.createServer((req, res) => {
 await new Promise((r) => server.listen(PORT, '127.0.0.1', r));
 
 const profile = path.join(process.env.TEMP ?? '.', `dsh-lyt-${Date.now()}`);
-const chrome = spawn(CHROME, ['--headless=new', '--no-sandbox', '--mute-audio', '--disable-gpu', '--enable-unsafe-swiftshader', '--disable-breakpad', `--user-data-dir=${profile}`, `--remote-debugging-port=${DEBUG_PORT}`, 'about:blank'], { stdio: 'ignore' });
+const chrome = spawn(CHROME, ['--headless=new', '--no-sandbox', '--mute-audio', '--disable-gpu', '--enable-unsafe-swiftshader', '--disable-breakpad', `--user-data-dir=${profile}`, `--remote-debugging-port=${DEBUG_PORT}`, 'about:blank'], { windowsHide: true, stdio: 'ignore' });
 
 class CDP {
   constructor(ws) {
@@ -348,7 +348,7 @@ try {
   console.log('FAIL  浏览器那一段异常: ' + (err?.stack ?? err));
 } finally {
   try {
-    execSync(`taskkill /pid ${chrome.pid} /T /F`, { stdio: 'ignore' });
+    execSync(`taskkill /pid ${chrome.pid} /T /F`, { windowsHide: true, stdio: 'ignore' });
   } catch {
     /* 已退 */
   }

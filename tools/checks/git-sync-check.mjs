@@ -51,7 +51,7 @@ const info = (s) => console.log(`      · ${s}`);
 
 /** 跑一条 git 命令（作用对象一律是副本 / bare 远端，绝不碰真仓库） */
 function git(args, cwd = DST) {
-  const r = spawnSync('git', args, { cwd, encoding: 'utf8' });
+  const r = spawnSync('git', args, { windowsHide: true, cwd, encoding: 'utf8' });
   return { ok: r.status === 0, out: (r.stdout || '').trim(), err: (r.stderr || '').trim(), code: r.status };
 }
 const gitOK = (args, cwd = DST) => {
@@ -119,7 +119,7 @@ for (const item of ['src', 'tools', 'package.json', 'astro.config.mjs', 'tsconfi
 // node_modules 用 junction 接过去：publish 里 requireDeps 只检查它在不在
 try {
   execFileSync('cmd', ['/c', 'mklink', '/J', path.join(DST, 'node_modules'),
-    path.join(SRC, 'node_modules')], { stdio: 'ignore' });
+    path.join(SRC, 'node_modules')], { windowsHide: true, stdio: 'ignore' });
 } catch { /* 已经有了就算了 */ }
 
 gitOK(['init', '-b', 'main'], DST);
@@ -163,12 +163,12 @@ function appendBodyLine(dir, file, line) {
 /** 在副本里跑真正的发布（就是用户在启动器里点「发布上线」走的那条命令） */
 function runPublish(cwd, message) {
   const r = spawnSync(NODE, [path.join(cwd, 'tools/git/sync.mjs'), 'publish', '--message', message],
-    { cwd, encoding: 'utf8', timeout: 120000 });
+    { windowsHide: true, cwd, encoding: 'utf8', timeout: 120000 });
   return { code: r.status, out: `${r.stdout || ''}${r.stderr || ''}` };
 }
 function runSync(cwd) {
   const r = spawnSync(NODE, [path.join(cwd, 'tools/git/sync.mjs'), 'sync'],
-    { cwd, encoding: 'utf8', timeout: 120000 });
+    { windowsHide: true, cwd, encoding: 'utf8', timeout: 120000 });
   return { code: r.status, out: `${r.stdout || ''}${r.stderr || ''}` };
 }
 /**
@@ -363,7 +363,7 @@ check('★ 图形启动器在「写文章 / 看效果」之前也会先同步一
   && /'sync\.mjs'\), 'sync'\]|'sync\.mjs'\], 'sync'/.test(studioSrc.replace(/\n\s+/g, ' ')));
 
 const st = spawnSync(NODE, [path.join(SRC, 'tools/git/sync.mjs'), 'status'],
-  { cwd: SRC, encoding: 'utf8' });
+  { windowsHide: true, cwd: SRC, encoding: 'utf8' });
 let stJson = null;
 try { stJson = JSON.parse(st.stdout); } catch { /* 下面会判 */ }
 check('★ status 子命令能给出机器可读的状态（菜单/状态栏读它）',
@@ -412,7 +412,7 @@ check('★ 判定「像不像代理问题」：代理的连接失败算，别的
 
   // 先证明这份配置真的会撞代理（裸 git 走一遍）
   const plainRun = spawnSync('git', ['ls-remote', '--heads', 'origin'],
-    { cwd: PROXY_DIR, encoding: 'utf8', timeout: 60000 });
+    { windowsHide: true, cwd: PROXY_DIR, encoding: 'utf8', timeout: 60000 });
   /*
     ⚠ 这里量的是"**连代理**这一步失败了"，不是 git 的某一句原文（2026-10-12 修）：
     老版本 git 报「Failed to connect to github.com:443 over proxy …」，
@@ -442,7 +442,7 @@ check('★ 判定「像不像代理问题」：代理的连接失败算，别的
 {
   // 编辑器服务定时探头用的就是这条子命令：机读结果里要有 behind，前端靠它亮角标
   const f = spawnSync(NODE, [path.join(DST, 'tools/git/sync.mjs'), 'fetch', '--quiet', '--json'],
-    { cwd: DST, encoding: 'utf8', timeout: 60000 });
+    { windowsHide: true, cwd: DST, encoding: 'utf8', timeout: 60000 });
   const line = String(f.stdout || '').split('\n').reverse().find((l) => l.startsWith('[result] '));
   let parsed = null;
   try { parsed = JSON.parse(String(line).slice('[result] '.length)); } catch { parsed = null; }
@@ -455,7 +455,7 @@ check('★ 判定「像不像代理问题」：代理的连接失败算，别的
 /* 收摊：先摘掉 node_modules 那个 junction（rmSync 会顺着它删掉真依赖！）再删副本 */
 try {
   const j = path.join(DST, 'node_modules');
-  if (fs.existsSync(j)) execFileSync('cmd', ['/c', 'rmdir', j], { stdio: 'ignore' });
+  if (fs.existsSync(j)) execFileSync('cmd', ['/c', 'rmdir', j], { windowsHide: true, stdio: 'ignore' });
   for (const p of [DST, OTHER, ORIGIN]) fs.rmSync(p, { recursive: true, force: true });
   console.log(`副本已清理: ${!fs.existsSync(DST) && !fs.existsSync(OTHER) && !fs.existsSync(ORIGIN)}`);
 } catch (err) {

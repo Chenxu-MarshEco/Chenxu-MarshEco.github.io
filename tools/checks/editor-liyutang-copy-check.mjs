@@ -187,10 +187,10 @@ check('副本四处都改上了（PROJECT_ROOT / LIYUTANG_FILE / 端口 / 假构
 fs.writeFileSync(path.join(TMP, 'tools', 'editor', 'server.mjs'), patched, 'utf8');
 fs.writeFileSync(FILE, `${JSON.stringify(FIXTURE, null, 2)}\n`, 'utf8');
 
-const syntax = spawnSync(process.execPath, ['--check', path.join(TMP, 'tools', 'editor', 'server.mjs')], { encoding: 'utf8' });
+const syntax = spawnSync(process.execPath, ['--check', path.join(TMP, 'tools', 'editor', 'server.mjs')], { windowsHide: true, encoding: 'utf8' });
 check('副本那份 server.mjs 语法没问题（改坏了就什么也测不了）', syntax.status === 0, String(syntax.stderr || '').slice(0, 200));
 
-const editor = spawn(process.execPath, [path.join(TMP, 'tools', 'editor', 'server.mjs')], {
+const editor = spawn(process.execPath, [path.join(TMP, 'tools', 'editor', 'server.mjs')], { windowsHide: true,
   cwd: TMP,
   stdio: ['ignore', 'pipe', 'pipe'],
 });
@@ -378,7 +378,7 @@ if (!base) {
   chrome = spawn(CHROME, ['--headless=new', '--no-sandbox', '--mute-audio', '--disable-gpu',
     '--enable-unsafe-swiftshader', '--disable-breakpad', '--window-size=1440,1000',
     `--user-data-dir=${profile}`, '--remote-debugging-port=0', 'about:blank'],
-  { stdio: 'ignore' });
+  { windowsHide: true, stdio: 'ignore' });
   /* 调试口让 Chrome 自己挑（写死端口会被同机别的验收脚本抢，抢输就连上别人的浏览器） */
   const dbgPort = await (async () => {
     const f = path.join(profile, 'DevToolsActivePort');
@@ -495,7 +495,7 @@ if (!base) {
  * ================================================================ */
 try { editor.kill(); } catch { /* 已经退出 */ }
 try { if (cdp) await cdp.send('Browser.close'); } catch { /* ignore */ }
-try { if (chrome) execSync(`taskkill /pid ${chrome.pid} /T /F`, { stdio: 'ignore' }); } catch { /* ignore */ }
+try { if (chrome) execSync(`taskkill /pid ${chrome.pid} /T /F`, { windowsHide: true, stdio: 'ignore' }); } catch { /* ignore */ }
 await sleep(600);
 for (let i = 0; i < 6 && fs.existsSync(TMP); i++) {
   try { fs.rmSync(TMP, { recursive: true, force: true }); } catch { /* 下一轮再试 */ }

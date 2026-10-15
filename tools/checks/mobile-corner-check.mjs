@@ -67,7 +67,7 @@ const profile = path.join(process.env.TEMP ?? '.', `dsh-mcorner-${Date.now()}`);
 const chrome = spawn(CHROME, [
   '--headless=new', '--no-sandbox', '--mute-audio', '--disable-gpu', '--enable-unsafe-swiftshader',
   '--disable-breakpad', `--user-data-dir=${profile}`, `--remote-debugging-port=${DEBUG_PORT}`, 'about:blank',
-], { stdio: 'ignore' });
+], { windowsHide: true, stdio: 'ignore' });
 
 class CDP {
   constructor(ws) {

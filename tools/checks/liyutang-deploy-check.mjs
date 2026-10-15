@@ -157,7 +157,7 @@ try {
 /* ============================================================ ⑤ dry 跑一遍 */
 console.log('\n=== ⑤ --dry 跑一遍：打包 + 打印要发什么（不部署） ===');
 try {
-  const out = execFileSync(process.execPath, [DEPLOY, '--dry'], { encoding: 'utf8', cwd: SRC, timeout: 60000 });
+  const out = execFileSync(process.execPath, [DEPLOY, '--dry'], { windowsHide: true, encoding: 'utf8', cwd: SRC, timeout: 60000 });
   info(out.trim().split('\n').slice(0, 4).join('\n      '));
   check('★ --dry 会认出环境 id 和函数名', /liyutang-d2g4e5otdf1ac263c/.test(out) && /twikoo/.test(out), '');
   check('--dry 明确说不调 API', /只打包，不调 API/.test(out), '');
