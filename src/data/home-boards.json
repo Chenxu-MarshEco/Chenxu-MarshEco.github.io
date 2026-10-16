@@ -1509,7 +1509,7 @@
                 {
                   "id": "huaya-r2-1-pmu9erqne2",
                   "type": "text",
-                  "text": "## 重要事件\n*由于本服录播时期没有加入现实时钟，所以许多事件的具体时间已经无从考据*\n\n### 发现樱花林\n最初本服的出生地位于一片雪杉林中，众人在一个雪村的冰河上建立了临时据点。第二天隰辰煦发现了樱花林后众人才开始搬迁，就此隰辰煦也开始了与樱花的不解之缘。"
+                  "text": "## 重要事件\n*由于本服录播时期没有加入现实时钟，所以许多事件的具体时间已经无从考据*\n\n### 发现樱花林\n最初本服的出生地位于一片雪杉林中，众人在一个雪村的冰河上建立了临时据点。在EP3隰辰煦发现了樱花林后众人才开始搬迁，就此隰辰煦也开始了与樱花的不解之缘。"
                 },
                 {
                   "id": "huaya-r2-1-pmv9a3zhj1",
@@ -1528,7 +1528,7 @@
                 {
                   "id": "huaya-r2-1-pmv9aieco3",
                   "type": "text",
-                  "text": "### 远航与袭击\n早期在樱花林村庄定居后，隰辰煦正前往远处的暖水海洋刷嗅探兽蛋时，吉吉因为樱花林里的掠夺前哨站不慎触发了袭击。在困难模式劫掠兽的攻势下村庄很快全灭，才促进了之后村民集中营的诞生。"
+                  "text": "### 远航与袭击\n在EP11，大家在樱花林村庄定居后，隰辰煦正前往远处的暖水海洋刷嗅探兽蛋时，吉吉因为樱花林里的掠夺前哨站不慎触发了袭击。在困难模式劫掠兽的攻势下村庄很快全灭，才促进了之后村民集中营的诞生。"
                 },
                 {
                   "id": "huaya-r2-1-pmv9andhp4",
@@ -1538,13 +1538,208 @@
                   "width": "third"
                 },
                 {
+                  "id": "huaya-r2-1-pmvaadn0d1",
+                  "type": "text",
+                  "text": "### 铁套屠龙\nEP17，花娅系列的第一次聚众打龙。穿着铁套玩船子，没有绀珠之药也没有硅胶假体。"
+                },
+                {
+                  "id": "huaya-r2-1-pmvabedcj2",
+                  "type": "image",
+                  "src": "/img/uploads/20261016-0954-446f-8fd931a6a2c02f24459d8b4b34bd83bb.jpg",
+                  "alt": "解放末地",
+                  "width": "third"
+                },
+                {
+                  "id": "huaya-r2-1-pmvabf7zl3",
+                  "type": "image",
+                  "src": "/img/uploads/20261016-0955-7dcf-53154ff056f7bdf7bab76ef76acb441f.jpg",
+                  "alt": "船阵列",
+                  "width": "third"
+                },
+                {
+                  "id": "huaya-r2-1-pmvabfgd54",
+                  "type": "text",
+                  "text": "### 隰辰煦被爆金币\n在EP42，隰辰煦带着虹星和■■■去自己在EP2时就发现的古城探索。可能是之前单人探索古城时过于顺利，隰辰煦这次并没有特别小心监守者，结果在古城边缘遭遇监守者时无路可逃，只能对着岩壁挖掘隧道仓皇逃窜，最后被监守者的音波玩喷，历经EP39~EP41攒出的合金套还没穿热就丢失了。在之后的很长一段时间里大家都经常调侃此事。"
+                },
+                {
+                  "id": "huaya-r2-1-pmvabto0r5",
+                  "type": "image",
+                  "src": "/img/uploads/20261016-1007-a24e-da1d2ed7ab824fe355f89c3febed2f67.jpg",
+                  "alt": "点击输入文本",
+                  "width": "third"
+                },
+                {
+                  "id": "huaya-r2-1-pmvac1zhe7",
+                  "type": "text",
+                  "text": "### 激斗五级袭击\n随着大家的装备逐步完善，隰辰煦和吉吉和■■■在EP52于村民集中营发动了袭击，然而一级袭击还是不够尽兴，村民的打折额度也不高，于是又花了整整一集的时间攒出了五级袭击。在EP54隰辰煦，虹星，桑芙，吉吉，■■■五人在Raw家门口与五级袭击进行了激烈交锋，场面宏大而热血。而此时Raw却全程躲在堆肥桶里，谁也没有预料到他将会成为未来的热斗之王…"
+                },
+                {
+                  "id": "huaya-r2-1-pmvad3uyc8",
+                  "type": "image",
+                  "src": "/img/uploads/20261016-1042-f2dc-bb8eb89638c9fe692a1644bb71fa27ac.jpg",
+                  "alt": "顶上之战",
+                  "width": "third"
+                },
+                {
+                  "id": "huaya-r2-1-pmvad4i409",
+                  "type": "image",
+                  "src": "/img/uploads/20261016-1042-c6d2-f09833621326eb3416c841cb627ac1ce.jpg",
+                  "alt": "交叉火力",
+                  "width": "third"
+                },
+                {
+                  "id": "huaya-r2-1-pmvad4smf10",
+                  "type": "image",
+                  "src": "/img/uploads/20261016-1043-d082-3455eca8019b165231424b78c9474ebd.jpg",
+                  "alt": "奔赴前线",
+                  "width": "third"
+                },
+                {
+                  "id": "huaya-r2-1-pmvad5ats11",
+                  "type": "image",
+                  "src": "/img/uploads/20261016-1043-9c45-a1459629ff5e3f5fde9c8d31d4b493fa.jpg",
+                  "alt": "五级袭击的可怕刷怪量",
+                  "width": "third"
+                },
+                {
+                  "id": "huaya-r2-1-pmvad5xd012",
+                  "type": "image",
+                  "src": "/img/uploads/20261016-1044-877a-9cb54e77e26d3a80c6eed5adea08c3c4.jpg",
+                  "alt": "桥头的混战",
+                  "width": "third"
+                },
+                {
+                  "id": "huaya-r2-1-pmvad698j13",
+                  "type": "image",
+                  "src": "/img/uploads/20261016-1044-26e2-8dc6dd1984c6a1d38293366bcc9b9d11.jpg",
+                  "alt": "装在桶子里的人",
+                  "width": "third"
+                },
+                {
+                  "id": "huaya-r2-1-pmvad84qc14",
+                  "type": "text",
+                  "text": "### 快点去和你爸爸杂交\nEP68隰辰煦建造猫爬架时，恰好虹星也正在进行他的邪恶猫咪杂交计划，由此诞生名句——快点去和你爸爸杂交，不对这不是他爸是他爷爷。后来被冰室传颂至今。"
+                },
+                {
+                  "id": "huaya-r2-1-pmvajjrnz18",
+                  "type": "image",
+                  "src": "/img/uploads/20261016-1342-0ce6-fc99b6ed0834a3ba82de9ef6adbb08f6.jpg",
+                  "width": "third"
+                },
+                {
+                  "id": "huaya-r2-1-pmvajk0an19",
+                  "type": "image",
+                  "src": "/img/uploads/20261016-1342-755d-4238de375c2816e06aa7dd1e383d28ee.jpg",
+                  "width": "third"
+                },
+                {
+                  "id": "huaya-r2-1-pmvajkmki20",
+                  "type": "image",
+                  "src": "/img/uploads/20261016-1343-72a5-c6f5594434b7e836b9143448b7fba9be.jpg",
+                  "width": "third"
+                },
+                {
+                  "id": "huaya-r2-1-pmvajkxci21",
+                  "type": "image",
+                  "src": "/img/uploads/20261016-1343-22e6-125c3abdc65b7b053cc361d2956514c2.jpg",
+                  "width": "third"
+                },
+                {
+                  "id": "huaya-r2-1-pmvajl3mr22",
+                  "type": "image",
+                  "src": "/img/uploads/20261016-1343-bc6a-fb220fe3e9460425f6856cfbef255a7e.jpg",
+                  "alt": "点击输入文本",
+                  "width": "third"
+                },
+                {
+                  "id": "huaya-r2-1-pmvajmkj323",
+                  "type": "text",
+                  "text": "### 七人大热睡\n在EP69难得当时群内所有人员都在线，于是那一天大家在隰辰煦家门口进行合影，随后服务器上史无前例地七个人一起睡觉跳过了夜晚。"
+                },
+                {
+                  "id": "huaya-r2-1-pmvajqbdb24",
+                  "type": "image",
+                  "src": "/img/uploads/20261016-1352-5c44-QQ图片20261016134731.png.webp",
+                  "alt": "七人大合照",
+                  "width": "third"
+                },
+                {
+                  "id": "huaya-r2-1-pmvak1pi925",
+                  "type": "image",
+                  "src": "/img/uploads/20261016-1357-a273-d78cb3475dab3a116a3b6d2d014d2498.jpg",
+                  "alt": "七人大热睡",
+                  "width": "third"
+                },
+                {
+                  "id": "huaya-r2-1-pmvak2f1z26",
+                  "type": "image",
+                  "src": "/img/uploads/20261016-1357-0589-c722e1354a657a26a49567f2a563be31.jpg",
+                  "width": "third"
+                },
+                {
+                  "id": "huaya-r2-1-pmvak6k8o27",
+                  "type": "text",
+                  "text": "### 地铁工程\n为了方便出行，隰辰煦和虹星从EP83开始便着手于修建地铁，终于在EP90隰辰煦家-虹星家段成功完工，大家开着冰船划到隰辰煦家前合影。后续地铁也逐步延伸到吉吉家，桑芙家与SSW家。"
+                },
+                {
+                  "id": "huaya-r2-1-pmvakdsv728",
+                  "type": "image",
+                  "src": "/img/uploads/20261016-1409-d15b-6029b2d189c2d75079addcc5f8311131.jpg",
+                  "alt": "甲乙两队同时施工",
+                  "width": "third"
+                },
+                {
+                  "id": "huaya-r2-1-pmvakil9a29",
+                  "type": "image",
+                  "src": "/img/uploads/20261016-1409-6614-9c182a701cadb6109c8b59da909bd0b1.jpg",
+                  "alt": "车祸警示录",
+                  "width": "third"
+                },
+                {
+                  "id": "huaya-r2-1-pmvakj8f030",
+                  "type": "image",
+                  "src": "/img/uploads/20261016-1410-6869-d7cc4836c877c6c7995e1d2dc4cebd66.jpg",
+                  "alt": "桑芙开车驾到",
+                  "width": "wide"
+                },
+                {
+                  "id": "huaya-r2-1-pmvakjk1a31",
+                  "type": "text",
+                  "text": "### 十五问的消失\n在EP115隰辰煦捕捉了一只掠夺者队长，并且挂机耗尽它的弩的耐久度成功使它从良，并将其命名为十五问，准备作为悦灵小屋的NPC。然而就在EP118中，十五问在短短半个小时内从玻璃罩中离奇消失，至今十五问的死因都是花娅的未解之谜。"
+                },
+                {
+                  "id": "huaya-r2-1-pmvaks31q32",
+                  "type": "image",
+                  "src": "/img/uploads/20261016-1417-417e-b6eadf662e01c12258c088e27983c6a1.jpg",
+                  "alt": "隰辰煦正在挂机劝说十五问从良",
+                  "width": "third"
+                },
+                {
+                  "id": "huaya-r2-1-pmvaks4nq33",
+                  "type": "image",
+                  "src": "/img/uploads/20261016-1417-336e-cbd59e74da47160b376ac7c9f02fad3c.jpg",
+                  "alt": "在半个小时里离奇失踪的十五问",
+                  "width": "third"
+                },
+                {
+                  "id": "huaya-r2-1-pmvaks4sc34",
+                  "type": "image",
+                  "src": "/img/uploads/20261016-1417-7194-a7c8633ca84ef3d5e83a78c579afa0f8.jpg",
+                  "width": "third"
+                },
+                {
+                  "id": "huaya-r2-1-pmvakyt9y36",
+                  "type": "text",
+                  "text": "### 结档\n作为花娅系列的开篇，纷湖十分幸运地有始有终。在经历了钓鱼大赛的小插曲后，大家也是顺利地在服务器的每一片建筑前进行了合照。纷湖结档日的合照流程也为以后的花娅结档日和月末总结大会奠定了基础。\n\n*结档日的合照详见画廊部分*"
+                },
+                {
                   "id": "huaya-r2-1-pmu9esei93",
                   "type": "divider"
                 },
                 {
                   "id": "huaya-r2-1-pmu9eshe24",
                   "type": "text",
-                  "text": "## 溪流之外的轶事\n- 纷湖最早只是虹星，隰辰煦，吉吉，Raw延续星露谷时期开的联机房间，后来才转为服务器。\n- 纷湖末期为了延长服务器寿命加入了粘液科技，然而并没有什么人去玩。\n- 纷湖的大湖里曾被隰辰煦倒入许多蝌蚪。\n- 纷湖的告示牌后经常诡异地出现ovo，qwq等颜文字。在结档很久之后虹星才承认是其所为。\n- 天空开始变得湿润……纷湖中期在成员增加后加入了点歌插件，从那时起服内就开始阴雨连绵，而每次点歌时都会弹出一句“天空开始变得湿润”的提示。一开始大家都以为只是歌曲开始播放的文艺提示，直道有一天虹星发现点歌插件里真的可以设置歌曲播放时是否切换为雨天……\n"
+                  "text": "## 溪流之外的轶事\n- 纷湖最早只是虹星，隰辰煦，吉吉，Raw延续星露谷时期开的联机房间，后来才转为服务器。\n- 纷湖末期为了延长服务器寿命加入了粘液科技，然而并没有什么人去玩。\n- 纷湖的大湖里曾被隰辰煦倒入许多蝌蚪。\n- 纷湖的告示牌后经常诡异地出现ovo，qwq等颜文字。在结档很久之后虹星才承认是其所为。\n- 天空开始变得湿润……纷湖中期在成员增加后加入了点歌插件，从那时起服内就开始阴雨连绵，而每次点歌时都会弹出一句“天空开始变得湿润”的提示。一开始大家都以为只是歌曲开始播放的文艺提示，直道有一天虹星发现点歌插件里真的可以设置歌曲播放时是否切换为雨天……\n- 纷湖是唯一一次结档时开了创造大胡闹的服务器，在末地留下了许多胡闹痕迹。\n- 纷湖时期由于隰辰煦对OBS知识的浅薄，每集录播的原文件录出来都有几十G之大，每天都要大量时间压缩才能上传录播。期间EP64~EP65之间激活海洋之心的片段还因为录制时硬盘储存不足而永远丢失了。"
                 },
                 {
                   "id": "huaya-r2-1-pmu9esvsi5",
@@ -1554,6 +1749,111 @@
                   "id": "huaya-r2-1-pmu9esy4h6",
                   "type": "text",
                   "text": "## 画廊"
+                },
+                {
+                  "id": "huaya-r2-1-pmvaltgxp37",
+                  "type": "image",
+                  "src": "/img/uploads/20261016-1446-56de-2023-08-02_22.36.08.webp",
+                  "alt": "合影-大圆环",
+                  "width": "third"
+                },
+                {
+                  "id": "huaya-r2-1-pmvalu3ie38",
+                  "type": "image",
+                  "src": "/img/uploads/20261016-1447-8acb-2023-08-02_22.39.31.webp",
+                  "alt": "合影-远眺隰辰煦家",
+                  "width": "third"
+                },
+                {
+                  "id": "huaya-r2-1-pmvalut5y39",
+                  "type": "image",
+                  "src": "/img/uploads/20261016-1447-807b-2023-08-02_22.41.31.webp",
+                  "alt": "合影-吉吉家",
+                  "width": "third"
+                },
+                {
+                  "id": "huaya-r2-1-pmvalvbox40",
+                  "type": "image",
+                  "src": "/img/uploads/20261016-1452-bef3-2023-08-02_22.43.43.webp",
+                  "alt": "合影-Raw家",
+                  "width": "third"
+                },
+                {
+                  "id": "huaya-r2-1-pmvamlgxp47",
+                  "type": "image",
+                  "src": "/img/uploads/20261016-1508-52cc-2023-08-02_22.49.31_2.webp",
+                  "alt": "合影-光子家桥头",
+                  "width": "third"
+                },
+                {
+                  "id": "huaya-r2-1-pmvam1zb141",
+                  "type": "image",
+                  "src": "/img/uploads/20261016-1453-52ab-2023-08-02_22.51.29_2.webp",
+                  "alt": "合影-SSW家",
+                  "width": "third"
+                },
+                {
+                  "id": "huaya-r2-1-pmvamckrx42",
+                  "type": "image",
+                  "src": "/img/uploads/20261016-1501-8a7e-2023-08-02_22.52.10.webp",
+                  "alt": "合影-桑芙家",
+                  "width": "third"
+                },
+                {
+                  "id": "huaya-r2-1-pmvamiu0p43",
+                  "type": "image",
+                  "src": "/img/uploads/20261016-1506-512c-2023-08-02_22.56.41.webp",
+                  "alt": "合影-虹星家",
+                  "width": "third"
+                },
+                {
+                  "id": "huaya-r2-1-pmvamjdq544",
+                  "type": "image",
+                  "src": "/img/uploads/20261016-1506-e01e-2023-08-02_23.01.07.webp",
+                  "alt": "村民集中营",
+                  "width": "third"
+                },
+                {
+                  "id": "huaya-r2-1-pmvammz7248",
+                  "type": "image",
+                  "src": "/img/uploads/20261016-1509-8869-2023-08-02_23.08.19.webp",
+                  "alt": "冰道船地铁",
+                  "width": "third"
+                },
+                {
+                  "id": "huaya-r2-1-pmvamnbr949",
+                  "type": "image",
+                  "src": "/img/uploads/20261016-1509-c433-2023-08-02_23.19.32.webp",
+                  "alt": "合影-幽匿之下",
+                  "width": "third"
+                },
+                {
+                  "id": "huaya-r2-1-pmvamnvfu50",
+                  "type": "image",
+                  "src": "/img/uploads/20261016-1510-5dab-2023-08-02_23.21.51.webp",
+                  "alt": "合影-小小嗅探兽",
+                  "width": "third"
+                },
+                {
+                  "id": "huaya-r2-1-pmvamof6b51",
+                  "type": "image",
+                  "src": "/img/uploads/20261016-1510-7b45-2023-08-02_23.40.56_2.webp",
+                  "alt": "合影-圆环之顶",
+                  "width": "third"
+                },
+                {
+                  "id": "huaya-r2-1-pmvant5um52",
+                  "type": "image",
+                  "src": "/img/uploads/20261016-1542-9d2d-2023-08-02_23.02.17.webp",
+                  "alt": "纷湖日出",
+                  "width": "third"
+                },
+                {
+                  "id": "huaya-r2-1-pmvantk9p53",
+                  "type": "image",
+                  "src": "/img/uploads/20261016-1544-9c55-2023-08-02_22.55.14.webp",
+                  "alt": "纷湖入海口",
+                  "width": "third"
                 },
                 {
                   "id": "huaya-r2-1-pmu9fa4wh7",
@@ -1568,13 +1868,14 @@
                   "id": "huaya-r2-1-pmu9fa5wp8",
                   "type": "nav",
                   "cats": [
-                    "navcat-mu9dgbej916"
+                    "navcat-mu9dgbej916",
+                    "navcat-mvampicd148"
                   ],
                   "text": "导航"
                 }
               ],
               "timeline": "tl-mu94ko3q566",
-              "timePoint": "tl-mu94ko3q566-pmu969cck13"
+              "timeSpan": "tl-mu94ko3q566-smu9527b10"
             },
             {
               "id": "huaya-r2-2",

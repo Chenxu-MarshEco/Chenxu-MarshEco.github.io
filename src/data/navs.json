@@ -1665,6 +1665,91 @@
           ]
         }
       ]
+    },
+    {
+      "id": "navcat-mvampicd148",
+      "title": "花娅",
+      "groups": [
+        {
+          "id": "g-mvampvjx21",
+          "title": "花娅陌域",
+          "items": [
+            {
+              "id": "i-mvamqi1h287",
+              "text": "纷湖",
+              "href": "/huaya/years/fenhu"
+            },
+            {
+              "id": "i-mvamqo46757",
+              "text": "花娅地"
+            },
+            {
+              "id": "i-mvamqsh1821",
+              "text": "新花娅地"
+            },
+            {
+              "id": "i-mvamqvst570",
+              "text": "绮花娅域"
+            },
+            {
+              "id": "i-mvamqyb13",
+              "text": "眠鱼路"
+            },
+            {
+              "id": "i-mvamr9ba425",
+              "text": "煌花娅市"
+            },
+            {
+              "id": "i-mvamrc3h220",
+              "text": "雏花娅冒险协会"
+            },
+            {
+              "id": "i-mvan0ked184",
+              "text": "徒花娅工业"
+            },
+            {
+              "id": "i-mvan0pn9427",
+              "text": "新绮花娅域"
+            },
+            {
+              "id": "i-mvan0sq6496",
+              "text": "遥花娅空域"
+            },
+            {
+              "id": "i-mvanlhfp276",
+              "text": "篠花娅风尚"
+            }
+          ]
+        },
+        {
+          "id": "g-mvamq0hh631",
+          "title": "花娅远位面",
+          "items": [
+            {
+              "id": "i-mvan0ywl768",
+              "text": "星露谷物语"
+            },
+            {
+              "id": "i-mvan13st193",
+              "text": "花娅泰拉外遣团"
+            },
+            {
+              "id": "i-mvan1yra564",
+              "text": "龙历院花娅支部"
+            }
+          ]
+        },
+        {
+          "id": "g-mvamq1s5383",
+          "title": "花娅文化",
+          "items": [
+            {
+              "id": "i-mvan3k7h334",
+              "text": "月末总结大会"
+            }
+          ]
+        }
+      ]
     }
   ]
 }
