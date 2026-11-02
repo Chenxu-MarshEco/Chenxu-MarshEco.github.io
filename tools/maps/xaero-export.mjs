@@ -35,7 +35,7 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, '..', '..');
 const EXE = path.join(HERE, 'xwm2png.exe');
 const DATA = path.join(ROOT, 'src', 'data', 'maps.json');
-const OUT_PUBLIC = path.join(ROOT, 'public', 'maps');
+const OUT_PUBLIC = path.join(ROOT, 'public', 'img', 'maps');
 
 /** 默认：这两个维度各出一张（城建世界全分辨率，主世界用 8 块/像素的缩图） */
 const DEFAULT_DIMS = [

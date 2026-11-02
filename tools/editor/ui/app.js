@@ -2066,6 +2066,11 @@ function closeWorkspace(id) {
   else if (id === 'copy') closeCopyModal();
   else if (id === 'collab') closeCollabModal();
   else if (id === 'versions') closeVersionsModal();
+  /*
+    地图排在最末：WORKSPACES 里它就是最后一条。切工作面时 openWorkspace 会走
+    closeOtherWorkspaces() → 这里，所以地图弹窗不会盖在新面板上面不动。
+  */
+  else if (id === 'maps') closeMapsModal();
 }
 
 /** 关掉除 except 以外的所有面板 */
@@ -4567,6 +4572,25 @@ function buildMapsModal() {
   mapUI.canvas.addEventListener('pointerdown', (ev) => {
     if (ev.button !== 0) return;
     if (mapState.tool === 'pan' || ev.shiftKey) {
+      /*
+        平移工具下按在标注上 = 选中它，不启动拖动。
+        用户要的是"在画布上点一条路就能改"；要是照旧一律拖图，想选的人一按
+        整张地图就跟着跑，永远选不中。按住 shift 那种临时拖图不参与选中 ——
+        那时候用户的意思很明确：我只要挪画面。
+        没按中标注（点的是空白）就把选中清掉，再照常拖图。
+      */
+      if (!ev.shiftKey) {
+        const hit = hitMapMark(ev);
+        if (hit) {
+          mapState.sel = hit;
+          renderMapPanel();
+          return;
+        }
+        if (mapState.sel) {
+          mapState.sel = null;
+          renderMapPanel();
+        }
+      }
       mapDrag = { x: ev.clientX, y: ev.clientY, tx: mapState.tx, ty: mapState.ty };
       mapUI.canvas.setPointerCapture(ev.pointerId);
       return;
@@ -4623,6 +4647,53 @@ function eventToWorld(ev) {
   const imgX = (ev.clientX - rect.left - mapState.tx) / mapState.zoom;
   const imgY = (ev.clientY - rect.top - mapState.ty) / mapState.zoom;
   return mapP2W(imgX, imgY);
+}
+
+/**
+ * 画布上这一下按在哪个已有标注上（平移工具用它做"点一下选中"）。
+ *
+ * 距离按**图画像素**算，不是屏幕像素：屏幕上的粗细 / 大小是 zoom 造出来的，
+ * 判断"按的是不是这条线"必须落在图上同一个坐标系里（和 mapW2P 一个账）。
+ * 阈值 8 图 px：路线的线宽默认 3、地点圆点半径 5，8 刚好把两者都圈得进来，
+ * 又不至于让相邻的两条路互相抢。
+ *
+ * 地点优先于路线：圆点是个小目标，压在一条路上时先让它赢 —— 反过来就再也
+ * 点不到那个点了。
+ */
+function hitMapMark(ev) {
+  if (!mapUI || !mapState.cur) return null;
+  const rect = mapUI.canvas.getBoundingClientRect();
+  const x = (ev.clientX - rect.left - mapState.tx) / mapState.zoom;
+  const y = (ev.clientY - rect.top - mapState.ty) / mapState.zoom;
+  const R = 8;
+
+  let near = null;
+  for (const p of mapState.places) {
+    const at = mapW2P(p.wx, p.wz);
+    const d = Math.hypot(at.x - x, at.y - y);
+    if (d <= R && (!near || d < near.d)) near = { kind: 'place', id: p.id, d };
+  }
+  if (near) return { kind: near.kind, id: near.id };
+
+  for (const r of mapState.roads) {
+    const pts = (r.points ?? []).map(([wx, wz]) => mapW2P(wx, wz));
+    for (let i = 0; i + 1 < pts.length; i += 1) {
+      const d = distToSegment(x, y, pts[i], pts[i + 1]);
+      if (d <= R && (!near || d < near.d)) near = { kind: 'road', id: r.id, d };
+    }
+  }
+  return near ? { kind: near.kind, id: near.id } : null;
+}
+
+/** 点 (x,y) 到线段 a→b 的最短距离（全是图画像素，命中判定用） */
+function distToSegment(x, y, a, b) {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const len2 = dx * dx + dy * dy;
+  const t = len2 === 0 ? 0 : Math.max(0, Math.min(1, ((x - a.x) * dx + (y - a.y) * dy) / len2));
+  const px = a.x + t * dx;
+  const py = a.y + t * dy;
+  return Math.hypot(x - px, y - py);
 }
 
 function applyMapTransform() {
@@ -4832,6 +4903,23 @@ async function openMapsModal() {
   } catch (err) {
     toast('读地图失败：' + err.message, true);
   }
+}
+
+/**
+ * 收起地图面板（切到别的工作面时由 closeWorkspace 调）。
+ *
+ * ⚠ 这里**不弹 confirm**：切工作面是"换块地方干活"，不是"要把这份标注扔掉"；
+ *   该问一句的是面板里那颗「关闭」按钮（见 buildMapsModal 里 mp-close 的绑定）。
+ *
+ * ⚠ 草稿不跨面板存活：openMapsModal 每次打开都会重新 GET /api/maps，把
+ *   roads / places 整份覆盖成盘上那份。所以切走前没保存的标注留不住 ——
+ *   这也是这里顺手把 dirty 清掉的原因：不清的话切回来会顶着「保存标注 ●」，
+ *   而手上其实已经是盘上那份，那个点只会骗人。
+ */
+function closeMapsModal() {
+  if (!mapUI) return;
+  mapUI.modal.hidden = true;
+  mapState.dirty = false;
 }
 
 /** 一个块的字段区 */

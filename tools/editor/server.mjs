@@ -6310,6 +6310,12 @@ const IMG_DIRS = new Map([
     只开这一层、只放行图片扩展名，和 uploads / home 一个规矩。
   */
   ['salon', path.join(PROJECT_ROOT, 'public', 'img', 'salon')],
+  /*
+    Xaero 导出的地图底图（public/img/maps/*.webp，见 tools/maps/xaero-export.mjs）。
+    地图工作台要在编辑器里把底图画出来，不放行就是 404 —— 2026-11-02 验收就是卡在这儿
+    （底图 naturalWidth=0，连带"方块坐标算回屏幕"那条一起崩）。
+  */
+  ['maps', path.join(PROJECT_ROOT, 'public', 'img', 'maps')],
 ]);
 
 /**
