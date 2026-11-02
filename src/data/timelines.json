@@ -376,6 +376,12 @@
           "date": "2026-10-01",
           "label": "冰室首次国庆大聚会",
           "kind": "event"
+        },
+        {
+          "id": "tl-mu6e19cb793-pmvz3bitq59",
+          "side": "left",
+          "date": "2026-10-17",
+          "label": "SSW的长期创造服开服"
         }
       ],
       "spans": [
@@ -477,6 +483,12 @@
           "id": "tl-mu6e19cb793-smu6p6mfq15",
           "name": "智能体年代",
           "from": "tl-mu6e19cb793-pmu6occ3a56",
+          "to": "tl-mu6e19cb793-pmu6p6djx56"
+        },
+        {
+          "id": "tl-mu6e19cb793-smvz3c60z16",
+          "name": "篠花娅风尚",
+          "from": "tl-mu6e19cb793-pmvz3bitq59",
           "to": "tl-mu6e19cb793-pmu6p6djx56"
         }
       ]
