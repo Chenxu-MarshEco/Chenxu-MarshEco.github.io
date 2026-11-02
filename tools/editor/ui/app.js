@@ -1993,6 +1993,7 @@ const WORKSPACES = [
   { id: 'timelines', label: '时间轴', hint: '新建 / 编辑时间轴' },
   { id: 'music', label: '音乐', hint: '给每个页面配一份歌单' },
   { id: 'layout', label: '排版', hint: '拖动 / 缩放页面上的元素' },
+  { id: 'maps', label: '地图', hint: '在 Xaero 导出的地图上画路线 / 点地点（存的是方块坐标，换底图不用重画）' },
   /*
     首页那几块（src/data/home-widgets.json）+ 冰室精华（src/data/salon.json）。
     放在最后：这几个是后来加的，前八个的顺序和用户已经点熟的位置一个字没动。
@@ -2092,6 +2093,7 @@ async function openWorkspace(id) {
   else if (id === 'timelines') await openTimelinesModal();
   else if (id === 'music') await openMusicModal();
   else if (id === 'layout') await openLayoutModal();
+  else if (id === 'maps') await openMapsModal();
   else if (id === 'calendar') await openCalendarModal();
   else if (id === 'about') await openAboutModal();
   else if (id === 'iceberg') await openIcebergModal();
@@ -4412,6 +4414,424 @@ function sidebarRowsEditor(block) {
     redraw();
   }));
   return box;
+}
+
+/*
+ * ============================================================================
+ * 地图工作台（2026-11-02）—— 在 Xaero 导出的底图上画路线 / 点地点
+ * ----------------------------------------------------------------------------
+ * 参考问道（How To Go）：在地图上标路标点、画道路。
+ *
+ * ⚠ 这一层最重要的规矩（用户原话「城建不断更新 …… 道路标记的坐标位置也会相对于锚定的
+ *   原点不动」）：**所有标注只存世界方块坐标**。屏幕上看到的位置是算出来的：
+ *     imgPx = (wx - originX) / blocksPerPixel      （图上的像素）
+ *     screen = imgPx * zoom + 平移                  （画布上的位置）
+ *   所以换底图（重新导出 Xaero）→ 只换图 + 原点/比例，标注自动回到原位。
+ *   这里**绝不**写回 originX / originZ / blocksPerPixel（那是导出工具的活），
+ *   保存只发 { id, roads, places } —— 服务端也只认这三样。
+ * ============================================================================
+ */
+const MAP_COLORS_UI = ['#ff5fb0', '#ffd166', '#7ee081', '#6ec8ff', '#c792ff', '#ff8a5b', '#ffffff'];
+const mapState = {
+  maps: [],
+  cur: null,
+  roads: [],
+  places: [],
+  zoom: 0.5,
+  tx: 40,
+  ty: 40,
+  tool: 'pan',       // pan | road | place
+  pending: [],       // 正在画的那条路的临时点（世界坐标）
+  sel: null,         // { kind:'road'|'place', id }
+  dirty: false,
+};
+let mapUI = null;
+let mapDrag = null;
+
+/** 世界方块坐标 → 图上的像素（不四舍五入，渲染用） */
+function mapW2P(wx, wz) {
+  const m = mapState.cur;
+  const bpp = Number(m?.blocksPerPixel) || 1;
+  return { x: (Number(wx) - Number(m?.originX || 0)) / bpp, y: (Number(wz) - Number(m?.originZ || 0)) / bpp };
+}
+/** 图上的像素 → 世界方块坐标 */
+function mapP2W(x, y) {
+  const m = mapState.cur;
+  const bpp = Number(m?.blocksPerPixel) || 1;
+  return { wx: Number(m?.originX || 0) + Number(x) * bpp, wz: Number(m?.originZ || 0) + Number(y) * bpp };
+}
+const mapRound = (n, d = 1) => Math.round(Number(n) / d) * d;
+
+function buildMapsModal() {
+  if (document.getElementById('mapsModal')) {
+    mapUI = { modal: document.getElementById('mapsModal') };
+    return;
+  }
+  const style = document.createElement('style');
+  style.textContent = `
+    #mapsModal { position: fixed; inset: 0; z-index: 9000; background: rgba(8,2,14,.72); backdrop-filter: blur(3px); display: flex; }
+    #mapsModal[hidden] { display: none; }
+    #mapsModal .mp-wrap { margin: auto; width: min(1200px, 96vw); height: min(90vh, 900px); display: flex; flex-direction: column;
+      background: #1b0626; border: 1px solid rgba(255,120,190,.45); border-radius: 14px; overflow: hidden; box-shadow: 0 24px 60px -20px #000; }
+    #mapsModal .mp-top { display: flex; gap: .5rem; align-items: center; padding: .6rem .8rem; border-bottom: 1px solid rgba(255,120,190,.2); flex-wrap: wrap; }
+    #mapsModal .mp-title { font-weight: 700; color: #ffd9ef; margin-right: .4rem; }
+    #mapsModal .mp-canvas { position: relative; flex: 1; overflow: hidden; background: #0d0417; cursor: grab; }
+    #mapsModal .mp-canvas.is-draw { cursor: crosshair; }
+    #mapsModal .mp-inner { position: absolute; left: 0; top: 0; transform-origin: 0 0; will-change: transform; }
+    #mapsModal .mp-inner img { display: block; image-rendering: pixelated; user-select: none; pointer-events: none; }
+    #mapsModal .mp-inner svg { position: absolute; left: 0; top: 0; width: 100%; height: 100%; pointer-events: none; }
+    #mapsModal .mp-side { width: 20rem; border-left: 1px solid rgba(255,120,190,.2); overflow: auto; padding: .6rem; }
+    #mapsModal .mp-row { display: flex; gap: .35rem; align-items: center; padding: .25rem .3rem; border-radius: 6px; margin-bottom: .2rem; }
+    #mapsModal .mp-row:hover { background: rgba(255,120,190,.1); }
+    #mapsModal .mp-row.is-sel { background: rgba(255,120,190,.22); }
+    #mapsModal .mp-dot { width: .8rem; height: .8rem; border-radius: 50%; flex: 0 0 auto; }
+    #mapsModal .mp-foot { padding: .4rem .8rem; border-top: 1px solid rgba(255,120,190,.2); color: #ccb6d6; font-size: .82rem; }
+    #mapsModal .mp-hint { color: #b79ac4; font-size: .78rem; }
+  `;
+  document.head.append(style);
+
+  const modal = document.createElement('div');
+  modal.id = 'mapsModal';
+  modal.hidden = true;
+  modal.innerHTML = `
+    <div class="mp-wrap">
+      <div class="mp-top">
+        <span class="mp-title">地图</span>
+        <select class="input" id="mp-map" style="max-width:20rem"></select>
+        <button class="btn btn--ghost boardedit__mini" id="mp-pan">平移</button>
+        <button class="btn btn--ghost boardedit__mini" id="mp-road">画路线</button>
+        <button class="btn btn--ghost boardedit__mini" id="mp-place">点地点</button>
+        <span id="mp-tools"></span>
+        <span style="flex:1"></span>
+        <button class="btn boardedit__mini" id="mp-save">保存标注</button>
+        <button class="btn btn--ghost boardedit__mini" id="mp-close">关闭</button>
+      </div>
+      <div style="display:flex;flex:1;min-height:0">
+        <div class="mp-canvas" id="mp-canvas"><div class="mp-inner" id="mp-inner"><img id="mp-img" alt=""><svg id="mp-svg"></svg></div></div>
+        <div class="mp-side">
+          <p class="mp-hint" id="mp-count"></p>
+          <b style="color:#ffd9ef">路线</b>
+          <div id="mp-roads"></div>
+          <b style="color:#ffd9ef">地点</b>
+          <div id="mp-places"></div>
+          <div id="mp-edit" style="margin-top:.6rem"></div>
+        </div>
+      </div>
+      <div class="mp-foot"><span id="mp-pos">把鼠标移到画布上，这里显示当前的世界坐标</span></div>
+    </div>`;
+  document.body.append(modal);
+
+  const $ = (s) => modal.querySelector(s);
+  mapUI = {
+    modal,
+    mapSel: $('#mp-map'),
+    canvas: $('#mp-canvas'),
+    inner: $('#mp-inner'),
+    img: $('#mp-img'),
+    svg: $('#mp-svg'),
+    tools: $('#mp-tools'),
+    roads: $('#mp-roads'),
+    places: $('#mp-places'),
+    edit: $('#mp-edit'),
+    count: $('#mp-count'),
+    pos: $('#mp-pos'),
+    btnPan: $('#mp-pan'),
+    btnRoad: $('#mp-road'),
+    btnPlace: $('#mp-place'),
+    btnSave: $('#mp-save'),
+  };
+
+  mapUI.btnPan.addEventListener('click', () => { mapState.tool = 'pan'; mapState.pending = []; renderMapPanel(); });
+  mapUI.btnRoad.addEventListener('click', () => { mapState.tool = 'road'; mapState.pending = []; renderMapPanel(); });
+  mapUI.btnPlace.addEventListener('click', () => { mapState.tool = 'place'; mapState.pending = []; renderMapPanel(); });
+  mapUI.btnSave.addEventListener('click', saveMapMarks);
+  $('#mp-close').addEventListener('click', () => {
+    if (mapState.dirty && !confirm('还有没保存的标注，确定关掉？')) return;
+    mapUI.modal.hidden = true;
+  });
+  mapUI.mapSel.addEventListener('change', () => {
+    if (mapState.dirty && !confirm('当前地图还有没保存的标注，切换到别的图会丢掉，继续？')) {
+      mapUI.mapSel.value = mapState.cur?.id ?? '';
+      return;
+    }
+    mapState.cur = mapState.maps.find((m) => m.id === mapUI.mapSel.value) ?? null;
+    mapState.roads = JSON.parse(JSON.stringify(mapState.cur?.roads ?? []));
+    mapState.places = JSON.parse(JSON.stringify(mapState.cur?.places ?? []));
+    mapState.pending = [];
+    mapState.dirty = false;
+    mapState.sel = null;
+    renderMapPanel();
+  });
+
+  /* ---- 画布交互：拖动平移 / 滚轮以鼠标为中心缩放 / 按工具加点 ---- */
+  mapUI.canvas.addEventListener('pointerdown', (ev) => {
+    if (ev.button !== 0) return;
+    if (mapState.tool === 'pan' || ev.shiftKey) {
+      mapDrag = { x: ev.clientX, y: ev.clientY, tx: mapState.tx, ty: mapState.ty };
+      mapUI.canvas.setPointerCapture(ev.pointerId);
+      return;
+    }
+    const world = eventToWorld(ev);
+    if (!world) return;
+    if (mapState.tool === 'road') {
+      mapState.pending.push([mapRound(world.wx), mapRound(world.wz)]);
+      renderMapPanel();
+    } else if (mapState.tool === 'place') {
+      mapState.places.push({
+        id: `place-${Date.now().toString(36)}`,
+        name: `新地点 ${mapState.places.length + 1}`,
+        wx: mapRound(world.wx),
+        wz: mapRound(world.wz),
+        color: MAP_COLORS_UI[1],
+      });
+      mapState.dirty = true;
+      renderMapPanel();
+    }
+  });
+  mapUI.canvas.addEventListener('pointermove', (ev) => {
+    if (mapDrag) {
+      mapState.tx = mapDrag.tx + (ev.clientX - mapDrag.x);
+      mapState.ty = mapDrag.ty + (ev.clientY - mapDrag.y);
+      applyMapTransform();
+      return;
+    }
+    const world = eventToWorld(ev);
+    if (world) mapUI.pos.textContent = `X ${Math.round(world.wx)}   Z ${Math.round(world.wz)}　（缩放 ${Math.round(mapState.zoom * 100)}%）`;
+  });
+  mapUI.canvas.addEventListener('pointerup', () => { mapDrag = null; });
+  mapUI.canvas.addEventListener('pointercancel', () => { mapDrag = null; });
+  mapUI.canvas.addEventListener('wheel', (ev) => {
+    ev.preventDefault();
+    const rect = mapUI.canvas.getBoundingClientRect();
+    const mx = ev.clientX - rect.left;
+    const my = ev.clientY - rect.top;
+    const before = { x: (mx - mapState.tx) / mapState.zoom, y: (my - mapState.ty) / mapState.zoom };
+    const next = Math.min(8, Math.max(0.05, mapState.zoom * (ev.deltaY < 0 ? 1.15 : 1 / 1.15)));
+    mapState.zoom = next;
+    /* 以鼠标位置为中心缩放：缩放前后，鼠标底下那个"图上的像素"要停在原地 */
+    mapState.tx = mx - before.x * next;
+    mapState.ty = my - before.y * next;
+    applyMapTransform();
+  }, { passive: false });
+}
+
+/** 屏幕事件 → 世界方块坐标（用当前平移/缩放反算） */
+function eventToWorld(ev) {
+  const m = mapState.cur;
+  if (!m) return null;
+  const rect = mapUI.canvas.getBoundingClientRect();
+  const imgX = (ev.clientX - rect.left - mapState.tx) / mapState.zoom;
+  const imgY = (ev.clientY - rect.top - mapState.ty) / mapState.zoom;
+  return mapP2W(imgX, imgY);
+}
+
+function applyMapTransform() {
+  if (!mapUI) return;
+  mapUI.inner.style.transform = `translate(${mapState.tx}px, ${mapState.ty}px) scale(${mapState.zoom})`;
+}
+
+function renderMapPanel() {
+  if (!mapUI) return;
+  const m = mapState.cur;
+  /* 地图下拉 */
+  if (mapUI.mapSel.options.length !== mapState.maps.length) {
+    mapUI.mapSel.innerHTML = '';
+    for (const one of mapState.maps) {
+      const o = document.createElement('option');
+      o.value = one.id;
+      o.textContent = one.name || one.id;
+      mapUI.mapSel.append(o);
+    }
+  }
+  mapUI.mapSel.value = m?.id ?? '';
+  /* 工具高亮 + 正在画的时候那两个按钮 */
+  for (const [btn, key] of [[mapUI.btnPan, 'pan'], [mapUI.btnRoad, 'road'], [mapUI.btnPlace, 'place']]) {
+    btn.style.background = mapState.tool === key ? 'rgba(255,120,190,.35)' : '';
+  }
+  mapUI.canvas.classList.toggle('is-draw', mapState.tool !== 'pan');
+  mapUI.tools.innerHTML = '';
+  if (mapState.tool === 'road') {
+    const mk = (label, fn) => {
+      const b = document.createElement('button');
+      b.className = 'btn btn--ghost boardedit__mini';
+      b.textContent = label;
+      b.addEventListener('click', fn);
+      mapUI.tools.append(b);
+    };
+    mk(`完成（${mapState.pending.length} 点）`, () => {
+      if (mapState.pending.length < 2) { toast('一条路至少要 2 个点', true); return; }
+      mapState.roads.push({ id: `road-${Date.now().toString(36)}`, color: MAP_COLORS_UI[0], width: 3, points: mapState.pending.slice() });
+      mapState.pending = [];
+      mapState.dirty = true;
+      renderMapPanel();
+    });
+    mk('撤销上一点', () => { mapState.pending.pop(); renderMapPanel(); });
+    mk('取消', () => { mapState.pending = []; renderMapPanel(); });
+    mapUI.tools.append(Object.assign(document.createElement('span'), { className: 'mp-hint', textContent: '　在画布上连点出折线' }));
+  }
+  if (m) {
+    mapUI.img.src = m.src;
+    mapUI.img.width = m.width;
+    mapUI.img.height = m.height;
+    mapUI.svg.setAttribute('viewBox', `0 0 ${m.width} ${m.height}`);
+    mapUI.svg.setAttribute('width', m.width);
+    mapUI.svg.setAttribute('height', m.height);
+    applyMapTransform();
+  }
+  /* 叠加层：路 + 地点 + 正在画的那条 */
+  const svgNS = 'http://www.w3.org/2000/svg';
+  mapUI.svg.innerHTML = '';
+  const addPoly = (pts, color, width, dashed) => {
+    if (pts.length < 2) return;
+    const el = document.createElementNS(svgNS, 'polyline');
+    el.setAttribute('points', pts.map(([wx, wz]) => { const p = mapW2P(wx, wz); return `${p.x},${p.y}`; }).join(' '));
+    el.setAttribute('fill', 'none');
+    el.setAttribute('stroke', color || '#ff5fb0');
+    el.setAttribute('stroke-width', String(width || 3));
+    el.setAttribute('stroke-linejoin', 'round');
+    el.setAttribute('stroke-linecap', 'round');
+    if (dashed) el.setAttribute('stroke-dasharray', '6 4');
+    mapUI.svg.append(el);
+  };
+  for (const r of mapState.roads) addPoly(r.points ?? [], r.color, r.width, r.dashed);
+  addPoly(mapState.pending, '#ffffff', 3, true);
+  for (const p of mapState.places) {
+    const at = mapW2P(p.wx, p.wz);
+    const c = document.createElementNS(svgNS, 'circle');
+    c.setAttribute('cx', String(at.x));
+    c.setAttribute('cy', String(at.y));
+    c.setAttribute('r', '5');
+    c.setAttribute('fill', p.color || '#ffd166');
+    c.setAttribute('stroke', '#1b0626');
+    c.setAttribute('stroke-width', '1.5');
+    mapUI.svg.append(c);
+    const t = document.createElementNS(svgNS, 'text');
+    t.setAttribute('x', String(at.x + 8));
+    t.setAttribute('y', String(at.y + 4));
+    t.setAttribute('fill', '#fff');
+    t.setAttribute('font-size', '11');
+    t.textContent = p.name || '';
+    mapUI.svg.append(t);
+  }
+  /* 右侧列表 */
+  mapUI.count.textContent = `${mapState.roads.length} 条路线 / ${mapState.places.length} 个地点　　方块坐标：X ${m?.originX ?? 0}..${(m?.originX ?? 0) + (m?.width ?? 0) * (m?.blocksPerPixel ?? 1)}　Z ${m?.originZ ?? 0}..${(m?.originZ ?? 0) + (m?.height ?? 0) * (m?.blocksPerPixel ?? 1)}`;
+  mapUI.roads.innerHTML = '';
+  mapUI.places.innerHTML = '';
+  const rowOf = (kind, item, label, color) => {
+    const row = document.createElement('div');
+    row.className = 'mp-row' + (mapState.sel?.kind === kind && mapState.sel?.id === item.id ? ' is-sel' : '');
+    const dot = document.createElement('span');
+    dot.className = 'mp-dot';
+    dot.style.background = color || '#888';
+    const name = document.createElement('span');
+    name.textContent = label;
+    name.style.flex = '1';
+    name.style.cursor = 'pointer';
+    name.addEventListener('click', () => { mapState.sel = { kind, id: item.id }; renderMapPanel(); });
+    row.append(dot, name);
+    return row;
+  };
+  mapState.roads.forEach((r, i) => mapUI.roads.append(rowOf('road', r, r.name || `路线 ${i + 1}（${(r.points ?? []).length} 点）`, r.color)));
+  mapState.places.forEach((p, i) => mapUI.places.append(rowOf('place', p, p.name || `地点 ${i + 1}`, p.color)));
+  /* 选中项的编辑表单 */
+  mapUI.edit.innerHTML = '';
+  const sel = mapState.sel;
+  if (sel) {
+    const item = sel.kind === 'road' ? mapState.roads.find((r) => r.id === sel.id) : mapState.places.find((p) => p.id === sel.id);
+    if (!item) { mapState.sel = null; return; }
+    const form = document.createElement('div');
+    form.append(Object.assign(document.createElement('div'), { className: 'mp-hint', textContent: sel.kind === 'road' ? '这条路' : '这个地点' }));
+    form.append(boardInput(item.name ?? '', '名字', (v) => { item.name = v; mapState.dirty = true; }));
+    if (sel.kind === 'place') {
+      const icon = boardInput(item.icon ?? '', '图标（一个 emoji，可选）', (v) => { item.icon = v; mapState.dirty = true; });
+      const note = boardInput(item.note ?? '', '备注（可选）', (v) => { item.note = v; mapState.dirty = true; });
+      form.append(icon, note);
+      form.append(Object.assign(document.createElement('div'), { className: 'mp-hint', textContent: `方块坐标：${item.wx}, ${item.wz}` }));
+    } else {
+      const w = boardInput(String(item.width ?? 3), '线宽 1–40', (v) => { const n = Number(v); if (n >= 1 && n <= 40) { item.width = n; mapState.dirty = true; } });
+      form.append(w);
+      const dashed = document.createElement('label');
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.checked = item.dashed === true;
+      cb.addEventListener('change', () => { item.dashed = cb.checked; mapState.dirty = true; renderMapPanel(); });
+      dashed.append(cb, document.createTextNode(' 虚线（小径）'));
+      form.append(dashed);
+    }
+    /* 颜色 */
+    const palette = document.createElement('div');
+    palette.className = 'mp-row';
+    for (const c of MAP_COLORS_UI) {
+      const b = document.createElement('button');
+      b.className = 'mp-dot';
+      b.style.border = '2px solid ' + (item.color === c ? '#fff' : 'transparent');
+      b.style.width = '1.1rem';
+      b.style.height = '1.1rem';
+      b.title = c;
+      b.addEventListener('click', () => { item.color = c; mapState.dirty = true; renderMapPanel(); });
+      palette.append(b);
+    }
+    form.append(palette);
+    const del = document.createElement('button');
+    del.className = 'btn btn--ghost boardedit__mini boardedit__del';
+    del.textContent = '删除';
+    del.addEventListener('click', () => {
+      if (!confirm('删掉这个标注？')) return;
+      if (sel.kind === 'road') mapState.roads = mapState.roads.filter((r) => r.id !== sel.id);
+      else mapState.places = mapState.places.filter((p) => p.id !== sel.id);
+      mapState.sel = null;
+      mapState.dirty = true;
+      renderMapPanel();
+    });
+    form.append(del);
+    mapUI.edit.append(form);
+  }
+  mapUI.btnSave.textContent = mapState.dirty ? '保存标注 ●' : '保存标注';
+}
+
+async function saveMapMarks() {
+  if (!mapState.cur) return;
+  const body = { id: mapState.cur.id, roads: mapState.roads, places: mapState.places };
+  try {
+    const r = await api('/api/maps', { method: 'POST', body: JSON.stringify(body) });
+    if (r?.ok) {
+      mapState.dirty = false;
+      /* 把服务端清洗后的结果拉回来（坐标三位小数、非法颜色被丢掉这类） */
+      const fresh = await api('/api/maps');
+      mapState.maps = fresh?.maps ?? mapState.maps;
+      mapState.cur = mapState.maps.find((m) => m.id === mapState.cur.id) ?? mapState.cur;
+      mapState.roads = JSON.parse(JSON.stringify(mapState.cur?.roads ?? []));
+      mapState.places = JSON.parse(JSON.stringify(mapState.cur?.places ?? []));
+      renderMapPanel();
+      toast(`标注已保存：${r.map?.roads ?? 0} 条路线 / ${r.map?.places ?? 0} 个地点`);
+    } else {
+      toast('保存失败：' + (r?.error || '服务端没认'), true);
+    }
+  } catch (err) {
+    toast('保存失败：' + err.message, true);
+  }
+}
+
+async function openMapsModal() {
+  markWorkspaceActive('maps');
+  buildMapsModal();
+  mapUI.modal.hidden = false;
+  try {
+    const r = await api('/api/maps');
+    mapState.maps = r?.maps ?? [];
+    mapState.cur = mapState.maps[0] ?? null;
+    mapState.roads = JSON.parse(JSON.stringify(mapState.cur?.roads ?? []));
+    mapState.places = JSON.parse(JSON.stringify(mapState.cur?.places ?? []));
+    mapState.pending = [];
+    mapState.sel = null;
+    mapState.dirty = false;
+    mapState.zoom = 0.5;
+    mapState.tx = 40;
+    mapState.ty = 40;
+    renderMapPanel();
+  } catch (err) {
+    toast('读地图失败：' + err.message, true);
+  }
 }
 
 /** 一个块的字段区 */
