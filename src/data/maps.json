@@ -1,0 +1,43 @@
+{
+  "_readme": [
+    "地图（编辑器「地图」面板 + 页面「地图」块都用这一份）。由 tools/maps/xaero-export.mjs 维护。",
+    "⚠ 道路 / 地点存的是**世界方块坐标**（wx / wz），不是像素：换底图（重新导出 Xaero）后会自动回到原位。",
+    "originX / originZ = 图片左上角那个像素对应的世界方块坐标；blocksPerPixel = 一个像素代表几块。",
+    "像素 ↔ 方块：px = (wx - originX) / blocksPerPixel，py = (wz - originZ) / blocksPerPixel。",
+    "roads = 折线（points 是世界坐标数组）；places = 一个点（wx / wz + 名字 / 颜色 / 图标）。",
+    "手改这份文件没问题，但**别动 origin / blocksPerPixel**，除非你重新导出的图范围变了。"
+  ],
+  "updated": "2026-11-02",
+  "maps": [
+    {
+      "id": "huaya-superflat",
+      "name": "篠花娅 · 超平坦城建",
+      "dimension": "huaya$superflat",
+      "src": "/maps/huaya-superflat.webp",
+      "width": 5120,
+      "height": 5120,
+      "originX": -2560,
+      "originZ": -2560,
+      "blocksPerPixel": 1,
+      "source": "full.png",
+      "exportedAt": "2026-11-02",
+      "roads": [],
+      "places": []
+    },
+    {
+      "id": "huaya-overworld",
+      "name": "篠花娅 · 主世界（总览）",
+      "dimension": "null",
+      "src": "/maps/huaya-overworld.webp",
+      "width": 1024,
+      "height": 1024,
+      "originX": -5120,
+      "originZ": -3072,
+      "blocksPerPixel": 8,
+      "source": "overview.png",
+      "exportedAt": "2026-11-02",
+      "roads": [],
+      "places": []
+    }
+  ]
+}
