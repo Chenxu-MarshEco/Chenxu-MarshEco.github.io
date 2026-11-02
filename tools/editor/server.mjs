@@ -1965,13 +1965,19 @@ async function handleApi(req, res, url) {
         blocksPerPixel: Number(m.blocksPerPixel) || 1,
         originX: Number(m.originX) || 0,
         originZ: Number(m.originZ) || 0,
-        roads: Array.isArray(m.roads) ? m.roads.length : 0,
-        places: Array.isArray(m.places) ? m.places.length : 0,
+        roads: Array.isArray(m.roads) ? m.roads : [],
+        places: Array.isArray(m.places) ? m.places : [],
       }));
       return sendJson(res, 200, { ok: true, maps });
     } catch (err) {
       return sendJson(res, 200, { ok: false, maps: [], error: String(err?.message || err) });
     }
+  }
+  /* 存标注（2026-11-02）：只改 roads / places，图的锚点绝不碰（见 writeMapMarks 那段说明） */
+  if (route === '/api/maps' && req.method === 'POST') {
+    const payload = await readBody(req);
+    const result = await writeMapMarks(payload);
+    return sendJson(res, 200, result);
   }
   if (route === '/api/boards' && req.method === 'GET') {
     /* rev = 这份数据此刻的指纹：页面保存时原样带回来，对不上就是"别人改过了"（见 checkDataStale） */
@@ -4093,6 +4099,91 @@ function cleanNode(raw, parentId, used) {
   return out;
 }
 
+/**
+ * 站内地图的标注存盘（2026-11-02）：只改 roads / places。
+ *
+ * ⚠ **绝不动** src / width / height / originX / originZ / blocksPerPixel —— 那几个是
+ * `tools/maps/xaero-export.mjs` 解码 Xaero 时算出来的。编辑器要是能改它们，一次误操作
+ * 就会让所有标注集体偏位（用户最怕的正是这个）。所以这里读旧文件、只替换标注、原样写回。
+ */
+async function writeMapMarks(payload) {
+  if (!payload || !String(payload.id || '').trim()) throw httpError(400, '数据格式不对，需要 { id, roads, places }');
+  const file = path.join(PROJECT_ROOT, 'src/data/maps.json');
+  let doc;
+  try {
+    doc = JSON.parse(await fs.readFile(file, 'utf8'));
+  } catch (err) {
+    throw httpError(500, `读不到 src/data/maps.json：${String(err?.message || err)}`);
+  }
+  const maps = Array.isArray(doc?.maps) ? doc.maps : [];
+  const idx = maps.findIndex((m) => String(m?.id || '') === String(payload.id));
+  if (idx < 0) throw httpError(404, `没有这张地图：${payload.id}`);
+
+  const str = (v, max) => String(v ?? '').trim().slice(0, max);
+  const num = (v) => {
+    const n = Number(v);
+    return Number.isFinite(n) ? Math.round(n * 1000) / 1000 : null;
+  };
+  const color = (v) => (/^#[0-9a-f]{6}$/i.test(String(v ?? '').trim()) ? String(v).trim().toLowerCase() : '');
+  const usedRoad = new Set();
+  const roads = [];
+  for (const [i, r] of (Array.isArray(payload.roads) ? payload.roads : []).entries()) {
+    if (!r || typeof r !== 'object') continue;
+    const pts = [];
+    for (const p of Array.isArray(r.points) ? r.points : []) {
+      const wx = num(Array.isArray(p) ? p[0] : p?.wx);
+      const wz = num(Array.isArray(p) ? p[1] : p?.wz);
+      if (wx === null || wz === null) continue;
+      pts.push([wx, wz]);
+    }
+    /* 一个点的"路"没有意义（画不出来）；超过 400 个点的折线多半是误操作 */
+    if (pts.length < 2 || pts.length > 400) continue;
+    let id = str(r.id, 64);
+    if (!id || usedRoad.has(id)) id = `road-${i + 1}-${Date.now().toString(36)}`;
+    usedRoad.add(id);
+    const one = { id, points: pts };
+    const name = str(r.name, 80);
+    if (name) one.name = name;
+    const c = color(r.color);
+    if (c) one.color = c;
+    const w = num(r.width);
+    if (w !== null && w >= 1 && w <= 40) one.width = w;
+    if (r.dashed === true) one.dashed = true;
+    roads.push(one);
+    if (roads.length >= 400) break;
+  }
+  const usedPlace = new Set();
+  const places = [];
+  for (const [i, p] of (Array.isArray(payload.places) ? payload.places : []).entries()) {
+    if (!p || typeof p !== 'object') continue;
+    const wx = num(p.wx);
+    const wz = num(p.wz);
+    const name = str(p.name, 80);
+    if (wx === null || wz === null || !name) continue;
+    let id = str(p.id, 64);
+    if (!id || usedPlace.has(id)) id = `place-${i + 1}-${Date.now().toString(36)}`;
+    usedPlace.add(id);
+    const one = { id, name, wx, wz };
+    const c = color(p.color);
+    if (c) one.color = c;
+    const icon = str(p.icon, 8);
+    if (icon) one.icon = icon;
+    const note = str(p.note, 200);
+    if (note) one.note = note;
+    places.push(one);
+    if (places.length >= 1000) break;
+  }
+
+  /* 只换标注，其余字段（图 / 原点 / 比例 / 名字 / 维度）原样保留 */
+  maps[idx] = { ...maps[idx], roads, places };
+  doc.maps = maps;
+  doc.updated = new Date(Date.now() + 8 * 3600 * 1000).toISOString().slice(0, 10);
+  await fs.writeFile(file, `${JSON.stringify(doc, null, 2)}\n`, 'utf8');
+  return {
+    ok: true,
+    map: { id: maps[idx].id, name: maps[idx].name, roads: roads.length, places: places.length },
+  };
+}
 async function writeBoards(payload) {
   if (!payload || !Array.isArray(payload.boards)) {
     throw httpError(400, '数据格式不对，需要 { boards: [...] }');
