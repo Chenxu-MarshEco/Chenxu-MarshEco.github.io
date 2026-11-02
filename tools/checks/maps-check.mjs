@@ -151,6 +151,54 @@ if (!base) {
     `${JSON.stringify(a1)} vs ${JSON.stringify(a2)}`);
 }
 
+
+
+/* ------------------------------------------- ④ 接进页面地图块（百分比 + 接线） */
+console.log('\n================ ④ 页面地图块接线 ================');
+{
+  /*
+    页面里的地图块（pmap）用**百分比**坐标，站内地图要摊成它认的那一页。
+    这里直接调 src/utils/maps.ts 里的纯函数（Node 能直接跑 TS 的类型擦除）验证换算，
+    再接上源码级接线断言 —— 这样不用起浏览器也能钉住"标注会不会落错地方"。
+  */
+  /* ⚠ Windows 上动态 import 绝对路径要给 file:// URL，直接传路径会失败 */
+  const { pathToFileURL } = await import('node:url');
+  const mod = await import(pathToFileURL(path.join(ROOT, 'src/utils/maps-math.mjs')).href).catch(() => null);
+  if (!mod) {
+    check('能 import src/utils/maps-math.mjs（拿 siteMapAsPage 来量换算）', false);
+  } else {
+    const m = maps.find((x) => x.id === 'huaya-superflat');
+    const page = mod.siteMapAsPage(m);
+    check('★ 摊成页面认得的那一页：底图是同一张、有 id', page.src === m.src && !!page.id, page.src);
+    check('★ 地点 → 图钉：数量对得上，坐标是百分比',
+      page.markers.length === (m.places ?? []).length
+      && page.markers.every((k) => k.x >= 0 && k.x <= 100 && k.y >= 0 && k.y <= 100 && typeof k.title === 'string'),
+      `${page.markers.length} 个：${page.markers.map((k) => `${k.title}@${k.x},${k.y}`).join(' ')}`);
+    /* 世界 (0,0) 在 5120² 的图上、原点 -2560 → 正好是 50% */
+    const zero = page.markers.find((k) => k.title.startsWith('原点'));
+    check('★ 世界 (0,0) 落在图的正中（50%, 50%）', !!zero && Math.abs(zero.x - 50) < 0.05 && Math.abs(zero.y - 50) < 0.05,
+      zero ? `${zero.x},${zero.y}` : '没找到原点那个样例');
+    check('★ 道路 → 线段：一条 3 点的折线拆成 2 段，颜色跟着走',
+      page.lines.length === 2 && page.lines.every((l) => l.color === (m.roads[0].color || undefined)),
+      JSON.stringify(page.lines.map((l) => `${l.x1},${l.y1}→${l.x2},${l.y2}`)));
+    /* 反推：百分比 → 世界坐标，要回到原来的方块坐标 */
+    const back = mod.pctToWorld(m, zero.x, zero.y);
+    check('★ 百分比再换回世界坐标，回到 (0,0)', Math.abs(back.wx) < 0.01 && Math.abs(back.wz) < 0.01,
+      `${back.wx},${back.wz}`);
+  }
+  const pc = fs.readFileSync(path.join(ROOT, 'src/components/PageContent.astro'), 'utf8');
+  const sv = fs.readFileSync(path.join(ROOT, 'tools/editor/server.mjs'), 'utf8');
+  const app = fs.readFileSync(path.join(ROOT, 'tools/editor/ui/app.js'), 'utf8');
+  const bt = fs.readFileSync(path.join(ROOT, 'src/utils/boards.ts'), 'utf8');
+  check('数据模型：地图块能带 siteMapId', /type: 'map'; pages: MapPage\[\]; siteMapId\?: string/.test(bt));
+  check('站点渲染：有 siteMapId 就用站内地图那一页（复用 pmap 取景框）',
+    /siteMapAsPage\(siteMap\)/.test(pc) && /mapById\(/.test(pc));
+  check('编辑器保存：地图块会把 siteMapId 存下来（不会被吞）', /withSite\(|siteMapId = siteMapId/.test(sv));
+  check('编辑器接口：/api/maps 能列出地图', /route === '\/api\/maps'/.test(sv));
+  check('编辑器面板：地图块有「地图来源」选择器', /地图来源/.test(app) && /api\('\/api\/maps'\)/.test(app));
+}
+
+console.log('\\n================ 结果 ================');
 console.log('\n================ 结果 ================');
-console.log(`PASS ${pass}   FAIL ${fail}`);
+console.log('PASS ' + pass + '   FAIL ' + fail);
 if (fail > 0) process.exit(1);

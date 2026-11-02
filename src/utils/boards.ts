@@ -109,7 +109,14 @@ export type PageBlock = (
    * 坐标一律存**百分比**而不是像素：地图能放大缩小、能拖，框的宽度还随
    * 屏幕变，只有「相对图片的百分之几」这套坐标在任何情况下都还指着同一个点。
    */
-  | { id: string; type: 'map'; pages: MapPage[] }
+  /**
+   * 地图块。两种来源（2026-11-02 加）：
+   *   · 自己传图 + 图钉（老样子，`pages`）；
+   *   · **站内地图**（`siteMapId`）：Xaero 导出的那几张 + 在地图编辑器里画的道路/地点。
+   *     后者只在块上记一个 id，道路/地点仍存在 `src/data/maps.json` 里（世界坐标），
+   *     所以重新导出底图之后标注不用重画。
+   */
+  | { id: string; type: 'map'; pages: MapPage[]; siteMapId?: string }
   /**
    * 把这一层的子页面铺在这里。
    * shape / size 是整块的默认值，单张卡想不一样就在那个子版块上设

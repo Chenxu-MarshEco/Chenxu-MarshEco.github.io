@@ -49,6 +49,7 @@ import site from '../site.config';
 import mianyuLog from '../data/mianyu.json';
 /* 「近期更新」的排序 / 去重 / 封顶都在这个 util 里（合并之后顺序不能信文件） */
 import { recentPageEdits } from '../utils/recent-edits';
+import { mapById, siteMapAsPage } from '../utils/maps';
 /* 「子页面都摆完了 / 这一层还没有子页面」那两句归「文案」面板（site-copy.json 的 board.*） */
 import { copy as siteCopy, text as copyText } from '../utils/site-copy';
 
@@ -508,7 +509,16 @@ function cardsForBlock(b: PageBlock): { list: BlockItem[]; missing: string[] } {
          没设才用「子页面」块上的默认值 */
       const video = b.type === 'video' && String(b.src ?? '').trim() ? videoOf(b.src) : null;
       /* 地图读成「页」的数组；老数据只有一页，见 utils/boards.ts 的 mapPages */
-      const pages = b.type === 'map' ? mapPages(b) : [];
+      /*
+        地图块的两个来源（2026-11-02）：
+          · 老样子：自己传图 + 图钉（`pages`）；
+          · 站内地图（`siteMapId`）：Xaero 导出的底图 + 地图编辑器里画的道路/地点。
+            后者把世界坐标投影成百分比、摊成"一页"，**照旧走下面那套 pmap 取景框**
+            （它自带的拖动 / 滚轮缩放 / 图钉反缩都不用重写）。
+        ⚠ 认不出来的 siteMapId（图被删了 / 手改错了）就退回老样子，不让整页报错。
+      */
+      const siteMap = b.type === 'map' ? mapById((b as { siteMapId?: string }).siteMapId) : null;
+      const pages = siteMap ? [siteMapAsPage(siteMap)] : (b.type === 'map' ? mapPages(b) : []);
       /*
         卡片类块：先算好这一块要摆哪些卡。
         认不出来的 ref 只在外层留一个 data-missing 记号（读者看不见），

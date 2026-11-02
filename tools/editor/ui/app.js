@@ -3392,6 +3392,55 @@ function mapFields(block) {
   const wrap = document.createElement('div');
   wrap.className = 'pmap-edit';
 
+  /*
+    来源二选一（2026-11-02）：
+      · 老样子：自己传图 + 图钉 / 划分线（下面那一整套）；
+      · **站内地图**：从 Xaero 导出的那几张里选一张，道路/地点是在地图编辑器里画的
+        （存的是世界坐标，重新导出底图不用重画）。
+    选了站内地图之后，下面那套"传图 + 图钉"就不用管了，所以给一句提示。
+  */
+  {
+    const row = document.createElement('div');
+    row.className = 'pblock-edit__row';
+    const label = document.createElement('b');
+    label.textContent = '地图来源';
+    const sel = document.createElement('select');
+    sel.className = 'input';
+    sel.style.maxWidth = '22rem';
+    const opt0 = document.createElement('option');
+    opt0.value = '';
+    opt0.textContent = '自己传图（图钉 / 划分线）';
+    sel.append(opt0);
+    sel.value = String(block.siteMapId || '');
+    sel.addEventListener('change', () => {
+      const v = sel.value;
+      if (v) block.siteMapId = v;
+      else delete block.siteMapId;
+      renderPageEditor();
+    });
+    const note = document.createElement('p');
+    note.className = 'pblock-edit__hint';
+    const paintNote = () => {
+      note.textContent = block.siteMapId
+        ? '用的是站内地图：底图和道路 / 地点都在「地图」工作台里维护（存的是方块坐标，重新导出底图后标注不用重画）。下面的传图 / 图钉就不用管了。'
+        : '';
+    };
+    paintNote();
+    row.append(label, sel);
+    wrap.append(row, note);
+    /* 地图列表从服务端来（同步拿不到，所以先建空的、拿到了再填） */
+    api('/api/maps').then((r) => {
+      const list = Array.isArray(r?.maps) ? r.maps : [];
+      for (const m of list) {
+        const o = document.createElement('option');
+        o.value = m.id;
+        o.textContent = `${m.name}（${m.roads} 条路 / ${m.places} 个地点）`;
+        sel.append(o);
+      }
+      sel.value = String(block.siteMapId || '');
+    }).catch(() => { /* 拿不到就只留"自己传图"这一项 */ });
+  }
+
   /**
    * 把块读成「页的数组」。
    * 兼容最早那版只有一页的写法（块上直接挂 src + markers）：

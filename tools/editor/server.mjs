@@ -1949,6 +1949,30 @@ async function handleApi(req, res, url) {
   // 数据放在 src/data/home-boards.json，site.config.ts 直接 import 它。
   // 之所以不让编辑器去改 site.config.ts：那是 TypeScript 源码，
   // 用字符串替换很容易把文件弄坏，改 JSON 则安全得多。
+  /*
+    站内地图列表（2026-11-02）：页面「地图」块可以选一张（Xaero 导出的那种）。
+    只回编辑器挑图要的那点信息；道路/地点本身在「地图」面板里编辑。
+  */
+  if (route === '/api/maps' && req.method === 'GET') {
+    try {
+      const doc = JSON.parse(await fs.readFile(path.join(PROJECT_ROOT, 'src/data/maps.json'), 'utf8'));
+      const maps = (Array.isArray(doc?.maps) ? doc.maps : []).map((m) => ({
+        id: String(m.id || ''),
+        name: String(m.name || m.id || ''),
+        src: String(m.src || ''),
+        width: Number(m.width) || 0,
+        height: Number(m.height) || 0,
+        blocksPerPixel: Number(m.blocksPerPixel) || 1,
+        originX: Number(m.originX) || 0,
+        originZ: Number(m.originZ) || 0,
+        roads: Array.isArray(m.roads) ? m.roads.length : 0,
+        places: Array.isArray(m.places) ? m.places.length : 0,
+      }));
+      return sendJson(res, 200, { ok: true, maps });
+    } catch (err) {
+      return sendJson(res, 200, { ok: false, maps: [], error: String(err?.message || err) });
+    }
+  }
   if (route === '/api/boards' && req.method === 'GET') {
     /* rev = 这份数据此刻的指纹：页面保存时原样带回来，对不上就是"别人改过了"（见 checkDataStale） */
     return sendJson(res, 200, { ...(await readBoards()), rev: await fileRev(BOARDS_FILE) });
@@ -3810,6 +3834,8 @@ function cleanBlocks(raw, ownerId) {
     }
 
     if (type === 'map') {
+      /* 站内地图（2026-11-02）：只存一个 id，道路/地点都在 src/data/maps.json 里 */
+      const siteMapId = String(b.siteMapId || '').trim();
       /*
         地图是「分页」结构：每一页各有自己的图、图钉、划分线和简介。
         坐标全按 0~100 的百分比收，越界的夹回来；小数点留两位就够，
@@ -3902,20 +3928,29 @@ function cleanBlocks(raw, ownerId) {
       });
 
       /*
+        站内地图（2026-11-02）：块上只存一个 id —— 底图和道路/地点都在
+        src/data/maps.json 里（世界坐标），所以它**不受"一页都没有就丢块"那条影响**。
+      */
+      const withSite = (block) => {
+        if (siteMapId) block.siteMapId = siteMapId;
+        return block;
+      };
+
+      /*
         一页都没留下 = 这个块是空的 → 丢掉；但模版导入的空地图要留着
         （页数就是结构：用户知道这里有一张图要传）。
       */
       if (!pages.length && b.placeholder !== true) return;
       if (!pages.length) {
-        pushBlock({ id, type, pages: (Array.isArray(b.pages) ? b.pages : [{}]).map((pg, pi) => ({
+        pushBlock(withSite({ id, type, pages: (Array.isArray(b.pages) ? b.pages : [{}]).map((pg, pi) => ({
           id: String(pg?.id || `${id}-p${pi + 1}`),
           src: '',
           markers: [],
           lines: [],
-        })) });
+        })) }));
         return;
       }
-      pushBlock({ id, type, pages });
+      pushBlock(withSite({ id, type, pages }));
       return;
     }
 
