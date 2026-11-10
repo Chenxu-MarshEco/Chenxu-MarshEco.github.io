@@ -12,6 +12,8 @@ import { editVars } from '../utils/layout';
 import { bgStyle, coverUrl, variantUrl } from '../utils/images';
 /* 首页两处小字（进入提示 / 回到封面）归「文案」面板：site-copy.json 的 home.* */
 import { copy, text } from '../utils/site-copy';
+import { announceExternal, announceHref, pinnedAnnounces } from '../utils/announce';
+const pinned = pinnedAnnounces();
 
 /*
   天际线走图片管线出的**无损 WebP**：颜色逐位不变（塔吊的 --ink #08020c
@@ -234,6 +236,32 @@ const backText = text(copy.home?.back);
           <p class="brand__tagline">{site.tagline}</p>
         </div>
       </header>
+
+{/*
+  ★ 置顶公告（2026-11-02）：紧贴大标题下方的第一屏内容。
+  用户原话：「被置顶的公告会在曼沫砾总线一直被置顶显示 同时还会在主页出现
+  就是出现在刚进入网站需要下翻之前的位置 网站大标题下方 公告可以插入图片
+  而被置顶的公告显示在网站主页的时候 会连带着图片一起显示」。
+  所以这里：有置顶就整块出现（带封面图），没有就什么都不渲染（不留空档）。
+*/}
+{pinned.length > 0 && (
+  <section class="homepin" aria-label="置顶公告" data-home-pinned>
+    {pinned.map((a) => {
+      const href = announceHref(a);
+      const external = announceExternal(a);
+      return (
+        <a class="homepin__card" href={href || '#'} {...external ? { target: '_blank', rel: 'noopener' } : {}} data-announce-id={a.id}>
+          <span class="homepin__tag">置顶</span>
+          {a.cover && <img class="homepin__img" src={withBase(a.cover)} alt="" loading="eager" decoding="async" />}
+          <span class="homepin__text">
+            <b class="homepin__title">{a.title}</b>
+            <time class="homepin__date" datetime={a.date}>{a.date}</time>
+          </span>
+        </a>
+      );
+    })}
+  </section>
+)}
 
       {/*
         屏幕下方那行小字。做成**链接**而不是按钮：没有 JS 的时候它就是一个

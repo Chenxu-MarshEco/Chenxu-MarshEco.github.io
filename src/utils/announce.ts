@@ -28,6 +28,11 @@ export interface Announcement {
   cover: string;
   /** 更新提醒公告的去处；事项公告恒为空串 */
   href: string;
+  /**
+   * 置顶（2026-11-02 加）：置顶的公告在「曼沫砾总线」那一页永远排最前，
+   * 并且会出现在**首页网站大标题下方**（带图）。两种公告都能置顶。
+   */
+  pinned: boolean;
 }
 
 /** 事项公告在站内的地址（更新提醒公告没有页面，不走这里） */
@@ -60,9 +65,9 @@ function normalize(item: unknown): Announcement | null {
 
   const kind: AnnounceKind = raw.kind === 'update' ? 'update' : 'notice';
   if (kind === 'update') {
-    return { id, kind, date, title, body: '', cover: '', href: str(raw.href) };
+    return { id, kind, date, title, body: '', cover: '', href: str(raw.href), pinned: raw.pinned === true };
   }
-  return { id, kind, date, title, body: String(raw.body ?? ''), cover: str(raw.cover), href: '' };
+  return { id, kind, date, title, body: String(raw.body ?? ''), cover: str(raw.cover), href: '', pinned: raw.pinned === true };
 }
 
 /**
@@ -76,7 +81,13 @@ export function announceList(): Announcement[] {
   return items
     .map(normalize)
     .filter((x): x is Announcement => x !== null)
-    .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+    /* 置顶的永远在最前（多个置顶之间、同日之间都保持文件里的顺序、按日期倒序兜底） */
+    .sort((a, b) => (a.pinned !== b.pinned ? (a.pinned ? -1 : 1) : (a.date < b.date ? 1 : a.date > b.date ? -1 : 0)));
+}
+
+/** 置顶公告（首页大标题下方那条 + 总线的置顶区都用它） */
+export function pinnedAnnounces(): Announcement[] {
+  return announceList().filter((a) => a.pinned);
 }
 
 /** 公告栏这一块自己的名字和首页显示条数 */

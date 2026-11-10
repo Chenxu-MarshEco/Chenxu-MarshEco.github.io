@@ -54,11 +54,11 @@ const updateCount = all.length - noticeCount;
                 const external = announceExternal(it);
                 const kind = ANNOUNCE_KIND_LABEL[it.kind];
                 return (
-                  <li class="alb__row" data-announce-id={it.id} data-announce-kind={it.kind}>
+                  <li class="alb__row" data-announce-id={it.id} data-announce-kind={it.kind} data-announce-pinned={it.pinned ? '1' : undefined}>
                     <time class="alb__date" datetime={it.date}>
                       {announceDateText(it.date)}
                     </time>
-                    <span class:list={['alb__kind', it.kind === 'update' && 'alb__kind--update']}>{kind}</span>
+                    <span class:list={['alb__kind', it.kind === 'update' && 'alb__kind--update']}>{kind}</span>`n                            {it.pinned && <span class="alb__pin" title="置顶公告：一直排在最前面，首页也会显示">置顶</span>}
                     {href ? (
                       <a
                         class="alb__title"

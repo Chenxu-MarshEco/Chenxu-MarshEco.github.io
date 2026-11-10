@@ -4535,8 +4535,13 @@ function cleanAnnouncements(payload, current) {
     used.add(id);
 
     const kind = raw.kind === 'update' ? 'update' : 'notice';
+    /*
+      置顶（2026-11-02）：两种公告都能置顶。只有 true 才写 this field，老数据过一遍
+      逐字节不变（其余字段同理，别塞 undefined）。
+    */
+    const pinned = raw.pinned === true ? { pinned: true } : {};
     if (kind === 'update') {
-      file.items.push({ id, kind, date, title, href: String(raw.href ?? '').trim() });
+      file.items.push({ id, kind, date, title, href: String(raw.href ?? '').trim(), ...pinned });
     } else {
       file.items.push({
         id,
@@ -4545,6 +4550,7 @@ function cleanAnnouncements(payload, current) {
         title,
         body: String(raw.body ?? ''),
         cover: String(raw.cover ?? '').trim(),
+        ...pinned,
       });
     }
   }
