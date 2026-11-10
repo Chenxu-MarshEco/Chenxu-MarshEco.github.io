@@ -13256,7 +13256,8 @@ function renderAnnouncePanel() {
   /* 显示顺序 = 站点上的顺序（日期倒序；同一天保持清单里的先后） */
   const shown = ann.items
     .map((it, i) => ({ it, i }))
-    .sort((a, b) => (a.it.date === b.it.date ? a.i - b.i : a.it.date < b.it.date ? 1 : -1))
+    /* 和站点一致：置顶优先，其次日期倒序、同一天保持清单顺序 */
+    .sort((a, b) => (a.it.pinned !== b.it.pinned ? (a.it.pinned ? -1 : 1) : (a.it.date === b.it.date ? a.i - b.i : a.it.date < b.it.date ? 1 : -1)))
     .map((x) => x.it);
   if (!shown.length) {
     listBox.appendChild(iceHint('还没有公告 —— 点上面那两颗按钮写第一条。'));
@@ -13293,6 +13294,25 @@ function annRow(item, status) {
   const kind = document.createElement('span');
   kind.className = item.kind === 'update' ? 'wann__kind wann__kind--update' : 'wann__kind';
   kind.textContent = ANN_KIND_LABEL[item.kind] ?? ANN_KIND_LABEL.notice;
+
+  /*
+    置顶（2026-11-02）：点一下切换，**按「保存并重新构建」才真写盘**（和这一栏别的操作一个规矩）。
+    置顶的公告在 /zongxian/ 永远排最前，并且会出现在**首页大标题下方**（带封面图）。
+  */
+  const pin = document.createElement('button');
+  pin.type = 'button';
+  pin.className = item.pinned ? 'btn boardedit__mini wann__pin' : 'btn btn--ghost boardedit__mini wann__pin';
+  pin.textContent = item.pinned ? '📌 已置顶' : '置顶';
+  pin.title = item.pinned
+    ? '现在是置顶：点一下取消（首页那块就不显示了）'
+    : '点一下置顶：总线上永远排最前，首页大标题下方也会显示（带封面图）';
+  pin.dataset.annPinned = item.pinned ? '1' : '0';
+  pin.addEventListener('click', () => {
+    if (item.pinned) delete item.pinned;
+    else item.pinned = true;
+    markPanelDirty(status, 'announce');
+    renderAnnouncePanel();
+  });
 
   const title = document.createElement('span');
   title.className = 'wann__title';
@@ -13336,7 +13356,7 @@ function annRow(item, status) {
     })
   );
 
-  row.append(kind, title, date, ops);
+  row.append(kind, pin, title, date, ops);
   return row;
 }
 
