@@ -2221,6 +2221,7 @@ const BLOCK_LABEL = {
   logs: '助手日志',
   recent: '近期更新',
   sidebar: '侧边栏',
+  album: '相册',
 };
 const TEXT_HINT =
   '支持 Markdown：**粗体**、[链接](地址)、- 列表、![图](/img/uploads/x.png)、## 小标题、'
@@ -4922,6 +4923,122 @@ function closeMapsModal() {
   mapState.dirty = false;
 }
 
+/**
+ * 「相册」块的面板（2026-11-11）
+ *
+ * 用户原话：「目前页面编辑的传图模式过于麻烦 需要一个一个传 …… 可以连续批量上传照片
+ * 点开照片后会显示大图以及描述（如果有描述的话）」。
+ *
+ * 所以这一块的重点是**一次收一批**：拖进来 / Ctrl+V / 点开选文件多选，全都走
+ * uploadImage 一张张传（并发不了，但不用你一张张点），传完自动铺成一行行缩略图，
+ * 每行一个描述框。整块可反复加，一个页面能放好几个相册、各自管自己的 photos。
+ */
+function albumFields(block) {
+  const wrap = document.createElement('div');
+  wrap.className = 'pblock-edit__body';
+  if (!Array.isArray(block.photos)) block.photos = [];
+
+  wrap.append(boardInput(block.text ?? '', '相册标题（可留空）', (v) => { block.text = v; }));
+
+  const drop = document.createElement('div');
+  drop.className = 'pblock-edit__row';
+  drop.style.cssText = 'min-height:4.5rem;display:flex;align-items:center;justify-content:center;'
+    + 'border:1px dashed rgba(255,120,190,.5);border-radius:8px;padding:.6rem;color:#ffd9ef;cursor:pointer;text-align:center';
+  drop.textContent = '拖照片到这里，或点这里选（可多选；也可以 QQ 截图后 Ctrl+V）';
+  const file = document.createElement('input');
+  file.type = 'file';
+  file.accept = 'image/*';
+  file.multiple = true;
+  file.style.display = 'none';
+  wrap.append(drop, file);
+
+  const addFiles = async (files) => {
+    const list = [...(files || [])].filter((f) => /^image\//.test(String(f.type || '')));
+    if (!list.length) return;
+    const was = drop.textContent;
+    let ok = 0;
+    for (const [i, f] of list.entries()) {
+      drop.textContent = `正在上传第 ${i + 1} / ${list.length} 张…`;
+      try {
+        const src = await uploadImage(f);
+        block.photos.push({ id: newBlockId(block.id), src, note: '' });
+        ok += 1;
+      } catch (err) {
+        toast(`「${f.name || '一张'}」没传上去：${err.message}`, true);
+      }
+    }
+    drop.textContent = was;
+    if (ok) {
+      renderPageEditor();
+      toast(`加了 ${ok} 张照片`);
+    }
+  };
+  /* 拖 / 粘 / 点选都交给全站那个统一入口（它已经会认 file input 并接管点击） */
+  attachImageIntake({
+    el: drop,
+    input: file,
+    multiple: true,
+    label: '相册',
+    title: '拖多张进来、或者点它选多张',
+    onFiles: addFiles,
+    onUrl: (url) => {
+      block.photos.push({ id: newBlockId(block.id), src: url, note: '' });
+      renderPageEditor();
+    },
+  });
+
+  /* 一张一行：缩略图 + 描述 + 排序 + 删除 */
+  const list = document.createElement('div');
+  block.photos.forEach((ph, i) => {
+    const row = document.createElement('div');
+    row.className = 'pblock-edit__row';
+    row.style.cssText = 'align-items:center;gap:.5rem';
+    const thumb = document.createElement('img');
+    thumb.src = ph.src;
+    thumb.alt = '';
+    thumb.style.cssText = 'width:3rem;height:3rem;object-fit:cover;border-radius:6px;flex:0 0 auto';
+    const note = boardInput(ph.note ?? '', '这张照片的描述（可留空）', (v) => {
+      if (v.trim()) ph.note = v;
+      else delete ph.note;
+    });
+    note.style.flex = '1';
+    const mini = (label, title, fn, cls = '') => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = `btn btn--ghost boardedit__mini ${cls}`.trim();
+      b.textContent = label;
+      b.title = title;
+      b.addEventListener('click', fn);
+      return b;
+    };
+    row.append(
+      thumb,
+      note,
+      mini('↑', '往前挪一张', () => {
+        if (i === 0) return;
+        [block.photos[i - 1], block.photos[i]] = [block.photos[i], block.photos[i - 1]];
+        renderPageEditor();
+      }),
+      mini('↓', '往后挪一张', () => {
+        if (i === block.photos.length - 1) return;
+        [block.photos[i + 1], block.photos[i]] = [block.photos[i], block.photos[i + 1]];
+        renderPageEditor();
+      }),
+      mini('删除', '从相册里删掉这张', () => {
+        block.photos.splice(i, 1);
+        renderPageEditor();
+      }, 'boardedit__del')
+    );
+    list.append(row);
+  });
+  wrap.append(list);
+
+  const hint = document.createElement('p');
+  hint.className = 'pblock-edit__hint';
+  hint.textContent = `这个相册有 ${block.photos.length} 张。站上点一张会放大看原图，描述会显示在照片墙下面、也会显示在大图下面。一个页面可以放好几个相册，各管各的照片。`;
+  wrap.append(hint);
+  return wrap;
+}
 /** 一个块的字段区 */
 function blockFields(block) {
   const wrap = document.createElement('div');
@@ -5225,6 +5342,7 @@ function blockFields(block) {
     return wrap;
   }
 
+  if (block.type === 'album') return albumFields(block);
   if (block.type === 'card') return cardBlockFields(block);
   if (block.type === 'cardbox') return cardboxBlockFields(block);
 
@@ -5963,6 +6081,9 @@ function renderPageEditor() {
     /* 侧边栏（2026-10-15）：页面右侧那条信息栏，格子可自由增删（见 sidebarRowsEditor） */
     ['sidebar', '侧边栏', () => ({ id: newBlockId(pageNode.id), type: 'sidebar', text: '', rows: [{ id: newBlockId(pageNode.id) + '-r1', kind: 'text', label: '标题', text: '' }], span: 3 }),
       '页面右侧一条信息栏：格子可增删，放文字 / 图片 / 链接 / 带图标的条目列表，还能设它跨几个板块'],
+    /* 相册（2026-11-11）：一个块装一组照片，批量上传、每张可带描述 */
+    ['album', '相册', () => ({ id: newBlockId(pageNode.id), type: 'album', text: '', photos: [] }),
+      '一组照片：可以一次拖/粘多张进来，点开看原图并显示描述；一页可以放好几个相册'],
     // 地图是分页的，新建时就直接建成分页形状（别再造老那种 src+markers 挂在块上的了）
     ['map', '地图', () => ({ id: newBlockId(pageNode.id), type: 'map', pages: [] })],
   ];
@@ -6214,6 +6335,8 @@ function commitPageBlocks() {
       b.type === 'recent' ||
       /* 侧边栏：刚加进来还没填格子时也得留着（不然「先加栏、再填格」中间保存一次就没了） */
       b.type === 'sidebar' ||
+      /* 相册：刚加进来还没传图时也得留着 */
+      b.type === 'album' ||
       /* 单张卡 / 卡片框本身就是作者特意放的结构：还没挑子页面也得留着，
          不然「先加个框、再去挑卡」中间保存一次，框就没了 */
       b.type === 'card' ||

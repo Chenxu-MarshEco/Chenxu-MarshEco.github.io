@@ -197,6 +197,15 @@ export type PageBlock = (
    * 谁高听谁的（见 PageContent.astro 的 .page--side）。
    */
   | { id: string; type: 'sidebar'; text?: string; rows: SidebarRow[]; span?: number }
+  /**
+   * **相册**块（2026-11-11）。用户原话：「需要一个 +相册 相册会专门变成一个板块
+   * 可以连续批量上传照片 点开照片后会显示大图以及描述（如果有描述的话）
+   * 一个页面里也可以塞多个相册 两个分开显示管理」。
+   *
+   * 和「＋图片」的区别：一个块装**一组**照片（批量上传），各自带描述；
+   * 同一页可以放好几个，每块自己一份 photos。点开放大走全站灯箱（ImageZoom 自动认）。
+   */
+  | { id: string; type: 'album'; text?: string; photos: AlbumPhoto[] }
 ) &
   TimeFields &
   PlaceholderField;
@@ -208,6 +217,16 @@ export type PageBlock = (
  *   link   一条链接（显示文字在 `text`，地址在 `href`）
  *   items  **一串带图标的条目**（参考图里「图鉴 / 道具池」那两格；样式就是导航条目）
  */
+/** 相册里的一张照片：图 + 可选描述（描述在照片墙下和灯箱里都显示） */
+export interface AlbumPhoto {
+  id: string;
+  /** public 下的图片地址（/img/uploads/…） */
+  src: string;
+  /** 读屏用的 alt；不写就用描述 */
+  alt?: string;
+  /** 描述（可留空：留空就只显示图） */
+  note?: string;
+}
 export type SidebarRowKind = 'text' | 'image' | 'link' | 'items';
 
 /** `items` 格子里的一条：和导航条目同形（文字 + 小图标 + 地址，都能缺） */

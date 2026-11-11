@@ -588,6 +588,35 @@ function cardsForBlock(b: PageBlock): { list: BlockItem[]; missing: string[] } {
             </a>
           )}
 
+          {/*
+            相册（2026-11-11）：一组照片 + 每张的可选描述。
+            · 点开放大：全站灯箱 ImageZoom 认 `data-zoom`，而它读图注的顺序是
+              「figcaption 的字 → 图片的 alt」—— 所以这里用 figure/figcaption 就
+              自动做到"大图下面带描述"，不用改灯箱一行代码；
+            · 描述为空时只有图（不渲染空 figcaption，留白也省了）。
+          */}
+          {b.type === 'album' && (
+            <div class="palbum">
+              {b.text && <p class="palbum__head">{b.text}</p>}
+              <ul class="palbum__grid">
+                {(b.photos ?? []).map((ph) => (
+                  <li class="palbum__cell" data-album-photo={ph.id}>
+                    <figure class="palbum__fig">
+                      <img
+                        class="palbum__img"
+                        src={withBase(ph.src)}
+                        alt={ph.alt || ph.note || ''}
+                        loading="lazy"
+                        decoding="async"
+                        data-zoom="1"
+                      />
+                      {ph.note && <figcaption class="palbum__note">{ph.note}</figcaption>}
+                    </figure>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
           {b.type === 'divider' && (
             <div class="pdivider" role="separator">
               {b.text ? <span class="pdivider__text">{b.text}</span> : null}
@@ -1379,6 +1408,44 @@ function cardsForBlock(b: PageBlock): { list: BlockItem[]; missing: string[] } {
     }
   }
 
+  /* ---------- 相册 ---------- */
+  /*
+    照片墙：等宽栅格，最小 10rem 一格（手机上自动一两列）。
+    图用 object-fit: cover 裁成方一点——相册里高矮不齐会显得很乱；
+    点开看的是原图（灯箱读 data-zoom 那张），裁掉的只是缩略图那一格。
+  */
+  .palbum__head {
+    margin: 0 0 0.6rem;
+    color: #ffd9ef;
+  }
+  .palbum__grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(10rem, 1fr));
+    gap: 0.6rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .palbum__cell {
+    margin: 0;
+  }
+  .palbum__fig {
+    margin: 0;
+  }
+  .palbum__img {
+    display: block;
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    object-fit: cover;
+    border-radius: 8px;
+    cursor: zoom-in;
+  }
+  .palbum__note {
+    margin: 0.3rem 0 0;
+    font-size: 0.8rem;
+    line-height: 1.5;
+    color: rgba(255, 240, 250, 0.72);
+  }
   /* ---------- 链接 ---------- */
   .plink {
     display: inline-flex;

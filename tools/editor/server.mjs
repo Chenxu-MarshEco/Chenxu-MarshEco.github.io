@@ -3745,6 +3745,32 @@ function cleanBlocks(raw, ownerId) {
       return;
     }
 
+    if (type === 'album') {
+      /*
+        相册（2026-11-11）：一个块一组照片，每张可带描述。
+        ⚠ 这是"认不认这个块"的唯一关口 —— 漏了，用户批量传好的照片一保存就静默消失。
+        没图的照片丢掉；一张不剩才算空块（模版导入的空相册要留着）。
+      */
+      const photos = [];
+      for (const [i, ph] of (Array.isArray(b.photos) ? b.photos : []).entries()) {
+        if (!ph || typeof ph !== 'object') continue;
+        const src = String(ph.src || '').trim();
+        if (!src) continue;
+        const one = { id: String(ph.id || '').trim() || `${id}-p${i + 1}`, src };
+        const alt = String(ph.alt ?? '').trim();
+        if (alt) one.alt = alt;
+        const note = String(ph.note ?? '').trim();
+        if (note) one.note = note;
+        photos.push(one);
+        if (photos.length >= 300) break;
+      }
+      if (!photos.length && b.placeholder !== true) return;
+      const block = { id, type, photos };
+      const head = String(b.text || '').trim();
+      if (head) block.text = head;
+      pushBlock(block);
+      return;
+    }
     if (type === 'sidebar') {
       /*
         侧边栏（2026-10-15 加）：rows = 格子，span = 跨几个板块。
