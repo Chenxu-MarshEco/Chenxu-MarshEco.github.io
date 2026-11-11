@@ -2,11 +2,458 @@
   "boards": [
     {
       "id": "page-mwbs12vg",
-      "title": "冰室相册-26年国庆大聚会",
+      "title": "2026冰室国庆大聚会",
       "subtitle": "",
-      "image": "",
+      "image": "/img/uploads/20261111-1627-44bb-138af5e591ebb58dfc3bf3d5088a252c.jpg",
       "standalone": true,
-      "href": "/huaya/bingshi/photo/20261001"
+      "href": "/huaya/bingshi/photo/20261001",
+      "page": [
+        {
+          "id": "page-mwbs12vg-pmwbuy9xs61",
+          "type": "toc"
+        },
+        {
+          "id": "page-mwbs12vg-pmwbuzqiv62",
+          "type": "text",
+          "text": "# 序言\n此页是为了纪念冰室第一次线下大聚会而生的相册。相聚在甬城的这几天发生了许多有趣的故事，如果想要看到照片以外的视角，可以跳转到[等待篠雨的日子里系列](https://www.bilibili.com/video/BV1Z2x16ZEEj/?spm_id_from=333.1387.homepage.video_card.click&vd_source=112e90bd5bb08c50693dbe5de5d7ea4d)观看视频视角，也可以前往[星虹巢](https://arcarlight.github.io/BlogStand/blog/niki_2026101/)观看由虹星撰写的游记视角！"
+        },
+        {
+          "id": "page-mwbs12vg-pmwbvc3tj63",
+          "type": "divider"
+        },
+        {
+          "id": "page-mwbs12vg-pmwbsh9po1",
+          "type": "text",
+          "text": "# Day1\n20260930 面见白蜥\n"
+        },
+        {
+          "id": "page-mwbs12vg-pmwbso0v02",
+          "type": "album",
+          "photos": [
+            {
+              "id": "page-mwbs12vg-pmwbso0v02-pmwbspna83",
+              "src": "/img/uploads/20261111-1526-3acb-IMG_20260930_191631.jpg",
+              "note": "南商的奇特建筑"
+            },
+            {
+              "id": "page-mwbs12vg-pmwbso0v02-pmwbsqfys5",
+              "src": "/img/uploads/20261111-1527-f284-IMG_20260930_194125.jpg",
+              "note": "我爱烤肉终结者"
+            },
+            {
+              "id": "page-mwbs12vg-pmwbso0v02-pmwbsqk0h6",
+              "src": "/img/uploads/20261111-1527-7772-IMG_20260930_203701.jpg",
+              "note": "水街之夜"
+            },
+            {
+              "id": "page-mwbs12vg-pmwbso0v02-pmwbsqo2n7",
+              "src": "/img/uploads/20261111-1527-0697-IMG_20260930_204139.jpg",
+              "note": "莲花楼"
+            },
+            {
+              "id": "page-mwbs12vg-pmwbso0v02-pmwbsqr6i8",
+              "src": "/img/uploads/20261111-1527-a1c0-IMG_20260930_204438.jpg",
+              "note": "我爱水街"
+            }
+          ],
+          "text": "隰辰煦视角"
+        },
+        {
+          "id": "page-mwbs12vg-pmwbvc9fi64",
+          "type": "divider"
+        },
+        {
+          "id": "page-mwbs12vg-pmwbt57sy9",
+          "type": "text",
+          "text": "# Day2\n20261001 鄞二观鸟之旅"
+        },
+        {
+          "id": "page-mwbs12vg-pmwbt5v3f10",
+          "type": "album",
+          "photos": [
+            {
+              "id": "page-mwbs12vg-pmwbt5v3f10-pmwbt67ku11",
+              "src": "/img/uploads/20261111-1539-5f40-IMG_20261001_135724.jpg",
+              "note": "青带凤蝶发生季"
+            },
+            {
+              "id": "page-mwbs12vg-pmwbt5v3f10-pmwbt6ckr12",
+              "src": "/img/uploads/20261111-1539-c9fa-IMG_20261001_152124.jpg",
+              "note": "我爱达美乐"
+            },
+            {
+              "id": "page-mwbs12vg-pmwbt5v3f10-pmwbt6lz113",
+              "src": "/img/uploads/20261111-1539-0344-IMG_20261001_160742.jpg",
+              "note": "水杉的板根"
+            },
+            {
+              "id": "page-mwbs12vg-pmwbt5v3f10-pmwbt702514",
+              "src": "/img/uploads/20261111-1540-664c-IMG_20261001_160922.jpg",
+              "note": "日间莲花楼"
+            },
+            {
+              "id": "page-mwbs12vg-pmwbt5v3f10-pmwbtav5r15",
+              "src": "/img/uploads/20261111-1543-4cf1-IMG_20261001_161258.jpg",
+              "note": "你好小白鹭"
+            },
+            {
+              "id": "page-mwbs12vg-pmwbt5v3f10-pmwbtaz9u16",
+              "src": "/img/uploads/20261111-1543-81d2-IMG_20261001_163939.jpg",
+              "note": "非常上镜的黑天鹅"
+            },
+            {
+              "id": "page-mwbs12vg-pmwbt5v3f10-pmwbtbbiy17",
+              "src": "/img/uploads/20261111-1543-154c-IMG_20261001_164638.jpg",
+              "note": "鄞二"
+            },
+            {
+              "id": "page-mwbs12vg-pmwbt5v3f10-pmwbtdv7h18",
+              "src": "/img/uploads/20261111-1545-ce56-IMG_20261001_170838.jpg",
+              "note": "黑水鸡与宝宝鸡"
+            },
+            {
+              "id": "page-mwbs12vg-pmwbt5v3f10-pmwbte8p219",
+              "src": "/img/uploads/20261111-1545-9776-IMG_20261001_171004.jpg",
+              "note": "悠闲的黑水鸡"
+            },
+            {
+              "id": "page-mwbs12vg-pmwbt5v3f10-pmwbtfgwy20",
+              "src": "/img/uploads/20261111-1546-4b28-IMG_20261001_171706.jpg",
+              "note": "鹊鸲小宝贝"
+            },
+            {
+              "id": "page-mwbs12vg-pmwbt5v3f10-pmwbtfknz21",
+              "src": "/img/uploads/20261111-1546-bb3f-IMG_20261001_174309.jpg",
+              "note": "异头人间的人头人"
+            },
+            {
+              "id": "page-mwbs12vg-pmwbt5v3f10-pmwbtfrc122",
+              "src": "/img/uploads/20261111-1546-9c5b-IMG_20261001_201904.jpg",
+              "note": "烟雨水街"
+            },
+            {
+              "id": "page-mwbs12vg-pmwbt5v3f10-pmwbtfu8323",
+              "src": "/img/uploads/20261111-1546-866f-IMG_20261001_223319.jpg",
+              "note": "后室满员之日"
+            }
+          ],
+          "text": "隰辰煦视角"
+        },
+        {
+          "id": "page-mwbs12vg-pmwbvccry65",
+          "type": "divider"
+        },
+        {
+          "id": "page-mwbs12vg-pmwbtu12h1",
+          "type": "text",
+          "text": "# Day3\n20261002 逃离象山作战"
+        },
+        {
+          "id": "page-mwbs12vg-pmwbtujk12",
+          "type": "album",
+          "photos": [
+            {
+              "id": "page-mwbs12vg-pmwbtujk12-pmwbtvc2i3",
+              "src": "/img/uploads/20261111-1558-7099-IMG_20261002_115607.jpg",
+              "note": "临时释放点"
+            },
+            {
+              "id": "page-mwbs12vg-pmwbtujk12-pmwbtvenm4",
+              "src": "/img/uploads/20261111-1559-0af8-IMG_20261002_122730.jpg",
+              "note": "向麦门臣服吧"
+            },
+            {
+              "id": "page-mwbs12vg-pmwbtujk12-pmwbtvoof5",
+              "src": "/img/uploads/20261111-1559-545b-IMG_20260926_135133.jpg",
+              "note": "（似乎卷入了回忆的漩涡）"
+            },
+            {
+              "id": "page-mwbs12vg-pmwbtujk12-pmwbtvqda6",
+              "src": "/img/uploads/20261111-1559-79a5-IMG_20260926_135316.jpg",
+              "note": "上个月的象山~碧海澄空"
+            },
+            {
+              "id": "page-mwbs12vg-pmwbtujk12-pmwbtvud77",
+              "src": "/img/uploads/20261111-1559-c546-IMG_20260926_152008.jpg",
+              "note": "上个月的象山~美丽的南沙滩"
+            },
+            {
+              "id": "page-mwbs12vg-pmwbtujk12-pmwbtvw0o8",
+              "src": "/img/uploads/20261111-1559-7f8d-IMG_20260926_152441.jpg",
+              "note": "上个月的象山~美丽的南沙滩"
+            },
+            {
+              "id": "page-mwbs12vg-pmwbtujk12-pmwbtvyg99",
+              "src": "/img/uploads/20261111-1559-d5e2-IMG_20260926_153513.jpg",
+              "note": "上个月的象山~美丽的南沙滩"
+            },
+            {
+              "id": "page-mwbs12vg-pmwbtujk12-pmwbtw2bn10",
+              "src": "/img/uploads/20261111-1559-c20c-IMG_20260926_155250.jpg",
+              "note": "上个月的象山~可爱的海蟑螂"
+            },
+            {
+              "id": "page-mwbs12vg-pmwbtujk12-pmwbtw45f11",
+              "src": "/img/uploads/20261111-1559-4d37-IMG_20260926_162754.jpg",
+              "note": "上个月的象山~美丽的北沙滩"
+            },
+            {
+              "id": "page-mwbs12vg-pmwbtujk12-pmwbtwcz412",
+              "src": "/img/uploads/20261111-1559-278f-IMG_20260926_163058.jpg",
+              "note": "上个月的象山~超子哥冲浪"
+            },
+            {
+              "id": "page-mwbs12vg-pmwbtujk12-pmwbtwrio14",
+              "src": "/img/uploads/20261111-1600-b51b-IMG_20260926_180023.jpg",
+              "note": "上个月的象山~中秋月圆"
+            },
+            {
+              "id": "page-mwbs12vg-pmwbtujk12-pmwbtwywa15",
+              "src": "/img/uploads/20261111-1600-fa96-IMG_20260926_181357.jpg",
+              "note": "上个月的象山~象山海鲜面"
+            },
+            {
+              "id": "page-mwbs12vg-pmwbtujk12-pmwbtwj0a13",
+              "src": "/img/uploads/20261111-1559-67eb-IMG_20260926_163721.jpg",
+              "note": "（此时此三人还不知道国庆将要面对什么）"
+            },
+            {
+              "id": "page-mwbs12vg-pmwbtujk12-pmwbu0dah16",
+              "src": "/img/uploads/20261111-1602-1bce-IMG_20261002_142244.jpg",
+              "note": "国庆的象山~象山湾的阴云天"
+            },
+            {
+              "id": "page-mwbs12vg-pmwbtujk12-pmwbu0is517",
+              "src": "/img/uploads/20261111-1603-8305-IMG_20261002_144215.jpg",
+              "note": "《橘》"
+            },
+            {
+              "id": "page-mwbs12vg-pmwbtujk12-pmwbu0m6318",
+              "src": "/img/uploads/20261111-1603-28d8-IMG_20261002_162310.jpg",
+              "note": "海堤一角"
+            },
+            {
+              "id": "page-mwbs12vg-pmwbtujk12-pmwbu21sc19",
+              "src": "/img/uploads/20261111-1604-1124-IMG_20261002_194538.jpg",
+              "note": "逃离象山然后食用板栗火锅吧"
+            },
+            {
+              "id": "page-mwbs12vg-pmwbtujk12-pmwbujfj945",
+              "src": "/img/uploads/20261111-1617-e331-bce4d570ad96a9b7c520a9c410d01f96.jpg",
+              "note": "成为“鱼”的一员"
+            },
+            {
+              "id": "page-mwbs12vg-pmwbtujk12-pmwbu28wm21",
+              "src": "/img/uploads/20261111-1604-50f0-IMG_20261002_214306.jpg",
+              "note": "蛞蝓伙伴帮我们把尿"
+            },
+            {
+              "id": "page-mwbs12vg-pmwbtujk12-pmwbu45vf22",
+              "src": "/img/uploads/20261111-1605-ed4c-IMG_20261002_222551.jpg",
+              "note": "则，酷儿，老车批"
+            }
+          ],
+          "text": "隰辰煦视角"
+        },
+        {
+          "id": "page-mwbs12vg-pmwbvcgom66",
+          "type": "divider"
+        },
+        {
+          "id": "page-mwbs12vg-pmwbu4hmp23",
+          "type": "text",
+          "text": "# Day4\n20261003 终于相聚在宁波之根下"
+        },
+        {
+          "id": "page-mwbs12vg-pmwbu5si824",
+          "type": "album",
+          "photos": [
+            {
+              "id": "page-mwbs12vg-pmwbu5si824-pmwbu61iu25",
+              "src": "/img/uploads/20261111-1607-3b6c-IMG_20261003_132711.jpg",
+              "note": "来到阪急"
+            },
+            {
+              "id": "page-mwbs12vg-pmwbu5si824-pmwbu65z026",
+              "src": "/img/uploads/20261111-1607-29c4-IMG_20261003_132920.jpg",
+              "note": "睡吧小哈哈"
+            },
+            {
+              "id": "page-mwbs12vg-pmwbu5si824-pmwbu692q27",
+              "src": "/img/uploads/20261111-1607-2e25-IMG_20261003_133101.jpg",
+              "note": "宁波之根"
+            },
+            {
+              "id": "page-mwbs12vg-pmwbu5si824-pmwbu6cb228",
+              "src": "/img/uploads/20261111-1607-47a8-IMG_20261003_133508.jpg",
+              "note": "冰室循环论的Q.E.D"
+            },
+            {
+              "id": "page-mwbs12vg-pmwbu5si824-pmwbu6s2w29",
+              "src": "/img/uploads/20261111-1607-4c3e-IMG_20261003_133639.jpg",
+              "note": "东部新城"
+            },
+            {
+              "id": "page-mwbs12vg-pmwbu5si824-pmwbu6v2o30",
+              "src": "/img/uploads/20261111-1607-ffdb-IMG_20261003_140338.jpg",
+              "note": "阪急连廊"
+            },
+            {
+              "id": "page-mwbs12vg-pmwbu5si824-pmwbu6z2831",
+              "src": "/img/uploads/20261111-1608-a165-IMG_20261003_141157.jpg",
+              "note": "远眺"
+            },
+            {
+              "id": "page-mwbs12vg-pmwbu5si824-pmwbu71tn32",
+              "src": "/img/uploads/20261111-1608-ca28-IMG_20261003_191720.jpg",
+              "note": "正统宁波家常菜"
+            },
+            {
+              "id": "page-mwbs12vg-pmwbu5si824-pmwbu74mw33",
+              "src": "/img/uploads/20261111-1608-eb57-IMG_20261003_210008.jpg",
+              "note": "无法逃离的山姆"
+            },
+            {
+              "id": "page-mwbs12vg-pmwbu5si824-pmwbu77nw34",
+              "src": "/img/uploads/20261111-1608-3120-IMG_20261003_210056.jpg",
+              "note": "阈限货架"
+            },
+            {
+              "id": "page-mwbs12vg-pmwbu5si824-pmwbu7dq936",
+              "src": "/img/uploads/20261111-1608-b82d-IMG_20261003_211829.jpg",
+              "note": "我爱大剑"
+            },
+            {
+              "id": "page-mwbs12vg-pmwbu5si824-pmwbu7e9k37",
+              "src": "/img/uploads/20261111-1608-876c-IMG_20261003_210515.jpg",
+              "note": "羽之颂（左1）与鲳鱼合影"
+            },
+            {
+              "id": "page-mwbs12vg-pmwbu5si824-pmwbu7jtr39",
+              "src": "/img/uploads/20261111-1608-92b9-IMG_20261003_211555.jpg",
+              "note": "萌趣佛手"
+            },
+            {
+              "id": "page-mwbs12vg-pmwbu5si824-pmwbu7h6d38",
+              "src": "/img/uploads/20261111-1608-398e-IMG_20261003_213345.jpg",
+              "note": "“马”的圣域"
+            },
+            {
+              "id": "page-mwbs12vg-pmwbu5si824-pmwbu7mut40",
+              "src": "/img/uploads/20261111-1608-514e-IMG_20261003_213603.jpg",
+              "note": "欢乐海岸的黑暗秘密"
+            },
+            {
+              "id": "page-mwbs12vg-pmwbu5si824-pmwbu7qil41",
+              "src": "/img/uploads/20261111-1608-9d2e-IMG_20261003_213920.jpg",
+              "note": "发现身边的砼核"
+            },
+            {
+              "id": "page-mwbs12vg-pmwbu5si824-pmwbu7sro42",
+              "src": "/img/uploads/20261111-1608-a2a4-IMG_20261003_214012.jpg",
+              "note": "夜探海岸"
+            },
+            {
+              "id": "page-mwbs12vg-pmwbu5si824-pmwbuj9ir44",
+              "src": "/img/uploads/20261111-1617-fffe-9eee9fe8f2f3e3f9810a9d9384f76d5f.jpg",
+              "note": "飞吧梦的翅膀"
+            }
+          ],
+          "text": "隰辰煦视角"
+        },
+        {
+          "id": "page-mwbs12vg-pmwbvcjra67",
+          "type": "divider"
+        },
+        {
+          "id": "page-mwbs12vg-pmwbuk7yp46",
+          "type": "text",
+          "text": "# Day5＆Day6\n20261004~05 冰室线下联机会"
+        },
+        {
+          "id": "page-mwbs12vg-pmwbuljv447",
+          "type": "album",
+          "photos": [
+            {
+              "id": "page-mwbs12vg-pmwbuljv447-pmwbulsak48",
+              "src": "/img/uploads/20261111-1619-5ec1-IMG_20261004_120113.jpg",
+              "note": "协议后室-四号线"
+            },
+            {
+              "id": "page-mwbs12vg-pmwbuljv447-pmwbum34k49",
+              "src": "/img/uploads/20261111-1619-c1ae-IMG_20261004_123244.jpg",
+              "note": "抢到3D龙了！"
+            },
+            {
+              "id": "page-mwbs12vg-pmwbuljv447-pmwbumc2b50",
+              "src": "/img/uploads/20261111-1619-5da3-IMG_20261004_132345.jpg",
+              "note": "我爱椰子鸡"
+            },
+            {
+              "id": "page-mwbs12vg-pmwbuljv447-pmwbumf5b51",
+              "src": "/img/uploads/20261111-1620-6fe7-IMG_20261004_144041.jpg",
+              "note": "冰室之主大请客"
+            },
+            {
+              "id": "page-mwbs12vg-pmwbuljv447-pmwbumio752",
+              "src": "/img/uploads/20261111-1620-fdc0-IMG_20261004_152603.jpg",
+              "note": "雨中小鹊鸲"
+            },
+            {
+              "id": "page-mwbs12vg-pmwbuljv447-pmwbummkx53",
+              "src": "/img/uploads/20261111-1620-e80a-IMG_20261004_192908.jpg",
+              "note": "我爱面包的诱惑"
+            },
+            {
+              "id": "page-mwbs12vg-pmwbuljv447-pmwbumpp054",
+              "src": "/img/uploads/20261111-1620-8f12-IMG_20261005_142736.jpg",
+              "note": "冰室观影体"
+            },
+            {
+              "id": "page-mwbs12vg-pmwbuljv447-pmwbumwnt55",
+              "src": "/img/uploads/20261111-1620-ab66-IMG_20261005_181123.jpg",
+              "note": "加油华为"
+            },
+            {
+              "id": "page-mwbs12vg-pmwbuljv447-pmwbun1ja56",
+              "src": "/img/uploads/20261111-1620-68c1-IMG_20261005_181244.jpg",
+              "note": "金史留名"
+            },
+            {
+              "id": "page-mwbs12vg-pmwbuljv447-pmwbunc7p57",
+              "src": "/img/uploads/20261111-1620-dce9-IMG_20261005_183046.jpg",
+              "note": "小鱼"
+            },
+            {
+              "id": "page-mwbs12vg-pmwbuljv447-pmwbunf8p58",
+              "src": "/img/uploads/20261111-1620-f2dc-IMG_20261005_190617.jpg",
+              "note": "我爱日本"
+            },
+            {
+              "id": "page-mwbs12vg-pmwbuljv447-pmwbunggx59",
+              "src": "/img/uploads/20261111-1620-902c-IMG_20261005_195958.jpg",
+              "note": "土豆再旅体"
+            },
+            {
+              "id": "page-mwbs12vg-pmwbuljv447-pmwbunmax60",
+              "src": "/img/uploads/20261111-1621-d12f-IMG_20261006_053346.jpg",
+              "note": "冰室之主离开的那个清晨"
+            }
+          ],
+          "text": "隰辰煦视角"
+        },
+        {
+          "id": "page-mwbs12vg-pmwbvcnjb68",
+          "type": "divider"
+        },
+        {
+          "id": "page-mwbs12vg-pmwbvcrdb70",
+          "type": "nav",
+          "cats": [
+            "navcat-mumdefvk536"
+          ]
+        }
+      ]
     },
     {
       "id": "page-muu0iohn",

@@ -27,8 +27,16 @@
   "title": "曼沫砾总线",
   "subtitle": "",
   "latest": 5,
-  "updated": "2026-10-10",
+  "updated": "2026-11-11",
   "items": [
+    {
+      "id": "an-20261111-01",
+      "kind": "update",
+      "date": "2026-11-11",
+      "title": "2026冰室国庆大聚会相册已上传~（置顶图标为临时版，仍在制作中）",
+      "href": "/huaya/bingshi/photo/20261001#blk-page-mwbs12vg-pmwbuy9xs61",
+      "pinned": true
+    },
     {
       "id": "an-20261010-01",
       "kind": "update",
