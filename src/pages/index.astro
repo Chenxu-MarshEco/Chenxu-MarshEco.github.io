@@ -245,12 +245,21 @@ const backText = text(copy.home?.back);
   所以这里：有置顶就整块出现（带封面图），没有就什么都不渲染（不留空档）。
 */}
 {pinned.length > 0 && (
-  <section class="homepin" aria-label="置顶公告" data-home-pinned>
+  <aside class="homepin" aria-label="置顶公告" data-home-pinned>
+    {/* 塔吊：立在右边、跟「花涧堂」标题齐平；吊钩下面挂货箱（见 .homepin__box） */}
+    <svg class="homepin__crane" viewBox="0 0 120 200" aria-hidden="true" focusable="false">
+      <rect class="homepin__mast" x="86" y="18" width="10" height="182" />
+      <rect class="homepin__jib" x="18" y="18" width="82" height="8" />
+      <path class="homepin__brace" d="M96 26 L44 18 M96 26 L74 18" />
+      <rect class="homepin__cab" x="74" y="6" width="18" height="14" rx="2" />
+      <line class="homepin__cable" x1="30" y1="26" x2="30" y2="58" />
+      <circle class="homepin__hook" cx="30" cy="61" r="4" />
+    </svg>
     {pinned.map((a) => {
       const href = announceHref(a);
       const external = announceExternal(a);
       return (
-        <a class="homepin__card" href={href || '#'} {...external ? { target: '_blank', rel: 'noopener' } : {}} data-announce-id={a.id}>
+        <a class="homepin__box" href={href || '#'} {...external ? { target: '_blank', rel: 'noopener' } : {}} data-announce-id={a.id}>
           <span class="homepin__tag">置顶</span>
           {a.cover && <img class="homepin__img" src={withBase(a.cover)} alt="" loading="eager" decoding="async" />}
           <span class="homepin__text">
@@ -260,8 +269,205 @@ const backText = text(copy.home?.back);
         </a>
       );
     })}
-  </section>
+    <span class="homepin__rope" aria-hidden="true"></span>
+  </aside>
 )}
+
+{/*
+  塔吊那一块的行为（2026-11-11）：
+    · 位置：固定在屏幕右侧，「和花涧堂标题齐平」—— 标题在封面里的纵向位置随屏高变，
+      所以这里量一下标题的实际位置，把 --homepin-top 设过去（量不到就退回 CSS 的默认值）；
+    · 滚动：往下滚过封面一半就**缓缓缩进右侧**（transform + opacity 过渡），
+      往回滚到顶部又完全出现；
+    · 点货箱直接跳公告（链接在货箱上，不需要 JS）；
+    · 动画尊重 prefers-reduced-motion（不想要动效的人直接看到静止的塔吊）。
+*/}
+<style>
+  .homepin {
+    position: fixed;
+    right: 0;
+    top: var(--homepin-top, 22vh);
+    z-index: 40;
+    display: flex;
+    align-items: flex-start;
+    gap: 0;
+    width: 22rem;
+    max-width: 42vw;
+    padding-right: 0.5rem;
+    pointer-events: none;
+    transition: transform 0.75s cubic-bezier(0.22, 0.61, 0.36, 1), opacity 0.55s ease;
+    will-change: transform, opacity;
+  }
+  /* 往下滚：整组缓缓缩进右侧；滚回顶部再出来 */
+  .homepin.is-away {
+    transform: translateX(calc(100% + 1rem));
+    opacity: 0;
+  }
+  .homepin__crane {
+    width: 6.2rem;
+    height: 10.3rem;
+    flex: 0 0 auto;
+    overflow: visible;
+  }
+  .homepin__mast,
+  .homepin__jib,
+  .homepin__brace,
+  .homepin__cab,
+  .homepin__hook {
+    fill: #4b2a5e;
+    stroke: #ff9fd2;
+    stroke-width: 1.6;
+    stroke-linejoin: round;
+  }
+  .homepin__jib {
+    fill: #5b3570;
+  }
+  .homepin__mast {
+    fill: #3b2049;
+  }
+  .homepin__cab {
+    fill: #ff9fd2;
+    stroke: #2a1038;
+  }
+  .homepin__cable {
+    stroke: #ff9fd2;
+    stroke-width: 1.4;
+    stroke-dasharray: 3 2;
+  }
+  .homepin__hook {
+    fill: #ffd166;
+    stroke: #2a1038;
+  }
+  /* 货箱 = 置顶公告本体：像吊着的一个木箱，点它跳公告 */
+  .homepin__box {
+    position: relative;
+    display: block;
+    flex: 1 1 auto;
+    min-width: 0;
+    margin-top: 5.4rem;
+    padding: 0.7rem 0.85rem 0.8rem;
+    border: 1px solid rgba(255, 120, 190, 0.5);
+    border-radius: 10px;
+    background: linear-gradient(180deg, rgba(58, 16, 84, 0.96), rgba(28, 6, 44, 0.97));
+    box-shadow: 0 18px 40px -20px #000;
+    color: #ffe6f4;
+    text-decoration: none;
+    pointer-events: auto;
+  }
+  .homepin__box::before,
+  .homepin__box::after {
+    /* 箱子上那两道捆绳，让它一眼像"货箱"而不是卡片 */
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: rgba(255, 159, 210, 0.35);
+  }
+  .homepin__box::before {
+    left: 28%;
+  }
+  .homepin__box::after {
+    right: 28%;
+  }
+  .homepin__tag {
+    display: inline-block;
+    margin-bottom: 0.35rem;
+    padding: 0.05rem 0.45rem;
+    border-radius: 999px;
+    background: #ff5fb0;
+    color: #2a0620;
+    font-size: 0.72rem;
+    letter-spacing: 0.06em;
+  }
+  .homepin__img {
+    display: block;
+    width: 100%;
+    max-height: 7.5rem;
+    object-fit: cover;
+    border-radius: 6px;
+    margin: 0.15rem 0 0.45rem;
+  }
+  .homepin__title {
+    display: block;
+    font-size: 0.95rem;
+    line-height: 1.5;
+  }
+  .homepin__date {
+    display: block;
+    margin-top: 0.2rem;
+    font-size: 0.75rem;
+    color: rgba(255, 230, 244, 0.65);
+  }
+  /* 货箱上面那根绳子：从塔吊吊钩连到箱顶 */
+  .homepin__rope {
+    position: absolute;
+    left: 1.55rem;
+    top: 6.2rem;
+    height: 3.2rem;
+    border-left: 1.4px dashed #ff9fd2;
+    pointer-events: none;
+  }
+  /* 手机：别和标题撞 —— 整体下移、缩短、收窄 */
+  @media (max-width: 46rem) {
+    .homepin {
+      top: var(--homepin-top, 44vh);
+      width: 15rem;
+      max-width: 74vw;
+    }
+    .homepin__crane {
+      width: 4.3rem;
+      height: 7.2rem;
+    }
+    .homepin__box {
+      margin-top: 3.6rem;
+      padding: 0.55rem 0.6rem 0.6rem;
+    }
+    .homepin__img {
+      max-height: 4.6rem;
+    }
+    .homepin__title {
+      font-size: 0.84rem;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .homepin {
+      transition: none;
+    }
+  }
+</style>
+<script>
+  /*
+    塔吊跟随（2026-11-11）：
+      ① 把货箱的纵向位置对齐到「花涧堂」那个大标题（读 --homepin-top；量不到就用 CSS 默认）；
+      ② 滚过封面一半 → 加 is-away（缓缓缩进右侧），滚回来再撤掉。
+    只在首屏有这个元素时才干活，别的页面不受影响。
+  */
+  (() => {
+    const el = document.querySelector('[data-home-pinned]');
+    if (!el) return;
+    const title = document.querySelector('.brand__title');
+    const place = () => {
+      if (!title) return;
+      const r = title.getBoundingClientRect();
+      /* 标题的中心对到塔吊偏上一点（塔吊立在右上，箱子挂在标题旁边） */
+      el.style.setProperty('--homepin-top', `${Math.max(12, Math.round(r.top + window.scrollY - 6))}px`);
+    };
+    place();
+    window.addEventListener('resize', place, { passive: true });
+
+    let away = false;
+    const onScroll = () => {
+      const limit = Math.max(220, window.innerHeight * 0.45);
+      const next = window.scrollY > limit;
+      if (next === away) return;
+      away = next;
+      el.classList.toggle('is-away', away);
+    };
+    onScroll();
+    window.addEventListener('scroll', onScroll, { passive: true });
+  })();
+</script>
 
       {/*
         屏幕下方那行小字。做成**链接**而不是按钮：没有 JS 的时候它就是一个
