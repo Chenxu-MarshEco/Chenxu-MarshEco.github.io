@@ -22,12 +22,41 @@ param(
   [switch]$Dry              # 只算不写、不提交
 )
 
-$ErrorActionPreference = 'Stop'
+# ⚠ 别改成 'Stop'（2026-11-12 踩过）：
+#   PowerShell 5.1 里，`原生程序 2>&1 | ...` 遇到 $ErrorActionPreference='Stop' 时，
+#   stderr 的每一行都会被当成**终止错误**，脚本当场退出。
+#   而 node 的 console.warn（比如「某张图 404」）正好走 stderr —— 于是第一条警告就把
+#   整个同步打断了，报告都没打出来。所以这里用 Continue，靠 $LASTEXITCODE 判成败。
+$ErrorActionPreference = 'Continue'
+
+# 中文输出：子进程 powershell.exe 默认不是 UTF-8，不设这个会全变「鈿?」乱码
+try {
+  [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+  $OutputEncoding = [System.Text.Encoding]::UTF8
+} catch { }
+
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repo = Split-Path -Parent (Split-Path -Parent $here)
 Set-Location $repo
 
 function Log($msg) { Write-Host "[$(Get-Date -Format 'HH:mm:ss')] $msg" }
+
+# 跑一个原生命令并把输出按 UTF-8 读回来（避开 2>&1 的 ErrorRecord 坑）
+# ⚠ 参数名别用 $Args —— 那是 PowerShell 的自动变量
+function Invoke-Native {
+  param([string]$Exe, [string[]]$ArgList)
+  $tmp = Join-Path $env:TEMP ("salon-" + [guid]::NewGuid().ToString('N') + ".log")
+  try {
+    & $Exe @ArgList *> $tmp
+    $code = $LASTEXITCODE
+    if (Test-Path $tmp) {
+      Get-Content $tmp -Encoding UTF8 | ForEach-Object { Write-Host ("    " + $_) }
+    }
+    return $code
+  } finally {
+    Remove-Item $tmp -Force -ErrorAction SilentlyContinue
+  }
+}
 
 # ---------------------------------------------------------------------------
 # 0. 前置检查
@@ -46,8 +75,8 @@ Log "月份：$(if ($Month) { $Month } else { '（上个月，脚本自己算）
 # 1. 先拉一次，别在旧数据上加
 # ---------------------------------------------------------------------------
 Log '拉取远端…'
-& git -c http.sslBackend=openssl pull --rebase --autostash 2>&1 | ForEach-Object { "    $_" }
-if ($LASTEXITCODE -ne 0) { Log '❌ 拉取失败（可能有没提交的东西，或者网络/凭据问题）'; exit 1 }
+$code = Invoke-Native git @('-c', 'http.sslBackend=openssl', 'pull', '--rebase', '--autostash')
+if ($code -ne 0) { Log '❌ 拉取失败（可能有没提交的东西，或者网络/凭据问题）'; exit 1 }
 
 # ---------------------------------------------------------------------------
 # 2. 同步
@@ -57,8 +86,8 @@ if ($Month) { $syncArgs += @('--month', $Month) }
 if ($Dry) { $syncArgs += '--dry' }
 
 Log '开始同步…'
-& node @syncArgs 2>&1 | ForEach-Object { "    $_" }
-if ($LASTEXITCODE -ne 0) { Log '❌ 同步失败'; exit 1 }
+$code = Invoke-Native node $syncArgs
+if ($code -ne 0) { Log '❌ 同步失败'; exit 1 }
 
 if ($Dry) { Log '（-Dry：到此为止，什么都没提交）'; exit 0 }
 
@@ -94,20 +123,21 @@ $commitMsg = @"
 - /salon 冰室精华
 "@
 
-$commitMsg | Out-File -FilePath (Join-Path $env:TEMP 'salon-commit-msg.txt') -Encoding UTF8
-& git commit -F (Join-Path $env:TEMP 'salon-commit-msg.txt') 2>&1 | ForEach-Object { "    $_" }
-if ($LASTEXITCODE -ne 0) { Log '❌ 提交失败'; exit 1 }
+$msgFile = Join-Path $env:TEMP 'salon-commit-msg.txt'
+$commitMsg | Out-File -FilePath $msgFile -Encoding UTF8
+$code = Invoke-Native git @('commit', '-F', $msgFile)
+if ($code -ne 0) { Log '❌ 提交失败'; exit 1 }
 
 # ---------------------------------------------------------------------------
 # 6. 先拉后推（永不强推）
 # ---------------------------------------------------------------------------
 Log '再拉一次，避免撞车…'
-& git -c http.sslBackend=openssl pull --rebase --autostash 2>&1 | ForEach-Object { "    $_" }
-if ($LASTEXITCODE -ne 0) { Log '❌ 拉取时冲突（已停下，什么都没推）。去仓库里看 git status。'; exit 1 }
+$code = Invoke-Native git @('-c', 'http.sslBackend=openssl', 'pull', '--rebase', '--autostash')
+if ($code -ne 0) { Log '❌ 拉取时冲突（已停下，什么都没推）。去仓库里看 git status。'; exit 1 }
 
 Log '推送…'
-& git -c http.sslBackend=openssl push origin main 2>&1 | ForEach-Object { "    $_" }
-if ($LASTEXITCODE -ne 0) { Log '❌ 推送失败（凭据或网络）。这次提交还在本地，修好后手动 push。'; exit 1 }
+$code = Invoke-Native git @('-c', 'http.sslBackend=openssl', 'push', 'origin', 'main')
+if ($code -ne 0) { Log '❌ 推送失败（凭据或网络）。这次提交还在本地，修好后手动 push。'; exit 1 }
 
 Log '✅ 完成。站点会在几十秒后自动构建。'
 Log '   线上页面：https://chenxu-marsheco.github.io/salon/'

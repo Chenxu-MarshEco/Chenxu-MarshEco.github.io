@@ -318,11 +318,17 @@ async function download(im) {
     /* 过期了：请 NapCat 重新签一次 */
     if (!im.file) throw err;
     let fresh = '';
+    let diag = '';
     try {
       const json = await call('get_image', { file: im.file });
       fresh = String(json?.data?.url ?? json?.data?.file ?? '');
-    } catch { /* 拿不到新链接就放弃这张 */ }
-    if (!fresh || !/^https?:/i.test(fresh)) throw err;
+      if (!fresh) diag = `get_image 没给 url，返回：${JSON.stringify(json?.data ?? json).slice(0, 160)}`;
+    } catch (e) {
+      diag = `get_image 失败：${e.message}`;
+    }
+    if (!fresh || !/^https?:/i.test(fresh)) {
+      throw new Error(diag || '换链接也没拿到 url');
+    }
     buf = await tryFetch(fresh);
     usedUrl = fresh;
   }
@@ -330,7 +336,7 @@ async function download(im) {
   let ext = 'jpg';
   const m = /\.(jpe?g|png|gif|webp|bmp)(?:\?|$)/i.exec(usedUrl);
   if (m) ext = m[1].toLowerCase().replace('jpeg', 'jpg');
-  return { buf, ext };
+  return { buf, ext, url: usedUrl };
 }
 
 /** 让 NapCat 认图里的字（仅 Windows 端支持；失败就当没有） */
@@ -387,7 +393,8 @@ async function main() {
   const usedMemberIds = new Set(file.members.map((m) => String(m.id || '')));
   const newMembers = [];
   const unknown = new Map(); // QQ号 → 群名片，报告用
-  const unknownPinned = []; // 图里认不出人、挂到「未知角色」的条目
+  const unknownPinned = []; // 图里认不出人、memberIds 留空的条目
+  const needsReview = []; // 图片没下下来的条目（归属可能不准）
   let chatScoped = 0; // 按「图里说话的人」归属的条数
   const memberOf = (name) => {
     const hit = byAlias.get(name);
@@ -452,31 +459,40 @@ async function main() {
 
     /* 图片 */
     const images = [];
+    /** 第一张图下载成功后拿到的「可用链接」，后面 OCR 用它（原 url 可能已过期） */
+    let firstUsableUrl = '';
     for (let k = 0; k < it.images.length; k++) {
       const im = it.images[k];
       if (!im.url && !im.file) continue;
       try {
-        const { buf, ext } = await download(im);
-        const name = `${id}-${k + 1}.${ext}`;
+        const got = await download(im);
+        if (!firstUsableUrl) firstUsableUrl = got.url || im.url;
+        const name = `${id}-${k + 1}.${got.ext}`;
         images.push(`/img/salon/${name}`);
         if (!DRY) {
           fs.mkdirSync(IMG_DIR, { recursive: true });
-          fs.writeFileSync(path.join(IMG_DIR, name), buf);
+          fs.writeFileSync(path.join(IMG_DIR, name), got.buf);
         }
         imgWritten++;
-        imgBytes += buf.length;
+        imgBytes += got.buf.length;
       } catch (err) {
-        console.warn(`  ⚠ ${id} 第 ${k + 1} 张图下载失败（url 过期且换新链接也没成）：${err.message}`);
+        console.warn(`  ⚠ ${id} 第 ${k + 1} 张图下载失败：${err.message}`);
         imgFailed++;
+        if (!needsReview.some((x) => x.id === id)) needsReview.push({ id, why: `第 ${k + 1} 张图没下下来（${err.message.slice(0, 60)}），归属可能不准` });
       }
     }
 
-    /* 聊天截图：有图就 OCR —— 不只是为了抠字，更是为了认出**图里说话的人** */
+    /*
+      聊天截图：有图就 OCR —— 不只是为了抠字，更是为了认出**图里说话的人**。
+      ⚠ 用「下载成功后拿到的可用链接」，不要用原始 url：原始 url 的 rkey 可能已过期，
+      拿它去 OCR 会直接失败，于是「图里认不出人」，整条就被误判成普通图片归了发送人。
+    */
     let finalText = it.text;
     let isOcr = false;
     let ocrText = '';
-    if (images.length && it.images[0]?.url) {
-      const got = await ocr(it.images[0].url);
+    const ocrTarget = firstUsableUrl || it.images[0]?.url || '';
+    if (images.length && ocrTarget) {
+      const got = await ocr(ocrTarget);
       ocrText = got.trim();
       if (ocrText && normText(it.text).length < OCR_MAX_TEXT) {
         finalText = ocrText;
@@ -557,6 +573,11 @@ async function main() {
     console.log('');
     console.log(`⚠ 聊天截图但图里一个成员都没认出来 → memberIds 留空（页面显示「冰室群成员」），等你在编辑器里认领：`);
     for (const u of unknownPinned) console.log(`   ${u.id}${u.names.length ? `  （图里出现的名字：${u.names.join('、')}）` : ''}`);
+  }
+  if (needsReview.length) {
+    console.log('');
+    console.log('⚠ 这些条目的图没下下来（rkey 过期且换链接也失败），**归属可能不准**，建议手工看一眼：');
+    for (const u of needsReview) console.log(`   ${u.id}  ${u.why}`);
   }
   if (unknown.size) {
     console.log('');
