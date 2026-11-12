@@ -132,7 +132,11 @@ function parseContent(content) {
     const t = s?.type;
     const d = s?.data ?? {};
     if (t === 'text') text += d.text ?? '';
-    else if (t === 'image') images.push({ url: String(d.url || d.file || ''), file: String(d.file || '') });
+    else if (t === 'image') images.push({
+      url: String(d.url || ''),
+      file: String(d.file || ''),
+      fileId: String(d.file_id || d.fileId || ''),
+    });
     else if (t === 'at') text += `@${d.qq ?? ''} `;
     else if (t === 'face' || t === 'mface') text += '[表情]';
     else if (t === 'reply') { /* 引用不落正文 */ }
@@ -142,30 +146,26 @@ function parseContent(content) {
 }
 
 /**
- * 剥掉群名片上的装饰：emoji、符号、不可见字符、空白。
+ * 群名片 → 只保留「真正是字」的字符。
  *
- * 真实数据里的样子：
+ * 真实数据里的样子（2026-11-12 实测）：
  *   「🏗隰辰煦🏗」            → 隰辰煦（emoji 框）
  *   「👆ミスタ」               → ミスタ
- *   「亚卡莱特ᅠ⁧呃呜喵⁧‭」      → 亚卡莱特呃呜喵（**填充符 + 双向隔离符**，肉眼看不见）
+ *   「亚卡莱特ᅠ⁧呃呜喵⁧‭」      → 亚卡莱特呃呜喵
  *
- * 最后那条是 2026-11-12 真数据里遇到的：QQ 允许在群名片里塞
- * U+115F/U+1160（朝鲜文填充符，渲染成空白）、U+2067/U+2069（双向隔离符）这类
- * **格式字符**，它们不可见但会参与字符串比较 —— 不剥掉，`亚卡莱特` 就永远对不上。
- * 所以这里连 `\p{Cf}`（格式字符）整类一起清掉，别指望列全。
+ * 最后那条最坑：QQ 允许在群名片里塞 U+115F/U+1160（朝鲜文填充符，渲染成空白）、
+ * U+2067（双向隔离符）这类不可见字符。**列黑名单永远列不全** ——
+ * 第一次我只剥了 emoji 和 `\p{Cf}`，服务器上跑出来仍然认得不对。
+ *
+ * 所以改成**白名单**：只留「字母 + 数字」（`\p{L}` `\p{N}`），其余一律丢掉。
+ * 但那两个朝鲜文填充符恰好属于 `\p{L}`（Lo），得再单独点名去掉 —— 它们渲染成空白，
+ * 却会参与字符串比较。
  */
 function cleanNick(s) {
   return String(s ?? '')
-    /* emoji 与各种符号（含变体选择符、零宽连接符） */
-    .replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{FE00}-\u{FE0F}\u{200D}\u{20E3}]/gu, '')
-    /* 装饰用的框线、箭头、几何符号、中英文括号 */
-    .replace(/[◆◇■□▲△▼▽★☆♦♠♣♥♪♫※→←↑↓↔⇒⇔]/g, '')
-    .replace(/[【】\[\]（）()「」『』]/g, '')
-    /* 朝鲜文填充符：渲染成空白，但 ≠ 空格（U+115F..U+1160、U+3164、U+FFA0） */
+    .replace(/[^\p{L}\p{N}]/gu, '')
+    /* 朝鲜文填充符：类别是「字母」，但看起来就是空白，必须点掉 */
     .replace(/[\u{115F}\u{1160}\u{3164}\u{FFA0}]/gu, '')
-    /* 所有格式字符（Cf）和控制字符（Cc）：双向隔离符、零宽空格、软连字符、BOM 都在这一类 */
-    .replace(/[\p{Cf}\p{Cc}]/gu, '')
-    .replace(/\s+/g, '')
     .trim();
 }
 
@@ -176,13 +176,15 @@ function cleanNick(s) {
  * 前缀至少 2 个字才认（1 个字太容易误伤），取**最长**的那个命中。
  */
 function matchName(nick, byAlias) {
-  if (!nick) return null;
-  if (byAlias.has(nick)) return byAlias.get(nick);
+  const n = cleanNick(nick);
+  if (!n) return null;
+  if (byAlias.has(n)) return byAlias.get(n);
+  /* 不要求「以别名开头」——名片上可能前后都挂了装饰，只要**包含**就算命中，取最长的 */
   let best = null;
   let bestLen = 0;
   for (const [alias, member] of byAlias) {
     if (alias.length < 2) continue;
-    if (nick.startsWith(alias) && alias.length > bestLen) {
+    if (n.includes(alias) && alias.length > bestLen) {
       best = member;
       bestLen = alias.length;
     }
@@ -298,45 +300,67 @@ async function fetchAll() {
 }
 
 /**
- * 下载一张图，返回 { buf, ext }。
- * 第一次用精华里给的 url；404/403 就回头找 NapCat 要一个新链接
- * （`get_image` 传 file 名）。为什么需要：QQ 的图片 url 里带 `rkey`，
- * **旧消息的 rkey 会过期** —— 2026-11-12 实测 32 条里有 5 张直接 404。
+ * 下载一张图，返回 { buf, ext, url }。
+ *
+ * QQ 的图片 url 里带 `rkey`，**旧消息的 rkey 会过期** —— 2026-11-12 实测
+ * 32 条里 5 张直接 404。所以下载失败时按顺序试三条兜底路线：
+ *   ① 用 `get_image`（传 file / file_id）让 NapCat 重签一次；
+ *   ② 还是没有，就用 `get_msg` 把那条消息重新取一遍，从 fresh content 里找新 url；
+ *   ③ 都不成就报错（外层会记 needsReview，让你手工看一眼）。
  */
-async function download(im) {
+async function download(im, messageId) {
   const tryFetch = async (url) => {
     const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return Buffer.from(await res.arrayBuffer());
   };
 
-  let buf = null;
-  let usedUrl = im.url;
+  const candidates = [];
+  if (im.url) candidates.push(im.url);
+
+  /* ① get_image 重签 */
   try {
-    buf = await tryFetch(im.url);
-  } catch (err) {
-    /* 过期了：请 NapCat 重新签一次 */
-    if (!im.file) throw err;
-    let fresh = '';
-    let diag = '';
+    const args = {};
+    if (im.file) args.file = im.file;
+    if (im.fileId) args.file_id = im.fileId;
+    if (Object.keys(args).length) {
+      const json = await call('get_image', args);
+      const u = String(json?.data?.url ?? '');
+      if (/^https?:/i.test(u)) candidates.push(u);
+      else if (json?.data?.file && /^https?:/i.test(String(json.data.file))) candidates.push(String(json.data.file));
+      else if (!candidates.length) candidates.push('');
+    }
+  } catch { /* 继续试下一条 */ }
+
+  /* ② get_msg 重新取那条消息，从最新 content 里找图 */
+  if (messageId) {
     try {
-      const json = await call('get_image', { file: im.file });
-      fresh = String(json?.data?.url ?? json?.data?.file ?? '');
-      if (!fresh) diag = `get_image 没给 url，返回：${JSON.stringify(json?.data ?? json).slice(0, 160)}`;
-    } catch (e) {
-      diag = `get_image 失败：${e.message}`;
-    }
-    if (!fresh || !/^https?:/i.test(fresh)) {
-      throw new Error(diag || '换链接也没拿到 url');
-    }
-    buf = await tryFetch(fresh);
-    usedUrl = fresh;
+      const json = await call('get_msg', { message_id: Number(messageId) });
+      const segs = json?.data?.message ?? json?.data?.content ?? [];
+      if (Array.isArray(segs)) {
+        for (const s of segs) {
+          if (s?.type !== 'image') continue;
+          const u = String(s?.data?.url ?? '');
+          if (/^https?:/i.test(u)) candidates.push(u);
+        }
+      }
+    } catch { /* 继续 */ }
   }
 
-  let ext = 'jpg';
-  const m = /\.(jpe?g|png|gif|webp|bmp)(?:\?|$)/i.exec(usedUrl);
-  if (m) ext = m[1].toLowerCase().replace('jpeg', 'jpg');
-  return { buf, ext, url: usedUrl };
+  let lastErr = null;
+  for (const url of candidates) {
+    if (!url) continue;
+    try {
+      const buf = await tryFetch(url);
+      let ext = 'jpg';
+      const m = /\.(jpe?g|png|gif|webp|bmp)(?:\?|$)/i.exec(url);
+      if (m) ext = m[1].toLowerCase().replace('jpeg', 'jpg');
+      return { buf, ext, url };
+    } catch (e) {
+      lastErr = e;
+    }
+  }
+  throw lastErr ?? new Error('没有可用的图片链接');
 }
 
 /** 让 NapCat 认图里的字（仅 Windows 端支持；失败就当没有） */
@@ -382,13 +406,21 @@ async function main() {
   const nickMap = aliasFile.nick ?? {};
   const skipMap = aliasFile.skip ?? {};
   const byAlias = new Map();
+  const put = (key, member) => {
+    if (!key) return;
+    byAlias.set(String(key), member);
+    /* 同时放一份「洗干净」的键：名片和别名都可能带装饰/不可见字符 */
+    const c = cleanNick(key);
+    if (c && !byAlias.has(c)) byAlias.set(c, member);
+  };
   for (const m of file.members) {
-    if (m?.name) byAlias.set(String(m.name), m);
-    for (const a of Array.isArray(m?.aliases) ? m.aliases : []) byAlias.set(String(a), m);
+    if (m?.name) put(m.name, m);
+    for (const a of Array.isArray(m?.aliases) ? m.aliases : []) put(a, m);
   }
   /* nick 区只补站里没有的（站里以 salon.json 为准） */
   for (const [nick, name] of Object.entries(nickMap)) {
-    if (!byAlias.has(nick) && byAlias.has(name)) byAlias.set(nick, byAlias.get(name));
+    const target = byAlias.get(name) ?? byAlias.get(cleanNick(name));
+    if (target) put(nick, target);
   }
   const usedMemberIds = new Set(file.members.map((m) => String(m.id || '')));
   const newMembers = [];
@@ -463,9 +495,10 @@ async function main() {
     let firstUsableUrl = '';
     for (let k = 0; k < it.images.length; k++) {
       const im = it.images[k];
-      if (!im.url && !im.file) continue;
+      if (!im.url && !im.file && !im.fileId) continue;
       try {
-        const got = await download(im);
+        /* 把 message_id 传进去：url 过期时要用它去问 NapCat 重新取（群友确认：必须过 NapCat） */
+        const got = await download(im, it.messageId);
         if (!firstUsableUrl) firstUsableUrl = got.url || im.url;
         const name = `${id}-${k + 1}.${got.ext}`;
         images.push(`/img/salon/${name}`);
