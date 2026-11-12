@@ -59,9 +59,9 @@ if (!host) { console.log('FAIL 副本里没有能装相册的页面'); process.e
 host.page = [{
   id: 'chk-album', type: 'album', text: '验收用相册',
   photos: [
-    { id: 'p1', src: A, note: '第一张的描述：虹星家的塔吊' },
-    { id: 'p2', src: B },
-    { id: 'p3', src: A, note: '第三张的描述：夜里的溪流' },
+    { id: 'chk-p1', src: A, note: '第一张的描述：虹星家的塔吊' },
+    { id: 'chk-p2', src: B },
+    { id: 'chk-p3', src: A, note: '第三张的描述：夜里的溪流' },
   ],
 }, ...host.page];
 fs.writeFileSync(boardsFile, `${JSON.stringify(tree, null, 2)}\n`, 'utf8');
@@ -83,7 +83,7 @@ const HREF = (() => {
     for (const e of fs.readdirSync(d, { withFileTypes: true })) {
       const p = path.join(d, e.name);
       if (e.isDirectory()) { if (e.name !== '.prerender') stack.push(p); continue; }
-      if (e.name === 'index.html' && fs.readFileSync(p, 'utf8').includes('data-album-photo="p1"')) {
+      if (e.name === 'index.html' && fs.readFileSync(p, 'utf8').includes('data-album-photo="chk-p1"')) {
         return `/${path.relative(path.join(DST, 'dist'), p).replace(/\\/g, '/').replace(/index\.html$/, '')}`;
       }
     }
@@ -93,10 +93,16 @@ const HREF = (() => {
 check('产物里有我们这个相册页', Boolean(HREF), String(HREF));
 if (!HREF) { console.log(`\nPASS ${pass}   FAIL ${fail}`); process.exit(1); }
 
-/* 静态：产物里的结构对不对 */
+/* 静态：产物里的结构对不对。
+   ⚠ 只数**我们塞进去的那个相册**（chk- 开头的 id）——
+   站长在这一页上已经有几十张别的相册照片了，全局数 palbum__img 会数成 70 多个。 */
 const html = fs.readFileSync(path.join(DST, 'dist', HREF.replace(/^\//, ''), 'index.html'), 'utf8');
-check('照片墙 3 张、都带 data-zoom', (html.match(/class="palbum__img"/g) || []).length === 3 && (html.match(/data-zoom="1"/g) || []).length >= 3);
-check('有描述的两张渲染了 figcaption、没描述那张没有', (html.match(/palbum__note/g) || []).length === 2);
+const cells = [...html.matchAll(/<li class="palbum__cell" data-album-photo="(chk-p\d)"[\s\S]*?<\/li>/g)];
+check('产物里我们这个相册有 3 格', cells.length === 3, `${cells.length} 格`);
+check('照片墙 3 张、都带 data-zoom',
+  cells.every((c) => (c[0].match(/class="palbum__img"/g) || []).length === 1 && /data-zoom="1"/.test(c[0])));
+check('有描述的两张渲染了 figcaption、没描述那张没有',
+  cells.filter((c) => /palbum__note/.test(c[0])).length === 2);
 
 /* 浏览器 */
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json; charset=utf-8', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.avif': 'image/avif', '.svg': 'image/svg+xml', '.woff2': 'font/woff2', '.gif': 'image/gif' };
@@ -137,17 +143,18 @@ try {
   for (let i = 0; i < 160; i += 1) { await sleep(120); try { if ((await ev('document.readyState')) === 'complete') break; } catch { /* 导航 */ } }
   await sleep(1200);
 
+  /* 只看我们塞进去那个相册（chk- 开头的 id）：这一页上还有站长自己的几十张照片 */
   const wall = await ev(`(() => {
-    const figs = [...document.querySelectorAll('.palbum__fig')];
+    const figs = [...document.querySelectorAll('[data-album-photo^="chk-"] .palbum__fig')];
     return { n: figs.length, notes: figs.map((f) => (f.querySelector('.palbum__note')?.textContent || '').trim()),
       zoomable: figs.every((f) => f.querySelector('img')?.hasAttribute('data-zoom')),
       imgsOk: figs.every((f) => { const i = f.querySelector('img'); return i && i.complete && i.naturalWidth > 0; }) };
   })()`);
-  check('★ 照片墙 3 张、都可点（data-zoom）、图都真的加载了', wall.n === 3 && wall.zoomable === true && wall.imgsOk === true, JSON.stringify(wall));
+  check('★ 照片墙 3 张、都可点（data-zoom）、图都真的加载了', wall.n === 3 && wall.zoomable === true && wall.imgsOk === true, JSON.stringify(wall).slice(0, 140));
   check('★ 描述在照片墙下面看得见（2 张有、1 张没有）', wall.notes.filter(Boolean).length === 2, JSON.stringify(wall.notes));
 
   /* 点第一张有描述的图 → 灯箱 */
-  const box = await ev(`(() => { const im = document.querySelectorAll('.palbum__fig')[0].querySelector('img'); const r = im.getBoundingClientRect(); return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) }; })()`);
+  const box = await ev(`(() => { const im = document.querySelector('[data-album-photo^="chk-"] .palbum__fig img'); const r = im.getBoundingClientRect(); return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) }; })()`);
   for (const [type, btn, btns] of [['mouseMoved', 'none', 0], ['mousePressed', 'left', 1], ['mouseReleased', 'left', 0]]) {
     await send('Input.dispatchMouseEvent', { type, x: box.x, y: box.y, button: btn, buttons: btns, clickCount: type === 'mouseMoved' ? 0 : 1 });
     await sleep(120);
@@ -169,6 +176,50 @@ try {
   await sleep(500);
   const closed = await ev(`(() => { const l = document.querySelector('.izoom'); return !l || l.hidden; })()`);
   check('Esc 能关掉灯箱', closed === true);
+
+  /*
+   * 手机版式（2026-11-12 用户）：「手机还是一行一张图 图片多了翻起来太慢 把手机适配为一行三张」。
+   * 量的是**第一行里有几个格子**（按 cell 的顶边分组），不是数 CSS 里的列数 ——
+   * 只有真的排成三列、图也真的加载出来才算过。
+   */
+  await send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+  await sleep(600);
+  const m = await ev(`(() => {
+    const sel = '[data-album-photo^="chk-"]';
+    const cells = [...document.querySelectorAll(sel)].map((c) => {
+      const r = c.getBoundingClientRect();
+      return { top: Math.round(r.top), left: Math.round(r.left), w: Math.round(r.width), h: Math.round(r.height) };
+    });
+    const first = cells[0] || { top: 0 };
+    const row1 = cells.filter((c) => Math.abs(c.top - first.top) <= 2);
+    const imgs = [...document.querySelectorAll(sel + ' .palbum__img')];
+    return {
+      cols: row1.length,
+      cellW: Math.round(row1[0]?.w || 0),
+      gap: row1.length > 1 ? Math.round(row1[1].left - (row1[0].left + row1[0].w)) : -1,
+      allLoaded: imgs.every((i) => i.complete && i.naturalWidth > 0),
+      zoomable: imgs.every((i) => i.hasAttribute('data-zoom')),
+      overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+      aspect: imgs[0] ? +(imgs[0].getBoundingClientRect().height / imgs[0].getBoundingClientRect().width).toFixed(2) : 0,
+    };
+  })()`);
+  check('★ 手机（390 宽）相册是**一行三张**', m.cols === 3, `第一行 ${m.cols} 格`);
+  check('手机上一格还有 90px 以上（缩略图看得清）', m.cellW >= 90, `${m.cellW}px 宽、间距 ${m.gap}px`);
+  check('手机上照片仍然是方的（object-fit 裁成正方的缩略图）', m.aspect >= 0.9 && m.aspect <= 1.1, `高/宽 ${m.aspect}`);
+  check('手机上一行三张之后图没被压坏（都还加载着、都还能点开）',
+    m.allLoaded === true && m.zoomable === true);
+  check('手机上没有横向溢出', m.overflow <= 0, `${m.overflow}px`);
+
+  /* 手机上再点一张，确认小的缩略图照样点得开 */
+  const mbox = await ev(`(() => { const im = document.querySelector('[data-album-photo^="chk-"] .palbum__fig img'); const r = im.getBoundingClientRect(); return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) }; })()`);
+  for (const [type, btn, btns] of [['mouseMoved', 'none', 0], ['mousePressed', 'left', 1], ['mouseReleased', 'left', 0]]) {
+    await send('Input.dispatchMouseEvent', { type, x: mbox.x, y: mbox.y, button: btn, buttons: btns, clickCount: type === 'mouseMoved' ? 0 : 1 });
+    await sleep(120);
+  }
+  await sleep(700);
+  const mzoom = await ev(`(() => { const l = document.querySelector('.izoom'); return !!l && !l.hidden && !!l.querySelector('img'); })()`);
+  check('手机上点一张小缩略图 → 灯箱照样打开', mzoom === true);
+
   check('全程无 JS 异常', errs.length === 0, errs.slice(0, 2).join(' | ') || '干净');
 } catch (err) {
   fail += 1;

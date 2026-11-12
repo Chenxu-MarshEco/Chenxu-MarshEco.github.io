@@ -304,28 +304,45 @@ check('动的时候货箱仍然在视口里（没被转出屏幕）',
   movingBox.box.right <= movingBox.vw + 0.5 && movingBox.box.bottom <= movingBox.vh);
 
 /*
- * 吊绳要一直挂在小车下面：横臂压缩时小车会横着移，货箱要靠自己的 translateX 跟上。
- * 小车的包围盒取的是它在 SVG 里的矩形（会带上横臂的 transform），
- * 吊绳那一条的横坐标 = 吊带 SVG（= 货箱宽）的中线，两者必须一直重合。
- * 顺带核一下纵向：小车底边和吊带顶边是同一条线。
+ * 吊绳要一直挂在小车下面。分三步量，因为它们各自是不同的事：
+ *   ① 静止那一帧（把动画定到 0）：吊带顶边和小车底边是同一条线 —— 这是"接上了"；
+ *   ② 摆动绕的必须是**货箱顶边中点**（transform-origin = 50% 0）——
+ *      轴心在绳头上，绳子才不会被摆动的箱子拽走；
+ *   ③ 整段回转里连续采样横向偏差（小车中心 vs 吊绳那条竖线）。
+ * ⚠ 不要拿"摆动中吊带 bbox 的顶边"当第①条：箱子一歪，bbox 的顶边天然会抬高
+ *   （224 宽的吊带转 2.4° 就抬 4.7px），那是包围盒的假象，不是真的脱开了。
  */
 const LINK = `(() => {
   const t = document.querySelector('.homepin__trolley').getBoundingClientRect();
   const s = document.querySelector('.homepin__sling').getBoundingClientRect();
+  const load = document.querySelector('.homepin__load');
+  const cs = getComputedStyle(load);
+  const o = cs.transformOrigin.split(' ').map((v) => parseFloat(v));
   return { dx: Math.abs((t.left + t.width / 2) - (s.left + s.width / 2)),
-    dy: Math.abs(t.bottom - s.top) };
+    dy: t.bottom - s.top, originX: o[0], originY: o[1], loadW: load.clientWidth };
 })()`;
+const SEEK = (ms) => `(() => { for (const sel of ['.homepin__slew', '.homepin__load']) {
+  for (const a of document.querySelector(sel).getAnimations()) { a.pause(); a.currentTime = ${ms}; } } return 1; })()`;
+const PLAY = `(() => { for (const sel of ['.homepin__slew', '.homepin__load']) {
+  document.querySelector(sel).getAnimations().forEach((a) => a.play()); } return 1; })()`;
+
+await cdp.ev(SEEK(0));
+const atRest = await cdp.ev(LINK);
+info(`静止那一帧：吊带顶边 - 小车底边 = ${atRest.dy.toFixed(1)}px；摆动轴心 ${atRest.originX}px ${atRest.originY}px（箱宽 ${atRest.loadW}）`);
+check('吊绳顶到小车底（静止那一帧 ≤ 2px，中间不剩空隙）', Math.abs(atRest.dy) <= 2, `${atRest.dy.toFixed(1)}px`);
+check('摆动绕的就是绳头那一点（transform-origin = 货箱顶边中点）',
+  Math.abs(atRest.originX - atRest.loadW / 2) <= 1 && atRest.originY <= 0.5,
+  `${atRest.originX}px ${atRest.originY}px vs 中点 ${atRest.loadW / 2}px`);
+await cdp.ev(PLAY);
+
 let worstDx = 0;
-let worstDy = 0;
 for (let i = 0; i < 9; i++) {
   const l = await cdp.ev(LINK);
   worstDx = Math.max(worstDx, l.dx);
-  worstDy = Math.max(worstDy, l.dy);
   await sleep(430);
 }
-info(`吊绳与小车：横向最大偏差 ${worstDx.toFixed(1)}px、纵向最大偏差 ${worstDy.toFixed(1)}px`);
-check('吊绳一直连在小车上（横向偏差 ≤ 3px，整段回转过程中都不断）', worstDx <= 3, `${worstDx.toFixed(1)}px`);
-check('吊绳顶到小车底（纵向偏差 ≤ 3px，中间不剩空隙）', worstDy <= 3, `${worstDy.toFixed(1)}px`);
+info(`回转全程：横向最大偏差 ${worstDx.toFixed(1)}px`);
+check('吊绳一直连在小车上（横向偏差 ≤ 3px，整段回转带摆动都不断）', worstDx <= 3, `${worstDx.toFixed(1)}px`);
 
 /*
  * 用**像素**再核一遍回转这件事（几何量不出"画出来的臂在哪"）。
@@ -336,7 +353,7 @@ check('吊绳顶到小车底（纵向偏差 ≤ 3px，中间不剩空隙）', wo
  *     （2026-11-12 就是这里翻过车：变换挂在 <svg> 上时裁切框跟着缩放，
  *      压缩那一帧臂离了屏幕边缘 19px，几何断言全过、只有像素看得见）
  */
-const SEEK = (ms) => `(() => {
+const SEEK_FRAME = (ms) => `(() => {
   const g = document.querySelector('.homepin__slew');
   const anims = g.getAnimations().concat(document.querySelector('.homepin__load').getAnimations());
   for (const a of anims) { a.pause(); a.currentTime = ${ms}; }
@@ -347,7 +364,7 @@ const SEEK = (ms) => `(() => {
 })()`;
 const INK = 25;
 async function inkEdges(ms) {
-  const m = await cdp.ev(SEEK(ms));
+  const m = await cdp.ev(SEEK_FRAME(ms));
   await sleep(160);
   const px = await cdp.shot();
   const y0 = Math.round(m.jibTop + m.jibH * 0.2);
@@ -374,6 +391,40 @@ check('像素上也是横向伸缩：臂尖收进去 ≥ 12px', inkedMin.left - 
 check('缩到最紧那一帧，臂的右端仍然压在视口右缘（右端始终被屏幕切掉）',
   inked.right >= inked.layoutW - 4 && inkedMin.right >= inked.layoutW - 4,
   `${inked.right} / ${inkedMin.right} vs 右缘 ${inked.layoutW - 1}`);
+await cdp.ev('document.querySelectorAll(".homepin__slew, .homepin__load").forEach((e) => e.getAnimations().forEach((a) => a.play()))');
+
+/*
+ * 货箱要**跟着摆**（2026-11-12 用户：「吊臂转动时下面的公告货箱也应该一起跟着微微摆动
+ * 不要完全不动 看起来很奇怪」），但摆的轴心必须是绳头：
+ *   · 摆动量：动画定到 31%（横臂最紧、货箱最歪）时，load 的变换矩阵 b 分量 = sin(倾角)；
+ *   · 箱子真的歪了：旋转后包围盒会变宽（宽×cos + 高×sin）；
+ *   · 绳头不能动：小车中心两帧之间必须一动不动 —— 它一挪，吊绳和小车就错开了。
+ */
+const SWAY = (ms) => `(() => {
+  for (const sel of ['.homepin__slew', '.homepin__load']) {
+    for (const a of document.querySelector(sel).getAnimations()) { a.pause(); a.currentTime = ${ms}; }
+  }
+  const load = document.querySelector('.homepin__load');
+  const box = document.querySelector('.homepin__box').getBoundingClientRect();
+  const t = document.querySelector('.homepin__trolley').getBoundingClientRect();
+  const m = getComputedStyle(load).transform;
+  const n = m === 'none' ? [1, 0, 0, 1, 0, 0] : m.match(/-?[\\d.]+/g).map(Number);
+  return { sin: n[1], boxW: box.width, boxRight: box.right, trolleyCx: t.left + t.width / 2,
+    vw: document.documentElement.clientWidth };
+})()`;
+const rest = await cdp.ev(SWAY(0));
+const peak = await cdp.ev(SWAY(8060));
+info(`摆动：静止 sin=${rest.sin.toFixed(3)} → 最歪 sin=${peak.sin.toFixed(3)}（≈${(Math.asin(Math.min(1, Math.abs(peak.sin))) * 180 / Math.PI).toFixed(1)}°）`);
+check('货箱跟着横臂一起摆（不是完全不动）', Math.abs(peak.sin) >= 0.03, `最歪时 sin=${peak.sin.toFixed(3)}`);
+check('箱子真的歪了：旋转后包围盒变宽 ≥ 3px',
+  peak.boxW >= rest.boxW + 3, `${rest.boxW.toFixed(1)} → ${peak.boxW.toFixed(1)}px`);
+check('摆动的轴心是绳头：小车中心一动不动（≤1px），吊绳不会和小车错开',
+  Math.abs(peak.trolleyCx - rest.trolleyCx) <= 1, `${Math.abs(peak.trolleyCx - rest.trolleyCx).toFixed(2)}px`);
+check('摆到最歪时货箱也没被推出屏幕右缘',
+  peak.boxRight <= peak.vw + 0.5, `右 ${peak.boxRight.toFixed(1)} vs ${peak.vw}`);
+/* 振幅要"微微"：太大会晃成钟摆 */
+check('摆幅是"微微"级别（最歪 ≤ 4°）',
+  Math.asin(Math.min(1, Math.abs(peak.sin))) * 180 / Math.PI <= 4);
 await cdp.ev('document.querySelectorAll(".homepin__slew, .homepin__load").forEach((e) => e.getAnimations().forEach((a) => a.play()))');
 
 /* 减少动态效果：一律不动 */

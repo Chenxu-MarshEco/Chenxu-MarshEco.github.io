@@ -1446,6 +1446,33 @@ function cardsForBlock(b: PageBlock): { list: BlockItem[]; missing: string[] } {
     line-height: 1.5;
     color: rgba(255, 240, 250, 0.72);
   }
+  /*
+    手机（2026-11-12 用户）：「手机还是一行一张图 图片多了翻起来太慢 一行三张」。
+    所以窄屏不再跟着 minmax(10rem) 走（那会算成两列），直接**钉死三列**：
+    390 宽的屏上每格还剩 100px 上下，缩略图仍看得清；
+    描述也跟着收小一号 —— 一行三张、每张底下压两行字的话，翻起来反而更慢。
+    点开看原图和描述的路没变（灯箱读的是 figcaption）。
+  */
+  @media (max-width: 46rem) {
+    .palbum__grid {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 0.35rem;
+    }
+    .palbum__img {
+      border-radius: 5px;
+    }
+    .palbum__note {
+      margin-top: 0.2rem;
+      font-size: 0.7rem;
+      line-height: 1.4;
+      /* 一行三张时每条描述最多两行，免得参差不齐把整面墙拉得忽高忽低 */
+      display: -webkit-box;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 2;
+      line-clamp: 2;
+      overflow: hidden;
+    }
+  }
   /* ---------- 链接 ---------- */
   .plink {
     display: inline-flex;

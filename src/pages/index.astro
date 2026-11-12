@@ -424,9 +424,15 @@ const backText = text(copy.home?.back);
     stroke: var(--ink, #08020c);
   }
   /*
-    货箱只做一点点**绕着绳头**的摆动（轴心就是吊绳那条竖线，所以绳头一动不动）。
-    横臂压缩时货箱自己不横移：吊重本来就是被吊着慢慢晃，不是跟着臂乱跑 ——
-    这也是它绝不会被推出屏幕右缘、绝不会和吊绳错开的原因。
+    货箱跟着横臂**轻轻摆**（2026-11-12 用户：「吊臂转动时下面的公告货箱也应该一起
+    跟着微微摆动 不要完全不动 看起来很奇怪」）。
+
+    轴心是 50% 0 —— 也就是吊绳挂在小车上的那一点，所以：
+      · 绳头一动不动（它正好在轴心上），横臂怎么转，线都还挂在小车下面；
+      · 摆的是整根绳 + 货箱（吊带、箱体跟着倾斜），就是吊重被带着晃的样子；
+      · 一点横移都不加（平移会让绳头离开小车、还可能把箱子顶出屏幕右缘）。
+    幅度 ±2.4°：箱子底边差不多左右各走 3px（往返 6px），看得见在荡，又不会晃成钟摆。
+    相位比横臂的伸缩**慢半拍**（横臂 31% 缩到最紧，货箱 31% 才到最歪），像吊重跟不上臂。
   */
   .homepin__load {
     position: relative;
@@ -442,19 +448,19 @@ const backText = text(copy.home?.back);
       transform: rotate(0deg);
     }
     16% {
-      transform: rotate(-0.5deg);
+      transform: rotate(-1.7deg);
     }
     31% {
-      transform: rotate(-0.6deg);
+      transform: rotate(-2.4deg);
     }
     48% {
-      transform: rotate(-0.15deg);
+      transform: rotate(0.6deg);
     }
     63% {
-      transform: rotate(0.18deg);
+      transform: rotate(2.2deg);
     }
     81% {
-      transform: rotate(-0.34deg);
+      transform: rotate(-0.8deg);
     }
   }
   /*
