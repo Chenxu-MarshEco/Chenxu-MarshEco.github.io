@@ -1,30 +1,38 @@
 /**
  * 群精华 → 站点数据：从 NapCat 的 HTTP 接口直接拉「燃儿求开组」的精华，
- * **增量**并进 `src/data/salon.json`（2026-11-12 加）。
+ * 并进 `src/data/salon.json`（2026-11-12 加）。
  *
- *   node tools/salon/sync-essence.mjs --probe     # 只打印接口原始返回，什么都不写
- *   node tools/salon/sync-essence.mjs --dry       # 算一遍，报告会加什么，不写盘
- *   node tools/salon/sync-essence.mjs             # 真写（salon.json + 图片）
+ *   node tools/salon/sync-essence.mjs --probe                 # 只打印接口原始返回，什么都不写
+ *   node tools/salon/sync-essence.mjs --dry                   # 算一遍，报告会加什么，不写盘
+ *   node tools/salon/sync-essence.mjs --month 2026-10         # 只处理 2026 年 10 月
+ *   node tools/salon/sync-essence.mjs                         # 真写（默认：上个月）
  *
  * 和 tools/salon/import-more.mjs 的区别：
  *   那份吃的是「月度导出 HTML」，要人先导出再喂进来；
- *   这份直接问 NapCat 要，**每月 1 号自动跑**（Windows 计划任务）。
+ *   这份直接问 NapCat 要，**每月 1 号自动跑**（Windows 计划任务），跑的是**上个月**。
  *   两者共用 merge.mjs 的去重规则（essenceKey / looksSame），所以混着用不会重复。
  *
  * 三条规矩（和 import-more 一致）：
- *   ① **只增不改**：已有的 806 条一个字节都不动，新条目从 e0807 往后接；
+ *   ① **只增不改**：已有的条目一个字节都不动，新条目从最大编号往后接；
  *   ② **去重**：日期 + 时刻 + 正文（去掉空白和 `- ` 项目符号）一样 = 同一条；
  *      同一时刻正文 90% 以上重合也算同一条（导出管线偶尔弄坏一两个字）；
- *   ③ **成员按名字或别名认**：认不出来就新建一个空头像成员，回头在编辑器里补。
+ *   ③ **成员按名字或别名认**：认不出来才新建。
  *
- * 增量而不是「按上个月切」：精华是**事后**设的（10 月 5 号可能把 9 月 20 号的话设成精华），
- * 按自然月切会永远漏掉这种；而且某次跑失败，下个月会自动补上，不会丢一个月。
+ * ⚠ **按月窗口跑**（2026-11-12 改）：站长要的是「12 月 1 号传 11 月的」，
+ * 不是「一直增量」。所以默认窗口 = 上个月，`--month` 可指定。某个月跑失败了，
+ * 下个月不会自动补 —— 要补就手动 `--month 2026-10` 再跑一次。
  *
  * 图片**必须存**（QQ 的图片链接带 rkey，过期就没了），存成
- * `public/img/salon/<id>-<序号>.<ext>`，和站里已有的 297 张同一个命名法。
+ * `public/img/salon/<id>-<序号>.<ext>`，和站里已有的图同一个命名法。
  *
- * 聊天截图类（有图、正文很短）会调 NapCat 的 `/ocr_image` 把字抠出来当正文，
- * 并打上 `ocr: true`（站里已有 19 条是这么来的）。
+ * ⚠ **聊天截图不归发送人**（2026-11-12 改，站长提的规则）：
+ * 一条精华如果是一张 QQ 聊天截图，它属于**图里说话的那几个人**，而不是截图的人。
+ *   例：隰辰煦发了张「隰辰煦和虹星对话」的截图 → 属于隰辰煦 + 虹星
+ *       隰辰煦发了张「只有 Raw 在说话」的截图       → 属于 Raw（不含隰辰煦）
+ * 判断办法：OCR 图上的字，把**认得出的成员名/马甲**都挑出来当参与者。
+ * 一个都认不出（图里是网图/游戏截图）就退回「归发送人」。
+ * 图里的名字如果对不上任何成员（图片里没有 QQ 号，认不出来），
+ * **不新建角色**，统一挂到 aliases.json 里指定的「未知角色」上，等站长在编辑器里认领。
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -41,8 +49,6 @@ const ALIAS_FILE = path.join(HERE, 'aliases.json');
 const API = (process.env.SALON_API || 'http://127.0.0.1:3003').replace(/\/+$/, '');
 const API_TOKEN = process.env.SALON_API_TOKEN || '';
 const GROUP_ID = Number(process.env.SALON_GROUP || 752855970);
-/** 只收这一天（含）之后的精华 —— 站里 2026-09-30 及以前已经有了 */
-const SINCE = process.env.SALON_SINCE || '2026-10-01';
 /** 正文短于这个字数、又有图的，就当「聊天截图」，去 OCR */
 const OCR_MAX_TEXT = 20;
 
@@ -50,8 +56,40 @@ const argv = process.argv.slice(2);
 const PROBE = argv.includes('--probe');
 const DRY = argv.includes('--dry') || PROBE;
 
-/* ---------------- 小工具 ---------------- */
+/* ---------------- 小工具（先声明，下面 resolveMonth 要用） ---------------- */
 const pad = (n) => String(n).padStart(2, '0');
+
+/**
+ * 跑哪个月。三种来源，优先级从高到低：
+ *   ① `--month 2026-10`     手动指定
+ *   ② `SALON_MONTH` 环境变量  计划任务里用（每月 1 号跑时它等于上个月）
+ *   ③ 都不给 → **上个月**（按北京时间算）
+ * 窗口是 [当月 1 号, 当月最后一天]，两头都含。
+ */
+function resolveMonth() {
+  const at = argv.indexOf('--month');
+  const raw = at >= 0 ? argv[at + 1] : process.env.SALON_MONTH || '';
+  if (raw && /^\d{4}-\d{2}$/.test(raw)) {
+    const [y, m] = raw.split('-').map(Number);
+    const last = new Date(Date.UTC(y, m, 0)).getUTCDate(); // 下个月第 0 天 = 本月最后一天
+    return { label: raw, from: `${raw}-01`, to: `${raw}-${pad(last)}` };
+  }
+  /* 默认上个月（北京时间：把「现在」往后挪 8 小时再取 UTC 的年月） */
+  const nowB = new Date(Date.now() + 8 * 3600 * 1000);
+  const y = nowB.getUTCFullYear();
+  const m = nowB.getUTCMonth() + 1; // 1..12
+  const py = m === 1 ? y - 1 : y;
+  const pm = m === 1 ? 12 : m - 1;
+  const label = `${py}-${pad(pm)}`;
+  const last = new Date(Date.UTC(py, pm, 0)).getUTCDate();
+  return { label, from: `${label}-01`, to: `${label}-${pad(last)}` };
+}
+const MONTH = resolveMonth();
+/* SALON_SINCE 仍可单独覆盖起点（补历史时用），默认就是本月 1 号 */
+const SINCE = process.env.SALON_SINCE || MONTH.from;
+const UNTIL = process.env.SALON_UNTIL || MONTH.to;
+/** 图里认不出的名字挂到哪 —— 默认留空，即 memberIds: []（站里已有 16 条是这个状态，页面显示「冰室群成员」，编辑器里可以手动认领） */
+const UNKNOWN_NAME = process.env.SALON_UNKNOWN || '';
 
 /** unix 秒 → 北京时间的 { date: 'YYYY-MM-DD', time: 'HH:MM' } */
 function bjParts(ts) {
@@ -150,6 +188,58 @@ function matchName(nick, byAlias) {
     }
   }
   return best;
+}
+
+/**
+ * 从一张聊天截图的 OCR 文本里，挑出**说话的人**（2026-11-12 加）。
+ *
+ * 站长订的规则：一条精华如果是 QQ 聊天截图，它属于**图里说话的那几个人**，
+ * 不属于截图的人。例：
+ *   · 隰辰煦发「隰辰煦和虹星对话」的截图 → 隰辰煦 + 虹星
+ *   · 隰辰煦发「只有 Raw 在说话」的截图   → 只有 Raw（不含隰辰煦）
+ *
+ * 怎么挑：QQ 聊天截图里，每条消息上面会有一行「名字 + 头衔/LV」。
+ * OCR 出来的文本里就是这些名字。我们把**认得出的成员名/马甲**都扫一遍，
+ * 出现过的就算参与者。认得出用什么认：优先用 aliases 的 nick 区（马甲），
+ * 其次用成员名本身。
+ *
+ * 认不出来的名字（图里没 QQ 号，真没法确定是谁）不新建角色，
+ * 统一记到 `unknown` 里，由调用方挂到「未知角色」上。
+ *
+ * @returns {{ members: object[], unknown: string[] }}
+ */
+function pickSpeakers(ocrText, byAlias) {
+  const text = String(ocrText || '');
+  if (!text.trim()) return { members: [], unknown: [] };
+
+  /* 把所有「能找到的名字 / 马甲」按长度从长到短排，先匹配长的
+     （避免「亚卡莱特」先被短的「虹星」什么的抢走） */
+  const keys = [...byAlias.keys()].filter((k) => k.length >= 2).sort((a, b) => b.length - a.length);
+  const hit = new Map(); // memberId → member
+  const unknown = [];
+  let rest = text;
+
+  for (const k of keys) {
+    if (!rest.includes(k)) continue;
+    const m = byAlias.get(k);
+    if (!m) continue;
+    hit.set(m.id, m);
+    /* 把这个名字从待搜文本里抹掉，免得短名字重复命中 */
+    rest = rest.split(k).join('\u0000');
+  }
+
+  /*
+    剩下的「像是说话人但认不出」的行：QQ 聊天截图里通常是
+    「名字」单独一行，或「名字：内容」。这里只做**报告**用，
+    不据此拆名字（OCR 太容易把正文切碎，硬拆会造出一堆假人）。
+  */
+  const lines = text.split('\n').map((s) => s.trim()).filter(Boolean);
+  for (const line of lines) {
+    const m = /^([^\s：:]{2,12})[：:]/.exec(line);
+    if (m && !byAlias.has(m[1])) unknown.push(m[1]);
+  }
+
+  return { members: [...hit.values()], unknown: [...new Set(unknown)] };
 }
 
 /**
@@ -258,7 +348,7 @@ async function ocr(url) {
 
 /* ---------------- 主流程 ---------------- */
 async function main() {
-  console.log(`接口 ${API}  群 ${GROUP_ID}  起始 ${SINCE}`);
+  console.log(`接口 ${API}  群 ${GROUP_ID}  窗口 ${SINCE} ~ ${UNTIL}（${MONTH.label}）`);
   const raw = await fetchAll();
   console.log(`接口返回 ${raw.length} 条精华`);
 
@@ -297,6 +387,8 @@ async function main() {
   const usedMemberIds = new Set(file.members.map((m) => String(m.id || '')));
   const newMembers = [];
   const unknown = new Map(); // QQ号 → 群名片，报告用
+  const unknownPinned = []; // 图里认不出人、挂到「未知角色」的条目
+  let chatScoped = 0; // 按「图里说话的人」归属的条数
   const memberOf = (name) => {
     const hit = byAlias.get(name);
     if (hit) return hit;
@@ -335,6 +427,7 @@ async function main() {
     const it = normalize(r);
     if (!it.date) { skipped.push({ ...it, why: '没有时间戳' }); continue; }
     if (it.date < SINCE) { skipped.push({ ...it, why: `早于 ${SINCE}` }); continue; }
+    if (it.date > UNTIL) { skipped.push({ ...it, why: `晚于 ${UNTIL}` }); continue; }
 
     const key = essenceKey(it);
     const text = normText(it.text);
@@ -378,31 +471,55 @@ async function main() {
       }
     }
 
-    /* 聊天截图：有图、正文很短 → OCR 抠字 */
+    /* 聊天截图：有图就 OCR —— 不只是为了抠字，更是为了认出**图里说话的人** */
     let finalText = it.text;
     let isOcr = false;
-    if (images.length && normText(it.text).length < OCR_MAX_TEXT && it.images[0]?.url) {
+    let ocrText = '';
+    if (images.length && it.images[0]?.url) {
       const got = await ocr(it.images[0].url);
-      if (got.trim()) {
-        finalText = got.trim();
+      ocrText = got.trim();
+      if (ocrText && normText(it.text).length < OCR_MAX_TEXT) {
+        finalText = ocrText;
         isOcr = true;
       }
     }
 
-    /* 成员：skip 名单 → QQ 号对照表 → 群名片精确/前缀匹配 → 都认不出才新建 */
+    /* ---- 归属：聊天截图归「图里说话的人」，其余归发送人 ---- */
     if (skipMap[it.senderId]) { skipped.push({ ...it, why: `skip 名单：${skipMap[it.senderId]}` }); continue; }
-    const qqName = qqMap[it.senderId];
-    const hitMember = qqName ? byAlias.get(qqName) : matchName(it.senderNick, byAlias);
-    if (!hitMember) {
-      /* 认不出来：先记下，最后统一报告；照样建一个新成员，别丢数据 */
-      unknown.set(it.senderId || '(空)', it.senderNick || '(空)');
+
+    /* 图里认得出的参与者 */
+    const speakers = images.length ? pickSpeakers(ocrText, byAlias) : { members: [], unknown: [] };
+
+    /** 这一条最终挂到哪些成员上 */
+    let memberIdList = [];
+    if (images.length && speakers.members.length) {
+      /* 有图、且图里认出了人 → 按图里的人归属（**不含发送人**，除非他本人就在图里） */
+      memberIdList = speakers.members.map((m) => m.id);
+      chatScoped++;
+    } else if (images.length && ocrText) {
+      /*
+        有图、有字、但一个成员都没认出来 —— 多半是聊天截图里全是生面孔/马甲。
+        **不新建角色**：memberIds 留空，页面显示「冰室群成员」，
+        站长在编辑器里手动认领（站里已有 16 条就是这个状态）。
+        设了 SALON_UNKNOWN 才会挂到指定成员上。
+      */
+      memberIdList = UNKNOWN_NAME ? [memberOf(UNKNOWN_NAME).id] : [];
+      unknownPinned.push({ id, names: speakers.unknown.slice(0, 4) });
+      chatScoped++;
+    } else {
+      /* 没图，或者是张网图/游戏截图（OCR 也认不出人）→ 按老规矩归发送人 */
+      const qqName = qqMap[it.senderId];
+      const hitMember = qqName ? byAlias.get(qqName) : matchName(it.senderNick, byAlias);
+      if (!hitMember) unknown.set(it.senderId || '(空)', it.senderNick || '(空)');
+      const name = qqName || hitMember?.name || it.senderNick;
+      if (!name) continue;
+      memberIdList = [memberOf(name).id];
     }
-    const name = qqName || hitMember?.name || it.senderNick;
-    if (!name) { continue; }
+    if (!memberIdList.length && !images.length) continue;
 
     const entry = {
       id,
-      memberIds: [memberOf(name).id],
+      memberIds: memberIdList,
       kind: isOcr ? 'perfect' : 'text',
       date: it.date,
       time: it.time || '',
@@ -435,6 +552,12 @@ async function main() {
   for (const [why, n] of byWhy) console.log(`   · ${why}：${n} 条`);
   console.log(`图片：${DRY ? '会写入' : '写入'} ${imgWritten} 张，${(imgBytes / 1048576).toFixed(1)} MB${imgFailed ? `，**失败 ${imgFailed} 张**（url 过期且换新链接也没成，条目还是加进去了，图缺着）` : ''}`);
   console.log(`新成员：${newMembers.length ? newMembers.map((m) => m.name).join('、') : '（没有新的）'}`);
+  if (chatScoped) console.log(`按「图里说话的人」归属：${chatScoped} 条（这些**不含**截图的人，除非他本人也在图里）`);
+  if (unknownPinned.length) {
+    console.log('');
+    console.log(`⚠ 聊天截图但图里一个成员都没认出来 → memberIds 留空（页面显示「冰室群成员」），等你在编辑器里认领：`);
+    for (const u of unknownPinned) console.log(`   ${u.id}${u.names.length ? `  （图里出现的名字：${u.names.join('、')}）` : ''}`);
+  }
   if (unknown.size) {
     console.log('');
     console.log('⚠ 这些 QQ 号认不出来（回头补进 tools/salon/aliases.json）：');
