@@ -103,8 +103,10 @@ $changed | ForEach-Object { "    $_" }
 # ---------------------------------------------------------------------------
 # 4. 只加精华相关的路径（**不要 git add -A**，站长可能同时在别处改东西）
 # ---------------------------------------------------------------------------
+# ⚠ 别加 salon.json.bak —— .gitignore 里有 `*.bak`，git add 会报
+#   「paths are ignored by one of your .gitignore files」并返回非 0，
+#   看起来像失败，其实只是被忽略（2026-11-12 服务器上踩到）。
 & git add -- src/data/salon.json
-if (Test-Path 'src/data/salon.json.bak') { & git add -- src/data/salon.json.bak }
 & git add -- public/img/salon
 if ($LASTEXITCODE -ne 0) { Log '❌ git add 失败'; exit 1 }
 
@@ -125,7 +127,13 @@ $commitMsg = @"
 
 $msgFile = Join-Path $env:TEMP 'salon-commit-msg.txt'
 $commitMsg | Out-File -FilePath $msgFile -Encoding UTF8
-$code = Invoke-Native git @('commit', '-F', $msgFile)
+# ⚠ 身份用 -c 显式传，别指望服务器上配过 user.name / user.email ——
+#   服务器上没配的话 git 会直接拒绝提交（2026-11-12 实际踩到）。
+$code = Invoke-Native git @(
+  '-c', 'user.name=Chenxu-MarshEco',
+  '-c', 'user.email=Chenxu-MarshEco@users.noreply.github.com',
+  'commit', '-F', $msgFile
+)
 if ($code -ne 0) { Log '❌ 提交失败'; exit 1 }
 
 # ---------------------------------------------------------------------------
