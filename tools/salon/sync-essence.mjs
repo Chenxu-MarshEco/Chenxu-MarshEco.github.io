@@ -615,7 +615,17 @@ async function main() {
       } catch (err) {
         console.warn(`  ⚠ ${id} 第 ${k + 1} 张图下载失败：${err.message}`);
         imgFailed++;
-        if (!needsReview.some((x) => x.id === id)) needsReview.push({ id, why: `第 ${k + 1} 张图没下下来（${err.message.slice(0, 60)}），归属可能不准` });
+        if (!needsReview.some((x) => x.id === id)) {
+          needsReview.push({
+            id,
+            why: `第 ${k + 1} 张图没下下来（${err.message.slice(0, 60)}）`,
+            date: it.date,
+            time: it.time || '',
+            nick: it.senderNick || '',
+            rawNick: it.rawNick || '',
+            text: String(it.text || '').replace(/\s+/g, ' ').slice(0, 60),
+          });
+        }
       }
     }
 
@@ -719,8 +729,12 @@ async function main() {
   }
   if (needsReview.length) {
     console.log('');
-    console.log('⚠ 这些条目的图没下下来（rkey 过期且换链接也失败），**归属可能不准**，建议手工看一眼：');
-    for (const u of needsReview) console.log(`   ${u.id}  ${u.why}`);
+    console.log('⚠ 这些条目的图没下下来（rkey 过期且换链接、本地缓存都没找到），**归属可能不准**：');
+    for (const u of needsReview) {
+      console.log(`   ${u.id}  ${u.date} ${u.time || '--:--'}  发送人=${u.nick || '(空)'}${u.rawNick && u.rawNick !== u.nick ? `（原始名片：${u.rawNick}）` : ''}`);
+      console.log(`        正文：${u.text || '(没有文字，只有图)'}`);
+      console.log(`        原因：${u.why}`);
+    }
   }
   if (unknown.size) {
     console.log('');
