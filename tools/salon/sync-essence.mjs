@@ -104,9 +104,17 @@ function parseContent(content) {
 }
 
 /**
- * 剥掉群名片上的装饰：emoji、符号、空白。
- * 真实数据里 sender_nick 长这样：「🏗隰辰煦🏗」「👆ミスタ」「亚卡莱特」
- * 站里成员叫「隰辰煦」，所以不剥就一个都对不上。
+ * 剥掉群名片上的装饰：emoji、符号、不可见字符、空白。
+ *
+ * 真实数据里的样子：
+ *   「🏗隰辰煦🏗」            → 隰辰煦（emoji 框）
+ *   「👆ミスタ」               → ミスタ
+ *   「亚卡莱特ᅠ⁧呃呜喵⁧‭」      → 亚卡莱特呃呜喵（**填充符 + 双向隔离符**，肉眼看不见）
+ *
+ * 最后那条是 2026-11-12 真数据里遇到的：QQ 允许在群名片里塞
+ * U+115F/U+1160（朝鲜文填充符，渲染成空白）、U+2067/U+2069（双向隔离符）这类
+ * **格式字符**，它们不可见但会参与字符串比较 —— 不剥掉，`亚卡莱特` 就永远对不上。
+ * 所以这里连 `\p{Cf}`（格式字符）整类一起清掉，别指望列全。
  */
 function cleanNick(s) {
   return String(s ?? '')
@@ -115,8 +123,33 @@ function cleanNick(s) {
     /* 装饰用的框线、箭头、几何符号、中英文括号 */
     .replace(/[◆◇■□▲△▼▽★☆♦♠♣♥♪♫※→←↑↓↔⇒⇔]/g, '')
     .replace(/[【】\[\]（）()「」『』]/g, '')
+    /* 朝鲜文填充符：渲染成空白，但 ≠ 空格（U+115F..U+1160、U+3164、U+FFA0） */
+    .replace(/[\u{115F}\u{1160}\u{3164}\u{FFA0}]/gu, '')
+    /* 所有格式字符（Cf）和控制字符（Cc）：双向隔离符、零宽空格、软连字符、BOM 都在这一类 */
+    .replace(/[\p{Cf}\p{Cc}]/gu, '')
     .replace(/\s+/g, '')
     .trim();
+}
+
+/**
+ * 群名片 → 站里的成员名。
+ * 先精确匹配（名字或别名），匹配不上就试「前缀」：
+ * 比如「亚卡莱特呃呜喵」以别名「亚卡莱特」开头 → 认成虹星。
+ * 前缀至少 2 个字才认（1 个字太容易误伤），取**最长**的那个命中。
+ */
+function matchName(nick, byAlias) {
+  if (!nick) return null;
+  if (byAlias.has(nick)) return byAlias.get(nick);
+  let best = null;
+  let bestLen = 0;
+  for (const [alias, member] of byAlias) {
+    if (alias.length < 2) continue;
+    if (nick.startsWith(alias) && alias.length > bestLen) {
+      best = member;
+      bestLen = alias.length;
+    }
+  }
+  return best;
 }
 
 /**
@@ -174,20 +207,39 @@ async function fetchAll() {
   return out;
 }
 
-/** 下载一张图，返回 { buf, ext } */
-async function download(url) {
-  const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  const buf = Buffer.from(await res.arrayBuffer());
-  const ct = String(res.headers.get('content-type') || '').toLowerCase();
-  let ext = 'jpg';
-  if (ct.includes('png')) ext = 'png';
-  else if (ct.includes('gif')) ext = 'gif';
-  else if (ct.includes('webp')) ext = 'webp';
-  else {
-    const m = /\.(jpe?g|png|gif|webp|bmp)(?:\?|$)/i.exec(url);
-    if (m) ext = m[1].toLowerCase().replace('jpeg', 'jpg');
+/**
+ * 下载一张图，返回 { buf, ext }。
+ * 第一次用精华里给的 url；404/403 就回头找 NapCat 要一个新链接
+ * （`get_image` 传 file 名）。为什么需要：QQ 的图片 url 里带 `rkey`，
+ * **旧消息的 rkey 会过期** —— 2026-11-12 实测 32 条里有 5 张直接 404。
+ */
+async function download(im) {
+  const tryFetch = async (url) => {
+    const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return Buffer.from(await res.arrayBuffer());
+  };
+
+  let buf = null;
+  let usedUrl = im.url;
+  try {
+    buf = await tryFetch(im.url);
+  } catch (err) {
+    /* 过期了：请 NapCat 重新签一次 */
+    if (!im.file) throw err;
+    let fresh = '';
+    try {
+      const json = await call('get_image', { file: im.file });
+      fresh = String(json?.data?.url ?? json?.data?.file ?? '');
+    } catch { /* 拿不到新链接就放弃这张 */ }
+    if (!fresh || !/^https?:/i.test(fresh)) throw err;
+    buf = await tryFetch(fresh);
+    usedUrl = fresh;
   }
+
+  let ext = 'jpg';
+  const m = /\.(jpe?g|png|gif|webp|bmp)(?:\?|$)/i.exec(usedUrl);
+  if (m) ext = m[1].toLowerCase().replace('jpeg', 'jpg');
   return { buf, ext };
 }
 
@@ -276,6 +328,7 @@ async function main() {
   const skipped = [];
   let imgWritten = 0;
   let imgBytes = 0;
+  let imgFailed = 0;
 
   /* ---- 逐条 ---- */
   for (const r of raw) {
@@ -308,9 +361,9 @@ async function main() {
     const images = [];
     for (let k = 0; k < it.images.length; k++) {
       const im = it.images[k];
-      if (!im.url) continue;
+      if (!im.url && !im.file) continue;
       try {
-        const { buf, ext } = await download(im.url);
+        const { buf, ext } = await download(im);
         const name = `${id}-${k + 1}.${ext}`;
         images.push(`/img/salon/${name}`);
         if (!DRY) {
@@ -320,7 +373,8 @@ async function main() {
         imgWritten++;
         imgBytes += buf.length;
       } catch (err) {
-        console.warn(`  ⚠ ${id} 第 ${k + 1} 张图下载失败：${err.message}`);
+        console.warn(`  ⚠ ${id} 第 ${k + 1} 张图下载失败（url 过期且换新链接也没成）：${err.message}`);
+        imgFailed++;
       }
     }
 
@@ -335,11 +389,16 @@ async function main() {
       }
     }
 
-    /* 成员：先查 QQ 号对照表，再按群名片/马甲认 */
+    /* 成员：skip 名单 → QQ 号对照表 → 群名片精确/前缀匹配 → 都认不出才新建 */
     if (skipMap[it.senderId]) { skipped.push({ ...it, why: `skip 名单：${skipMap[it.senderId]}` }); continue; }
-    const name = qqMap[it.senderId] || it.senderNick;
-    if (!name) { unknown.set(it.senderId || '(空)', it.senderNick || '(空)'); continue; }
-    if (!qqMap[it.senderId] && !byAlias.has(name)) unknown.set(it.senderId, it.senderNick);
+    const qqName = qqMap[it.senderId];
+    const hitMember = qqName ? byAlias.get(qqName) : matchName(it.senderNick, byAlias);
+    if (!hitMember) {
+      /* 认不出来：先记下，最后统一报告；照样建一个新成员，别丢数据 */
+      unknown.set(it.senderId || '(空)', it.senderNick || '(空)');
+    }
+    const name = qqName || hitMember?.name || it.senderNick;
+    if (!name) { continue; }
 
     const entry = {
       id,
@@ -374,7 +433,7 @@ async function main() {
   const byWhy = new Map();
   for (const s of skipped) byWhy.set(s.why, (byWhy.get(s.why) ?? 0) + 1);
   for (const [why, n] of byWhy) console.log(`   · ${why}：${n} 条`);
-  console.log(`图片：写入 ${imgWritten} 张，${(imgBytes / 1048576).toFixed(1)} MB`);
+  console.log(`图片：${DRY ? '会写入' : '写入'} ${imgWritten} 张，${(imgBytes / 1048576).toFixed(1)} MB${imgFailed ? `，**失败 ${imgFailed} 张**（url 过期且换新链接也没成，条目还是加进去了，图缺着）` : ''}`);
   console.log(`新成员：${newMembers.length ? newMembers.map((m) => m.name).join('、') : '（没有新的）'}`);
   if (unknown.size) {
     console.log('');
