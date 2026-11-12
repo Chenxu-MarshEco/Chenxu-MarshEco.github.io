@@ -308,6 +308,49 @@ async function fetchAll() {
  *   ② 还是没有，就用 `get_msg` 把那条消息重新取一遍，从 fresh content 里找新 url；
  *   ③ 都不成就报错（外层会记 needsReview，让你手工看一眼）。
  */
+/**
+ * 在缓存目录里按文件名找图（2026-11-12 加）。
+ *
+ * 为什么需要：QQ 的图片 url 带 rkey，旧消息的 rkey 过期后 404；
+ * `get_image` / `get_msg` 给回来的往往还是同一条过期链接（实测 5 张全 404）。
+ * 但 NapCat 收到图片时会**落盘**，文件名就是消息段里的 `file`
+ * （如 `CAAE99E5169DC1F52FC913C4831424BE.png`）。所以最后去磁盘上捞一遍。
+ *
+ * 目录用环境变量 `SALON_IMG_CACHE` 指定，分号分隔，比如：
+ *   set SALON_IMG_CACHE=C:\bots\GrainRain-NapCat;C:\Users\Administrator\AppData\Roaming\QQ
+ * 不设就跳过这一步。
+ */
+const CACHE_DIRS = String(process.env.SALON_IMG_CACHE || '')
+  .split(';')
+  .map((s) => s.trim())
+  .filter(Boolean);
+
+function findInCache(fileName, maxDepth = 6) {
+  if (!CACHE_DIRS.length || !fileName) return '';
+  const want = fileName.toLowerCase();
+  const walk = (dir, depth) => {
+    if (depth > maxDepth) return '';
+    let entries;
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return ''; }
+    for (const e of entries) {
+      const full = path.join(dir, e.name);
+      if (e.isDirectory()) {
+        const hit = walk(full, depth + 1);
+        if (hit) return hit;
+      } else if (e.name.toLowerCase() === want) {
+        return full;
+      }
+    }
+    return '';
+  };
+  for (const dir of CACHE_DIRS) {
+    if (!fs.existsSync(dir)) continue;
+    const hit = walk(dir, 0);
+    if (hit) return hit;
+  }
+  return '';
+}
+
 async function download(im, messageId) {
   const tryFetch = async (url) => {
     const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
@@ -352,7 +395,7 @@ async function download(im, messageId) {
     diag.push(`get_image 报错：${e.message.slice(0, 80)}`);
   }
 
-  /* ①.5 本地缓存：get_image 给的路径、或者 QQ 缓存目录里按文件名找 */
+  /* ①.5 本地缓存：get_image 给的路径、或者 NapCat / QQ 缓存目录里按文件名找 */
   for (const p of localPaths) {
     try {
       if (p && fs.existsSync(p)) {
@@ -366,6 +409,19 @@ async function download(im, messageId) {
     } catch (e) {
       diag.push(`读本地文件失败：${e.message.slice(0, 60)}`);
     }
+  }
+
+  /* ①.6 在缓存目录里按文件名捞（NapCat 收到图会落盘，文件名就是 im.file） */
+  if (im.file) {
+    const found = findInCache(im.file);
+    if (found) {
+      const buf = fs.readFileSync(found);
+      let ext = 'jpg';
+      const m = /\.(jpe?g|png|gif|webp|bmp)$/i.exec(found);
+      if (m) ext = m[1].toLowerCase().replace('jpeg', 'jpg');
+      return { buf, ext, url: `file:${found}` };
+    }
+    diag.push(`缓存目录里也没找到 ${im.file}`);
   }
 
   /* ② get_msg 重新取那条消息，从最新 content 里找图 */
