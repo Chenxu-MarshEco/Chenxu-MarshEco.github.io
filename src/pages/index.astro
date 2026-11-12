@@ -246,30 +246,52 @@ const backText = text(copy.home?.back);
 */}
 {pinned.length > 0 && (
   <aside class="homepin" aria-label="置顶公告" data-home-pinned>
-    {/* 塔吊：立在右边、跟「花涧堂」标题齐平；吊钩下面挂货箱（见 .homepin__box） */}
-    <svg class="homepin__crane" viewBox="0 0 120 200" aria-hidden="true" focusable="false">
-      <rect class="homepin__mast" x="86" y="18" width="10" height="182" />
-      <rect class="homepin__jib" x="18" y="18" width="82" height="8" />
-      <path class="homepin__brace" d="M96 26 L44 18 M96 26 L74 18" />
-      <rect class="homepin__cab" x="74" y="6" width="18" height="14" rx="2" />
-      <line class="homepin__cable" x1="30" y1="26" x2="30" y2="58" />
-      <circle class="homepin__hook" cx="30" cy="61" r="4" />
-    </svg>
-    {pinned.map((a) => {
-      const href = announceHref(a);
-      const external = announceExternal(a);
-      return (
-        <a class="homepin__box" href={href || '#'} {...external ? { target: '_blank', rel: 'noopener' } : {}} data-announce-id={a.id}>
-          <span class="homepin__tag">置顶</span>
-          {a.cover && <img class="homepin__img" src={withBase(a.cover)} alt="" loading="eager" decoding="async" />}
-          <span class="homepin__text">
-            <b class="homepin__title">{a.title}</b>
-            <time class="homepin__date" datetime={a.date}>{a.date}</time>
-          </span>
-        </a>
-      );
-    })}
-    <span class="homepin__rope" aria-hidden="true"></span>
+    {/*
+      一台「贴着镜头」的塔吊（2026-11-11 第二版，推翻重做）。
+
+      背景天际线里那三台是远山处的剪影（components/HomeCranes.astro），
+      这一台要读成同一片工地里、但离镜头近得多的一台，所以：
+        · 只露出横臂的**前半截** —— 塔身、司机室、配重全在屏幕右缘之外，
+          所以横臂的右端是被屏幕边缘**直接切掉**的，不是画出来的端头；
+        · 桁架做法跟背景那三台一模一样（上下两根主弦 + 来回折的斜腹杆），
+          只是杆件更粗、还多一条逆光的「天光边」—— 近处才看得到这种细节；
+        · 横臂下的小车吊着两根吊带，吊带下面挂的货箱就是置顶公告本身。
+    */}
+    <div class="homepin__rig">
+      <svg class="homepin__jib" viewBox="0 0 200 32" aria-hidden="true" focusable="false">
+        <path class="homepin__chord" d="M2 22H201M14 6H201" />
+        <path
+          class="homepin__web"
+          d="M14 6L28 22L42 6L56 22L70 6L84 22L98 6L112 22L126 6L140 22L154 6L168 22L182 6L196 22L201 17"
+        />
+        <path class="homepin__nose" d="M2 22L14 6" />
+        {/* 小车：吊带就挂在它下面（x=118~130，正中 124 = 容器宽度的 62%，和下面货箱的中线同一个点） */}
+        <rect class="homepin__trolley" x="118" y="22" width="12" height="5" rx="1" />
+        {/* 逆光：天光只勾亮主弦的上沿一条线 */}
+        <path class="homepin__rim" d="M14 5.4H201" />
+      </svg>
+      <div class="homepin__load">
+        <svg class="homepin__sling" viewBox="0 0 100 30" preserveAspectRatio="none" aria-hidden="true" focusable="false">
+          <path class="homepin__cable" d="M50 0V12.6" vector-effect="non-scaling-stroke" />
+          <path class="homepin__slings" d="M8 30L50 17.4M92 30L50 17.4" vector-effect="non-scaling-stroke" />
+          <rect class="homepin__hook" x="46.6" y="12.6" width="6.8" height="4.8" rx="1.4" />
+        </svg>
+        {pinned.map((a) => {
+          const href = announceHref(a);
+          const external = announceExternal(a);
+          return (
+            <a class="homepin__box" href={href || '#'} {...external ? { target: '_blank', rel: 'noopener' } : {}} data-announce-id={a.id}>
+              <span class="homepin__tag">置顶</span>
+              {a.cover && <img class="homepin__img" src={withBase(a.cover)} alt="" loading="eager" decoding="async" />}
+              <span class="homepin__text">
+                <b class="homepin__title">{a.title}</b>
+                <time class="homepin__date" datetime={a.date}>{a.date}</time>
+              </span>
+            </a>
+          );
+        })}
+      </div>
+    </div>
   </aside>
 )}
 
@@ -283,17 +305,18 @@ const backText = text(copy.home?.back);
     · 动画尊重 prefers-reduced-motion（不想要动效的人直接看到静止的塔吊）。
 */}
 <style>
+  /*
+    整块贴在屏幕右缘：容器的右边界就是屏幕边界，
+    所以横臂 SVG 画到 x=200（容器右缘）的地方就是被屏幕切掉的地方。
+    宽度和箱子的宽度都用百分比互相定位（见 .homepin__load / .homepin__sling），
+    这样换到手机上收窄时，小车、吊带、箱子的中线仍然是同一个点。
+  */
   .homepin {
     position: fixed;
     right: 0;
     top: var(--homepin-top, 22vh);
     z-index: 40;
-    display: flex;
-    align-items: flex-start;
-    gap: 0;
-    width: 22rem;
-    max-width: 42vw;
-    padding-right: 0.5rem;
+    width: 20rem;
     pointer-events: none;
     transition: transform 0.75s cubic-bezier(0.22, 0.61, 0.36, 1), opacity 0.55s ease;
     will-change: transform, opacity;
@@ -303,78 +326,133 @@ const backText = text(copy.home?.back);
     transform: translateX(calc(100% + 1rem));
     opacity: 0;
   }
-  .homepin__crane {
-    width: 6.2rem;
-    height: 10.3rem;
-    flex: 0 0 auto;
+  /*
+    回转轴：真实的塔吊是绕竖直轴回转，塔身从屏幕右缘外立起来 ——
+    所以把 transform-origin 放到容器右侧外面（118%）、横臂高度上（2rem），
+    绕这个点大幅转一点点，看起来就是整台吊机在回转、吊着的货箱跟着缓缓荡。
+    幅度刻意压到 ±1.1°：给大了货箱会晃得像挂在钟摆上，就不像塔吊了。
+  */
+  .homepin__rig {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    transform-origin: 118% 2rem;
+    animation: homepin-slew 26s ease-in-out infinite;
+    filter: drop-shadow(0 14px 22px rgba(0, 0, 0, 0.45));
+  }
+  @keyframes homepin-slew {
+    0%,
+    100% {
+      transform: rotate(-1.1deg);
+    }
+    26% {
+      transform: rotate(1.15deg);
+    }
+    48% {
+      transform: rotate(0.4deg);
+    }
+    72% {
+      transform: rotate(-0.85deg);
+    }
+  }
+  /* 横臂：铺满容器宽度，高度按 viewBox 比例（200:32）自己算 */
+  .homepin__jib {
+    display: block;
+    width: 100%;
+    height: auto;
+    overflow: hidden;
+  }
+  /*
+    墨色跟背景天际线、背景那三台塔吊是同一个 --ink：
+    同一片工地、同一个逆光的傍晚，只是这一台离镜头近得多。
+  */
+  .homepin__chord,
+  .homepin__nose {
+    fill: none;
+    stroke: var(--ink, #08020c);
+    stroke-width: 2.4;
+    stroke-linecap: round;
+  }
+  .homepin__web {
+    fill: none;
+    stroke: var(--ink, #08020c);
+    stroke-width: 1.25;
+    stroke-linecap: round;
+  }
+  .homepin__trolley,
+  .homepin__hook {
+    fill: var(--ink, #08020c);
+  }
+  /* 天光边：只给主弦上沿那一线，用来交代"这是逆光的近景剪影" */
+  .homepin__rim {
+    fill: none;
+    stroke: rgba(255, 176, 216, 0.5);
+    stroke-width: 0.7;
+    stroke-linecap: round;
+  }
+  /* 吊带那一小截：吊绳、两根吊带、吊钩 */
+  .homepin__sling {
+    position: absolute;
+    left: 0;
+    bottom: 100%;
+    width: 100%;
+    height: var(--homepin-drop, 2.6rem);
     overflow: visible;
   }
-  .homepin__mast,
-  .homepin__jib,
-  .homepin__brace,
-  .homepin__cab,
-  .homepin__hook {
-    fill: #4b2a5e;
-    stroke: #ff9fd2;
-    stroke-width: 1.6;
-    stroke-linejoin: round;
+  .homepin__cable,
+  .homepin__slings {
+    fill: none;
+    stroke: rgba(255, 224, 246, 0.82);
   }
-  .homepin__jib {
-    fill: #5b3570;
+  /* 箱子外面那圈留白 = 吊带的高度，箱子自己往下让这么多 */
+  .homepin__load {
+    position: relative;
+    width: 70%;
+    margin: var(--homepin-drop, 2.6rem) 3% 0 0;
   }
-  .homepin__mast {
-    fill: #3b2049;
-  }
-  .homepin__cab {
-    fill: #ff9fd2;
-    stroke: #2a1038;
-  }
-  .homepin__cable {
-    stroke: #ff9fd2;
-    stroke-width: 1.4;
-    stroke-dasharray: 3 2;
-  }
-  .homepin__hook {
-    fill: #ffd166;
-    stroke: #2a1038;
-  }
-  /* 货箱 = 置顶公告本体：像吊着的一个木箱，点它跳公告 */
+  /*
+    货箱 = 置顶公告本体。做成集装箱的样子：
+    竖着的压筋（背景里的重复条纹）+ 底边一道黄黑警示条，点它跳公告。
+  */
   .homepin__box {
     position: relative;
     display: block;
-    flex: 1 1 auto;
-    min-width: 0;
-    margin-top: 5.4rem;
-    padding: 0.7rem 0.85rem 0.8rem;
-    border: 1px solid rgba(255, 120, 190, 0.5);
-    border-radius: 10px;
-    background: linear-gradient(180deg, rgba(58, 16, 84, 0.96), rgba(28, 6, 44, 0.97));
-    box-shadow: 0 18px 40px -20px #000;
+    padding: 0.62rem 0.85rem 0.8rem;
+    border: 1px solid rgba(255, 140, 200, 0.36);
+    border-radius: 3px;
+    background-color: #170322;
+    background-image:
+      repeating-linear-gradient(90deg, rgba(255, 159, 210, 0.06) 0 1px, transparent 1px 13px),
+      linear-gradient(180deg, #230631 0%, #0c0114 100%);
+    box-shadow: 0 20px 36px -18px #000, inset 0 1px 0 rgba(255, 176, 216, 0.14);
     color: #ffe6f4;
     text-decoration: none;
     pointer-events: auto;
+    transition: border-color 0.25s ease, transform 0.25s ease;
   }
-  .homepin__box::before,
+  .homepin__box:hover {
+    border-color: rgba(255, 140, 200, 0.72);
+  }
+  .homepin__box:hover .homepin__title {
+    color: #fff;
+  }
   .homepin__box::after {
-    /* 箱子上那两道捆绳，让它一眼像"货箱"而不是卡片 */
     content: '';
     position: absolute;
-    top: 0;
+    left: 0;
+    right: 0;
     bottom: 0;
-    width: 2px;
-    background: rgba(255, 159, 210, 0.35);
-  }
-  .homepin__box::before {
-    left: 28%;
-  }
-  .homepin__box::after {
-    right: 28%;
+    height: 4px;
+    border-radius: 0 0 2px 2px;
+    background: repeating-linear-gradient(-45deg, rgba(255, 209, 102, 0.55) 0 5px, transparent 5px 10px);
+    opacity: 0.85;
   }
   .homepin__tag {
     display: inline-block;
-    margin-bottom: 0.35rem;
+    margin-bottom: 0.3rem;
     padding: 0.05rem 0.45rem;
-    border-radius: 999px;
+    border-radius: 2px;
     background: #ff5fb0;
     color: #2a0620;
     font-size: 0.72rem;
@@ -383,78 +461,101 @@ const backText = text(copy.home?.back);
   .homepin__img {
     display: block;
     width: 100%;
-    max-height: 7.5rem;
+    max-height: 6.4rem;
     object-fit: cover;
-    border-radius: 6px;
-    margin: 0.15rem 0 0.45rem;
+    border-radius: 2px;
+    margin: 0.15rem 0 0.4rem;
   }
   .homepin__title {
     display: block;
-    font-size: 0.95rem;
-    line-height: 1.5;
+    font-size: 0.92rem;
+    line-height: 1.45;
   }
   .homepin__date {
     display: block;
     margin-top: 0.2rem;
-    font-size: 0.75rem;
-    color: rgba(255, 230, 244, 0.65);
+    font-size: 0.74rem;
+    color: rgba(255, 230, 244, 0.62);
   }
-  /* 货箱上面那根绳子：从塔吊吊钩连到箱顶 */
-  .homepin__rope {
-    position: absolute;
-    left: 1.55rem;
-    top: 6.2rem;
-    height: 3.2rem;
-    border-left: 1.4px dashed #ff9fd2;
-    pointer-events: none;
-  }
-  /* 手机：别和标题撞 —— 整体下移、缩短、收窄 */
+  /*
+    手机：标题在中间、占得满，塔吊往右下让 —— 横向收窄、吊带缩短，
+    纵向位置由脚本改成「贴在标题下沿」（见下面的 <script>）。
+  */
   @media (max-width: 46rem) {
     .homepin {
-      top: var(--homepin-top, 44vh);
+      top: var(--homepin-top, 48vh);
       width: 15rem;
-      max-width: 74vw;
     }
-    .homepin__crane {
-      width: 4.3rem;
-      height: 7.2rem;
+    .homepin__rig {
+      transform-origin: 118% 1.7rem;
+    }
+    .homepin__load {
+      width: 82%;
+      --homepin-drop: 1.9rem;
     }
     .homepin__box {
-      margin-top: 3.6rem;
-      padding: 0.55rem 0.6rem 0.6rem;
+      padding: 0.55rem 0.65rem 0.7rem;
     }
     .homepin__img {
-      max-height: 4.6rem;
+      max-height: 4.4rem;
     }
     .homepin__title {
       font-size: 0.84rem;
+    }
+    .homepin__tag,
+    .homepin__date {
+      font-size: 0.7rem;
     }
   }
   @media (prefers-reduced-motion: reduce) {
     .homepin {
       transition: none;
     }
+    .homepin__rig {
+      animation: none;
+    }
   }
 </style>
 <script>
   /*
-    塔吊跟随（2026-11-11）：
-      ① 把货箱的纵向位置对齐到「花涧堂」那个大标题（读 --homepin-top；量不到就用 CSS 默认）；
-      ② 滚过封面一半 → 加 is-away（缓缓缩进右侧），滚回来再撤掉。
-    只在首屏有这个元素时才干活，别的页面不受影响。
+    塔吊跟随（2026-11-11 第二版）：
+      ① 纵向位置对到「花涧堂」那个大标题 —— 桌面端让**横臂**的中轴对齐标题的
+         视觉中线（标题在封面里的位置随屏高变，写死会错位，所以每次量）；
+         手机端标题占满中间，塔吊改成贴在标题下沿，免得压在字上；
+      ② 滚过封面一半 → 加 is-away（整组缓缓缩进右侧），滚回来再撤掉。
+    只量 .homepin 自己的横臂高度，不写死像素值，所以换字号/换断点都不用改这儿。
   */
   (() => {
     const el = document.querySelector('[data-home-pinned]');
     if (!el) return;
     const title = document.querySelector('.brand__title');
+    /* 手机端要避开的是**整个标题块**（含下面那句副标题），不是只有「花涧堂」三个字 */
+    const tagline = document.querySelector('.brand__tagline');
+    const jib = el.querySelector('.homepin__jib');
+    const narrow = window.matchMedia('(max-width: 46rem)');
+
     const place = () => {
       if (!title) return;
       const r = title.getBoundingClientRect();
-      /* 标题的中心对到塔吊偏上一点（塔吊立在右上，箱子挂在标题旁边） */
-      el.style.setProperty('--homepin-top', `${Math.max(12, Math.round(r.top + window.scrollY - 6))}px`);
+      if (!r.height) return; /* 标题还没布局（字体未就绪/被隐藏）就先不写，免得写进 0 */
+      const jibH = jib ? jib.getBoundingClientRect().height : 52;
+      let top;
+      if (narrow.matches) {
+        /* 手机：从标题块的下沿往下起吊，横臂才不会横穿那句副标题 */
+        const bottom = Math.max(r.bottom, tagline ? tagline.getBoundingClientRect().bottom : r.bottom);
+        top = bottom + 14;
+      } else {
+        /* 桌面：横臂中轴 ≈ 标题的视觉中线 */
+        top = r.top + r.height * 0.46 - jibH * 0.42;
+      }
+      el.style.setProperty('--homepin-top', `${Math.max(8, Math.round(top))}px`);
     };
+
+    /* 字体就绪后标题的高度/位置才算准，所以 fonts.ready 再量一次 */
     place();
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(place);
     window.addEventListener('resize', place, { passive: true });
+    narrow.addEventListener('change', place);
 
     let away = false;
     const onScroll = () => {
