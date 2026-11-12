@@ -81,6 +81,15 @@ const ALLOW = [
   */
   { why: '画板存档：某一天的笔划 / 索引', re: /^src\/data\/draw\/(index|\d{4}-\d{2}-\d{2})\.json$/i },
   { why: '画板存档：那天画完的样子（脚本渲染的 SVG）', re: /^public\/img\/draw\/\d{4}-\d{2}-\d{2}\.svg$/i },
+  /*
+    群精华的每月同步（2026-11-12 加）：`tools/salon/sync-essence.mjs` 每月 1 号
+    从 NapCat 拉「燃儿求开组」的精华，增量并进 salon.json，图片存进 public/img/salon/。
+    ⚠ 和上面两个存档同一个坑：漏了这两条，机器人一提交精华，gate 就把**整次站点发布**拦下来 ——
+    提交在仓库里、/salon/ 却永远不更新（"看起来跑成功了、其实没上线"最难查）。
+    文件名都是脚本生成的死格式：e0807-1.jpg 这种（精华 id + 序号）。
+  */
+  { why: '群精华：数据（salon.json 和它的备份）', re: /^src\/data\/salon\.json(\.bak)?$/i },
+  { why: '群精华：那几条的配图（精华 id + 序号）', re: /^public\/img\/salon\/e[0-9a-z-]+-\d+\.(jpe?g|png|webp|gif)$/i },
 ];
 
 /* ---------------------------------------------------------------- 参数 */
