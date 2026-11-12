@@ -319,22 +319,53 @@ async function download(im, messageId) {
   if (im.url) candidates.push(im.url);
   /** 诊断：把每一步拿到了什么记下来，失败时一并报出去 */
   const diag = [];
+  /** 本地磁盘上现成的文件（NapCat 和本脚本在同一台机器上，缓存常常就在那儿） */
+  const localPaths = [];
 
-  /* ① get_image 重签 */
+  /* ① get_image 重签：可能给 url，也可能给本地路径（file）或 base64 */
   try {
     const args = {};
     if (im.file) args.file = im.file;
     if (im.fileId) args.file_id = im.fileId;
     if (Object.keys(args).length) {
       const json = await call('get_image', args);
-      const u = String(json?.data?.url ?? '');
+      const d = json?.data ?? {};
+      const u = String(d.url ?? '');
       if (/^https?:/i.test(u)) candidates.push(u);
-      else diag.push(`get_image 没给 url（返回 ${JSON.stringify(json?.data ?? json).slice(0, 120)}）`);
+      /* 本地路径：直接读盘，比再走一次 HTTP 更快也更可靠 */
+      const f = String(d.file ?? '');
+      if (f && !/^https?:/i.test(f)) localPaths.push(f);
+      /* base64 直给 */
+      const b64 = String(d.base64 ?? '');
+      if (b64 && b64.length > 100) {
+        const buf = Buffer.from(b64.replace(/^data:[^,]+,/, ''), 'base64');
+        if (buf.length) {
+          const ext = String(d.file ?? '').toLowerCase().endsWith('.png') ? 'png' : 'jpg';
+          return { buf, ext, url: '(base64)' };
+        }
+      }
+      if (!u && !f) diag.push(`get_image 没给 url/file（返回 ${JSON.stringify(d).slice(0, 140)}）`);
     } else {
       diag.push('这条没 file / file_id，跳过 get_image');
     }
   } catch (e) {
     diag.push(`get_image 报错：${e.message.slice(0, 80)}`);
+  }
+
+  /* ①.5 本地缓存：get_image 给的路径、或者 QQ 缓存目录里按文件名找 */
+  for (const p of localPaths) {
+    try {
+      if (p && fs.existsSync(p)) {
+        const buf = fs.readFileSync(p);
+        let ext = 'jpg';
+        const m = /\.(jpe?g|png|gif|webp|bmp)$/i.exec(p);
+        if (m) ext = m[1].toLowerCase().replace('jpeg', 'jpg');
+        return { buf, ext, url: `file:${p}` };
+      }
+      diag.push(`本地路径不存在：${p}`);
+    } catch (e) {
+      diag.push(`读本地文件失败：${e.message.slice(0, 60)}`);
+    }
   }
 
   /* ② get_msg 重新取那条消息，从最新 content 里找图 */
@@ -359,8 +390,10 @@ async function download(im, messageId) {
   }
 
   let lastErr = null;
+  let tried = 0;
   for (const url of candidates) {
     if (!url) continue;
+    tried++;
     try {
       const buf = await tryFetch(url);
       let ext = 'jpg';
@@ -372,7 +405,10 @@ async function download(im, messageId) {
     }
   }
   const detail = diag.length ? `；${diag.join('；')}` : '';
-  throw new Error(`${lastErr ? lastErr.message : '没有可用的图片链接'}${detail}`);
+  throw new Error(
+    `${lastErr ? lastErr.message : '没有可用的图片链接'}（试了 ${tried} 个链接）${detail}；` +
+      `原始数据 file=${JSON.stringify(im.file || '')} file_id=${JSON.stringify(im.fileId || '')}`
+  );
 }
 
 /** 让 NapCat 认图里的字（仅 Windows 端支持；失败就当没有） */
