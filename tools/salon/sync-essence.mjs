@@ -317,6 +317,8 @@ async function download(im, messageId) {
 
   const candidates = [];
   if (im.url) candidates.push(im.url);
+  /** 诊断：把每一步拿到了什么记下来，失败时一并报出去 */
+  const diag = [];
 
   /* ① get_image 重签 */
   try {
@@ -327,24 +329,33 @@ async function download(im, messageId) {
       const json = await call('get_image', args);
       const u = String(json?.data?.url ?? '');
       if (/^https?:/i.test(u)) candidates.push(u);
-      else if (json?.data?.file && /^https?:/i.test(String(json.data.file))) candidates.push(String(json.data.file));
-      else if (!candidates.length) candidates.push('');
+      else diag.push(`get_image 没给 url（返回 ${JSON.stringify(json?.data ?? json).slice(0, 120)}）`);
+    } else {
+      diag.push('这条没 file / file_id，跳过 get_image');
     }
-  } catch { /* 继续试下一条 */ }
+  } catch (e) {
+    diag.push(`get_image 报错：${e.message.slice(0, 80)}`);
+  }
 
   /* ② get_msg 重新取那条消息，从最新 content 里找图 */
   if (messageId) {
     try {
       const json = await call('get_msg', { message_id: Number(messageId) });
       const segs = json?.data?.message ?? json?.data?.content ?? [];
+      let got = 0;
       if (Array.isArray(segs)) {
         for (const s of segs) {
           if (s?.type !== 'image') continue;
           const u = String(s?.data?.url ?? '');
-          if (/^https?:/i.test(u)) candidates.push(u);
+          if (/^https?:/i.test(u)) { candidates.push(u); got++; }
         }
       }
-    } catch { /* 继续 */ }
+      if (!got) diag.push(`get_msg 里没找到图片段（${Array.isArray(segs) ? `只有 ${segs.length} 段` : '没有 message 字段'}）`);
+    } catch (e) {
+      diag.push(`get_msg 报错：${e.message.slice(0, 80)}`);
+    }
+  } else {
+    diag.push('这条没有 message_id，跳过 get_msg');
   }
 
   let lastErr = null;
@@ -360,7 +371,8 @@ async function download(im, messageId) {
       lastErr = e;
     }
   }
-  throw lastErr ?? new Error('没有可用的图片链接');
+  const detail = diag.length ? `；${diag.join('；')}` : '';
+  throw new Error(`${lastErr ? lastErr.message : '没有可用的图片链接'}${detail}`);
 }
 
 /** 让 NapCat 认图里的字（仅 Windows 端支持；失败就当没有） */
@@ -559,7 +571,13 @@ async function main() {
       /* 没图，或者是张网图/游戏截图（OCR 也认不出人）→ 按老规矩归发送人 */
       const qqName = qqMap[it.senderId];
       const hitMember = qqName ? byAlias.get(qqName) : matchName(it.senderNick, byAlias);
-      if (!hitMember) unknown.set(it.senderId || '(空)', it.senderNick || '(空)');
+      /*
+        ⚠ 只有「真的不知道是谁」才报 unknown。
+        aliases.json 的 qq 区已经写了名字、但站里还没这个成员（比如 `铃忆`），
+        属于「知道是谁、只是要新建」，不算认不出来 —— 否则报告里会又出现
+        「新成员：铃忆」又出现「3821785356 认不出来」，自相矛盾。
+      */
+      if (!hitMember && !qqName) unknown.set(it.senderId || '(空)', it.senderNick || '(空)');
       const name = qqName || hitMember?.name || it.senderNick;
       if (!name) continue;
       memberIdList = [memberOf(name).id];
