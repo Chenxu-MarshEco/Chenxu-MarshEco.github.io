@@ -29,6 +29,7 @@ import path from 'node:path';
 import http from 'node:http';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import sharp from 'sharp';
 import { chromePath } from './lib/chrome.mjs';
 
 const root = process.argv[2] ? path.resolve(process.argv[2]) : path.resolve('dist');
@@ -64,6 +65,10 @@ check('首页有置顶公告容器（data-home-pinned）', /data-home-pinned/.te
 check('横臂的桁架在上面（homepin__jib / homepin__chord / homepin__web）',
   /homepin__jib/.test(html) && /homepin__chord/.test(html) && /homepin__web/.test(html));
 check('有挂货的小车（homepin__trolley）', /homepin__trolley/.test(html));
+/* 回转必须挂在 <g class="homepin__slew"> 上：挂在 <svg> 上的话视口裁切框会跟着缩放，
+   臂就离开屏幕右缘了（2026-11-12 实测过一次） */
+check('回转挂在横臂内部的 <g> 上（不是挂在 <svg> 上）',
+  /<g class="homepin__slew"/.test(html));
 check('有吊绳 + 两根吊带（homepin__cable / homepin__slings / homepin__hook）',
   /homepin__cable/.test(html) && /homepin__slings/.test(html) && /homepin__hook/.test(html));
 check('货箱就是公告本体（.homepin__box 是个 <a>，带公告 id）',
@@ -79,9 +84,25 @@ const css = fs.existsSync(astroDir)
   : '';
 const inlineCss = [...html.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/g)].map((m) => m[1]).join('\n');
 const allCss = css + inlineCss;
-check('回转动画的样式在产物里（.homepin__rig + @keyframes）',
-  /homepin__rig/.test(allCss) && /homepin-slew/.test(allCss), '.homepin__rig / homepin-slew');
+check('回转动画的样式在产物里（两条 @keyframes 都在，都挂在 .homepin__slew 上）',
+  /@keyframes homepin-jib-slew/.test(allCss) && /@keyframes homepin-load-slew/.test(allCss)
+  && /\.homepin__slew[^{]*\{[^}]*homepin-jib-slew/.test(allCss),
+  'homepin-jib-slew / homepin-load-slew');
 check('横臂用的墨色跟背景天际线同一个变量（--ink）', /var\(--ink/.test(allCss));
+check('吊绳 / 吊带也是黑色的（和背景那三台塔吊的吊索一个墨色）',
+  /* 产物里的选择器会带上 Astro 的作用域属性，所以中间那段用 [^{]* 兜住 */
+  /\.homepin__cable[^{]*\{[^}]*stroke:\s*var\(--ink/.test(allCss)
+  && /\.homepin__slings[^{]*\{[^}]*stroke:\s*var\(--ink/.test(allCss));
+/* 产物 CSS 是压缩过的：scaleX(0.875) 会写成 scaleX(.875)，所以数字要容许省略前导 0 */
+check('横臂回转照背景的做法：同时有 scaleX 和一点 rotate',
+  /@keyframes homepin-jib-slew\{[\s\S]{0,400}?scaleX\(\.?8/.test(allCss)
+  && /@keyframes homepin-jib-slew\{[\s\S]{0,400}?rotate\(-?\.?\d/.test(allCss));
+check('货箱只绕着绳头轻晃（rotate，不横移、不会被推出屏幕）',
+  /@keyframes homepin-load-slew\{[\s\S]{0,400}?rotate\(-?\.?\d/.test(allCss)
+  && !/@keyframes homepin-load-slew\{[\s\S]{0,400}?translate/.test(allCss));
+check('鼠标移上去有反馈（.homepin__box:hover 抬起来 + 光晕）',
+  /* 产物里选择器长这样：.homepin__box[data-astro-cid-x]:hover{...}，作用域属性在 :hover 前面 */
+  /\.homepin__box[^{]*:hover[^{]*\{[^}]*translateY\(-2px\)/.test(allCss));
 
 /* ================================================================
  * 起服务 + 开浏览器
@@ -156,6 +177,12 @@ class CDP {
     await sleep(40);
     await this.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'left', buttons: 0, clickCount: 1 });
   }
+  /** 截图并解成裸像素（量桁架的墨色范围用） */
+  async shot() {
+    const r = await this.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
+    const { data, info } = await sharp(Buffer.from(r.data, 'base64')).raw().toBuffer({ resolveWithObject: true });
+    return { data, w: info.width, h: info.height, c: info.channels };
+  }
   setViewport(w, h, mobile) {
     return this.send('Emulation.setDeviceMetricsOverride', { width: w, height: h, deviceScaleFactor: 1, mobile });
   }
@@ -186,8 +213,8 @@ const FREEZE = `(() => {
 
 /*
  * 一次量全：横臂、货箱、标题、副标题、视口。
- * 「横臂的桁架中轴」不是 svg 的中心 —— 桁架在 viewBox 里只占上面那一段，
- * 所以按 svg 高度的 40% 取（viewBox 0..32 里桁架在 4.6..27，中心 13/32 ≈ 0.40）。
+ * 「横臂的桁架中轴」不是 svg 的中心 —— 桁架在 viewBox 0..27 里占 y=6~22，
+ * 中轴在 14/27 ≈ 0.52 处（下面那 5 个单位留给小车）。
  */
 const GEOM = `(() => {
   const el = document.querySelector('[data-home-pinned]');
@@ -205,7 +232,7 @@ const GEOM = `(() => {
     vw: document.documentElement.clientWidth,
     vh: window.innerHeight,
     jib: jj,
-    trussCenter: jj ? jj.top + jj.height * 0.4 : null,
+    trussCenter: jj ? jj.top + jj.height * 0.52 : null,
     box: bb,
     rig: { left: rig.left, right: rig.right, top: rig.top, bottom: rig.bottom },
     title: t ? { left: t.left, right: t.right, top: t.top, bottom: t.bottom, height: t.height } : null,
@@ -259,27 +286,105 @@ check('货箱是指向那条公告的链接', /^\/huaya\/bingshi\/photo\/2026100
 /* ================================================================
  * C. 回转
  * ================================================================ */
-console.log('\n================ C. 横臂缓缓回转 ================');
+console.log('\n================ C. 横臂缓缓回转（照背景那三台的做法：横向伸缩 + 一点点转） ================');
 await cdp.goto('/'); /* 重新进来，去掉 B 段的冻结 */
-const live1 = await cdp.ev('(() => { const j = document.querySelector(".homepin__jib").getBoundingClientRect(); return { top: j.top, left: j.left }; })()');
+const JIBRECT = '(() => { const j = document.querySelector(".homepin__slew").getBoundingClientRect(); return { top: j.top, left: j.left, right: j.right, width: j.width }; })()';
+const live1 = await cdp.ev(JIBRECT);
 await sleep(4200);
-const live2 = await cdp.ev('(() => { const j = document.querySelector(".homepin__jib").getBoundingClientRect(); return { top: j.top, left: j.left }; })()');
+const live2 = await cdp.ev(JIBRECT);
 const dTop = Math.abs(live2.top - live1.top);
 const dLeft = Math.abs(live2.left - live1.left);
-info(`4.2 秒里横臂位移：纵向 ${dTop.toFixed(1)}px、横向 ${dLeft.toFixed(1)}px`);
-check('横臂在动（4 秒内至少移 1px）', dTop + dLeft > 1);
-check('但是动得很慢（4 秒内不超过 30px，不会把货箱甩出去）', dTop + dLeft < 30);
+const dWidth = Math.abs(live2.width - live1.width);
+info(`4.2 秒里横臂：左端移 ${dLeft.toFixed(1)}px、高度变 ${dWidth.toFixed(1)}px、纵向 ${dTop.toFixed(1)}px`);
+check('横臂在转（4 秒内横向位移至少 1px）', dLeft > 1);
+check('是**横向伸缩**（回转的透视缩短），不是上下摆动 —— 纵向位移 ≤ 6px', dTop <= 6, `纵向 ${dTop.toFixed(1)}px`);
+check('伸缩幅度约 4 秒 10~50px（看得出在转、又不夸张）', dLeft >= 10 && dLeft <= 50, `${dLeft.toFixed(1)}px`);
 const movingBox = await cdp.ev(GEOM);
 check('动的时候货箱仍然在视口里（没被转出屏幕）',
   movingBox.box.right <= movingBox.vw + 0.5 && movingBox.box.bottom <= movingBox.vh);
 
+/*
+ * 吊绳要一直挂在小车下面：横臂压缩时小车会横着移，货箱要靠自己的 translateX 跟上。
+ * 小车的包围盒取的是它在 SVG 里的矩形（会带上横臂的 transform），
+ * 吊绳那一条的横坐标 = 吊带 SVG（= 货箱宽）的中线，两者必须一直重合。
+ * 顺带核一下纵向：小车底边和吊带顶边是同一条线。
+ */
+const LINK = `(() => {
+  const t = document.querySelector('.homepin__trolley').getBoundingClientRect();
+  const s = document.querySelector('.homepin__sling').getBoundingClientRect();
+  return { dx: Math.abs((t.left + t.width / 2) - (s.left + s.width / 2)),
+    dy: Math.abs(t.bottom - s.top) };
+})()`;
+let worstDx = 0;
+let worstDy = 0;
+for (let i = 0; i < 9; i++) {
+  const l = await cdp.ev(LINK);
+  worstDx = Math.max(worstDx, l.dx);
+  worstDy = Math.max(worstDy, l.dy);
+  await sleep(430);
+}
+info(`吊绳与小车：横向最大偏差 ${worstDx.toFixed(1)}px、纵向最大偏差 ${worstDy.toFixed(1)}px`);
+check('吊绳一直连在小车上（横向偏差 ≤ 3px，整段回转过程中都不断）', worstDx <= 3, `${worstDx.toFixed(1)}px`);
+check('吊绳顶到小车底（纵向偏差 ≤ 3px，中间不剩空隙）', worstDy <= 3, `${worstDy.toFixed(1)}px`);
+
+/*
+ * 用**像素**再核一遍回转这件事（几何量不出"画出来的臂在哪"）。
+ * 把 CSS 动画用 Web Animations API 定到某一刻：0% 是最长、31%（=8.06s）是最短，
+ * 各截一张图，扫一条横带里墨色（亮度 < 25；背景那圈紫约 36、货箱不在这一带）的左右边界：
+ *   · 两帧的左边界差 = 臂尖横向收了多少（必须 ≥ 12px，而且纵向基本不动）
+ *   · 每一帧的右边界都要压在视口右缘上 —— 臂的右端永远是被屏幕切掉的那一刀
+ *     （2026-11-12 就是这里翻过车：变换挂在 <svg> 上时裁切框跟着缩放，
+ *      压缩那一帧臂离了屏幕边缘 19px，几何断言全过、只有像素看得见）
+ */
+const SEEK = (ms) => `(() => {
+  const g = document.querySelector('.homepin__slew');
+  const anims = g.getAnimations().concat(document.querySelector('.homepin__load').getAnimations());
+  for (const a of anims) { a.pause(); a.currentTime = ${ms}; }
+  const r = document.querySelector('.homepin__jib').getBoundingClientRect();
+  return { jibTop: r.top, jibH: r.height, jibLeft: r.left,
+    /* 截图带滚动条那 15px，所以比的是**布局视口**（clientWidth），不是图片宽度 */
+    layoutW: document.documentElement.clientWidth };
+})()`;
+const INK = 25;
+async function inkEdges(ms) {
+  const m = await cdp.ev(SEEK(ms));
+  await sleep(160);
+  const px = await cdp.shot();
+  const y0 = Math.round(m.jibTop + m.jibH * 0.2);
+  const y1 = Math.round(m.jibTop + m.jibH * 0.85);
+  let left = -1;
+  let right = -1;
+  for (let y = y0; y <= y1; y++) {
+    for (let x = 1100; x < px.w; x++) {
+      const i = (y * px.w + x) * px.c;
+      const lum = 0.2126 * px.data[i] + 0.7152 * px.data[i + 1] + 0.0722 * px.data[i + 2];
+      if (lum < INK) {
+        if (left < 0 || x < left) left = x;
+        if (x > right) right = x;
+      }
+    }
+  }
+  return { left, right, vw: px.w, layoutW: m.layoutW };
+}
+const inked = await inkEdges(0);
+const inkedMin = await inkEdges(8060);
+info(`像素：伸出去 ${inked.left}→${inked.right}；缩回来 ${inkedMin.left}→${inkedMin.right}（布局视口 ${inked.layoutW}、截图 ${inked.vw}）`);
+check('像素上也是横向伸缩：臂尖收进去 ≥ 12px', inkedMin.left - inked.left >= 12,
+  `${inkedMin.left - inked.left}px`);
+check('缩到最紧那一帧，臂的右端仍然压在视口右缘（右端始终被屏幕切掉）',
+  inked.right >= inked.layoutW - 4 && inkedMin.right >= inked.layoutW - 4,
+  `${inked.right} / ${inkedMin.right} vs 右缘 ${inked.layoutW - 1}`);
+await cdp.ev('document.querySelectorAll(".homepin__slew, .homepin__load").forEach((e) => e.getAnimations().forEach((a) => a.play()))');
+
 /* 减少动态效果：一律不动 */
 await cdp.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
 await cdp.goto('/');
-const rm1 = await cdp.ev('document.querySelector(".homepin__jib").getBoundingClientRect().top');
+const rm1 = await cdp.ev(JIBRECT);
 await sleep(1500);
-const rm2 = await cdp.ev('document.querySelector(".homepin__jib").getBoundingClientRect().top');
-check('系统开了「减少动态效果」→ 横臂完全静止', Math.abs(rm1 - rm2) < 0.2, `${Math.abs(rm1 - rm2).toFixed(2)}px`);
+const rm2 = await cdp.ev(JIBRECT);
+check('系统开了「减少动态效果」→ 横臂完全静止',
+  Math.abs(rm1.top - rm2.top) < 0.2 && Math.abs(rm1.left - rm2.left) < 0.2,
+  `纵向 ${Math.abs(rm1.top - rm2.top).toFixed(2)}px / 横向 ${Math.abs(rm1.left - rm2.left).toFixed(2)}px`);
 await cdp.send('Emulation.setEmulatedMedia', { features: [] });
 
 /* ================================================================
@@ -316,7 +421,28 @@ check('滚回顶部 → 原样回来（还在原位、不透明）',
 /* ================================================================
  * E. 点得到
  * ================================================================ */
-console.log('\n================ E. 点货箱 ================');
+console.log('\n================ E. 鼠标移上去 / 点货箱 ================');
+/*
+ * 悬停反馈：要和首页下方那些板块卡（.board / .lyt）同一手感 ——
+ * 抬起来一点 + 边框提亮 + 粉光晕。这里在真浏览器里把鼠标移到货箱正中，
+ * 比对 transform 和 box-shadow 有没有变。
+ */
+const HOVER = `(() => { const b = document.querySelector('.homepin__box'); const cs = getComputedStyle(b);
+  return { transform: cs.transform, shadow: cs.boxShadow, border: cs.borderTopColor }; })()`;
+const idle = await cdp.ev(HOVER);
+const hoverPt = await cdp.ev(`(() => { const b = document.querySelector('.homepin__box').getBoundingClientRect();
+  return { x: Math.round(b.left + b.width / 2), y: Math.round(b.top + b.height / 2) }; })()`);
+await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: hoverPt.x, y: hoverPt.y, button: 'none' });
+await sleep(400);
+const hovered = await cdp.ev(HOVER);
+info(`悬停前 transform=${idle.transform}`);
+info(`悬停后 transform=${hovered.transform}`);
+check('鼠标移上货箱 → 整块抬起（transform 变了，和首页其他卡片一样）',
+  idle.transform !== hovered.transform && /matrix/.test(hovered.transform),
+  `${idle.transform} → ${hovered.transform}`);
+check('鼠标移上货箱 → 边框提亮 / 亮起粉光晕（不只是位移）',
+  hovered.shadow !== idle.shadow && hovered.border !== idle.border);
+
 const target = await cdp.ev(`(() => { const b = document.querySelector('.homepin__box').getBoundingClientRect();
   return { x: Math.round(b.left + b.width / 2), y: Math.round(b.top + b.height / 2) }; })()`);
 const hitName = await cdp.ev(`(() => { const el = document.elementFromPoint(${target.x}, ${target.y});
