@@ -351,6 +351,17 @@ if (!entries.length) {
 }
 console.log(`月份 ${MONTH}  接口 ${NO_API ? '（--no-api 不连）' : API}  群 ${GROUP_ID}  站里条目 ${entries.length}`);
 
+/*
+  「不许碰别的月份」基线（2026-11-13 加，站长要求立成硬规矩）：
+  这支工具只该修 `--month` 说的那个月，其它月份（上个月、上上个月…）必须原样不动。
+  写盘前逐个比对，发现别的月份被改/被删就拒绝写盘。
+*/
+const outsideSnap = new Map(
+  data.essences
+    .filter((e) => !String(e.date || '').startsWith(MONTH))
+    .map((e) => [String(e.id), JSON.stringify(e)]),
+);
+
 let raw = [];
 if (!NO_API) {
   raw = await fetchAll();
@@ -795,9 +806,26 @@ if (!WRITE) {
 } else if (!changed && !fixed) {
   console.log('没有改动，不写盘。');
 } else {
+  /* 「不许碰别的月份」硬校验（见上面 outsideSnap 的注释） */
+  const touchedOther = [];
+  for (const e of data.essences) {
+    const k = String(e.id);
+    if (!outsideSnap.has(k)) continue;
+    if (outsideSnap.get(k) !== JSON.stringify(e)) touchedOther.push(k);
+  }
+  const lostOther = [...outsideSnap.keys()].filter((k) => !data.essences.some((e) => String(e.id) === k));
+  if (touchedOther.length || lostOther.length) {
+    console.error('');
+    console.error(`❌ 保护性中止：这次会动到 ${MONTH} 以外月份的条目，所以什么都没写。`);
+    if (touchedOther.length) console.error(`   被改动的：${touchedOther.slice(0, 8).join(', ')}`);
+    if (lostOther.length) console.error(`   被删掉的：${lostOther.slice(0, 8).join(', ')}`);
+    console.error('   这支工具只许修 --month 指定的那个月（站长 2026-11-13 的规矩）。');
+    process.exit(4);
+  }
   const before = entriesBefore;
   try { fs.copyFileSync(SALON_FILE, `${SALON_FILE}.bak`); } catch { /* 首次无备份 */ }
   fs.writeFileSync(SALON_FILE, `${JSON.stringify(data, null, 2)}\n`, 'utf8');
   console.log(`已写入 src/data/salon.json（精华 ${before} → ${data.essences.length}${dropped.length ? `，删空壳 ${dropped.length} 条` : ''}，补图 ${fixed} 张，OCR ${ocrDone} 条）`);
+  console.log(`其他月份 ${outsideSnap.size} 条逐个比对，全部原样未动`);
 }
 if (ocrFailedList.length) console.log(`⚠ OCR 仍失败的条目：${ocrFailedList.join('、')}`);

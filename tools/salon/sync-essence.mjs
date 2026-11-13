@@ -624,6 +624,13 @@ async function main() {
   };
 
   /* ---- 去重表 ---- */
+  /*
+    「只增不改」的**基线快照**（2026-11-13 加，站长要求立成硬规矩）：
+    自动跑只允许**新增**当月的条目，已经躺在站里的老内容（上个月、上上个月…）
+    一个字节都不许动 —— OCR、归属、马甲匹配这些**只作用于新增的那些**。
+    下面写盘前会拿这份快照逐个比对，发现任何老条目被改/被删就**直接放弃写盘**。
+  */
+  const oldSnap = new Map(file.essences.map((e) => [String(e.id), JSON.stringify(e)]));
   const seen = new Set(file.essences.map(essenceKey));
   /*
     同一天同一时刻、两边都没有正文的（= 只有图的精华）也当同一条（2026-11-13 加）。
@@ -862,9 +869,26 @@ async function main() {
   if (DRY) { console.log('\n（--dry：什么都没写）'); return; }
   if (!added.length) { console.log('\n没有新东西，不写盘。'); return; }
 
+  /* ---- 写盘前的硬校验：老条目必须一个都没变（见上面 oldSnap 的注释） ---- */
+  const touchedOld = [];
+  for (const e of file.essences) {
+    const k = String(e.id);
+    if (!oldSnap.has(k)) continue;                 /* 新条目，本来就该变 */
+    if (oldSnap.get(k) !== JSON.stringify(e)) touchedOld.push(k);
+  }
+  const lostOld = [...oldSnap.keys()].filter((k) => !file.essences.some((e) => String(e.id) === k));
+  if (touchedOld.length || lostOld.length) {
+    console.error('');
+    console.error('❌ 保护性中止：这次会动到**已有的**精华，所以一个字都没写。');
+    if (touchedOld.length) console.error(`   被改动的老条目 ${touchedOld.length} 条：${touchedOld.slice(0, 8).join(', ')}`);
+    if (lostOld.length) console.error(`   被删掉的老条目 ${lostOld.length} 条：${lostOld.slice(0, 8).join(', ')}`);
+    console.error('   自动同步只允许「新增当月条目」，老内容必须原样不动（站长 2026-11-13 的规矩）。');
+    process.exit(3);
+  }
+
   try { fs.copyFileSync(SALON_FILE, `${SALON_FILE}.bak`); } catch { /* 第一次没备份，正常 */ }
   fs.writeFileSync(SALON_FILE, `${JSON.stringify(file, null, 2)}\n`, 'utf8');
-  console.log(`\n已写入 ${path.relative(PROJ, SALON_FILE)}`);
+  console.log(`\n已写入 ${path.relative(PROJ, SALON_FILE)}（老条目 ${oldSnap.size} 条逐个比对，全部原样未动）`);
 }
 
 main().catch((err) => {
