@@ -34,8 +34,18 @@ $stream = Await ($file.OpenAsync([Windows.Storage.FileAccessMode]::Read)) ([Wind
 $decoder = Await ([Windows.Graphics.Imaging.BitmapDecoder]::CreateAsync($stream)) ([Windows.Graphics.Imaging.BitmapDecoder])
 $bitmap = Await ($decoder.GetSoftwareBitmapAsync()) ([Windows.Graphics.Imaging.SoftwareBitmap])
 
-# 先试用户语言，再逐个试所有可用语言（中文包不一定在）
-$engine = [Windows.Media.Ocr.OcrEngine]::TryCreateFromUserProfileLanguages()
+# 选引擎：**先点中文**，再退到用户语言，最后随便挑一个。
+# ⚠ 别用 TryCreateFromUserProfileLanguages 一把梭（2026-11-13 踩到）：
+#   这台机器用户语言是 en-US + ja，它就只给了 en-US，中文全被认成乱码。
+$engine = $null
+foreach ($tag in @('zh-Hans-CN', 'zh-CN', 'zh-Hans')) {
+  try {
+    $lang = [Windows.Globalization.Language]::new($tag)
+    $engine = [Windows.Media.Ocr.OcrEngine]::TryCreateFromLanguage($lang)
+  } catch { $engine = $null }
+  if ($engine) { break }
+}
+if (-not $engine) { $engine = [Windows.Media.Ocr.OcrEngine]::TryCreateFromUserProfileLanguages() }
 if (-not $engine) {
   $langs = [Windows.Media.Ocr.OcrEngine]::AvailableRecognizerLanguages
   Write-Host ("可用 OCR 语言：" + (($langs | ForEach-Object { $_.LanguageTag }) -join ', '))

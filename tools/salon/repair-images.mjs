@@ -30,6 +30,7 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
+import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -70,6 +71,17 @@ const DO_ATTR = argv.includes('--attr') || argv.includes('--all');
  * 所以按字节改名，顺手把 salon.json 里的路径一起改掉。
  */
 const DO_FIXEXT = argv.includes('--fixext') || argv.includes('--all');
+/** 不连 NapCat（图已经从本机 QQ 缓存收回来了，只想在本地认字 / 算归属 / 去空壳） */
+const NO_API = argv.includes('--no-api');
+/**
+ * OCR 用谁：`napcat`（默认，走服务器的 ocr_image）还是 `win`（Windows.Media.Ocr，本机离线）。
+ * ⚠ 2026-11-13 实测：这台服务器的 NapCat `ocr_image` 是坏的，三种传法都返回空，
+ *   而 Windows 自带 OCR 装上中文包就能认，所以本机收图时走 `win`。
+ */
+const OCR_ENGINE = (() => {
+  const a = argv.find((x) => x.startsWith('--ocr-engine='));
+  return a ? a.split('=')[1] : 'napcat';
+})();
 const MONTH = (() => {
   const at = argv.indexOf('--month');
   if (at >= 0) return argv[at + 1];
@@ -186,6 +198,30 @@ async function ocrImage(shapes) {
   return { ok: false, tried };
 }
 
+/** 去中文之间的空格（Windows OCR 会把每个汉字用空格隔开，不清掉读起来是「群 主 的 小 鸡 鸡」） */
+function tightenCjk(s) {
+  const CJK = '\\u4e00-\\u9fff\\u3000-\\u303f\\uff00-\\uffef';
+  return String(s)
+    .replace(new RegExp(`([${CJK}])[ \\t]+(?=[${CJK}])`, 'g'), '$1')
+    .replace(/[ \t]+$/gm, '')
+    .trim();
+}
+
+/** 用 Windows 自带 OCR 认一张本地图（依赖 tools/salon/ocr-local.ps1 + 中文 OCR 语言包） */
+function ocrWin(absPath) {
+  const script = path.join(HERE, 'ocr-local.ps1');
+  const out = execFileSync(
+    'powershell.exe',
+    ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', script, '-Path', absPath],
+    { encoding: 'utf8', timeout: 120000 },
+  );
+  const lines = String(out)
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter((l) => l && !/^(LANG|LINES)=/.test(l) && l !== 'NO_OCR_ENGINE');
+  return lines.length ? tightenCjk(lines.join('\n')) : '';
+}
+
 async function fetchAll() {
   const out = [];
   const seen = new Set();
@@ -279,6 +315,28 @@ function pickSpeakers(text, byAlias) {
   return { members: [...hit.values()], unknown: [...new Set(unknown)] };
 }
 
+/**
+ * 这段 OCR 文本看着像不像**QQ/游戏聊天截图**（2026-11-13 加）。
+ *
+ * 为什么需要：站长定的规矩有两条分支——
+ *   · 聊天截图 → 归**图里说话的人**，认不出就留空当「未知」等他手改；
+ *   · 网图 / 游戏截图 / AI 画 → **归发送人**。
+ * 只看「认不认得出人名」分不开这两类：`e0818` 是张豆包 AI 插画，OCR 只认出水印「豆包」，
+ * 按老逻辑会被当成「聊天截图但全是生面孔」，把归属清空 —— 其实它就该归发送人。
+ *
+ * 判据（宽松一点，宁可判成聊天图）：出现 `<昵称>`、出现时刻、或者多行里有多行带「名字：」。
+ */
+function looksLikeChatScreen(text) {
+  const raw = String(text || '');
+  const lines = raw.split('\n').map((s) => s.trim()).filter(Boolean);
+  if (!lines.length) return false;
+  if (/<\s*[A-Za-z0-9_\u4e00-\u9fff]+\s*>/.test(raw)) return true;
+  if (/\d{1,2}\s*[:：]\s*\d{2}/.test(raw)) return true;
+  const named = lines.filter((l) => /^[^\s：:]{1,14}[：:]/.test(l)).length;
+  if (named >= 2) return true;
+  return lines.length >= 4;
+}
+
 /* ---------------- 主流程 ---------------- */
 const data = JSON.parse(fs.readFileSync(SALON_FILE, 'utf8'));
 const entries = data.essences.filter((e) => String(e.date || '').startsWith(MONTH));
@@ -286,20 +344,25 @@ if (!entries.length) {
   console.log(`${MONTH} 在站里没有条目，没什么可修的。`);
   process.exit(0);
 }
-console.log(`月份 ${MONTH}  接口 ${API}  群 ${GROUP_ID}  站里条目 ${entries.length}`);
+console.log(`月份 ${MONTH}  接口 ${NO_API ? '（--no-api 不连）' : API}  群 ${GROUP_ID}  站里条目 ${entries.length}`);
 
-const raw = await fetchAll();
-console.log(`接口返回 ${raw.length} 条精华`);
-if (!raw.length) {
-  /*
-    ⚠ 一条都没返回时**绝对不能说「缺图 0」然后收工**（2026-11-13 踩到）：
-    那次 NapCat 掉线（它自己的日志里写着「账号状态变更为离线」），
-    接口给回空列表，脚本却报告「对账结果：缺图 0 条」，看着像全好。
-  */
-  console.log('');
-  console.log('⚠ 接口一条精华都没返回 —— 多半是 NapCat 掉线或没同步到这个群。');
-  console.log('  先确认 NapCat 在线（get_login_info / get_group_list 里有这个群），再重跑；这次不写盘。');
-  process.exit(2);
+let raw = [];
+if (!NO_API) {
+  raw = await fetchAll();
+  console.log(`接口返回 ${raw.length} 条精华`);
+  if (!raw.length) {
+    /*
+      ⚠ 一条都没返回时**绝对不能说「缺图 0」然后收工**（2026-11-13 踩到）：
+      那次 NapCat 掉线（它自己的日志里写着「账号状态变更为离线」），
+      接口给回空列表，脚本却报告「对账结果：缺图 0 条」，看着像全好。
+    */
+    console.log('');
+    console.log('⚠ 接口一条精华都没返回 —— 多半是 NapCat 掉线或没同步到这个群。');
+    console.log('  先确认 NapCat 在线（get_login_info / get_group_list 里有这个群），再重跑；这次不写盘。');
+    process.exit(2);
+  }
+} else {
+  console.log('（--no-api：不连 NapCat，只做本机能做的——本地图 OCR / 归属 / 去空壳 / 扩展名纠偏）');
 }
 
 const rawByWhen = new Map();
@@ -335,8 +398,10 @@ for (const [k, raws] of rawByWhen) {
   repairList.push({ entry: pick, want, have, gone, raws });
 }
 
-console.log('');
-console.log(`对账结果：完整 ${complete.length} 条，**缺图 ${repairList.length} 条**`);
+if (!NO_API) {
+  console.log('');
+  console.log(`对账结果：完整 ${complete.length} 条，**缺图 ${repairList.length} 条**`);
+}
 for (const r of repairList) {
   console.log(`   ${r.entry.id}  ${r.entry.date} ${r.entry.time || ''}  应 ${r.want} 张 / 实 ${r.have.length} 张${r.gone.length ? `（其中 ${r.gone.length} 个文件不在盘上）` : ''}  正文=${JSON.stringify(String(r.entry.text || '').slice(0, 20))}`);
 }
@@ -513,7 +578,8 @@ const ocrFailedList = [];
 
 /* ---------------- OCR：有图但没有文字的条目，就地补文字 ---------------- */
 if (DO_OCR) {
-  const need = entries.filter((e) => (e.images ?? []).length && String(e.text || '').trim().length < 20);
+  /* 已经有 OCR 文本的不再重认（以前每跑一次就把上一轮的正文当「说明」再拼一遍，越跑越长） */
+  const need = entries.filter((e) => (e.images ?? []).length && (!String(e.text || '').trim() || (!e.ocr && String(e.text || '').trim().length < 20)));
   console.log('');
   console.log(`===== OCR：有图但没文字（或文字太少）的条目 ${need.length} 条 =====`);
   for (const e of need) {
@@ -533,14 +599,27 @@ if (DO_OCR) {
       ['原始 url 形状', { image: String(e.ocrSource || '') }],
     ].filter(([, b]) => b.image);
 
-    const got = await ocrImage(shapes);
+    let got;
+    if (OCR_ENGINE === 'win') {
+      const t = ocrWin(abs);
+      got = t ? { ok: true, text: t, why: 'Windows OCR' } : { ok: false, tried: ['Windows OCR → 一个字都没认出'] };
+    } else {
+      got = await ocrImage(shapes);
+    }
     if (got.ok) {
-      e.text = got.text;
+      /*
+        正文形状跟**往期 perfect 条目**一致：每行一条、行首 `- `（站点按列表渲染）。
+        条目原来就有短正文的（比如 e0824 那句「ssw，你在那里干什么呢？」），
+        把它放在第一段保留，别被 OCR 冲掉。
+      */
+      const caption = e.ocr ? '' : String(e.text || '').trim();
+      const ocrLines = got.text.split('\n').map((s) => s.trim()).filter(Boolean).map((s) => (s.startsWith('- ') ? s : `- ${s}`));
+      e.text = (caption && caption.length >= 2 ? `${caption}\n\n${ocrLines.join('\n')}` : ocrLines.join('\n'));
       e.ocr = true;
       e.kind = 'perfect';
       changed = true;
       ocrDone++;
-      const firstLine = got.text.split('\n').map((s) => s.trim()).filter(Boolean)[0] || '';
+      const firstLine = ocrLines[0] || '';
       console.log(`   ✅ ${e.id} ${e.date} ${e.time || ''}  用「${got.why}」认出 ${got.text.length} 字：${firstLine.slice(0, 40)}`);
     } else {
       ocrFail++;
@@ -578,21 +657,25 @@ if (DO_ATTR) {
       console.log(`   · ${e.id} ${e.date} ${e.time || ''}  OCR 文本为空，保持 ${before}`);
       continue;
     }
+    const chat = looksLikeChatScreen(text);
+    let why;
     if (got.members.length) {
       e.memberIds = got.members.map((m) => m.id);
-      e.kind = 'perfect';
-      e.ocr = true;
-    } else {
-      /* 认不出人 → 未知，memberIds 留空（页面显示「冰室群成员」），等站长手改 */
+      why = got.members.map((m) => m.name).join('、');
+    } else if (chat) {
+      /* 聊天截图但图里全是生面孔 → 未知，memberIds 留空（页面显示「冰室群成员」），等站长手改 */
       e.memberIds = [];
-      e.kind = 'perfect';
-      e.ocr = true;
+      why = '未知（等手改）';
+    } else {
+      /* 不是聊天图（网图 / AI 画 / 游戏截图）→ 按老规矩归发送人，不动 */
+      why = '不像聊天截图 → 保持发送人';
     }
+    e.kind = 'perfect';
+    e.ocr = true;
     const after = JSON.stringify(e.memberIds ?? []);
     if (after !== before) { attrChanged++; changed = true; }
-    const who = got.members.length ? got.members.map((m) => m.name).join('、') : '未知（等手改）';
-    const extra = got.members.length ? '' : got.unknown.length ? `  图里出现的名字：${got.unknown.slice(0, 4).join('、')}` : '';
-    console.log(`   ${after === before ? '·' : '→'} ${e.id} ${e.date} ${e.time || ''}  ${before} → ${after}  【${who}】${extra}`);
+    const extra = !got.members.length && got.unknown.length ? `  图里出现的名字：${got.unknown.slice(0, 4).join('、')}` : '';
+    console.log(`   ${after === before ? '·' : '→'} ${e.id} ${e.date} ${e.time || ''}  ${before} → ${after}  【${why}】${extra}`);
   }
   console.log(`   归属变动 ${attrChanged} 条${attrChanged ? '' : '（没有要改的）'}`);
 }
