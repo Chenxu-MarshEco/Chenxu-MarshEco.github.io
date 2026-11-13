@@ -13,9 +13,24 @@
 #
 # ⚠ 两件必须在服务器上先配好的事：
 #   ① NapCat 开着 HTTP 接口（127.0.0.1:3003），token 写进 Windows 环境变量
-#      `SALON_API_TOKEN`（系统级，别写进仓库）；
+#      `SALON_API_TOKEN`（**系统级**，别写进仓库）——计划任务里没有你当前窗口的临时变量；
 #   ② git 能免交互推送 —— 先手动 push 一次让凭据管理器记住，
 #      或者 `git config --local credential.helper store` 配好后首次输一次。
+#
+# 2026-11-13 实地配好之后的运行环境（照着查能省一轮折腾）：
+#   · 计划任务名 **SalonMonthlySync**（纯英文，中文名会撞编码坑）：
+#       schtasks /Create /TN "SalonMonthlySync" /SC MONTHLY /D 1 /ST 00:10 /F `
+#         /TR "powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\bots\Chenxu-MarshEco.github.io\tools\salon\monthly-sync.ps1" `
+#         /RU Administrator /RP *
+#     **必须 /RU Administrator + 密码登录类型**：换成 SYSTEM 就没有 Administrator 的 git 凭据，推不上去。
+#     建完 `Export-ScheduledTask` 里要能看到 `<ScheduleByMonth><DaysOfMonth><Day>1</Day>`，
+#     并且 `Get-ScheduledTaskInfo` 的 NextRunTime 是下个月 1 号 0:10。
+#   · 任务是从「无人登录」的上下文跑的，所以 PATH 里必须有 node（`where.exe node` 查）。
+#   · OCR 走 Windows 自带引擎（`tools/salon/ocr-local.ps1`），服务器要先装中文 OCR 语言包：
+#       DISM /Online /Add-Capability /CapabilityName:Language.OCR~~~zh-CN~0.0.1.0
+#     验一下：`powershell -NoProfile -ExecutionPolicy Bypass -File tools\salon\ocr-local.ps1 -Path public\img\salon\e0822-1.png`
+#     打印 `LANG=zh-Hans-CN` + 几行中文才算通。
+#   · 配完用 `schtasks /Run /TN "SalonMonthlySync"` 真跑一次，`LastTaskResult` 要是 0。
 # ============================================================================
 param(
   [string]$Month = '',      # 留空 = 上个月（脚本自己算，按北京时间）
