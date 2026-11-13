@@ -290,6 +290,17 @@ console.log(`月份 ${MONTH}  接口 ${API}  群 ${GROUP_ID}  站里条目 ${ent
 
 const raw = await fetchAll();
 console.log(`接口返回 ${raw.length} 条精华`);
+if (!raw.length) {
+  /*
+    ⚠ 一条都没返回时**绝对不能说「缺图 0」然后收工**（2026-11-13 踩到）：
+    那次 NapCat 掉线（它自己的日志里写着「账号状态变更为离线」），
+    接口给回空列表，脚本却报告「对账结果：缺图 0 条」，看着像全好。
+  */
+  console.log('');
+  console.log('⚠ 接口一条精华都没返回 —— 多半是 NapCat 掉线或没同步到这个群。');
+  console.log('  先确认 NapCat 在线（get_login_info / get_group_list 里有这个群），再重跑；这次不写盘。');
+  process.exit(2);
+}
 
 const rawByWhen = new Map();
 for (const r of raw) {
@@ -552,9 +563,19 @@ if (DO_ATTR) {
     const text = String(e.text || '');
     const got = pickSpeakers(text, byAlias);
     const before = JSON.stringify(e.memberIds ?? []);
+    /*
+      ⚠ 只能改**真拿到 OCR 文字**的那些（2026-11-13 踩到）：
+      10 月 e0820 的正文是「？？？」三个字，不是 OCR 出来的；
+      按原逻辑会被当成「认不出人」把归属清空 —— 明明什么都没认出来，却把
+      已经填好的成员删了。现在没 OCR 文本就一律不动。
+    */
+    if (!e.ocr) {
+      console.log(`   · ${e.id} ${e.date} ${e.time || ''}  没有 OCR 文本，保持 ${before}`);
+      continue;
+    }
     if (!text.trim()) {
-      /* 一个字都没有（OCR 也没戏）→ 保持原样，不瞎猜 */
-      console.log(`   · ${e.id} ${e.date} ${e.time || ''}  没文字，保持 ${before}`);
+      /* 标了 ocr 却是空文本 —— 也不动，别瞎猜 */
+      console.log(`   · ${e.id} ${e.date} ${e.time || ''}  OCR 文本为空，保持 ${before}`);
       continue;
     }
     if (got.members.length) {
