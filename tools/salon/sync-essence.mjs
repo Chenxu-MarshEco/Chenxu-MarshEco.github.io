@@ -37,6 +37,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
+import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { essenceKey, looksSame, eraIdFor, nextIdFrom } from './merge.mjs';
 
@@ -59,6 +60,9 @@ const DRY = argv.includes('--dry') || PROBE;
 
 /* ---------------- 小工具（先声明，下面 resolveMonth 要用） ---------------- */
 const pad = (n) => String(n).padStart(2, '0');
+
+/** 一段字节的 md5（图片按字节去重用） */
+const md5Of = (buf) => crypto.createHash('md5').update(buf).digest('hex');
 
 /**
  * 跑哪个月。三种来源，优先级从高到低：
@@ -631,6 +635,27 @@ async function main() {
     下面写盘前会拿这份快照逐个比对，发现任何老条目被改/被删就**直接放弃写盘**。
   */
   const oldSnap = new Map(file.essences.map((e) => [String(e.id), JSON.stringify(e)]));
+  /*
+    站里已有图片的指纹，用来按**字节**去重（2026-11-13 加）。
+    `imgHashToId`：图片 md5 → 条目 id；`hasImgAt`：窗口内「已经有图」的时刻。
+    只扫「本次窗口」内的条目，几十条，读文件的开销可以忽略。
+  */
+  const imgHashToId = new Map();
+  const hasImgAt = new Set();
+  for (const e of file.essences) {
+    const d = String(e.date || '');
+    if (d < SINCE || d > UNTIL) continue;
+    const list = Array.isArray(e.images) ? e.images : [];
+    if (list.length) hasImgAt.add(`${e.date}|${e.time || ''}`);
+    const first = list[0];
+    if (!first) continue;
+    try {
+      const p = path.join(PROJ, 'public', String(first).replace(/^\//, '').replace(/\//g, path.sep));
+      imgHashToId.set(md5Of(fs.readFileSync(p)), String(e.id));
+    } catch {
+      /* 图不在盘上就算了 */
+    }
+  }
   const seen = new Set(file.essences.map(essenceKey));
   /*
     同一天同一时刻、两边都没有正文的（= 只有图的精华）也当同一条（2026-11-13 加）。
@@ -698,7 +723,8 @@ async function main() {
     if (!id) id = `e-${Date.now().toString(36)}`;
     usedIds.add(id);
 
-    /* 图片 */
+    /* 图片：**先下到内存**，按字节去重之后再落盘（2026-11-13 改，见下面注释） */
+    const pending = []; // { name, buf }
     const images = [];
     /** 第一张图下载成功后拿到的「可用链接」，后面 OCR 用它（原 url 可能已过期） */
     let firstUsableUrl = '';
@@ -709,14 +735,7 @@ async function main() {
         /* 把 message_id 传进去：url 过期时要用它去问 NapCat 重新取（群友确认：必须过 NapCat） */
         const got = await download(im, it.messageId);
         if (!firstUsableUrl) firstUsableUrl = got.url || im.url;
-        const name = `${id}-${k + 1}.${got.ext}`;
-        images.push(`/img/salon/${name}`);
-        if (!DRY) {
-          fs.mkdirSync(IMG_DIR, { recursive: true });
-          fs.writeFileSync(path.join(IMG_DIR, name), got.buf);
-        }
-        imgWritten++;
-        imgBytes += got.buf.length;
+        pending.push({ name: `${id}-${k + 1}.${got.ext}`, buf: got.buf });
       } catch (err) {
         console.warn(`  ⚠ ${id} 第 ${k + 1} 张图下载失败：${err.message}`);
         imgFailed++;
@@ -733,6 +752,39 @@ async function main() {
         }
       }
     }
+
+    /*
+      ⚠ **按图片字节去重**（2026-11-13 补的洞，10 月因此多出 14 条重复）：
+      以前只比「日期 + 时刻 + 正文」。可是图类精华入库时会**补上 OCR 文字**，
+      于是一条「无正文、有图」的原始精华，跟站里那条（有 OCR 文字、有图）永远对不上键 ——
+      每跑一次就把整批图重新收一遍，插一堆一模一样的条目。
+      现在直接比图片内容的 md5：同一张图已经在站里，这条就是重复的。
+    */
+    const firstHash = pending.length ? md5Of(pending[0].buf) : '';
+    if (firstHash && imgHashToId.has(firstHash)) {
+      skipped.push({ ...it, why: `同一张图站里已经有（${imgHashToId.get(firstHash)}）` });
+      continue;
+    }
+    /*
+      兜底：原始这条只有图、而且一张都没下下来（链接过期），但同一时刻站里那条**已经有图**
+      → 同样是重复的，不然又会插一条空壳进去。
+    */
+    if (!pending.length && !String(it.text || '').trim() && hasImgAt.has(`${it.date}|${it.time || ''}`)) {
+      skipped.push({ ...it, why: '同刻站里那条已经有图了（重复）' });
+      continue;
+    }
+
+    /* 去重通过了，这才落盘 */
+    for (const p of pending) {
+      images.push(`/img/salon/${p.name}`);
+      if (!DRY) {
+        fs.mkdirSync(IMG_DIR, { recursive: true });
+        fs.writeFileSync(path.join(IMG_DIR, p.name), p.buf);
+      }
+      imgWritten++;
+      imgBytes += p.buf.length;
+    }
+    if (firstHash && !imgHashToId.has(firstHash)) imgHashToId.set(firstHash, id);
 
     /*
       聊天截图：有图就 OCR —— 不只是为了抠字，更是为了认出**图里说话的人**。

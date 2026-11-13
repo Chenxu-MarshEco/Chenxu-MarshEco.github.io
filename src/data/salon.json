@@ -10560,18 +10560,6 @@
       "ocr": true
     },
     {
-      "id": "e0847",
-      "memberIds": [
-        "m14-4d5c"
-      ],
-      "kind": "text",
-      "date": "2026-10-03",
-      "time": "01:30",
-      "text": "",
-      "images": [],
-      "eraId": "era5"
-    },
-    {
       "id": "e0831",
       "memberIds": [
         "m15-5808"
@@ -10625,18 +10613,6 @@
       "ocr": true
     },
     {
-      "id": "e0846",
-      "memberIds": [
-        "m14-4d5c"
-      ],
-      "kind": "text",
-      "date": "2026-10-10",
-      "time": "17:28",
-      "text": "",
-      "images": [],
-      "eraId": "era5"
-    },
-    {
       "id": "e0827",
       "memberIds": [
         "m14-4d5c"
@@ -10650,18 +10626,6 @@
       ],
       "eraId": "era5",
       "ocr": true
-    },
-    {
-      "id": "e0845",
-      "memberIds": [
-        "m14-4d5c"
-      ],
-      "kind": "text",
-      "date": "2026-10-10",
-      "time": "19:29",
-      "text": "",
-      "images": [],
-      "eraId": "era5"
     },
     {
       "id": "e0826",
@@ -10729,21 +10693,6 @@
       "ocr": true
     },
     {
-      "id": "e0844",
-      "memberIds": [
-        "m03-018b"
-      ],
-      "kind": "perfect",
-      "date": "2026-10-14",
-      "time": "23:47",
-      "text": "- <SSWTLZZ> [ 流浪者头颅 ]\n- < Sf10492 > ？\n- <SSWTLZZ> 以斩首流浪者\n- < Sf10492 OK\n- SSWTLZ 被流浪者射杀",
-      "ocr": true,
-      "images": [
-        "/img/salon/e0844-1.png"
-      ],
-      "eraId": "era5"
-    },
-    {
       "id": "e0821",
       "memberIds": [
         "m06-5577"
@@ -10769,19 +10718,6 @@
       ],
       "eraId": "era5",
       "ocr": true
-    },
-    {
-      "id": "e0843",
-      "memberIds": [],
-      "kind": "perfect",
-      "date": "2026-10-16",
-      "time": "10:27",
-      "text": "- 「今天又出现了很多 bug] 一一来吧，按老规矩：把 log 和现象描述丢给我（有 log 我就能直接定位到分支，不用猜）。我这边已经就\n- 绪： log 路径、门禁、桩单测、部薯 + MD5 这条流水线都是热的，改完立刻能跑全套验一谝。咪咪小鱼啵。",
-      "ocr": true,
-      "images": [
-        "/img/salon/e0843-1.png"
-      ],
-      "eraId": "era5"
     },
     {
       "id": "e0819",
@@ -10811,19 +10747,6 @@
       "ocr": true
     },
     {
-      "id": "e0842",
-      "memberIds": [],
-      "kind": "perfect",
-      "date": "2026-10-18",
-      "time": "21:27",
-      "text": "- 豆包",
-      "ocr": true,
-      "images": [
-        "/img/salon/e0842-1.png"
-      ],
-      "eraId": "era5"
-    },
-    {
       "id": "e0817",
       "memberIds": [
         "m15-5808"
@@ -10837,19 +10760,6 @@
       ],
       "eraId": "era5",
       "ocr": true
-    },
-    {
-      "id": "e0841",
-      "memberIds": [],
-      "kind": "perfect",
-      "date": "2026-10-20",
-      "time": "20:32",
-      "text": "- 、久夕谩孕吧",
-      "ocr": true,
-      "images": [
-        "/img/salon/e0841-1.jpg"
-      ],
-      "eraId": "era5"
     },
     {
       "id": "e0816",
@@ -10867,19 +10777,6 @@
       "ocr": true
     },
     {
-      "id": "e0840",
-      "memberIds": [],
-      "kind": "perfect",
-      "date": "2026-10-20",
-      "time": "21:58",
-      "text": "- 制作希\n- 乍缠生\n- 础带崗飢",
-      "ocr": true,
-      "images": [
-        "/img/salon/e0840-1.jpg"
-      ],
-      "eraId": "era5"
-    },
-    {
       "id": "e0815",
       "memberIds": [
         "m02-da43",
@@ -10894,22 +10791,6 @@
       ],
       "eraId": "era5",
       "ocr": true
-    },
-    {
-      "id": "e0839",
-      "memberIds": [
-        "m02-da43",
-        "m14-4d5c"
-      ],
-      "kind": "perfect",
-      "date": "2026-10-21",
-      "time": "16:57",
-      "text": "- < 燃几求开组（ 35 ）\n- 0 隰辰煦的\n- 你可以去搜索一下无鳞基因的蛇看\n- 0 隰辰煦\n- 很萌趣\n- （新 v 〕周末爱拉屎镇暴部队\n- 没有鳞片吗\n- （新 v 〕周末爱拉屎镇暴部队\n- 京蛆杀\n- 那就是一层皮？\n- 下午 4 ： 48\n- 奄隰辰煦\n- -0 隰辰煦 0\n- 我在爬店摸过\n- -0 隰辰煦\n- 冫月冫田冫田白勺\n- 0 隰辰煦的\n- 是那种有点丝绒感的滑溜溜\n- 0 隰辰煦\n- 不是鳞片那种滑\n- 其实跟人皮嫩的地方很像\n- 下午 4 ： 52\n- 你做举手动作然后摸你手臂的这个\n- 位置\n- 就是无鳞的触感了\n- （前提是你 BM 旺常不是骷髅兵）\n- （新 v 〕周末爱拉屎镇暴部队\n- 不是，搞什么\n- （新 v 〕周末爱拉屎镇暴部队\n- 我忘记我在上课了\n- 4\n- 你笑了？\n- 刂火半\n- （新 v 〕周末爱拉屎镇 · “ 下午 4 ： 54\n- 我忘记我在上课了\n- 7\n- 你这个话有点小众\n- （新 v 〕周末爱拉屎镇暴部队\n- 举手被叫了\n- 蝓伙\n- 7\n- 0 ． 000 0\n- 7\n- 7\n- 奄隰辰煦\n- 0\n- 你要笑死我吗\n- 0\n- 0\n- （新司周末爱拉屎镇 · “ 下午 4 ： 54 忄\n- 举手被叫了\n- 4\n- 0\n- 尼玛笑死我了\n- 三只夕\n- 隰辰煦下午 4 ： 52\n- 你做举手动作然后摸你手臂的这个位置\n- 谁说没有完美犯罪\n- O\n- O",
-      "ocr": true,
-      "images": [
-        "/img/salon/e0839-1.jpg"
-      ],
-      "eraId": "era5"
     },
     {
       "id": "e0814",
@@ -10939,21 +10820,6 @@
       "ocr": true
     },
     {
-      "id": "e0838",
-      "memberIds": [
-        "m02-da43"
-      ],
-      "kind": "perfect",
-      "date": "2026-10-21",
-      "time": "17:37",
-      "text": "- ．．〕〖新 v 〗周末爱拉屎镇暴部队 0\n- 京蛆杀\n- 小时候放鞭炮，一不小心炸到园\n- 〖新 v 〗周末爱拉屎镇暴部队 0\n- 京蛆杀\n- 我晚上睡不着，因为那是我的园\n- 〖新 v 〗周末爱拉屎镇暴部队 0\n- 京蛆杀\n- 你不知道，我的有多重要园\n- 〖新 v 〗周末爱拉屎镇暴部队 0\n- 京蛆杀\n- 一百块钱治不好园",
-      "ocr": true,
-      "images": [
-        "/img/salon/e0838-1.jpg"
-      ],
-      "eraId": "era5"
-    },
-    {
       "id": "e0812",
       "memberIds": [
         "m04-1c92"
@@ -10967,19 +10833,6 @@
       ],
       "eraId": "era5",
       "ocr": true
-    },
-    {
-      "id": "e0837",
-      "memberIds": [],
-      "kind": "perfect",
-      "date": "2026-10-22",
-      "time": "20:59",
-      "text": "- 爸爸的伪娘身份曝光",
-      "ocr": true,
-      "images": [
-        "/img/salon/e0837-1.png"
-      ],
-      "eraId": "era5"
     },
     {
       "id": "e0811",
@@ -11021,21 +10874,6 @@
       "ocr": true
     },
     {
-      "id": "e0836",
-      "memberIds": [
-        "m14-4d5c"
-      ],
-      "kind": "perfect",
-      "date": "2026-10-24",
-      "time": "18:54",
-      "text": "- -0 隰辰煦 0\n- 〖新 v 〗周末爱拉． “ 18 ： 53\n- 接\n- Dre",
-      "ocr": true,
-      "images": [
-        "/img/salon/e0836-1.png"
-      ],
-      "eraId": "era5"
-    },
-    {
       "id": "e0808",
       "memberIds": [
         "m04-1c92"
@@ -11051,19 +10889,6 @@
       "ocr": true
     },
     {
-      "id": "e0835",
-      "memberIds": [],
-      "kind": "perfect",
-      "date": "2026-10-29",
-      "time": "02:01",
-      "text": "- 今天\n- 匚 +\n- 00 ： 49 带着北阴酆都大帝来你家踩了踩",
-      "ocr": true,
-      "images": [
-        "/img/salon/e0835-1.jpg"
-      ],
-      "eraId": "era5"
-    },
-    {
       "id": "e0807",
       "memberIds": [
         "m15-5808"
@@ -11077,19 +10902,6 @@
       ],
       "eraId": "era5",
       "ocr": true
-    },
-    {
-      "id": "e0834",
-      "memberIds": [],
-      "kind": "perfect",
-      "date": "2026-10-31",
-      "time": "18:40",
-      "text": "- 所以我才把自己\n- 画成这种简单的\n- 风格\n- 、 QQ 1716096250\n- 如果我长成这样，\n- 你还愿意听我说\n- 话吗？",
-      "ocr": true,
-      "images": [
-        "/img/salon/e0834-1.png"
-      ],
-      "eraId": "era5"
     }
   ]
 }
