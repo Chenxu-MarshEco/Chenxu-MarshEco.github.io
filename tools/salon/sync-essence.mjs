@@ -36,6 +36,7 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
+import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { essenceKey, looksSame, eraIdFor, nextIdFrom } from './merge.mjs';
 
@@ -489,17 +490,42 @@ async function download(im, messageId) {
 }
 
 /**
- * 让 NapCat 认图里的字（2026-11-13 改）。
+ * 用 Windows 自带 OCR 认一张**本地**图（2026-11-13 加）。
+ *
+ * 为什么换掉 NapCat 那条：服务器上 `ocr_image` 三种传法（本地路径 / file:// / base64）
+ * **一律返回空**，而 10 月那批因此全成了「有图没字」。实测 Windows.Media.Ocr
+ * 装上中文 OCR 包就能正常认字（`tools/salon/ocr-local.ps1`）。
+ *
+ * 环境变量 `SALON_OCR` 能改行为：`auto`（默认，先 Windows 再 NapCat）、
+ * `win`（只 Windows）、`napcat`（只走老路）。
+ */
+function ocrWin(absPath) {
+  try {
+    const out = execFileSync(
+      'powershell.exe',
+      ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', path.join(HERE, 'ocr-local.ps1'), '-Path', absPath],
+      { encoding: 'utf8', timeout: 120000 },
+    );
+    const lines = String(out)
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter((l) => l && !/^(LANG|LINES)=/.test(l) && l !== 'NO_OCR_ENGINE');
+    if (!lines.length) return '';
+    /* Windows OCR 把每个汉字都用空格隔开，读起来是「群 主 的 小 鸡 鸡」，得收紧 */
+    const CJK = '\\u4e00-\\u9fff\\u3000-\\u303f\\uff00-\\uffef';
+    return lines.join('\n').replace(new RegExp(`([${CJK}])[ \\t]+(?=[${CJK}])`, 'g'), '$1').trim();
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * 让 NapCat 认图里的字（老路，作为兜底）。
  *
  * ⚠ 以前只传 `{image: url}`，**10 月那 11 张图一张都没认出来**，而且失败被 catch
  * 悄悄吞掉，于是「有图没字」直接上了线（站长 2026-11-13 报的第三个问题）。
- * 现在按「本地文件路径 → 可用链接 → 原始链接」依次试：
- *   · **本地路径是最靠谱的那个** —— 图已经落盘了，NapCat 直接读文件，
- *     不用再走一次可能过期的 CDN 链接；
- *   · 链接只在写盘失败（`--dry`）时才用得上。
- * 一个都认不出就返回空串，由调用方记进报告，不再静默。
  */
-async function ocr(targets) {
+async function ocrNapcat(targets) {
   for (const t of targets) {
     if (!t) continue;
     try {
@@ -515,6 +541,20 @@ async function ocr(targets) {
     }
   }
   return '';
+}
+
+/** 认字总入口：先 Windows（本地文件），不行再问 NapCat */
+async function ocr(targets) {
+  const mode = String(process.env.SALON_OCR || 'auto').toLowerCase();
+  if (mode !== 'napcat') {
+    const local = targets.find((t) => t && /^[A-Za-z]:[\\/]/.test(t) && fs.existsSync(t));
+    if (local) {
+      const got = ocrWin(local);
+      if (got) return got;
+    }
+    if (mode === 'win') return '';
+  }
+  return ocrNapcat(targets);
 }
 
 /* ---------------- 主流程 ---------------- */
@@ -704,7 +744,13 @@ async function main() {
     if (images.length) {
       ocrText = await ocr(ocrTargets);
       if (ocrText && normText(it.text).length < OCR_MAX_TEXT) {
-        finalText = ocrText;
+        /* 正文形状对齐往期 perfect 条目：每行 `- ` 开头（站点按列表渲染） */
+        finalText = ocrText
+          .split('\n')
+          .map((l) => l.trim())
+          .filter(Boolean)
+          .map((l) => (l.startsWith('- ') ? l : `- ${l}`))
+          .join('\n');
         isOcr = true;
         ocrDone++;
       }

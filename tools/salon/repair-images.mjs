@@ -331,9 +331,14 @@ function looksLikeChatScreen(text) {
   const lines = raw.split('\n').map((s) => s.trim()).filter(Boolean);
   if (!lines.length) return false;
   if (/<\s*[A-Za-z0-9_\u4e00-\u9fff]+\s*>/.test(raw)) return true;
-  if (/\d{1,2}\s*[:：]\s*\d{2}/.test(raw)) return true;
   const named = lines.filter((l) => /^[^\s：:]{1,14}[：:]/.test(l)).length;
   if (named >= 2) return true;
+  /*
+    ⚠ **别拿「出现时刻」当聊天证据**（2026-11-13 站长指出）：
+    `e0808` 是「加好友通知卡片」——「今天」+ 头像 + 昵称 + `00:49 带着北阴酆都大帝…`，
+    长得跟聊天很像，其实不是聊天，该归发送人（桑芙）。它一共只有 3 行。
+    真正的聊天截图通常有好几行消息，所以用行数兜底就行了。
+  */
   return lines.length >= 4;
 }
 
@@ -686,6 +691,27 @@ if (DO_ATTR) {
     console.log(`   ${after === before ? '·' : '→'} ${e.id} ${e.date} ${e.time || ''}  ${before} → ${after}  【${why}】${extra}`);
   }
   console.log(`   归属变动 ${attrChanged} 条${attrChanged ? '' : '（没有要改的）'}`);
+
+  /*
+    最后把**手工指定**的覆盖上去（tools/salon/attribution-fixes.json）。
+    没有这一步，重跑一次就把站长手改的归属冲掉了（2026-11-13 踩到）。
+  */
+  let fixes = {};
+  try { fixes = JSON.parse(fs.readFileSync(path.join(HERE, 'attribution-fixes.json'), 'utf8')); } catch { /* 没有就算了 */ }
+  let fixedN = 0;
+  for (const [id, ids] of Object.entries(fixes)) {
+    if (id.startsWith('_') || !Array.isArray(ids)) continue;
+    const e = entries.find((x) => x.id === id);
+    if (!e) continue;
+    const before = JSON.stringify(e.memberIds ?? []);
+    const after = JSON.stringify(ids);
+    if (before === after) continue;
+    e.memberIds = ids.slice();
+    changed = true;
+    fixedN++;
+    console.log(`   ✎ ${id} 按 attribution-fixes.json 覆盖：${before} → ${after}`);
+  }
+  if (fixedN) console.log(`   手工指定覆盖 ${fixedN} 条`);
 }
 
 /* ---------------- 扩展名纠偏：按字节改回真身格式 ---------------- */
