@@ -658,10 +658,18 @@ if (DO_ATTR) {
       continue;
     }
     const chat = looksLikeChatScreen(text);
+    /*
+      「图里贴的是**群外人**的 QQ」→ 这条归**发送人**（2026-11-13 站长定）。
+      场景：群友截图吐槽某个群外人的言论，图里印着对方的 QQ 号。
+      那个人不是群成员，把精华归给他是错的。认法：文本里出现 `QQ 1234567890` 这种。
+    */
+    const outsiderQQ = /QQ[^\d]{0,4}\d{5,12}/i.test(text);
     let why;
     if (got.members.length) {
       e.memberIds = got.members.map((m) => m.id);
       why = got.members.map((m) => m.name).join('、');
+    } else if (outsiderQQ) {
+      why = '图里是群外人的号 → 保持发送人';
     } else if (chat) {
       /* 聊天截图但图里全是生面孔 → 未知，memberIds 留空（页面显示「冰室群成员」），等站长手改 */
       e.memberIds = [];

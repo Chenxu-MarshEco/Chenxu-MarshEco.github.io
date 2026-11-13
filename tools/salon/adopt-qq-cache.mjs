@@ -19,6 +19,7 @@
  *   node tools/salon/adopt-qq-cache.mjs --root "D:\某个目录"   # 额外扫一个目录
  */
 import fs from 'node:fs';
+import crypto from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -30,7 +31,11 @@ const IMG_DIR = path.join(PROJ, 'public', 'img', 'salon');
 const argv = process.argv.slice(2);
 const WRITE = argv.includes('--write');
 const extraRoots = [];
-for (let i = 0; i < argv.length; i++) if (argv[i] === '--root' && argv[i + 1]) extraRoots.push(argv[i + 1]);
+const fromDirs = [];
+for (let i = 0; i < argv.length; i++) {
+  if (argv[i] === '--root' && argv[i + 1]) extraRoots.push(argv[i + 1]);
+  if (argv[i] === '--from' && argv[i + 1]) fromDirs.push(argv[i + 1]);
+}
 
 /**
  * 10 月那批缺的 5 张。`md5` 就是精华接口里那个 `file` 字段（去扩展名、转小写）。
@@ -49,6 +54,40 @@ function sniffExt(buf) {
   if (buf.length > 8 && buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47) return 'png';
   if (buf.length > 6 && buf[0] === 0x47 && buf[1] === 0x49 && buf[2] === 0x46) return 'gif';
   if (buf.length > 12 && buf.toString('ascii', 0, 4) === 'RIFF' && buf.toString('ascii', 8, 12) === 'WEBP') return 'webp';
+  return '';
+}
+
+/**
+ * 在指定目录里**按文件内容 MD5** 找图（2026-11-13 加）。
+ *
+ * 为什么还要按内容找：从 QQ 里「另存为」出来的文件名是随机 UUID
+ * （`135b3838-c212-4c24-98ce-848e15efb798.jpeg`），跟 md5 毫无关系。
+ * 但 QQ 那边那张图的 `file` 就是原图的 MD5，所以**内容哈希一定对得上** ——
+ * 这样连对号都不用猜。
+ */
+function findByContentMd5(md5, dirs, maxBytes = 30 * 1024 * 1024) {
+  for (const dir of dirs) {
+    if (!fs.existsSync(dir)) continue;
+    const stack = [dir];
+    while (stack.length) {
+      const cur = stack.pop();
+      let entries;
+      try { entries = fs.readdirSync(cur, { withFileTypes: true }); } catch { continue; }
+      for (const e of entries) {
+        const full = path.join(cur, e.name);
+        if (e.isDirectory()) { stack.push(full); continue; }
+        const ext = path.extname(e.name).toLowerCase();
+        if (!['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp'].includes(ext)) continue;
+        let st;
+        try { st = fs.statSync(full); } catch { continue; }
+        if (st.size > maxBytes) continue;
+        try {
+          const h = crypto.createHash('md5').update(fs.readFileSync(full)).digest('hex');
+          if (h === md5) return full;
+        } catch { /* 读不了就跳过 */ }
+      }
+    }
+  }
   return '';
 }
 
@@ -105,7 +144,11 @@ for (const w of WANTED) {
     console.log(`· ${w.id}（${w.label}）站里已经有图 ${entry.images[0]}，跳过`);
     continue;
   }
-  const file = findFile(w.md5);
+  let file = findFile(w.md5);
+  if (!file && fromDirs.length) {
+    file = findByContentMd5(w.md5, fromDirs);
+    if (file) console.log(`   （按内容 MD5 在 --from 目录里对上了）`);
+  }
   if (!file) {
     console.log(`✗ ${w.id}（${w.label}）本机缓存里没有 —— 去 QQ 里把那天的图点开一次再来`);
     continue;
