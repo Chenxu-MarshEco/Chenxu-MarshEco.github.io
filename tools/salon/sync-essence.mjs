@@ -146,6 +146,26 @@ function parseContent(content) {
 }
 
 /**
+ * 图片格式**只看字节**（2026-11-13 加）。
+ *
+ * 以前是从 URL 里抠扩展名，抠不到就一律 `.jpg`：
+ *   · QQ 的下载链接长这样 `multimedia.nt.qq.com.cn/download?appid=…&fileid=…&rkey=…`
+ *     —— **根本没有扩展名**，于是所有 PNG 都被存成了 `.jpg`；
+ *   · 反过来，URL 上写着 `.png`、真身其实是 JPEG 的老图也有。
+ * 两者都不会让浏览器看不见图，但会让「这批图到底是什么格式」永远说不准 ——
+ * 站长 2026-11-13 报的就是这个（「缺的那几张都是 jpeg 或 png」）。
+ * 所以存盘前先用字节验一遍，顺便把「下回来的其实是错误页」挡在门外。
+ */
+function sniffExt(buf) {
+  if (buf.length > 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return 'jpg';
+  if (buf.length > 8 && buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47) return 'png';
+  if (buf.length > 6 && buf[0] === 0x47 && buf[1] === 0x49 && buf[2] === 0x46) return 'gif';
+  if (buf.length > 12 && buf.toString('ascii', 0, 4) === 'RIFF' && buf.toString('ascii', 8, 12) === 'WEBP') return 'webp';
+  if (buf.length > 2 && buf[0] === 0x42 && buf[1] === 0x4d) return 'bmp';
+  return '';
+}
+
+/**
  * 群名片 → 只保留「真正是字」的字符。
  *
  * 真实数据里的样子（2026-11-12 实测）：
@@ -383,8 +403,9 @@ async function download(im, messageId) {
       if (b64 && b64.length > 100) {
         const buf = Buffer.from(b64.replace(/^data:[^,]+,/, ''), 'base64');
         if (buf.length) {
-          const ext = String(d.file ?? '').toLowerCase().endsWith('.png') ? 'png' : 'jpg';
-          return { buf, ext, url: '(base64)' };
+          const ext = sniffExt(buf);
+          if (!ext) diag.push(`get_image 给的 base64 不是图片（${buf.length} 字节）`);
+          else return { buf, ext, url: '(base64)' };
         }
       }
       if (!u && !f) diag.push(`get_image 没给 url/file（返回 ${JSON.stringify(d).slice(0, 140)}）`);
@@ -467,17 +488,33 @@ async function download(im, messageId) {
   );
 }
 
-/** 让 NapCat 认图里的字（仅 Windows 端支持；失败就当没有） */
-async function ocr(url) {
-  try {
-    const json = await call('ocr_image', { image: url });
-    const d = json?.data ?? {};
-    const texts = d.texts ?? d.text ?? d.words ?? [];
-    if (Array.isArray(texts)) return texts.map((t) => (typeof t === 'string' ? t : t?.text ?? '')).filter(Boolean).join('\n');
-    return String(texts || '');
-  } catch {
-    return '';
+/**
+ * 让 NapCat 认图里的字（2026-11-13 改）。
+ *
+ * ⚠ 以前只传 `{image: url}`，**10 月那 11 张图一张都没认出来**，而且失败被 catch
+ * 悄悄吞掉，于是「有图没字」直接上了线（站长 2026-11-13 报的第三个问题）。
+ * 现在按「本地文件路径 → 可用链接 → 原始链接」依次试：
+ *   · **本地路径是最靠谱的那个** —— 图已经落盘了，NapCat 直接读文件，
+ *     不用再走一次可能过期的 CDN 链接；
+ *   · 链接只在写盘失败（`--dry`）时才用得上。
+ * 一个都认不出就返回空串，由调用方记进报告，不再静默。
+ */
+async function ocr(targets) {
+  for (const t of targets) {
+    if (!t) continue;
+    try {
+      const json = await call('ocr_image', { image: t });
+      const d = json?.data ?? {};
+      const texts = d.texts ?? d.text ?? d.words ?? d.result ?? [];
+      const text = Array.isArray(texts)
+        ? texts.map((x) => (typeof x === 'string' ? x : x?.text ?? x?.word ?? '')).filter(Boolean).join('\n')
+        : String(texts || '');
+      if (text.trim()) return text.trim();
+    } catch {
+      /* 这个传法不行，试下一个 */
+    }
   }
+  return '';
 }
 
 /* ---------------- 主流程 ---------------- */
@@ -548,6 +585,20 @@ async function main() {
 
   /* ---- 去重表 ---- */
   const seen = new Set(file.essences.map(essenceKey));
+  /*
+    同一天同一时刻、两边都没有正文的（= 只有图的精华）也当同一条（2026-11-13 加）。
+    为什么必须单独判：只有图的精华如果图没下下来，存进站里就是「无正文、无图」，
+    essenceKey 退化成 `date|time|#img0`，而原始数据是 `date|time|#img1` —— **永远对不上**，
+    于是每跑一次就多出一条空壳（10 月那批 e0834–e0837 就是这么来的）。
+  */
+  const emptyAt = new Set();
+  /** 同刻已存在、但**没有任何图**的条目所在时刻（多半是当初图没下下来的那条） */
+  const noImgAt = new Set();
+  const noteShape = (entry) => {
+    const at = `${entry.date}|${entry.time || ''}`;
+    if (!String(entry.text || '').trim()) emptyAt.add(at);
+    if (!(Array.isArray(entry.images) ? entry.images : []).length) noImgAt.add(at);
+  };
   const byWhen = new Map();
   const normText = (s) => String(s ?? '').split('\n').map((l) => l.replace(/^\s*[-–—]\s*/, '')).join('').replace(/\s+/g, '');
   for (const e of file.essences) {
@@ -555,6 +606,7 @@ async function main() {
     const arr = byWhen.get(k) ?? [];
     arr.push({ text: normText(e.text) });
     byWhen.set(k, arr);
+    noteShape(e);
   }
 
   let nextNum = nextIdFrom(file.essences);
@@ -564,6 +616,9 @@ async function main() {
   let imgWritten = 0;
   let imgBytes = 0;
   let imgFailed = 0;
+  /** 有图、但一个字都没认出来的条数（2026-11-13 加：以前这种情况完全静默） */
+  let ocrEmpty = 0;
+  let ocrDone = 0;
 
   /* ---- 逐条 ---- */
   for (const r of raw) {
@@ -576,6 +631,9 @@ async function main() {
     const text = normText(it.text);
     let why = '';
     if (seen.has(key)) why = '站里已经有这一条了';
+    else if (!text && emptyAt.has(`${it.date}|${it.time || ''}`)) why = '站里已经有这一条了（同刻、都没有正文）';
+    /* 原始这条有图、站里同刻那条没图 → 就是当初图没下下来的那条，别再插一条新空壳 */
+    else if (it.images.length && noImgAt.has(`${it.date}|${it.time || ''}`)) why = '站里已经有这一条了（同刻、那条没图；补图用 repair-images.mjs）';
     else if (text) {
       for (const cand of byWhen.get(`${it.date}|${it.time || ''}`) ?? []) {
         if (looksSame(cand.text, text)) { why = '站里已经有这一条了（正文只差几个字）'; break; }
@@ -637,14 +695,20 @@ async function main() {
     let finalText = it.text;
     let isOcr = false;
     let ocrText = '';
-    const ocrTarget = firstUsableUrl || it.images[0]?.url || '';
-    if (images.length && ocrTarget) {
-      const got = await ocr(ocrTarget);
-      ocrText = got.trim();
+    /*
+      优先拿**刚落盘的那张图**去 OCR（2026-11-13 改）：
+      本地路径是唯一稳定能认字的一路，链接要么过期、要么 NapCat 那边读不到。
+    */
+    const writtenLocal = !DRY && images.length ? path.join(IMG_DIR, path.basename(images[0])) : '';
+    const ocrTargets = [writtenLocal, firstUsableUrl, it.images[0]?.url, ''].filter(Boolean);
+    if (images.length) {
+      ocrText = await ocr(ocrTargets);
       if (ocrText && normText(it.text).length < OCR_MAX_TEXT) {
         finalText = ocrText;
         isOcr = true;
+        ocrDone++;
       }
+      if (!ocrText) ocrEmpty++;
     }
 
     /* ---- 归属：聊天截图归「图里说话的人」，其余归发送人 ---- */
@@ -703,6 +767,7 @@ async function main() {
     const arr = byWhen.get(wk) ?? [];
     arr.push({ text: normText(entry.text) });
     byWhen.set(wk, arr);
+    noteShape(entry);
     added.push(entry);
   }
 
@@ -721,6 +786,10 @@ async function main() {
   for (const [why, n] of byWhy) console.log(`   · ${why}：${n} 条`);
   console.log(`图片：${DRY ? '会写入' : '写入'} ${imgWritten} 张，${(imgBytes / 1048576).toFixed(1)} MB${imgFailed ? `，**失败 ${imgFailed} 张**（url 过期且换新链接也没成，条目还是加进去了，图缺着）` : ''}`);
   console.log(`新成员：${newMembers.length ? newMembers.map((m) => m.name).join('、') : '（没有新的）'}`);
+  console.log(
+    `OCR：${ocrDone} 条认出文字` +
+      (ocrEmpty ? `，**${ocrEmpty} 条有图但一个字都没认出来**（这些条目按「发送人」归了，回头可以用 repair-images.mjs --ocr 补）` : ''),
+  );
   if (chatScoped) console.log(`按「图里说话的人」归属：${chatScoped} 条（这些**不含**截图的人，除非他本人也在图里）`);
   if (unknownPinned.length) {
     console.log('');
