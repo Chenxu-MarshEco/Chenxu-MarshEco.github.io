@@ -3185,18 +3185,92 @@
             },
             {
               "id": "huaya-r2-11",
-              "title": "花篠桓娅",
-              "href": "/huaya/years/huaxiao",
+              "title": "篠花娅风尚",
+              "href": "/huaya/years/shinohana",
               "page": [
                 {
-                  "id": "huaya-r2-11-pmv4sbxw781",
+                  "id": "huaya-r2-11-pmwk2x6hi1",
+                  "type": "toc",
+                  "text": "篠花娅风尚"
+                },
+                {
+                  "id": "huaya-r2-11-pmwk2x6hi2",
+                  "type": "divider"
+                },
+                {
+                  "id": "huaya-r2-11-pmwk2x6hi3",
                   "type": "text",
                   "text": "## 花篠桓娅\n花篠桓娅，永远的花娅。以无尽增长的城市花篠市为陌点，许多有趣的远位面萌生而出。篠花娅的风尚不会结束，故事也还在书写，快去看看吧~"
                 },
                 {
-                  "id": "huaya-r2-11-pmv4sirpk82",
+                  "id": "huaya-r2-11-pmwk2x6hi4",
                   "type": "video",
-                  "src": "https://www.bilibili.com/video/BV1JBp364Ewx/"
+                  "src": "https://www.bilibili.com/video/BV1L3J66dENG/",
+                  "placeholder": true
+                },
+                {
+                  "id": "huaya-r2-11-pmwk2x6hi5",
+                  "type": "divider"
+                },
+                {
+                  "id": "huaya-r2-11-pmwk2x6hi6",
+                  "type": "text",
+                  "text": "## 地图勘探"
+                },
+                {
+                  "id": "huaya-r2-11-pmwk2x6hi7",
+                  "type": "map",
+                  "pages": [
+                    {
+                      "id": "huaya-r2-11-pmwk2x6hi7-p1",
+                      "src": "",
+                      "markers": [],
+                      "lines": []
+                    }
+                  ],
+                  "placeholder": true
+                },
+                {
+                  "id": "huaya-r2-11-pmwk2x6hj8",
+                  "type": "divider"
+                },
+                {
+                  "id": "huaya-r2-11-pmwk2x6hj9",
+                  "type": "text",
+                  "text": "## 重要事件"
+                },
+                {
+                  "id": "huaya-r2-11-pmwk2x6hj10",
+                  "type": "divider"
+                },
+                {
+                  "id": "huaya-r2-11-pmwk2x6hj11",
+                  "type": "text",
+                  "text": "## 溪流之外的轶事"
+                },
+                {
+                  "id": "huaya-r2-11-pmwk2x6hj12",
+                  "type": "divider"
+                },
+                {
+                  "id": "huaya-r2-11-pmwk2x6hj13",
+                  "type": "text",
+                  "text": "## 画廊"
+                },
+                {
+                  "id": "huaya-r2-11-pmwk2x6hj14",
+                  "type": "divider"
+                },
+                {
+                  "id": "huaya-r2-11-pmwk2x6hj15",
+                  "type": "text",
+                  "text": "## 导航"
+                },
+                {
+                  "id": "huaya-r2-11-pmwk2x6hj16",
+                  "type": "nav",
+                  "cats": [],
+                  "text": "导航"
                 }
               ]
             }
