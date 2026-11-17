@@ -86,6 +86,12 @@ check('前端引擎在（mountBoard）', /export function mountBoard/.test(engin
 check('★ 平滑走共享几何（strokeSegments，和存档 SVG 同一份）', /strokeSegments/.test(engine));
 check('★ 两层画布：定下来的笔划进离屏缓存，只有集合变了才重画', /const cache = document\.createElement\('canvas'\)/.test(engine) && /cacheDirty/.test(engine));
 check('★ 本地先画（抬笔立刻出现在自己屏幕上，后台再送）', /const commit = async/.test(engine) && /local-/.test(engine));
+check('★ 抬笔那一笔临时失败会**自动重发一次**（不是一次没成就撤笔）',
+  /const sendStroke = async/.test(engine) && /await sendStroke\(\{ event: 'LT_DRAW_ADD'/.test(engine) &&
+    /STROKE_RETRY_MS/.test(engine));
+check('★ 云函数：连数据库失败不把坏 promise 缓存住（2026-11-17 那个"永久报错实例"）',
+  /if \(dbPromise === p\) dbPromise = null/.test(backend) && /DB_TIMEOUT_MS/.test(backend) &&
+    !/dbPromise = \(async \(\) => \{/.test(backend));
 check('采样过滤（画板坐标里 1.2px 以内不留点）', /< 1\.2/.test(engine));
 check('★ 逐人显隐（hidden 集合 + 重画）', /const hidden = new Set<string>\(\)/.test(engine) && /hidden\.has\(s\.uk\)/.test(engine));
 check('橡皮按纸色画（和服务端 / 存档 SVG 一个规矩）', /ERASER_COLOR = PAPER/.test(engine));
@@ -693,7 +699,7 @@ const liveApi = (() => {
 })();
 
 /* 假后端：自己画的记下来；轮询时给一笔"别人画的"（在 1800,1100，蓝色） */
-const seen = { add: [], del: [], moves: [], prefs: [], replace: [], chatSends: [], chatLists: 0, lists: 0 };
+const seen = { add: [], addFailed: [], del: [], moves: [], prefs: [], replace: [], chatSends: [], chatLists: 0, lists: 0 };
 /*
   茶绘右栏那个聊天框（2026-10-10 加的）用的假聊天后端：一条历史消息 + 之后发进来的。
   ⚠ 增量那一趟必须**按游标过滤**（mountChat 在带游标时是"追加"，不去重）——
@@ -734,6 +740,12 @@ let prefsState = {};
 const NEXT_DAY = '2026-10-11';
 let servedToday = '2026-10-09';
 let servedWiped = false;
+/**
+ * 夹具：接下来几枪 `LT_DRAW_ADD` 要**假装没送上去**（模拟云函数连数据库超时那一下，
+ * 也就是线上那句「账号服务出错：Socket 'secureConnect' timed out」）。
+ * 默认 0 = 一直正常。验收 ⑨ 用它证明"抬笔第一次失败会自动重试、笔不会白画"。
+ */
+let addFailsLeft = 0;
 const OTHER = { id: 'other-stroke', uk: 'beef1234', nick: '虹星', avatar: '', tool: 'pen', color: '#3a86ff', size: 24, points: [[1750, 1050], [1850, 1100], [1950, 1150]], createdAt: 0, mine: false };
 const fakeBackend = (body) => {
   const event = String(body?.event || '');
@@ -778,6 +790,15 @@ const fakeBackend = (body) => {
   }
   if (event === 'LT_DRAW_ADD') {
     seen.add.push(body);
+    /* 夹具：这一枪假装没送上去（只影响 `addFailsLeft` 指定的那几次） */
+    if (addFailsLeft > 0) {
+      addFailsLeft -= 1;
+      seen.addFailed.push(body);
+      return {
+        code: 1000,
+        message: "账号服务出错：Socket 'secureConnect' timed out after 12003ms (connectTimeoutMS: 12000)",
+      };
+    }
     const stroke = {
       id: 'mine' + seen.add.length,
       uk: 'aaaa1111',
@@ -2416,6 +2437,63 @@ try {
 
   /* 这一段自己的异常账在这一步结（下面窄屏 / 访客要换页面，页面一换异常账就不干净了） */
   check('新增这一整段没有未捕获的 JS 异常', cdp.errors.length === errBefore, cdp.errors.slice(errBefore, errBefore + 2).join(' | '));
+
+  /* ---- ⑨ 抬笔那一笔"第一次没送上去"：要自动重试，别把用户这一笔吃掉（2026-11-17） ----
+     站长报的线上现象是「账号服务出错：Socket 'secureConnect' timed out」+
+     「画板进度回退」。根因是云函数那边一次连接超时之后那个实例会一直报同一条错，
+     客户端再把失败的那一笔撤掉 —— 于是画着画着进度就退回去了。 */
+  await cdp.ev(`(() => {
+      const b = document.querySelector('[data-lt-tool="pen"]');
+      if (b && !b.disabled) b.click();
+      if (window.__ltBoard && window.__ltBoard.reset) window.__ltBoard.reset();
+      return 1;
+    })()`);
+  await sleep(500);
+  await setInk('#00c2ff');
+
+  const addsBefore = seen.add.length;
+  const createdBefore = created.size;
+  addFailsLeft = 1;
+  await drawOn([[2100, 380], [2200, 380], [2300, 380]]);
+  /* 等服务端真收到（重试那一枪是 600ms 之后才发的） */
+  let landedRetry = false;
+  for (let i = 0; i < 30; i += 1) {
+    if (created.size > createdBefore) {
+      landedRetry = true;
+      break;
+    }
+    await sleep(300);
+  }
+  check('★ 抬笔那一下第一次失败 → 自动重发一次，这一笔最后真的到了服务端',
+    landedRetry === true && seen.add.length - addsBefore === 2 && seen.addFailed.length === 1,
+    JSON.stringify({ 发了几次: seen.add.length - addsBefore, 服务端新增: created.size - createdBefore, 假装失败: seen.addFailed.length }));
+
+  await sleep(3800); // 熬过一个轮询周期，确认它没被当成"失败"撤掉
+  const keptPix = await cdp.ev(pixelAt(2200, 380));
+  check('★ 重试成功之后这一笔就在板上（下一趟轮询也没把它抹掉）', keptPix === '#00c2ff', keptPix);
+
+  const addsBefore2 = seen.add.length;
+  addFailsLeft = 2;
+  await drawOn([[2100, 900], [2200, 900], [2300, 900]]);
+  /*
+    ⚠ 那句提示会被**轮询**那句「今天这块板上已经有 N 笔」盖掉（3 秒一刷），
+    所以不能等一会儿再读一次 —— 要一边等一边采样，抓到就算。
+  */
+  let goneSay = '';
+  for (let i = 0; i < 45; i += 1) {
+    const t = await cdp.ev(`String((document.querySelector('[data-lt-draw-status]') || {}).textContent || '')`);
+    if (/没画上/.test(t)) {
+      goneSay = t;
+      break;
+    }
+    if (seen.add.length - addsBefore2 >= 2 && !goneSay) goneSay = goneSay || t;
+    await sleep(100);
+  }
+  await sleep(400);
+  const gonePix = await cdp.ev(pixelAt(2200, 900));
+  check('★ 两枪都没成 → 才撤笔，并且说清楚（不留下"以为画上去了"的假笔）',
+    gonePix === PAPER && /没画上/.test(goneSay) && seen.add.length - addsBefore2 === 2,
+    JSON.stringify({ 像素: gonePix, 提示: goneSay.slice(0, 46), 发了几次: seen.add.length - addsBefore2 }));
 
   /* 窄屏：两栏塌成一列（聊天框搬到画板下面），别溢出 */
   await cdp.send('Emulation.setDeviceMetricsOverride', { width: 700, height: 900, deviceScaleFactor: 1, mobile: false });

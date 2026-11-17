@@ -121,6 +121,19 @@ const ERASER_SIZE_DEFAULT = 20;
 /** 移动的命中阈值 = 笔划半宽 + 这么多个**画板像素**（手没那么准，光按线宽点不中） */
 const HIT_SLACK = 8;
 
+/**
+ * 抬笔那一笔送不上去时，多久之内还值得"再试一次"（毫秒）。
+ *
+ * 云函数那边偶尔会回「Socket 'secureConnect' timed out」（它连数据库的握手超时，
+ * 2026-11-17 查过：一次超时之后那个实例会一直报同一条错）。服务端抖一下不该
+ * 让用户白画一笔，所以第一次失败会在 600ms 后自动重发一次；
+ * 但如果第一次就已经慢慢耗到超时（服务端真的没响应），再叠一轮只会让这一笔在
+ * 界面上悬更久 —— 那种就直接按"没画上"处理。
+ */
+const STROKE_RETRY_MS = 8000;
+/** 重发之间隔多久（别把两枪挤在同一毫秒，也别让用户等太久） */
+const STROKE_RETRY_GAP = 600;
+
 export interface LtStroke {
   id: string;
   uk: string;
@@ -883,7 +896,36 @@ export function mountBoard(opts: BoardOpts): BoardHandle {
     say(`今天这块板上已经有 ${strokes.filter((s) => !hidden.has(s.uk)).length} 笔（你自己看到的）`, true);
   };
 
-  /** 抬笔之后把这一笔送上去；失败就把它从本地撤掉，别让人以为画上去了 */
+  /**
+   * 把一根笔划送上去，**临时失败自动再试一次**。
+   *
+   * 为什么要（2026-11-17，站长报的）：云函数连数据库偶尔超时
+   * （「账号服务出错：Socket 'secureConnect' timed out …」），一次就判死的话，
+   * commit() 会把这一笔从本地撤掉 —— 用户看到的就是「画着画着进度回退了」。
+   * 服务端抖一下不该吃掉用户的一笔。
+   *
+   * 只重试**临时**错误：401（没登录 / 令牌过期）重试也没用，直接抛。
+   * 而且第一次失败得够慢（超过 STROKE_RETRY_MS）时也不再试 —— 见那个常量的注释。
+   */
+  const sendStroke = async (body: Record<string, unknown>): Promise<Record<string, any>> => {
+    let last: Error | null = null;
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const t0 = Date.now();
+      try {
+        const r = await call(api, body);
+        if (Number(r.code) === 0) return r;
+        last = new Error(String(r.message ?? '这一笔没送上去'));
+        if (Number(r.code) === 401) break;
+      } catch (err) {
+        last = err instanceof Error ? err : new Error(String(err));
+      }
+      if (attempt === 0 && Date.now() - t0 > STROKE_RETRY_MS) break;
+      if (attempt === 0) await new Promise((r) => setTimeout(r, STROKE_RETRY_GAP));
+    }
+    throw last ?? new Error('这一笔没送上去');
+  };
+
+  /** 抬笔之后把这一笔送上去；两次都没成才把它从本地撤掉，别让人以为画上去了 */
   const commit = async (s: Drawn, okWord = ''): Promise<boolean> => {
     const temp: LtStroke = {
       id: 'local-' + Date.now().toString(36),
@@ -904,8 +946,8 @@ export function mountBoard(opts: BoardOpts): BoardHandle {
     paintFaces();
     schedule();
     try {
-      const r = await call(api, { event: 'LT_DRAW_ADD', ltToken: getToken(), ...s });
-      if (r.code !== 0) throw new Error(String(r.message ?? '这一笔没送上去'));
+      /* sendStroke 自己会重试一次（临时失败不算数），两次都没成才抛出来 */
+      const r = await sendStroke({ event: 'LT_DRAW_ADD', ltToken: getToken(), ...s });
       /* 用服务端给的那条替掉本地临时那条（id / uk / 时间都以服务端为准） */
       const got = r.stroke as LtStroke;
       const i = strokes.findIndex((x) => x.id === temp.id);

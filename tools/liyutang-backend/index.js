@@ -172,16 +172,36 @@ const FLAGS = {
 const capabilities =
   typeof common.defineCapabilities === 'function' ? common.defineCapabilities(FLAGS) : FLAGS;
 
+/**
+ * 连 Atlas 的超时（毫秒）。
+ *
+ * 为什么是 18 秒：云函数执行超时是 30 秒，而"冷启动第一枪"要先做 DNS、再跟 Atlas
+ * 建 TLS 连接、再选主 —— 平时 1~2 秒，但偶尔会很慢（免费档 M0 建连排队、跨境链路
+ * 抖一下）。2026-10-09 从默认 5 秒提到 12 秒，2026-11-17 再到 18 秒：
+ * 那次线上测到「Socket 'secureConnect' timed out after 12003ms」之后，**这个实例
+ * 从此每个请求都秒回同一条旧错误**（见 ourDb() 那段），代价太大，宁可多等 6 秒。
+ */
+const DB_TIMEOUT_MS = 18000;
+
+/**
+ * 快到这种程度的失败才值得"换一条新连接立刻再试一次"。
+ *
+ * 为什么要有这条线：18 + 18 = 36 秒，超过云函数的 30 秒，用户会拿到一个没有信息的
+ * 网关超时。而 DNS 没解析、TCP 被拒、握手中途被 reset 这类失败都是几百毫秒就回来的，
+ * 立刻重试一次最划算（最坏 6 + 18 = 24 秒，装得下）。
+ */
+const DB_FAST_FAIL_MS = 6000;
+
 /** Twikoo 那条数据库（它自己管 comment / config / counter / cap_kv 四个集合）
  *  ⚠ 那两个超时是 2026-10-09 加上去的：默认 5 秒对**冷启动**太紧 ——
  *  函数闲一阵之后第一枪要先跟 Atlas 建 TLS 连接，5 秒不够时会回一句
  *  「Socket 'secureConnect' timed out」，用户看到的就是"评论/登录突然坏了"，
- *  再点一次又好了。给到 12 秒（云函数执行超时是 30 秒，装得下）。 */
+ *  再点一次又好了。这里和自己的那条连接用同一个超时（见 DB_TIMEOUT_MS）。 */
 const twikooDb = new MongoDatabase({
   uri: URI,
   dbName: DB_NAME,
-  serverSelectionTimeoutMS: 12000,
-  connectTimeoutMS: 12000,
+  serverSelectionTimeoutMS: DB_TIMEOUT_MS,
+  connectTimeoutMS: DB_TIMEOUT_MS,
 });
 
 /** 空实现占位（官方云开发适配器也这么占位） */
@@ -194,43 +214,88 @@ const storageStub = {
 /* ============================================================ 我们自己的 Mongo 连接 */
 
 /**
+ * 建一条连接（顺手把索引建掉，建过就是空操作）。
+ *
+ * 单独抽出来是为了能"换一条新的再来一次"（见 ourDb()）。失败时要把这个 client
+ * 关掉：连不上的 client 内部还挂着定时器和半开的 socket，不关的话每失败一次就往
+ * 云函数实例里漏一份，实例越活越慢。
+ * @returns {Promise<import('mongodb').Db>} 数据库
+ */
+async function connectDb() {
+  const client = new MongoClient(URI, {
+    maxPoolSize: 5,
+    serverSelectionTimeoutMS: DB_TIMEOUT_MS,
+    connectTimeoutMS: DB_TIMEOUT_MS,
+  });
+  try {
+    await client.connect();
+  } catch (err) {
+    try {
+      await client.close(true);
+    } catch {
+      /* 已经废了，关不掉也无所谓 */
+    }
+    throw err;
+  }
+  const db = client.db(DB_NAME);
+  await Promise.all([
+    /* 昵称唯一（大小写不敏感：存一份小写副本做键） */
+    db.collection(USERS).createIndex({ nickLower: 1 }, { unique: true }),
+    db.collection(POSTS).createIndex({ id: 1 }, { unique: true }),
+    db.collection(POSTS).createIndex({ board: 1, createdAt: -1 }),
+    db.collection(POSTS).createIndex({ authorId: 1, createdAt: -1 }),
+    /* 聊天室：按"哪一天 + 时间"查（翻某天的记录），以及按人查（限速用） */
+    db.collection(CHAT).createIndex({ id: 1 }, { unique: true }),
+    db.collection(CHAT).createIndex({ day: 1, createdAt: 1 }),
+    db.collection(CHAT).createIndex({ userId: 1, createdAt: -1 }),
+    /* 画板：按天拉笔划（今天那块板），以及按人查（限速 / 撤销） */
+    db.collection(DRAW).createIndex({ id: 1 }, { unique: true }),
+    db.collection(DRAW).createIndex({ day: 1, createdAt: 1 }),
+    db.collection(DRAW).createIndex({ userId: 1, createdAt: -1 }),
+  ]).catch(() => {
+    /* 索引建不上不该挡住正事（比如权限只给了读写没给建索引） */
+  });
+  return db;
+}
+
+/**
  * 我们自己的那条连接：**账号和帖子共用一条**（Twikoo 那条是它自己管的，插不进去）。
- * 单例 + 懒建：冷实例第一次用到才连，之后复用；顺手把索引建掉（建过就是空操作）。
+ * 单例 + 懒建：冷实例第一次用到才连，之后复用。
+ *
+ * ⚠⚠ **失败时那个 promise 必须扔掉**（2026-11-17 修的线上事故）。
+ *
+ * 以前的写法是 `if (!dbPromise) dbPromise = (async () => …)();  return dbPromise;` ——
+ * promise 一建就不再管了。于是冷启动那一次握手要是超时（线上看到的是
+ * 「Socket 'secureConnect' timed out after 12003ms」），这个 promise 就变成
+ * **rejected 且永远留着**：之后这个实例上的每一个 LT_* 请求 await 到的都是它，
+ * 立刻拿到同一条旧错误（实测 165~467 毫秒就返回，而且报的还是当初那个 "12003"），
+ * 既不重连也不自愈，只能等平台把实例回收掉。
+ *
+ * 用户看到的就是"账号服务出错"一阵一阵地冒 + 抬笔那一笔被撤掉（画板进度回退），
+ * 但画板又没完全掉线 —— 因为轮询下一拍可能落到别的、健康的实例上。
+ *
+ * 现在两条保险：①失败把缓存清掉，下一趟重新连；②失败得够快就当场再试一次。
  * @returns {Promise<import('mongodb').Db>} 数据库
  */
 let dbPromise = null;
 function ourDb() {
-  if (!dbPromise) {
-    dbPromise = (async () => {
-      const client = new MongoClient(URI, {
-        maxPoolSize: 5,
-        /* 和 Twikoo 那条一样：冷启动建 TLS 连接有时要 6~10 秒，5 秒太紧（见上面那段注释） */
-        serverSelectionTimeoutMS: 12000,
-        connectTimeoutMS: 12000,
-      });
-      await client.connect();
-      const db = client.db(DB_NAME);
-      await Promise.all([
-        /* 昵称唯一（大小写不敏感：存一份小写副本做键） */
-        db.collection(USERS).createIndex({ nickLower: 1 }, { unique: true }),
-        db.collection(POSTS).createIndex({ id: 1 }, { unique: true }),
-        db.collection(POSTS).createIndex({ board: 1, createdAt: -1 }),
-        db.collection(POSTS).createIndex({ authorId: 1, createdAt: -1 }),
-        /* 聊天室：按"哪一天 + 时间"查（翻某天的记录），以及按人查（限速用） */
-        db.collection(CHAT).createIndex({ id: 1 }, { unique: true }),
-        db.collection(CHAT).createIndex({ day: 1, createdAt: 1 }),
-        db.collection(CHAT).createIndex({ userId: 1, createdAt: -1 }),
-        /* 画板：按天拉笔划（今天那块板），以及按人查（限速 / 撤销） */
-        db.collection(DRAW).createIndex({ id: 1 }, { unique: true }),
-        db.collection(DRAW).createIndex({ day: 1, createdAt: 1 }),
-        db.collection(DRAW).createIndex({ userId: 1, createdAt: -1 }),
-      ]).catch(() => {
-        /* 索引建不上不该挡住正事（比如权限只给了读写没给建索引） */
-      });
-      return db;
-    })();
-  }
-  return dbPromise;
+  if (dbPromise) return dbPromise;
+  const p = (async () => {
+    const t0 = Date.now();
+    try {
+      return await connectDb();
+    } catch (err) {
+      if (Date.now() - t0 > DB_FAST_FAIL_MS) throw err;
+      /* 快速失败（DNS / TCP 被拒 / 握手中途被 reset）→ 换一条新连接立刻再来一次 */
+      return await connectDb();
+    }
+  })();
+  dbPromise = p;
+  p.catch(() => {
+    /* 认准自己这一份：别把后来新建的那条（如果已经换了）一起清掉 */
+    if (dbPromise === p) dbPromise = null;
+  });
+  return p;
 }
 
 /** @returns {Promise<import('mongodb').Collection>} lt_users 集合 */
