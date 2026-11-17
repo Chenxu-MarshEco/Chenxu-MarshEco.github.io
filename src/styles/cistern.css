@@ -94,6 +94,41 @@ body.is-cistern .site-header .logo__text,
 body.is-cistern .site-header .brand {
   color: #0b4a63;
 }
+/* 站名 / 面包屑 / 页脚：深色页那套粉字压在浅色底上几乎看不见，这一页统一换成墨蓝 */
+body.is-cistern .site-header .site-title {
+  color: #0b4a63;
+  text-shadow: 0 1px 0 #fff, 0 0 12px rgba(120, 220, 255, 0.5);
+}
+body.is-cistern .site-brand:hover .site-title,
+body.is-cistern .site-brand:focus-visible .site-title {
+  text-shadow: 0 1px 0 #fff, 0 0 14px rgba(80, 190, 240, 0.85);
+}
+/*
+  面包屑的链接要写成 `a[href]`：
+  NodeView 里那条是 `.crumbs[data-astro-cid-x] a[data-astro-cid-x]`（三份"类/属性"权重 + 一个元素），
+  光写 `body.is-cistern .crumbs a` 压不下去（实测：粉字原样保留）。多挂一个 `[href]`
+  正好把它顶掉，又不依赖 Astro 每次构建都会变的那个 cid。
+*/
+body.is-cistern.is-board .crumbs a[href] {
+  color: #0a6f99;
+}
+body.is-cistern.is-board .crumbs a[href]:hover {
+  color: #0a94c8;
+  text-shadow: none;
+}
+body.is-cistern .crumbs__sep {
+  color: rgba(11, 74, 99, 0.38);
+}
+body.is-cistern .crumbs__here {
+  color: #0b4a63;
+}
+body.is-cistern.is-board .site-footer,
+body.is-cistern.is-board .site-footer a {
+  color: #0b4a63;
+}
+body.is-cistern.is-board .site-footer a:hover {
+  color: #0a94c8;
+}
 
 /* hero（版块页顶上那块）：换成玻璃拟物的浅色版，标题用墨蓝 */
 body.is-cistern .bp__hero {
@@ -189,12 +224,17 @@ body.is-cistern .pfigure img {
   background: linear-gradient(180deg, rgba(255, 255, 255, 0) 0%, rgba(255, 255, 255, 0.72) 55%, rgba(255, 255, 255, 0) 100%);
   filter: blur(10px);
 }
+/*
+  水面只占卡片底下一条（高度封顶），正文一律在水面**上方** ——
+  以前水面写的是 `height: 30%`，内容一多那 30% 就爬到半个页面上，
+  底下几块的字正好压在深蓝水面上，几乎读不出来。
+*/
 .cist__sea {
   position: absolute;
   left: 0;
   right: 0;
   bottom: 0;
-  height: 30%;
+  height: clamp(120px, 15%, 200px);
   background: linear-gradient(180deg, rgba(120, 210, 240, 0.15) 0%, #3fb2d6 26%, #1d7fa8 100%);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6);
   overflow: hidden;
@@ -269,7 +309,8 @@ body.is-cistern .pfigure img {
 .cist__inner {
   position: relative;
   z-index: 3;
-  padding: 1.5rem 1.4rem 1.6rem;
+  /* 底下这 210px 是留给水面的：最后一块的内容不会掉进水里（水面最高 200px，见 .cist__sea） */
+  padding: 1.5rem 1.4rem 210px;
 }
 .cist__head {
   display: flex;
@@ -292,13 +333,144 @@ body.is-cistern .pfigure img {
   font-variant-numeric: tabular-nums;
 }
 
-/* 跳转按钮：时间轴（按轴各一个）+ 冰室日记 —— 玻璃珠 + 顶部高光 */
-.cist__jumps {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.45rem;
-  margin-left: auto;
+/* ---------------------------------------------------------------- 四个板块 */
+/*
+  站长 2026-11-17：「把核心板块从上往下划开变成四个部分 分别就是精华 冰山 时刻 冰室日记
+  四个板块部分 如果今天没有 就写一个历史上的今天还没有XX占位」。
+  所以每一块都是「一颗玻璃珠标题 + 下面一摞内容」；没内容就只剩那句占位。
+*/
+.cist__sec + .cist__sec {
+  margin-top: 1.15rem;
 }
+.cist__h {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0 0 0.55rem;
+  padding: 0.16rem 0.72rem 0.16rem 0.58rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.95);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(214, 244, 255, 0.84));
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  color: #06405a;
+  box-shadow:
+    inset 0 1px 0 #fff,
+    inset 0 -6px 10px -8px rgba(12, 90, 120, 0.55),
+    0 8px 16px -14px rgba(9, 74, 105, 0.85);
+}
+/* 标题前面那颗玻璃珠（纯装饰，不是字） */
+.cist__h::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  flex: none;
+  border-radius: 50%;
+  background: radial-gradient(circle at 34% 28%, #fff 0 40%, #7fd8f5 70%, #1e9ad4 100%);
+  box-shadow: 0 0 6px rgba(90, 210, 250, 0.9);
+}
+.cist__list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+/* 这天这一块没东西：只有站长那句占位，别的一句都不补 */
+.cist__empty {
+  margin: 0;
+  padding: 0.62rem 0.85rem;
+  border-radius: 12px;
+  border: 1px dashed rgba(6, 64, 90, 0.22);
+  background: rgba(255, 255, 255, 0.46);
+  color: rgba(6, 56, 76, 0.58);
+  font-size: 0.82rem;
+}
+
+/* 时刻：一行一个刻度 —— 原来那颗塔吊（时刻黄 / 事件粉）+ 名字 + 年月日 */
+[data-cist-list='points'] {
+  gap: 0.28rem;
+}
+.cist__tick {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.24rem 0.7rem 0.26rem 0.5rem;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  color: var(--fa-ink);
+  text-decoration: none;
+  transition: background 0.14s ease, border-color 0.14s ease, box-shadow 0.14s ease;
+}
+a.cist__tick {
+  cursor: pointer;
+}
+a.cist__tick:hover,
+a.cist__tick:focus-visible {
+  color: var(--fa-ink);
+  text-decoration: none;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(236, 250, 255, 0.8));
+  border-color: rgba(255, 255, 255, 0.95);
+  box-shadow: inset 0 1px 0 #fff, 0 12px 22px -20px rgba(9, 74, 105, 0.9);
+}
+/*
+  塔吊：颜色和原来轴上那两颗一模一样（时刻 #ffc857 落日黄 / 事件 #ffb7c5 樱花粉）。
+  加一层深色投影只是为了在浅色水面上还看得清 —— 颜色本身没动。
+*/
+.cist__crane {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 26px;
+  height: 26px;
+  color: #ffc857;
+  filter: drop-shadow(0 0 4px rgba(255, 150, 40, 0.8)) drop-shadow(0 0 1px rgba(6, 56, 76, 0.6))
+    drop-shadow(0 1px 2px rgba(9, 74, 105, 0.45));
+  transition: scale 0.16s ease;
+}
+.cist__crane svg {
+  display: block;
+  width: 26px;
+  height: 26px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.cist__tick[data-kind='event'] .cist__crane {
+  color: #ffb7c5;
+  filter: drop-shadow(0 0 4px rgba(255, 170, 205, 0.9)) drop-shadow(0 0 1px rgba(6, 56, 76, 0.6))
+    drop-shadow(0 1px 2px rgba(9, 74, 105, 0.45));
+}
+.cist__tick[data-kind='event'] .cist__crane svg {
+  width: 18px;
+  height: 18px;
+  stroke-width: 2.8;
+}
+/* 能点的刻度：鼠标手势 + 塔吊微微放大（和原来轴上一样的那一下） */
+a.cist__tick:hover .cist__crane,
+a.cist__tick:focus-visible .cist__crane {
+  scale: 1.16;
+}
+.cist__tickText {
+  display: flex;
+  flex-direction: column;
+  gap: 0.04rem;
+  min-width: 0;
+}
+.cist__tickName {
+  font-size: 0.9rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--fa-ink);
+}
+.cist__tickWhen {
+  font-size: 0.72rem;
+  color: rgba(6, 56, 76, 0.6);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 冰室日记的跳转卡：玻璃珠 + 顶部高光 */
 .cist__jump {
   display: inline-flex;
   align-items: baseline;
@@ -337,15 +509,7 @@ body.is-cistern .pfigure img {
     0 12px 24px -12px rgba(9, 74, 105, 0.9);
 }
 
-/* ---------------------------------------------------------------- 平铺的那两摞 */
-.cist__flat {
-  display: flex;
-  flex-direction: column;
-  gap: 0.7rem;
-}
-.cist__flat + .cist__flat {
-  margin-top: 1rem;
-}
+/* ---------------------------------------------------------------- 卡片 */
 .cist__hit {
   display: block;
   border-radius: 14px;
@@ -513,14 +677,20 @@ body.is-cistern .pfigure img {
     border-radius: 16px;
   }
   .cist__inner {
-    padding: 1.1rem 0.8rem 1.2rem;
+    padding: 1.1rem 0.8rem 150px;
+  }
+  .cist__sea {
+    height: clamp(96px, 15%, 140px);
   }
   .cist__head {
     gap: 0.3rem 0.6rem;
   }
-  .cist__jumps {
-    margin-left: 0;
-    width: 100%;
+  .cist__sec + .cist__sec {
+    margin-top: 0.95rem;
+  }
+  .cist__tick {
+    padding: 0.22rem 0.4rem 0.24rem 0.2rem;
+    gap: 0.35rem;
   }
   .cist__item {
     padding: 0.6rem 0.7rem 0.7rem;

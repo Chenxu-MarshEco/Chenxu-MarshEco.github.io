@@ -5,15 +5,21 @@
  * 用户 2026-11-17 的原话：
  *   「跳转到一个独立的页面：涣愿终池 …… 要保留一块核心功能区：显示每一年的这一天的
  *    冰室事件和精华 …… 四个板块 …… 这个页面每天都会更新」
- *   「只有铃忆的冰室日记和时间轴是跳转按钮 其他的都是平铺在核心区里 就像精华页面那样
- *    精华就按原格式 冰山则是如果有完备描述则详细铺开完备描述」
+ *   「把核心板块从上往下划开变成四个部分 分别就是精华 冰山 时刻 冰室日记四个板块部分
+ *    如果今天没有 就写一个历史上的今天还没有XX占位」
+ *   「时刻里的时间轴上的点用原有塔吊图标（且原轴是黄色的就用黄的 原轴是粉的就用粉的）
+ *    点了不要跳转到原时间轴 而是看这个刻度在原时间轴里有没有写对应的跳转链接
+ *    没有就不用管有就一样跳转到那个链接」
  *
- * 所以这一块分成两半：
- *   · **平铺**：精华（照 /salon/ 那一条的样子）+ 可考据的冰山词条（有完备描述就整段铺开）；
- *   · **跳转按钮**：时间轴（跳去放那条轴的那一页）+ 铃忆的冰室日记（跳去那一天的手记）。
+ * 所以从上往下一共四个板块，每个板块一个标题（精华 / 冰山 / 时刻 / 冰室日记）：
+ *   · 精华 —— 照 /salon/ 那一条的格式平铺；
+ *   · 冰山 —— 有完备描述就整段铺开；
+ *   · 时刻 —— 时间轴上的点，用原来那颗塔吊（时刻黄、事件粉），点了去那个刻度自己填的链接；
+ *   · 冰室日记 —— 跳转卡片。
+ * 哪一块这天没东西，就只显示那一句占位（「历史上的今天还没有精华」这种，站长点的原话）。
  *
- * ⚠ 这一块**不许有任何自己写的说明句**（站规 2026-11-17）：HTML 里只有空盘子，
- * 内容全在浏览器里按"今天"从 `/cistern.json` 挑；没有数据就空着，不补"还没有……"。
+ * ⚠ 除此之外**不许有任何自己写的说明句**（站规 2026-11-17）：HTML 里只有空盘子，
+ * 内容全在浏览器里按"今天"从 `/cistern.json` 挑。
  */
 import { withBase } from '../utils/url';
 
@@ -33,6 +39,17 @@ interface Props {
 const { text = '', bg = '' } = Astro.props;
 const title = String(text ?? '').trim();
 const asSrc = (raw: string) => (/^https?:\/\//i.test(raw) ? raw : withBase(raw));
+
+/**
+ * 四个板块。`name` 就是站长给的那四个词（标题 + 占位句都用它，
+ * 占位句是站长原话「历史上的今天还没有XX」——除了这四个字，一个字都不加）。
+ */
+const SECTIONS = [
+  { key: 'essences', name: '精华' },
+  { key: 'iceberg', name: '冰山' },
+  { key: 'points', name: '时刻' },
+  { key: 'notes', name: '冰室日记' },
+] as const;
 ---
 <section
   class="cist"
@@ -62,17 +79,16 @@ const asSrc = (raw: string) => (/^https?:\/\//i.test(raw) ? raw : withBase(raw))
       <p class="cist__when">
         <b data-cist-day></b>
       </p>
-      {/*
-        两条跳转（时间轴 / 冰室日记）。放哪儿由脚本按"这天有没有东西"填，
-        没有就一排空位都不占。
-      */}
-      <div class="cist__jumps" data-cist-jumps></div>
     </header>
 
-    {/* 平铺：精华（照 /salon/ 那一条的格式） */}
-    <section class="cist__flat" data-cist-flat="essences" data-cist-panel="essences"></section>
-    {/* 平铺：可考据的冰山词条（有完备描述就整段铺开） */}
-    <section class="cist__flat" data-cist-flat="iceberg" data-cist-panel="iceberg"></section>
+    {
+      SECTIONS.map((s) => (
+        <section class="cist__sec" data-cist-flat={s.key}>
+          <h3 class="cist__h">{s.name}</h3>
+          <div class="cist__list" data-cist-list={s.key} data-cist-empty={`历史上的今天还没有${s.name}`} />
+        </section>
+      ))
+    }
   </div>
 
   {/*
@@ -88,7 +104,7 @@ const asSrc = (raw: string) => (/^https?:\/\//i.test(raw) ? raw : withBase(raw))
 
 <script>
   /* ============================================================
-     涣愿终池：按**访问者本地的那一天**把核心区填满
+     涣愿终池：按**访问者本地的那一天**把四个板块填满
      ============================================================ */
   type Essence = {
     id: string;
@@ -100,7 +116,16 @@ const asSrc = (raw: string) => (/^https?:\/\//i.test(raw) ? raw : withBase(raw))
     image: string;
     href: string;
   };
-  type Point = { id: string; timeline: string; timelineId: string; date: string; label: string; kind: string; href: string };
+  type Point = {
+    id: string;
+    timeline: string;
+    timelineId: string;
+    date: string;
+    label: string;
+    kind: string;
+    href: string;
+    showAxis: boolean;
+  };
   type Ice = {
     id: string;
     date: string;
@@ -113,7 +138,7 @@ const asSrc = (raw: string) => (/^https?:\/\//i.test(raw) ? raw : withBase(raw))
   };
   type Note = { id: string; date: string; title: string; href: string };
   type Day = { key: string; essences: Essence[]; points: Point[]; iceberg: Ice[]; notes: Note[] };
-  type Index = { days: Record<string, Day>; dayCount: number; timelineHref?: Record<string, string> };
+  type Index = { days: Record<string, Day>; dayCount: number };
 
   const root = document.querySelector<HTMLElement>('[data-cist]');
   const cfgEl = document.getElementById('cist-cfg');
@@ -123,6 +148,8 @@ const asSrc = (raw: string) => (/^https?:\/\//i.test(raw) ? raw : withBase(raw))
     const dayOf = (d: Date = new Date()) =>
       `${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
     const WEEK = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+    /** 原来那颗塔吊的线条（照抄 Timeline.astro 里那个 24×24 的图标） */
+    const CRANE = 'M10.5 20.5V6.5M13.5 20.5V6.5M8.5 20.5h7M12 4v2.5M3.5 9h17M12 4 3.5 9M12 4l8.5 5M17.5 9v4';
 
     let index: Index | null = null;
     let painted = '';
@@ -149,8 +176,7 @@ const asSrc = (raw: string) => (/^https?:\/\//i.test(raw) ? raw : withBase(raw))
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;');
-    const abs = (href: string) =>
-      !href ? '' : href.startsWith('http') || href.startsWith('#') ? href : base + href;
+    const abs = (href: string) => (!href ? '' : base + href);
     /** `2026-09-16` → `2026 年 9 月 16 日`（只转格式，不加字） */
     const when = (iso: string) => {
       const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso ?? ''));
@@ -171,17 +197,21 @@ const asSrc = (raw: string) => (/^https?:\/\//i.test(raw) ? raw : withBase(raw))
       }
       return a;
     };
+    /** 这一块这天没东西 → 那一句占位（站长原话），别的一句都不许补 */
+    function emptyNotice(host: HTMLElement) {
+      const notice = el('p', 'cist__empty');
+      notice.textContent = host.dataset.cistEmpty || '';
+      host.append(notice);
+    }
 
-    /* ---------- 平铺：精华（照 /salon/ 那一条的格式） ---------- */
+    /* ---------- 精华（照 /salon/ 那一条的格式） ---------- */
     function paintEssences(host: HTMLElement, items: Essence[]) {
       for (const e of items) {
         const card = el('article', 'cist__item');
         const face = e.avatar
           ? `<img class="cist__avatar" src="${esc(e.avatar)}" alt="" loading="lazy" decoding="async">`
           : `<span class="cist__avatar cist__avatar--none"></span>`;
-        const text = e.text
-          ? `<p class="cist__bq">${esc(e.text).replace(/\n/g, '<br>')}</p>`
-          : '';
+        const text = e.text ? `<p class="cist__bq">${esc(e.text).replace(/\n/g, '<br>')}</p>` : '';
         const pic = e.image
           ? `<img class="cist__pic" src="${esc(e.image)}" alt="" loading="lazy" decoding="async">`
           : '';
@@ -202,12 +232,14 @@ const asSrc = (raw: string) => (/^https?:\/\//i.test(raw) ? raw : withBase(raw))
       }
     }
 
-    /* ---------- 平铺：冰山词条（有完备描述就整段铺开） ---------- */
+    /* ---------- 冰山词条（有完备描述就整段铺开） ---------- */
     function paintIceberg(host: HTMLElement, items: Ice[]) {
       for (const it of items) {
         const card = el('article', 'cist__item cist__item--ice');
         const meta = [it.layer, it.category].filter(Boolean).map(esc).join(' · ');
-        const body = it.desc ? `<p class="cist__bq cist__bq--full">${esc(it.desc).replace(/\n/g, '<br>')}</p>` : '';
+        const body = it.desc
+          ? `<p class="cist__bq cist__bq--full">${esc(it.desc).replace(/\n/g, '<br>')}</p>`
+          : '';
         card.innerHTML =
           `<div class="cist__who"><b class="cist__name">${it.emoji ? `<span class="cist__emoji">${esc(it.emoji)}</span>` : ''}${esc(it.name)}</b>` +
           `<time class="cist__time">${esc(when(it.date))}</time></div>` +
@@ -224,50 +256,55 @@ const asSrc = (raw: string) => (/^https?:\/\//i.test(raw) ? raw : withBase(raw))
       }
     }
 
-    /* ---------- 跳转按钮：时间轴（按轴各一个） / 冰室日记 ---------- */
-    function paintJumps(host: HTMLElement, day: Day) {
-      host.textContent = '';
-      /* 按轴分组：同一条轴上那天的点只出一个按钮，按钮上写着轴的名字（标明出处） */
-      const axes = new Map<string, { id: string; title: string }>();
-      for (const p of day.points) {
-        const key = p.timelineId || p.timeline;
-        if (!key || axes.has(key)) continue;
-        axes.set(key, { id: key, title: p.timeline || '时间轴事件与时刻' });
+    /* ---------- 时刻：原来那颗塔吊（时刻黄 / 事件粉），点了去那个刻度自己的链接 ---------- */
+    function paintPoints(host: HTMLElement, items: Point[]) {
+      for (const p of items) {
+        /* 主轴里有的不带前缀；只有分轴里有的，名字前面写上是哪条轴 */
+        const name = p.showAxis && p.timeline ? `${p.timeline}·${p.label}` : p.label;
+        const row = p.href ? anchor(p.href, 'cist__tick') : el('div', 'cist__tick');
+        row.dataset.kind = p.kind === 'event' ? 'event' : 'moment';
+        if (p.href) row.setAttribute('aria-label', name);
+        row.innerHTML =
+          `<span class="cist__crane" aria-hidden="true">` +
+          `<svg viewBox="0 0 24 24"><path d="${CRANE}"></path></svg></span>` +
+          `<span class="cist__tickText">` +
+          `<b class="cist__tickName">${esc(name)}</b>` +
+          `<time class="cist__tickWhen">${esc(when(p.date))}</time>` +
+          `</span>`;
+        host.append(row);
       }
-      for (const axis of axes.values()) {
-        const href = index?.timelineHref?.[axis.id] || '';
-        if (!href) continue;
-        const a = anchor(href, 'cist__jump');
-        a.innerHTML = `<b>${esc(axis.title)}</b>`;
-        host.append(a);
-      }
-      for (const n of day.notes) {
+    }
+
+    /* ---------- 冰室日记：跳转卡片（不搬全文） ---------- */
+    function paintNotes(host: HTMLElement, items: Note[]) {
+      for (const n of items) {
         const a = anchor(n.href, 'cist__jump');
         a.innerHTML = `<b>铃忆的冰室日记</b><em>${esc(when(n.date))}</em>`;
         host.append(a);
       }
     }
 
-    /* ---------- 把这一天的核心区全画一遍 ---------- */
+    /* ---------- 把这一天的四个板块全画一遍 ---------- */
     function paint(key: string) {
       const day: Day = index?.days?.[key] ?? { key, essences: [], points: [], iceberg: [], notes: [] };
       const now = new Date();
       const dayEl = root!.querySelector<HTMLElement>('[data-cist-day]');
       if (dayEl) dayEl.textContent = `${now.getMonth() + 1} 月 ${now.getDate()} 日 · ${WEEK[now.getDay()]}`;
 
-      const jumps = root!.querySelector<HTMLElement>('[data-cist-jumps]');
-      if (jumps) paintJumps(jumps, day);
+      const paints = [
+        ['essences', day.essences, paintEssences],
+        ['iceberg', day.iceberg, paintIceberg],
+        ['points', day.points, paintPoints],
+        ['notes', day.notes, paintNotes],
+      ] as const;
+      for (const [name, list, paintOne] of paints) {
+        const host = root!.querySelector<HTMLElement>(`[data-cist-list="${name}"]`);
+        if (!host) continue;
+        host.textContent = '';
+        if (list.length) (paintOne as (h: HTMLElement, l: unknown[]) => void)(host, list as unknown[]);
+        else emptyNotice(host);
+      }
 
-      const e = root!.querySelector<HTMLElement>('[data-cist-flat="essences"]');
-      const i = root!.querySelector<HTMLElement>('[data-cist-flat="iceberg"]');
-      if (e) {
-        e.textContent = '';
-        paintEssences(e, day.essences);
-      }
-      if (i) {
-        i.textContent = '';
-        paintIceberg(i, day.iceberg);
-      }
       painted = key;
       root!.dataset.cistCurrent = key;
       root!.dataset.cistReady = '1';

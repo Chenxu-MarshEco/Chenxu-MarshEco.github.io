@@ -23,6 +23,7 @@ import { toISODate } from './date';
 import { iceberg } from './iceberg';
 import { memberAvatar, memberName, salonEssences } from './salon';
 import { pointKind, timelines, type TimelinePoint } from './timelines';
+import { dedupePoints, type CisternPoint, type CisternPointRow } from './cistern-dedupe';
 import { flattenBoards, type BoardNode } from './boards';
 import site from '../site.config';
 import { withBase } from './url';
@@ -46,20 +47,13 @@ export interface CisternEssence {
   href: string;
 }
 
-/** 时间轴上的一个点（事件 / 时刻） */
-export interface CisternPoint {
-  id: string;
-  /** 属于哪条轴（「花娅年代记」这种）—— 页面上要标明出处 */
-  timeline: string;
-  /** 那条轴的 id（跳转按钮按它去查"这一页在哪"） */
-  timelineId: string;
-  date: string;
-  label: string;
-  /** moment 时刻 / event 事件（难考据那种没有具体日子，进不来） */
-  kind: string;
-  /** 填了就点得动 */
-  href: string;
-}
+/**
+ * 时间轴上的一个点（事件 / 时刻）。
+ *
+ * 形状和查重后的那一份一样（见 `cistern-dedupe.ts`）：除了轴的名字，
+ * 还多一个 `showAxis` —— 名字前面要不要带「轴名·」。
+ */
+export type { CisternPoint };
 
 /** 冰山词条 */
 export interface CisternIce {
@@ -100,10 +94,10 @@ export interface CisternIndex {
   days: Record<string, CisternDay>;
   /** 一共凑出了多少个日子（验收 / 调试用） */
   dayCount: number;
-  /** 四类各有多少条（验收 / 调试用） */
+  /** 四类各有多少条（查重之后的条数；验收 / 调试用） */
   counts: { essences: number; points: number; iceberg: number; notes: number };
-  /** 轴 id → 放那条轴的那一页（页面上的跳转按钮用它） */
-  timelineHref: Record<string, string>;
+  /** 主轴（全站总轴）的 id；查重时"主轴里有的不带前缀"就靠它（验收 / 调试用） */
+  mainAxis: string;
 }
 
 /** `2026-11-17` → `11-17`；认不出来就空串 */
@@ -144,11 +138,47 @@ function pointDay(p: TimelinePoint): string {
 
 /**
  * 时间轴读**全部**轴（用户 2026-11-17 改的口径）：
- * 「因为一些服务器的分轴里还有一些更小的事件 所以……所有时间轴都读取 但是标明轴出处」。
+ * 「因为一些服务器的分轴里还有一些更小的事件 所以……所有时间轴都读取 但是标明轴出处」
+ * 「时刻应该读取本网站所有已存在的时间轴并去重后显示」。
  *
- * 所以每个点都带上 `timeline`（轴的名字）和 `timelineId`，页面上的跳转按钮
- * 按轴分别给一个，按钮上写着是哪条轴 —— 读者知道这条是从哪条轴上捞上来的。
+ * 所以每个点都带上 `timeline`（轴的名字）和 `timelineId`；同一天里「名字 + 时间」
+ * 完全一样的按 `dedupePoints()` 那四条规则合并（主轴里有的不带前缀，分轴独有的带）。
  */
+
+/**
+ * 主轴（全站总轴）是哪条。
+ *
+ * 站长 2026-11-17：「这个花娅年代记是全站的总轴」。数据里没有哪一项专门写
+ * 「我是总轴」，所以按版块树推：**挂在最浅那一页上的那条轴**就是总轴
+ * （`/huaya` 比 `/huaya/years/fenhu` 浅）。同样是浅的就比谁的点多，
+ * 再一样就比数据里的先后 —— 这样"总轴"不会因为随手加一条分轴就跑掉。
+ */
+function mainAxisOf(boards: BoardNode[]): string {
+  /** 轴 id → 它挂过的最浅那一页的 depth */
+  const shallowest = new Map<string, number>();
+  for (const f of flattenBoards(boards)) {
+    if (f.external) continue;
+    const id = String(f.node.timeline ?? '').trim();
+    if (!id) continue;
+    const prev = shallowest.get(id);
+    shallowest.set(id, prev === undefined ? f.depth : Math.min(prev, f.depth));
+  }
+
+  let best = '';
+  let bestDepth = Infinity;
+  let bestPoints = -1;
+  for (const tl of timelines) {
+    const depth = shallowest.get(tl.id);
+    if (depth === undefined) continue;
+    const count = tl.points.filter((p) => pointDay(p)).length;
+    if (depth < bestDepth || (depth === bestDepth && count > bestPoints)) {
+      best = tl.id;
+      bestDepth = depth;
+      bestPoints = count;
+    }
+  }
+  return best;
+}
 
 /**
  * 建整张倒排表。构建期调一次就够（Astro 每个页面各调一次也没关系：
@@ -156,6 +186,8 @@ function pointDay(p: TimelinePoint): string {
  */
 export async function cisternIndex(): Promise<CisternIndex> {
   const days: Record<string, CisternDay> = {};
+  /** 查重之前的时间轴点（一条轴上每个点各算一份，等全部收完再按规则合并） */
+  const pointRows: Record<string, CisternPointRow[]> = {};
   const counts = { essences: 0, points: 0, iceberg: 0, notes: 0 };
 
   const bucket = (date: string): CisternDay | null => {
@@ -183,7 +215,7 @@ export async function cisternIndex(): Promise<CisternIndex> {
     counts.essences += 1;
   }
 
-  /* ---------- 2. 时间轴的事件与时刻（所有轴，点上都标明出处） ---------- */
+  /* ---------- 2. 时间轴的事件与时刻（所有轴，同一天里按规则查重） ---------- */
   for (const tl of timelines) {
     for (const p of tl.points) {
       const day = pointDay(p);
@@ -193,16 +225,17 @@ export async function cisternIndex(): Promise<CisternIndex> {
       if (kind === 'fuzzy') continue;
       const b = bucket(day);
       if (!b) continue;
-      b.points.push({
+      const row: CisternPointRow = {
         id: p.id,
         timeline: tl.title || '',
         timelineId: tl.id,
         date: day,
         label: p.label || '',
         kind,
-        href: String(p.href ?? '').trim(),
-      });
-      counts.points += 1;
+        /* 轴上这个刻度自己填的链接；没填就是空串（点了不动） */
+        href: String(p.href ?? '').trim() ? withBase(String(p.href).trim()) : '',
+      };
+      (pointRows[b.key] ??= []).push(row);
     }
   }
 
@@ -242,6 +275,18 @@ export async function cisternIndex(): Promise<CisternIndex> {
   }
 
   /*
+    时间轴的点收齐了，按「名字 + 时间」查重：
+    主轴里有的只留一条（名字不带前缀），只有分轴里有的每条轴各留一条（带轴前缀）。
+    规则和用例在 `cistern-dedupe.ts`，验收脚本直接 import 那个文件跑四种情形。
+  */
+  const mainAxis = mainAxisOf(site.homeBoards as BoardNode[]);
+  for (const [key, rows] of Object.entries(pointRows)) {
+    const merged = dedupePoints(rows, mainAxis);
+    days[key].points = merged;
+    counts.points += merged.length;
+  }
+
+  /*
     每一类内部都按**日期倒序**（最近的一年先出现）：
     读者点开这一刻最想知道的是"去年的今天"，而不是 2023 年那一条。
     同一类的年月日都相同的，再按原来的顺序（稳定排序，构建结果可复现）。
@@ -253,20 +298,7 @@ export async function cisternIndex(): Promise<CisternIndex> {
     d.notes.sort((a, b) => b.date.localeCompare(a.date));
   }
 
-  /*
-    每条轴"住在哪一页"：页面上那个跳转按钮要跳到放这条轴的地方。
-    一个轴可能被好几页共用，取**第一页**（按树里的先序）就够了 ——
-    同一份数据，跳到哪一页看到的都一样。
-  */
-  const timelineHref: Record<string, string> = {};
-  for (const f of flattenBoards(site.homeBoards as BoardNode[])) {
-    if (f.external) continue;
-    const id = String(f.node.timeline ?? '').trim();
-    if (!id || timelineHref[id]) continue;
-    timelineHref[id] = withBase(f.url);
-  }
-
-  return { days, dayCount: Object.keys(days).length, counts, timelineHref };
+  return { days, dayCount: Object.keys(days).length, counts, mainAxis };
 }
 
 /** `MM-DD` 那天的内容；没有就返回四个空数组（页面上显示"这天还没有记录"） */
