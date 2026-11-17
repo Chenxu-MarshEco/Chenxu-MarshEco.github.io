@@ -10,7 +10,7 @@
   ],
   "title": "冰室冰山",
   "intro": "",
-  "updated": "2026-10-21",
+  "updated": "2026-11-13",
   "categories": [
     {
       "id": "c01",
@@ -202,6 +202,29 @@
           "tags": [],
           "desc": "",
           "href": ""
+        },
+        {
+          "id": "i14",
+          "name": "我想底",
+          "categoryId": "c02",
+          "categoryIds": [
+            "c02",
+            "c05"
+          ],
+          "tags": [],
+          "desc": "",
+          "href": ""
+        },
+        {
+          "id": "i15",
+          "name": "搞钱",
+          "categoryId": "c02",
+          "categoryIds": [
+            "c02"
+          ],
+          "tags": [],
+          "desc": "",
+          "href": ""
         }
       ]
     },
@@ -213,7 +236,7 @@
       "head": "",
       "items": [
         {
-          "id": "i14",
+          "id": "i16",
           "name": "618大灭绝事件",
           "categoryId": "c01",
           "categoryIds": [
@@ -224,7 +247,7 @@
           "href": ""
         },
         {
-          "id": "i15",
+          "id": "i17",
           "name": "吧务猎人",
           "categoryId": "c02",
           "categoryIds": [
@@ -235,7 +258,7 @@
           "href": ""
         },
         {
-          "id": "i16",
+          "id": "i18",
           "name": "在龙都中心烤焦肉",
           "categoryId": "c06",
           "categoryIds": [
@@ -246,7 +269,7 @@
           "href": "https://info.monsterhunter.com/wilds/event-quest/zh-hans/schedule"
         },
         {
-          "id": "i17",
+          "id": "i19",
           "name": "人壳",
           "categoryId": "c02",
           "categoryIds": [
@@ -257,7 +280,7 @@
           "href": ""
         },
         {
-          "id": "i18",
+          "id": "i20",
           "name": "酷儿",
           "categoryId": "c05",
           "categoryIds": [
@@ -268,7 +291,7 @@
           "href": ""
         },
         {
-          "id": "i19",
+          "id": "i21",
           "name": "宝宝",
           "categoryId": "c01",
           "categoryIds": [
@@ -279,7 +302,7 @@
           "href": ""
         },
         {
-          "id": "i20",
+          "id": "i22",
           "name": "热斗大厅",
           "categoryId": "c01",
           "categoryIds": [
@@ -290,7 +313,7 @@
           "href": ""
         },
         {
-          "id": "i21",
+          "id": "i23",
           "name": "狂性派",
           "categoryId": "c02",
           "categoryIds": [
@@ -301,7 +324,7 @@
           "href": ""
         },
         {
-          "id": "i22",
+          "id": "i24",
           "name": "此美吧",
           "categoryId": "c02",
           "categoryIds": [
@@ -312,7 +335,7 @@
           "href": ""
         },
         {
-          "id": "i23",
+          "id": "i25",
           "name": "乐岷TV",
           "categoryId": "c04",
           "categoryIds": [
@@ -323,7 +346,7 @@
           "href": ""
         },
         {
-          "id": "i24",
+          "id": "i26",
           "name": "每日一蚊",
           "categoryId": "c03",
           "categoryIds": [
@@ -334,7 +357,7 @@
           "href": ""
         },
         {
-          "id": "i25",
+          "id": "i27",
           "name": "月末总结大会",
           "categoryId": "c01",
           "categoryIds": [
@@ -345,7 +368,7 @@
           "href": ""
         },
         {
-          "id": "i26",
+          "id": "i28",
           "name": "花娅热斗豪记簿",
           "categoryId": "c02",
           "categoryIds": [
@@ -356,7 +379,7 @@
           "href": ""
         },
         {
-          "id": "i27",
+          "id": "i29",
           "name": "直接噗噗噗噗啦噜啦大喷射",
           "categoryId": "c05",
           "categoryIds": [
@@ -367,7 +390,7 @@
           "href": ""
         },
         {
-          "id": "i28",
+          "id": "i30",
           "name": "北大文化",
           "categoryId": "c05",
           "categoryIds": [
@@ -378,7 +401,7 @@
           "href": ""
         },
         {
-          "id": "i29",
+          "id": "i31",
           "name": "新绮花娅OP",
           "categoryId": "c02",
           "categoryIds": [
@@ -389,10 +412,67 @@
           "href": ""
         },
         {
-          "id": "i30",
+          "id": "i32",
           "name": "此美厕",
           "categoryId": "c02",
           "categoryIds": [
+            "c02"
+          ],
+          "tags": [],
+          "desc": "",
+          "href": ""
+        },
+        {
+          "id": "i33",
+          "name": "人鱼娜娜",
+          "categoryId": "c05",
+          "categoryIds": [
+            "c05"
+          ],
+          "tags": [],
+          "desc": "",
+          "href": ""
+        },
+        {
+          "id": "i34",
+          "name": "我是一个婴儿",
+          "categoryId": "c02",
+          "categoryIds": [
+            "c02",
+            "c04"
+          ],
+          "tags": [],
+          "desc": "",
+          "href": ""
+        },
+        {
+          "id": "i35",
+          "name": "射命丸文#28068",
+          "categoryId": "c02",
+          "categoryIds": [
+            "c02"
+          ],
+          "tags": [],
+          "desc": "",
+          "href": ""
+        },
+        {
+          "id": "i36",
+          "name": "🐁……",
+          "categoryId": "c02",
+          "categoryIds": [
+            "c02"
+          ],
+          "tags": [],
+          "desc": "",
+          "href": ""
+        },
+        {
+          "id": "i37",
+          "name": "别玩了，别玩了",
+          "categoryId": "c04",
+          "categoryIds": [
+            "c04",
             "c02"
           ],
           "tags": [],
@@ -409,7 +489,7 @@
       "head": "",
       "items": [
         {
-          "id": "i31",
+          "id": "i38",
           "name": "传送带传动容易产生桌子下的橡皮",
           "categoryId": "c01",
           "categoryIds": [
@@ -420,7 +500,7 @@
           "href": ""
         },
         {
-          "id": "i32",
+          "id": "i39",
           "name": "快跑，狐狸精来了！",
           "categoryId": "c04",
           "categoryIds": [
@@ -431,7 +511,7 @@
           "href": ""
         },
         {
-          "id": "i33",
+          "id": "i40",
           "name": "213香蕉锡事件",
           "categoryId": "c01",
           "categoryIds": [
@@ -442,7 +522,7 @@
           "href": ""
         },
         {
-          "id": "i34",
+          "id": "i41",
           "name": "713大清盘事件",
           "categoryId": "c01",
           "categoryIds": [
@@ -453,7 +533,7 @@
           "href": ""
         },
         {
-          "id": "i35",
+          "id": "i42",
           "name": "212蠹虫大灾变事件",
           "categoryId": "c01",
           "categoryIds": [
@@ -464,7 +544,7 @@
           "href": ""
         },
         {
-          "id": "i36",
+          "id": "i43",
           "name": "望子成龙",
           "categoryId": "c03",
           "categoryIds": [
@@ -475,7 +555,7 @@
           "href": ""
         },
         {
-          "id": "i37",
+          "id": "i44",
           "name": "火龙古代树弓箭40分台",
           "categoryId": "c03",
           "categoryIds": [
@@ -486,7 +566,7 @@
           "href": ""
         },
         {
-          "id": "i38",
+          "id": "i45",
           "name": "汽水帽",
           "categoryId": "c01",
           "categoryIds": [
@@ -497,7 +577,7 @@
           "href": ""
         },
         {
-          "id": "i39",
+          "id": "i46",
           "name": "唐羊机",
           "categoryId": "c01",
           "categoryIds": [
@@ -508,7 +588,7 @@
           "href": ""
         },
         {
-          "id": "i40",
+          "id": "i47",
           "name": "月光魁尸",
           "categoryId": "c01",
           "categoryIds": [
@@ -519,7 +599,7 @@
           "href": ""
         },
         {
-          "id": "i41",
+          "id": "i48",
           "name": "进食！吉拉吉拉碳水",
           "categoryId": "c01",
           "categoryIds": [
@@ -530,7 +610,7 @@
           "href": ""
         },
         {
-          "id": "i42",
+          "id": "i49",
           "name": "啪声么的",
           "categoryId": "c04",
           "categoryIds": [
@@ -541,7 +621,7 @@
           "href": ""
         },
         {
-          "id": "i43",
+          "id": "i50",
           "name": "黑历史之夜",
           "categoryId": "c02",
           "categoryIds": [
@@ -552,7 +632,7 @@
           "href": ""
         },
         {
-          "id": "i44",
+          "id": "i51",
           "name": "下意识，下血本，下菜碟",
           "categoryId": "c02",
           "categoryIds": [
@@ -563,7 +643,7 @@
           "href": ""
         },
         {
-          "id": "i45",
+          "id": "i52",
           "name": "吃个法宝",
           "categoryId": "c01",
           "categoryIds": [
@@ -574,7 +654,7 @@
           "href": ""
         },
         {
-          "id": "i46",
+          "id": "i53",
           "name": "杀一个放一个",
           "categoryId": "c02",
           "categoryIds": [
@@ -585,11 +665,69 @@
           "href": "https://chenxu-marsheco.github.io/img/opt/salon/e0306-1-520.avif"
         },
         {
-          "id": "i47",
+          "id": "i54",
           "name": "尸体巨像”宝宝”",
           "categoryId": "c01",
           "categoryIds": [
             "c01"
+          ],
+          "tags": [],
+          "desc": "",
+          "href": ""
+        },
+        {
+          "id": "i55",
+          "name": "欢乐海岸冰雪世界",
+          "categoryId": "c05",
+          "categoryIds": [
+            "c05"
+          ],
+          "tags": [],
+          "desc": "",
+          "href": ""
+        },
+        {
+          "id": "i56",
+          "name": "欢乐海岸兔子断头悬案",
+          "categoryId": "c05",
+          "categoryIds": [
+            "c05",
+            "c02"
+          ],
+          "tags": [],
+          "desc": "",
+          "href": ""
+        },
+        {
+          "id": "i57",
+          "name": "鱼头人车",
+          "categoryId": "c05",
+          "categoryIds": [
+            "c05"
+          ],
+          "tags": [],
+          "desc": "",
+          "href": ""
+        },
+        {
+          "id": "i58",
+          "name": "冰室观影体",
+          "categoryId": "c02",
+          "categoryIds": [
+            "c02",
+            "c05"
+          ],
+          "tags": [],
+          "desc": "",
+          "href": ""
+        },
+        {
+          "id": "i59",
+          "name": "花菜 vs 西蓝花",
+          "categoryId": "c02",
+          "categoryIds": [
+            "c02",
+            "c05"
           ],
           "tags": [],
           "desc": "",
@@ -605,7 +743,7 @@
       "head": "",
       "items": [
         {
-          "id": "i48",
+          "id": "i60",
           "name": "受孕吧。是。",
           "categoryId": "c01",
           "categoryIds": [
@@ -616,7 +754,7 @@
           "href": ""
         },
         {
-          "id": "i49",
+          "id": "i61",
           "name": "新花娅地曾经不存在樱花建筑",
           "categoryId": "c01",
           "categoryIds": [
@@ -627,7 +765,7 @@
           "href": ""
         },
         {
-          "id": "i50",
+          "id": "i62",
           "name": "夏至死在了眠鱼路",
           "categoryId": "c01",
           "categoryIds": [
@@ -638,7 +776,7 @@
           "href": ""
         },
         {
-          "id": "i51",
+          "id": "i63",
           "name": "Raw太小了还不能产奶",
           "categoryId": "c01",
           "categoryIds": [
@@ -649,7 +787,7 @@
           "href": ""
         },
         {
-          "id": "i52",
+          "id": "i64",
           "name": "紫色品质的追踪弓（伤口）",
           "categoryId": "c01",
           "categoryIds": [
@@ -660,7 +798,7 @@
           "href": ""
         },
         {
-          "id": "i53",
+          "id": "i65",
           "name": "白蜥蜴入侵煌花娅",
           "categoryId": "c01",
           "categoryIds": [
@@ -671,7 +809,7 @@
           "href": ""
         },
         {
-          "id": "i54",
+          "id": "i66",
           "name": "海南Project",
           "categoryId": "c02",
           "categoryIds": [
@@ -682,7 +820,7 @@
           "href": ""
         },
         {
-          "id": "i55",
+          "id": "i67",
           "name": "WQ的阵列建筑",
           "categoryId": "c01",
           "categoryIds": [
@@ -693,7 +831,7 @@
           "href": ""
         },
         {
-          "id": "i56",
+          "id": "i68",
           "name": "吉吉的混乱七彩森林",
           "categoryId": "c01",
           "categoryIds": [
@@ -704,7 +842,7 @@
           "href": ""
         },
         {
-          "id": "i57",
+          "id": "i69",
           "name": "ATM之星合成事故",
           "categoryId": "c01",
           "categoryIds": [
@@ -715,7 +853,7 @@
           "href": ""
         },
         {
-          "id": "i58",
+          "id": "i70",
           "name": "冰室群头像的来历",
           "categoryId": "c01",
           "categoryIds": [
@@ -726,7 +864,7 @@
           "href": ""
         },
         {
-          "id": "i59",
+          "id": "i71",
           "name": "蛋鸡树构图",
           "categoryId": "c01",
           "categoryIds": [
@@ -737,7 +875,7 @@
           "href": ""
         },
         {
-          "id": "i60",
+          "id": "i72",
           "name": "煦花道",
           "categoryId": "c05",
           "categoryIds": [
@@ -748,7 +886,7 @@
           "href": "https://chenxu-marsheco.github.io/img/opt/salon/e0524-1-520.avif"
         },
         {
-          "id": "i61",
+          "id": "i73",
           "name": "Snan歌曲",
           "categoryId": "c01",
           "categoryIds": [
@@ -759,7 +897,7 @@
           "href": ""
         },
         {
-          "id": "i62",
+          "id": "i74",
           "name": "屠宰工艺引发动物灾变",
           "categoryId": "c01",
           "categoryIds": [
@@ -770,11 +908,46 @@
           "href": ""
         },
         {
-          "id": "i63",
+          "id": "i75",
           "name": "天空开始变得湿润…",
           "categoryId": "c01",
           "categoryIds": [
             "c01"
+          ],
+          "tags": [],
+          "desc": "",
+          "href": ""
+        },
+        {
+          "id": "i76",
+          "name": "员工通道",
+          "categoryId": "c05",
+          "categoryIds": [
+            "c05"
+          ],
+          "tags": [],
+          "desc": "",
+          "href": ""
+        },
+        {
+          "id": "i77",
+          "name": "隰之茶",
+          "categoryId": "c01",
+          "categoryIds": [
+            "c01",
+            "c02"
+          ],
+          "tags": [],
+          "desc": "",
+          "href": ""
+        },
+        {
+          "id": "i78",
+          "name": "冰室赠礼大会",
+          "categoryId": "c05",
+          "categoryIds": [
+            "c05",
+            "c02"
           ],
           "tags": [],
           "desc": "",
@@ -790,7 +963,7 @@
       "head": "",
       "items": [
         {
-          "id": "i64",
+          "id": "i79",
           "name": "花娅一词的来源",
           "categoryId": "c01",
           "categoryIds": [
@@ -801,7 +974,7 @@
           "href": ""
         },
         {
-          "id": "i65",
+          "id": "i80",
           "name": "职高木森林",
           "categoryId": "c01",
           "categoryIds": [
@@ -812,7 +985,7 @@
           "href": "https://www.bilibili.com/video/BV1bKMzzcECg/?p=29&share_source=copy_web&vd_source=328e49a1c21a02cda30de11f6ea118ad&t=6298"
         },
         {
-          "id": "i66",
+          "id": "i81",
           "name": "风蚀蘑菇险些让登月失败",
           "categoryId": "c01",
           "categoryIds": [
@@ -823,7 +996,7 @@
           "href": ""
         },
         {
-          "id": "i67",
+          "id": "i82",
           "name": "就知道怎么回事乱轮",
           "categoryId": "c01",
           "categoryIds": [
@@ -834,7 +1007,7 @@
           "href": ""
         },
         {
-          "id": "i68",
+          "id": "i83",
           "name": "哥哥我只有他一个秘密哦",
           "categoryId": "c01",
           "categoryIds": [
@@ -845,7 +1018,7 @@
           "href": ""
         },
         {
-          "id": "i69",
+          "id": "i84",
           "name": "出海找嗅探兽回家被袭击灭村",
           "categoryId": "c01",
           "categoryIds": [
@@ -856,7 +1029,7 @@
           "href": ""
         },
         {
-          "id": "i70",
+          "id": "i85",
           "name": "隰辰煦在纷湖做了两套合金套",
           "categoryId": "c01",
           "categoryIds": [
@@ -867,7 +1040,7 @@
           "href": ""
         },
         {
-          "id": "i71",
+          "id": "i86",
           "name": "吉吉做成就虐猫",
           "categoryId": "c01",
           "categoryIds": [
@@ -878,7 +1051,7 @@
           "href": ""
         },
         {
-          "id": "i72",
+          "id": "i87",
           "name": "花娅地恐龙横死事件",
           "categoryId": "c01",
           "categoryIds": [
@@ -889,7 +1062,7 @@
           "href": ""
         },
         {
-          "id": "i73",
+          "id": "i88",
           "name": "花娅地经历过两次核灾难",
           "categoryId": "c01",
           "categoryIds": [
@@ -900,7 +1073,7 @@
           "href": ""
         },
         {
-          "id": "i74",
+          "id": "i89",
           "name": "讨厌的水龟",
           "categoryId": "c01",
           "categoryIds": [
@@ -911,7 +1084,7 @@
           "href": ""
         },
         {
-          "id": "i75",
+          "id": "i90",
           "name": "花娅地的边境秋千",
           "categoryId": "c01",
           "categoryIds": [
@@ -922,7 +1095,7 @@
           "href": ""
         },
         {
-          "id": "i76",
+          "id": "i91",
           "name": "热斗一词来自原神",
           "categoryId": "c02",
           "categoryIds": [
@@ -933,7 +1106,7 @@
           "href": "https://ys.mihoyo.com/main/m/news/detail/158640"
         },
         {
-          "id": "i77",
+          "id": "i92",
           "name": "虹星曾是主群管理",
           "categoryId": "c06",
           "categoryIds": [
@@ -944,7 +1117,7 @@
           "href": ""
         },
         {
-          "id": "i78",
+          "id": "i93",
           "name": "任务书领的新手背包里有很多奇怪的东西",
           "categoryId": "c01",
           "categoryIds": [
@@ -955,7 +1128,7 @@
           "href": ""
         },
         {
-          "id": "i79",
+          "id": "i94",
           "name": "在绮花娅域无法前往边境之地",
           "categoryId": "c01",
           "categoryIds": [
@@ -966,7 +1139,7 @@
           "href": ""
         },
         {
-          "id": "i80",
+          "id": "i95",
           "name": "九大猫星",
           "categoryId": "c01",
           "categoryIds": [
@@ -977,7 +1150,7 @@
           "href": ""
         },
         {
-          "id": "i81",
+          "id": "i96",
           "name": "新周原车站的售货机内有死体",
           "categoryId": "c01",
           "categoryIds": [
@@ -988,7 +1161,7 @@
           "href": ""
         },
         {
-          "id": "i82",
+          "id": "i97",
           "name": "花揽堂厕所隔间里的牛尸",
           "categoryId": "c01",
           "categoryIds": [
@@ -999,7 +1172,7 @@
           "href": ""
         },
         {
-          "id": "i83",
+          "id": "i98",
           "name": "传送带上的七鳃鳗",
           "categoryId": "c01",
           "categoryIds": [
@@ -1010,7 +1183,7 @@
           "href": ""
         },
         {
-          "id": "i84",
+          "id": "i99",
           "name": "芒黍稻田吊死鬼",
           "categoryId": "c01",
           "categoryIds": [
@@ -1021,11 +1194,22 @@
           "href": "https://www.bilibili.com/video/BV1U6doBmEHS"
         },
         {
-          "id": "i85",
+          "id": "i100",
           "name": "永远消失的初代金卜院",
           "categoryId": "c01",
           "categoryIds": [
             "c01"
+          ],
+          "tags": [],
+          "desc": "",
+          "href": ""
+        },
+        {
+          "id": "i101",
+          "name": "蒂安希？？？……",
+          "categoryId": "c02",
+          "categoryIds": [
+            "c02"
           ],
           "tags": [],
           "desc": "",
@@ -1041,7 +1225,7 @@
       "head": "",
       "items": [
         {
-          "id": "i86",
+          "id": "i102",
           "name": "粉碎轮尿尿（视频记录）",
           "categoryId": "c01",
           "categoryIds": [
@@ -1052,7 +1236,7 @@
           "href": "https://www.bilibili.com/video/BV19QtLehE3E/?p=176&share_source=copy_web&vd_source=328e49a1c21a02cda30de11f6ea118ad&t=5305"
         },
         {
-          "id": "i87",
+          "id": "i103",
           "name": "怎么boom的一声呢个就全死了（视频记录）",
           "categoryId": "c01",
           "categoryIds": [
@@ -1063,7 +1247,7 @@
           "href": ""
         },
         {
-          "id": "i88",
+          "id": "i104",
           "name": "虹星对盖欧卡表示没有任何兴趣",
           "categoryId": "c06",
           "categoryIds": [
@@ -1074,7 +1258,7 @@
           "href": ""
         },
         {
-          "id": "i89",
+          "id": "i105",
           "name": "虹Raw大战",
           "categoryId": "c06",
           "categoryIds": [
@@ -1085,7 +1269,7 @@
           "href": ""
         },
         {
-          "id": "i90",
+          "id": "i106",
           "name": "Raw的纷鸟群群友图鉴",
           "categoryId": "c06",
           "categoryIds": [
