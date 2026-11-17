@@ -258,7 +258,20 @@ const backText = text(copy.home?.back);
         · 横臂下的小车吊着两根吊带，吊带下面挂的货箱就是置顶公告本身。
     */}
     <div class="homepin__rig">
-      <svg class="homepin__jib" viewBox="0 0 200 27" aria-hidden="true" focusable="false">
+      {/*
+        viewBox 为什么从 `0 0 200 27` 变成 `0 -44 200 71`（2026-11-13）：
+        用户要求「加一条从屏幕外连接到吊臂的斜拉线，就和背景里的塔吊一样」。
+        原来那 27 个单位的画布**横臂就贴着上边缘**，上面一点地方都没有，
+        斜拉线根本画不出来。所以把画布往上撑 44 个单位 ——
+        横臂、小车、吊钩的坐标一个都没动（还在 y=6~22），
+        只是上方多出一片**透明空白**给拉线走。
+
+        ⚠ 动这个数值要同步改三处：
+          · 样式里 .homepin__slew 的 transform-origin（小车在 66/71 ≈ 92.96%）
+          · 下面脚本里的 TRUSS_MID（58/71）和 MOBILE_BAND（44/71）
+          · tools/checks/home-pinned-crane-check.mjs 里 trussCenter 的 0.52 系数
+      */}
+      <svg class="homepin__jib" viewBox="0 -44 200 71" aria-hidden="true" focusable="false">
         {/*
           回转的动画挂在这个 <g> 上（不是外面的 <svg>），这点很要紧：
           CSS 变换加在 <svg> 元素上时，**连它的视口裁切框一起被缩放** ——
@@ -270,6 +283,14 @@ const backText = text(copy.home?.back);
           留这一截余量是为了压缩到最紧时右端仍然铺出屏幕边缘。
         */}
         <g class="homepin__slew">
+          {/*
+            斜拉线（2026-11-13 加）：和背景那三台的 `ties` 一个意思 ——
+            从塔顶（在这台塔吊的视角里，塔身整个在屏幕右缘之外）拉下来，
+            连到横臂上。起点 (320, -44) 在画布的右上方之外，
+            所以被**屏幕右缘**切掉，读起来就是"从画面外拉进来的一根钢索"；
+            终点 (70, 6) 落在上主弦上。
+          */}
+          <path class="homepin__stay" d="M320 -44L70 6" />
           <path class="homepin__chord" d="M2 22H240M14 6H240" />
           <path
             class="homepin__web"
@@ -383,7 +404,10 @@ const backText = text(copy.home?.back);
   */
   .homepin__slew {
     transform-box: view-box;
-    transform-origin: 62% 81.48%;
+    /* 小车那一点：x=124/200=62%；y=22 在 viewBox(-44..27) 里的位置是
+       (22-(-44))/71 = 66/71 ≈ 92.96%（2026-11-13 加了 44 个单位的上方留白，
+       这个百分比必须跟着改，不然回转轴心会跑到横臂上方去） */
+    transform-origin: 62% 92.96%;
     animation: homepin-jib-slew 26s ease-in-out infinite;
     will-change: transform;
   }
@@ -478,6 +502,17 @@ const backText = text(copy.home?.back);
     fill: none;
     stroke: var(--ink, #08020c);
     stroke-width: 1.25;
+    stroke-linecap: round;
+  }
+  /*
+    斜拉线（2026-11-13 加）：比横臂杆件细一点 —— 真实塔吊的拉索本来就细，
+    而且太粗会跟桁架的斜腹杆抢眼。底色和桁架一样用 --ink，
+    这样它和横臂、背景那三台属于"同一个逆光的傍晚"。
+  */
+  .homepin__stay {
+    fill: none;
+    stroke: var(--ink, #08020c);
+    stroke-width: 1.05;
     stroke-linecap: round;
   }
   .homepin__trolley,
@@ -628,26 +663,46 @@ const backText = text(copy.home?.back);
       const r = title.getBoundingClientRect();
       if (!r.height) return; /* 标题还没布局（字体未就绪/被隐藏）就先不写，免得写进 0 */
       /*
-        横臂的高度**不能**用 jib.getBoundingClientRect()（它带着回转的 transform，
-        量出来会随那一两度旋转忽高忽低），也不能用 jib.offsetHeight ——
-        SVG 元素没有 offsetHeight，会是 undefined，一算就是 NaN，
-        写进 --homepin-top 之后整条声明失效、吊车会飘到页面顶部去（踩过一次）。
-        所以按"容器宽度 × viewBox 比例（27/200）"算，屏幕上量不到 transform 的干扰。
+        ⚠ 量的是**文档坐标**（rect + scrollY），不是视口坐标（2026-11-13 修的那个 bug）。
+
+        为什么：fixed 元素的 top 是**视口**坐标，而这段脚本的本意是"页面在顶部时，
+        横臂对齐标题" —— 也就是说它只该给出一个和滚动无关的定值。
+        可是它会被 resize / 字体就绪 / 断点切换重新触发，**只要那一次发生在用户
+        已经往下滚之后**，标题的 rect.top 就是负的（标题早就滚出屏幕了），
+        算出来的 top 变成负数、再被下限一夹就贴到屏幕最上沿 ——
+        用户原话：「往下翻进入首页页面板块，再往上翻回去以后，塔吊高度位置就会
+        异常地在屏幕最上方」。
+
+        标题的**文档坐标**不随滚动变，所以 rect + scrollY 在任何时刻算都是同一个数。
+        手机上滚动的地址栏收放会触发 resize，正好是这个坑的高发场景。
       */
+      const y0 = window.scrollY || document.documentElement.scrollTop || 0;
+      const titleTop = r.top + y0;
+      const titleBottom = r.bottom + y0;
       const armW = el.getBoundingClientRect().width || 320;
-      const jibH = (armW * 27) / 200;
+      /*
+        viewBox 是 200×71（y 从 -44 到 27，见 markup 里的注释）：
+          · 桁架中轴 = (6+22)/2 = 14 → 在整张图里是 (14+44)/71 = 58/71
+          · 横臂以上那 44 个单位是画斜拉线用的留白
+        所以"把桁架中轴放到标题视觉中线"要减掉 58/71 个图高，不是以前的 0.52。
+      */
+      const jibH = (armW * 71) / 200;
+      const TRUSS_MID = 58 / 71;
+      const BAND_ABOVE = 44 / 71;
       let top;
       if (narrow.matches) {
         /* 手机：从标题块的下沿往下起吊，横臂才不会横穿那句副标题 */
-        const bottom = Math.max(r.bottom, tagline ? tagline.getBoundingClientRect().bottom : r.bottom);
-        top = bottom + 14;
+        const tagBottom = tagline ? tagline.getBoundingClientRect().bottom + y0 : titleBottom;
+        const bottom = Math.max(titleBottom, tagBottom);
+        /* 减掉上方那段留白：不然横臂会被推到标题下方 jibH×44/71 处 */
+        top = bottom + 14 - jibH * BAND_ABOVE;
       } else {
-        /* 桌面：横臂的**桁架中轴** ≈ 标题的视觉中线。
-           桁架在 viewBox 0..27 里占 y=6~22，中轴在 14/27 ≈ 0.52 处。 */
-        top = r.top + r.height * 0.46 - jibH * 0.52;
+        /* 桌面：横臂的**桁架中轴** ≈ 标题的视觉中线 */
+        top = titleTop + r.height * 0.46 - jibH * TRUSS_MID;
       }
-      if (!Number.isFinite(top)) top = window.innerHeight * 0.22;
-      el.style.setProperty('--homepin-top', `${Math.max(8, Math.round(top))}px`);
+      /* 量歪了（负数 / NaN）就别写：保留上一次的正确值，绝不能把塔吊甩到屏幕最上面 */
+      if (!Number.isFinite(top) || top < 0) return;
+      el.style.setProperty('--homepin-top', `${Math.round(top)}px`);
     };
 
     /* 字体就绪后标题的高度/位置才算准，所以 fonts.ready 再量一次 */
@@ -655,6 +710,13 @@ const backText = text(copy.home?.back);
     if (document.fonts && document.fonts.ready) document.fonts.ready.then(place);
     window.addEventListener('resize', place, { passive: true });
     narrow.addEventListener('change', place);
+    /*
+      再跟着「封面尺寸量完」这件事量一次（2026-11-13 加）。
+      下面第二段脚本会量页头高度和封面顶边、写成 --home-header / --cover-top，
+      那会改变封面的高度、标题的纵向位置也就跟着变 —— 这段脚本在它**前面**执行，
+      只量一次的话会拿旧布局算出来的值。它量完会派发这个事件，我们跟着重算。
+    */
+    document.addEventListener('home-cover-measured', place);
 
     let away = false;
     const onScroll = () => {
@@ -767,6 +829,8 @@ const backText = text(copy.home?.back);
       const top = Math.round(cover.getBoundingClientRect().top + window.scrollY);
       doc.style.setProperty('--cover-top', `${top}px`);
     }
+    /* 封面尺寸变了 → 标题位置可能也变了，通知置顶塔吊重新定位（见上面那段脚本） */
+    document.dispatchEvent(new Event('home-cover-measured'));
   };
   measure();
 

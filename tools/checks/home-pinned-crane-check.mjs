@@ -69,6 +69,13 @@ check('有挂货的小车（homepin__trolley）', /homepin__trolley/.test(html))
    臂就离开屏幕右缘了（2026-11-12 实测过一次） */
 check('回转挂在横臂内部的 <g> 上（不是挂在 <svg> 上）',
   /<g class="homepin__slew"/.test(html));
+/*
+  斜拉线（2026-11-13 加）：用户要求「加一条从屏幕外连接到吊臂的斜拉线，
+  就和背景里的塔吊一样」。这里只验**产物里有这条线**，几何在 B 段量。
+*/
+check('有一条从画面外拉下来的斜拉线（homepin__stay）',
+  /class="homepin__stay"/.test(html),
+  (html.match(/class="homepin__stay"[^>]*d="([^"]*)"/) || [, '(没找到)'])[1]);
 check('有吊绳 + 两根吊带（homepin__cable / homepin__slings / homepin__hook）',
   /homepin__cable/.test(html) && /homepin__slings/.test(html) && /homepin__hook/.test(html));
 check('货箱就是公告本体（.homepin__box 是个 <a>，带公告 id）',
@@ -212,9 +219,9 @@ const FREEZE = `(() => {
 })()`;
 
 /*
- * 一次量全：横臂、货箱、标题、副标题、视口。
- * 「横臂的桁架中轴」不是 svg 的中心 —— 桁架在 viewBox 0..27 里占 y=6~22，
- * 中轴在 14/27 ≈ 0.52 处（下面那 5 个单位留给小车）。
+ * 一次量全：横臂、货箱、标题、副标题、视口、斜拉线。
+ * viewBox 是 200×71（y 从 -44 到 27，上面 44 个单位是给斜拉线的留白），
+ * 桁架占 y=6~22，中轴 14 → (14+44)/71 = 58/71。
  */
 const GEOM = `(() => {
   const el = document.querySelector('[data-home-pinned]');
@@ -228,11 +235,28 @@ const GEOM = `(() => {
   const cs = getComputedStyle(document.querySelector('[data-home-pinned]'));
   const jj = j ? { left: j.left, right: j.right, top: j.top, height: j.height } : null;
   const bb = b ? { left: b.left, right: b.right, top: b.top, bottom: b.bottom, width: b.width, height: b.height } : null;
+  /* 斜拉线：量它在屏幕上的包围盒（含被 SVG 裁掉的那一段，所以右端会伸到视口之外） */
+  const stEl = document.querySelector('.homepin__stay');
+  const stR = stEl ? stEl.getBoundingClientRect() : null;
   return {
     vw: document.documentElement.clientWidth,
     vh: window.innerHeight,
     jib: jj,
-    trussCenter: jj ? jj.top + jj.height * 0.52 : null,
+    /* viewBox 是 200×71（y 从 -44 到 27），桁架中轴 14 → (14+44)/71 = 58/71
+       （2026-11-13 给斜拉线加了 44 个单位的上方留白，这个系数必须跟着改） */
+    trussCenter: jj ? jj.top + jj.height * (58 / 71) : null,
+    /*
+      横臂**桁架那一条**的包围盒（y=6~22 → (6+44)/71 ~ (22+44)/71）。
+      不能拿整个 <svg> 的矩形当"横臂"：上方那 44/71 是给斜拉线留的空白，
+      拿它去和标题比重叠会误判（2026-11-13 加斜拉线时踩到的）。
+    */
+    jibBand: jj ? {
+      left: jj.left,
+      right: jj.right,
+      top: jj.top + jj.height * (50 / 71),
+      bottom: jj.top + jj.height * (66 / 71),
+    } : null,
+    stay: stR ? { left: stR.left, right: stR.right, top: stR.top, bottom: stR.bottom } : null,
     box: bb,
     rig: { left: rig.left, right: rig.right, top: rig.top, bottom: rig.bottom },
     title: t ? { left: t.left, right: t.right, top: t.top, bottom: t.bottom, height: t.height } : null,
@@ -271,7 +295,7 @@ check('货箱整只在视口里（右边不越界、下边不出屏）',
 check('货箱挂在画面右半边、靠着右缘（离右缘 ≤ 40px）',
   g.box.left > g.vw * 0.55 && g.vw - g.box.right <= 40,
   `左 ${Math.round(g.box.left)}、离右缘 ${Math.round(g.vw - g.box.right)}px`);
-check('货箱和标题块一个像素都不重叠', !overlap(g.box, g.title) && !overlap(g.jib, g.title));
+check('货箱和标题块一个像素都不重叠', !overlap(g.box, g.title) && !overlap(g.jibBand, g.title));
 check('货箱宽度不超过画面的 20%（不能盖住半个封面）', g.box.width <= g.vw * 0.2, `${Math.round(g.box.width)}px`);
 /* 吊车"更靠近摄像机"：横臂比背景那三台大得多（背景最高那台 290px，横臂只有画面宽度的 1/4 左右） */
 const bgCrane = await cdp.ev(`(() => { const c = document.querySelector('.crane--gap .crane__art');
@@ -282,6 +306,21 @@ check('货箱顶着「置顶」标签（公告 UI 本体，不是别的东西）
   await cdp.ev(`(() => { const b = document.querySelector('.homepin__box');
     return !!b && /置顶/.test(b.textContent) && !!b.querySelector('.homepin__title'); })()`));
 check('货箱是指向那条公告的链接', /^\/huaya\/bingshi\/photo\/20261001/.test(g.href || ''), g.href || '(空)');
+
+/* ---- 斜拉线（2026-11-13 加）---- */
+const TRUSS_TOP = 50 / 71; /* 上主弦 y=6 在 viewBox(-44..27) 里的位置 */
+check('斜拉线从屏幕右缘之外拉进来（右端越出视口，读得出"在画面外"）',
+  !!g.stay && g.stay.right > g.vw + 10,
+  g.stay ? `拉线右端 ${Math.round(g.stay.right)} vs 视口 ${g.vw}` : '(没有这条线)');
+check('斜拉线的下端落在横臂的上主弦上（差 ≤ 2px）',
+  !!g.stay && Math.abs(g.stay.bottom - (g.jib.top + g.jib.height * TRUSS_TOP)) <= 2,
+  g.stay ? `线端 ${g.stay.bottom.toFixed(1)} vs 主弦 ${(g.jib.top + g.jib.height * TRUSS_TOP).toFixed(1)}` : '');
+check('斜拉线横跨横臂上方一大段（不是贴着屏幕边的一小截）',
+  !!g.stay && g.stay.left < g.vw - 60,
+  g.stay ? `左端 x=${Math.round(g.stay.left)}` : '');
+check('斜拉线在画面里的那一段是斜的（上下高度差 ≥ 20px）',
+  !!g.stay && Math.abs(g.stay.bottom - g.stay.top) >= 20,
+  g.stay ? `高差 ${Math.round(Math.abs(g.stay.bottom - g.stay.top))}px` : '');
 
 /* ================================================================
  * C. 回转
@@ -468,6 +507,23 @@ const back = await cdp.ev(GEOM);
 check('滚回顶部 → 原样回来（还在原位、不透明）',
   back.away === false && back.opacity === 1
   && Math.abs(back.box.right - before.box.right) < 2 && Math.abs(back.box.top - before.box.top) < 2);
+/*
+ * ⚠ 回归：2026-11-13 用户报的 bug ——「往下翻进入首页页面板块，再往上翻回去以后，
+ * 塔吊高度位置就会异常地在屏幕最上方」。
+ * 根因是定位脚本量的是**视口坐标**：只要那次重算发生在已经滚下去之后（手机上
+ * 地址栏收放触发的 resize 就是典型），标题的 rect.top 是负的，算出来被下限一夹
+ * 就贴到屏幕最上面。所以这里故意在**滚下去的状态**下派发一次 resize，再滚回顶部比对。
+ */
+await cdp.ev('window.scrollTo(0, 1200); 1');
+await sleep(400);
+await cdp.ev('window.dispatchEvent(new Event("resize")); 1');
+await sleep(400);
+await cdp.ev('window.scrollTo(0, 0); 1');
+await sleep(1200);
+const afterResize = await cdp.ev(GEOM);
+check('滚下去时来一次 resize，再滚回顶部 —— 塔吊仍在原位（不会被甩到屏幕最上方）',
+  Math.abs(afterResize.box.top - before.box.top) < 2 && afterResize.away === false,
+  `货箱顶 ${afterResize.box.top.toFixed(1)} vs 原来 ${before.box.top.toFixed(1)}`);
 
 /* ================================================================
  * E. 点得到
@@ -513,15 +569,15 @@ await cdp.goto('/');
 await cdp.ev(FREEZE);
 await sleep(200);
 const m = await cdp.ev(GEOM);
-info(`横臂 ${Math.round(m.jib.left)}→${Math.round(m.jib.right)}、顶边 ${Math.round(m.jib.top)}；标题块下沿 ${Math.round(Math.max(m.title.bottom, m.tagline ? m.tagline.bottom : 0))}`);
+info(`横臂 ${Math.round(m.jib.left)}→${Math.round(m.jib.right)}、顶边 ${Math.round(m.jibBand.top)}；标题块下沿 ${Math.round(Math.max(m.title.bottom, m.tagline ? m.tagline.bottom : 0))}`);
 check('横臂仍然从右缘伸进来', Math.abs(m.jib.right - m.vw) <= 1, `${m.jib.right.toFixed(1)} vs ${m.vw}`);
 check('横臂在标题块下沿以下（不横穿「花涧堂」和那行副标题）',
-  m.jib.top >= Math.max(m.title.bottom, m.tagline ? m.tagline.bottom : 0) - 1,
-  `横臂顶 ${Math.round(m.jib.top)} vs 标题块下沿 ${Math.round(Math.max(m.title.bottom, m.tagline ? m.tagline.bottom : 0))}`);
+  m.jibBand.top >= Math.max(m.title.bottom, m.tagline ? m.tagline.bottom : 0) - 1,
+  `横臂顶 ${Math.round(m.jibBand.top)} vs 标题块下沿 ${Math.round(Math.max(m.title.bottom, m.tagline ? m.tagline.bottom : 0))}`);
 check('货箱整只可见（右、下都不越界）',
   m.box.right <= m.vw + 0.5 && m.box.bottom <= m.vh, `右 ${Math.round(m.box.right)} / 下 ${Math.round(m.box.bottom)}`);
-check('货箱和标题块不重叠', !overlap(m.box, m.title) && !overlap(m.jib, m.title)
-  && !overlap(m.box, m.tagline) && !overlap(m.jib, m.tagline));
+check('货箱和标题块不重叠', !overlap(m.box, m.title) && !overlap(m.jibBand, m.title)
+  && !overlap(m.box, m.tagline) && !overlap(m.jibBand, m.tagline));
 check('手机上货箱不窄于 130px（标题还得读得出来）', m.box.width >= 130, `${Math.round(m.box.width)}px`);
 /* 极端窄屏也不撞标题 */
 await cdp.setViewport(360, 640, true);
@@ -530,7 +586,7 @@ await cdp.ev(FREEZE);
 await sleep(200);
 const tiny = await cdp.ev(GEOM);
 check('360×640 这种小屏：横臂同样在标题块下面、货箱不越界',
-  tiny.jib.top >= Math.max(tiny.title.bottom, tiny.tagline ? tiny.tagline.bottom : 0) - 1
+  tiny.jibBand.top >= Math.max(tiny.title.bottom, tiny.tagline ? tiny.tagline.bottom : 0) - 1
   && tiny.box.right <= tiny.vw + 0.5 && !overlap(tiny.box, tiny.title));
 
 /* ================================================================
