@@ -138,7 +138,11 @@ function blockLabel(b: PageBlock, html: string | null, titles?: Map<string, stri
     case 'album': {
       const n = (b.photos ?? []).length;
       return b.text ? `相册：${cut(b.text)}` : `相册（${n} 张）`;
-    }    case 'sidebar': {
+    }
+    /* 涣愿终池核心区（2026-11-17 加）：那一块每天自己换内容，锚点文字用它的标题 */
+    case 'cistern':
+      return b.text && b.text !== '涣愿终池' ? `涣愿终池：${cut(b.text)}` : '涣愿终池';
+    case 'sidebar': {
       const rows = (b.rows ?? []).length;
       return b.text ? `侧边栏：${cut(b.text)}` : `侧边栏（${rows} 格）`;
     }

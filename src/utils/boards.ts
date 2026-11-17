@@ -206,6 +206,18 @@ export type PageBlock = (
    * 同一页可以放好几个，每块自己一份 photos。点开放大走全站灯箱（ImageZoom 自动认）。
    */
   | { id: string; type: 'album'; text?: string; photos: AlbumPhoto[] }
+  /**
+   * **涣愿终池·核心区**（2026-11-17 加）。
+   *
+   * 用户原话：「要保留一块核心功能区：显示每一年的这一天的冰室事件和精华 ……
+   * 四个板块 …… 并且这个页面每天都会更新 …… 但是我要在核心页面之外写关于涣愿
+   * 终池的文案介绍等要素 …… 可以选择添加在核心部分的上面或下面」。
+   *
+   * 所以它就是一个**普通的块**：能放在页面内容的任意位置，上面下面都能再写文字 /
+   * 图片 / 卡片。块里不放任何内容数据 —— 内容由浏览器按"今天"从 `/cistern.json`
+   * 现挑（`text` 是那块里的大标题，`bg` 是可选的实景底图）。
+   */
+  | { id: string; type: 'cistern'; text?: string; bg?: string }
 ) &
   TimeFields &
   PlaceholderField;

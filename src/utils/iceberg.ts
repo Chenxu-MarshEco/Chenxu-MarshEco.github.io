@@ -60,6 +60,14 @@ export interface IcebergItem {
   desc: string;
   /** 站内或站外链接；空串 = 点不动 */
   href: string;
+  /**
+   * **可考据的归属时间**（`YYYY-MM-DD`，2026-11-17 加）。
+   *
+   * 只为一件事存在：「涣愿终池」那一天要能捞出「历年来这一天的冰山词条」。
+   * 写法和时间轴上那些点一样（一条一个日期），**留空 = 不进涣愿终池**
+   * —— 大部分词条其实说不清是哪一天冒出来的，空着才是常态。
+   */
+  date: string;
 }
 
 export interface IcebergLayer {
@@ -316,8 +324,27 @@ const item = (i: IcebergItem & { categoryId?: string }): IcebergItem => {
     tags: (Array.isArray(i?.tags) ? i.tags : []).map(str).filter((id) => tagOf.has(id)),
     desc: str(i?.desc),
     href: str(i?.href),
+    /*
+      归属时间只认 `YYYY-MM-DD`（面板里那个 date 输入就是这个格式）。
+      手改数据写别的东西（`2024/01/02`、`2024-1-2`）也尽量救回来；救不回来就当没填
+      —— 宁可这一条不进涣愿终池，也不要它每天跑到错的那一天里。
+    */
+    date: normalizeItemDate(str(i?.date)),
   };
 };
+
+/** 归一化「可考据时间」：`YYYY-M-D` / `YYYY/M/D` → `YYYY-MM-DD`；认不出来 = 空串 */
+function normalizeItemDate(raw: string): string {
+  const s = raw.trim();
+  if (!s) return '';
+  const m = /^(\d{4})[-/.年](\d{1,2})[-/.月](\d{1,2})/.exec(s);
+  if (!m) return '';
+  const y = Number(m[1]);
+  const mo = Number(m[2]);
+  const d = Number(m[3]);
+  if (!y || mo < 1 || mo > 12 || d < 1 || d > 31) return '';
+  return `${y}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+}
 
 /** 层级：顺序 = 数组顺序（页面从上往下就是它）。标题空的层级也留着，只是不显示大标题 */
 export const layers: IcebergLayer[] = (Array.isArray(file.layers) ? file.layers : [])

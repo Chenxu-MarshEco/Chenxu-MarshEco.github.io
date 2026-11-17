@@ -62,6 +62,8 @@ if (timelineDefault === null && timeline) {
     }
   }
 }
+// 涣愿终池的核心区放在顶层大板块页上也一样要换主题（判据同 [...path].astro）
+const cistern = data.page.some((b) => b.type === 'cistern');
 ---
 
 <BoardLayout
@@ -71,6 +73,7 @@ if (timelineDefault === null && timeline) {
   backLabel={backLabel}
   timeline={timeline}
   timelineDefault={timelineDefault}
+  cistern={cistern}
 >
   <NodeView
     trail={data.trail}

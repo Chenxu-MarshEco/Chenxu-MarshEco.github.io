@@ -2222,6 +2222,7 @@ const BLOCK_LABEL = {
   recent: '近期更新',
   sidebar: '侧边栏',
   album: '相册',
+  cistern: '涣愿终池',
 };
 const TEXT_HINT =
   '支持 Markdown：**粗体**、[链接](地址)、- 列表、![图](/img/uploads/x.png)、## 小标题、'
@@ -4933,6 +4934,42 @@ function closeMapsModal() {
  * uploadImage 一张张传（并发不了，但不用你一张张点），传完自动铺成一行行缩略图，
  * 每行一个描述框。整块可反复加，一个页面能放好几个相册、各自管自己的 photos。
  */
+/**
+ * 涣愿终池的核心区（2026-11-17）。
+ *
+ * 这一块**没有内容可编** —— 四个盘子里的东西是按"今天"在浏览器里现挑的
+ * （`/cistern.json` + 访问者自己的表）。面板里只给两样：
+ *   · 大标题（默认「涣愿终池」）
+ *   · 可选的实景底图（不给就用默认那套 FA 天空 / 水面 / 泡泡）。
+ * 页面的文案介绍照样用「＋文字」「＋图片」摆在它上面或下面。
+ */
+function cisternFields(block) {
+  const wrap = document.createElement('div');
+  wrap.className = 'pblock-edit__body';
+  wrap.append(
+    boardInput(block.text ?? '', '核心区的大标题（留空就是「涣愿终池」）', (v) => {
+      block.text = v;
+    })
+  );
+
+  const bgRow = document.createElement('div');
+  bgRow.className = 'pblock-edit__row';
+  bgRow.append(
+    linkField(block.bg ?? '', '实景底图（可留空：留空就用默认那套天空 + 水面 + 泡泡）', (v) => {
+      block.bg = v;
+    })
+  );
+  wrap.append(bgRow);
+
+  const tip = document.createElement('p');
+  tip.className = 'pblock-edit__hint';
+  tip.textContent =
+    '这一块的内容每天自己换：历年这一天的精华 / 时间轴事件与时刻 / 可考据的冰山词条 / 冰室日记卡片。'
+    + '页面的介绍文字照常加在它上面或下面就行。';
+  wrap.append(tip);
+  return wrap;
+}
+
 function albumFields(block) {
   const wrap = document.createElement('div');
   wrap.className = 'pblock-edit__body';
@@ -5343,6 +5380,7 @@ function blockFields(block) {
   }
 
   if (block.type === 'album') return albumFields(block);
+  if (block.type === 'cistern') return cisternFields(block);
   if (block.type === 'card') return cardBlockFields(block);
   if (block.type === 'cardbox') return cardboxBlockFields(block);
 
@@ -6084,6 +6122,9 @@ function renderPageEditor() {
     /* 相册（2026-11-11）：一个块装一组照片，批量上传、每张可带描述 */
     ['album', '相册', () => ({ id: newBlockId(pageNode.id), type: 'album', text: '', photos: [] }),
       '一组照片：可以一次拖/粘多张进来，点开看原图并显示描述；一页可以放好几个相册'],
+    /* 涣愿终池的核心区（2026-11-17）：一块"每天自己换内容"的板块 */
+    ['cistern', '涣愿终池', () => ({ id: newBlockId(pageNode.id), type: 'cistern', text: '涣愿终池', bg: '' }),
+      '每天自动换内容的四个盘子（历年这一天的精华 / 事件与时刻 / 冰山词条 / 冰室日记），上面下面都能再写别的块'],
     // 地图是分页的，新建时就直接建成分页形状（别再造老那种 src+markers 挂在块上的了）
     ['map', '地图', () => ({ id: newBlockId(pageNode.id), type: 'map', pages: [] })],
   ];
@@ -6337,6 +6378,8 @@ function commitPageBlocks() {
       b.type === 'sidebar' ||
       /* 相册：刚加进来还没传图时也得留着 */
       b.type === 'album' ||
+      /* 涣愿终池的核心区：它自己不带内容（按"今天"现挑），永远算"有东西" */
+      b.type === 'cistern' ||
       /* 单张卡 / 卡片框本身就是作者特意放的结构：还没挑子页面也得留着，
          不然「先加个框、再去挑卡」中间保存一次，框就没了 */
       b.type === 'card' ||
@@ -14219,6 +14262,28 @@ function iceItemForm(host, layer, item, status, isNew) {
     dirty();
   }, { anchor: true });
   box.appendChild(panelRow('链接', link, '留空 = 这一条点不动（只出悬停卡片）。'));
+
+  /*
+    「可考据的归属时间」（2026-11-17 加）。
+    用户原话：「需要单独为冰山词条加一个归属时间 就和精华时间轴一样 可以选择这个词条
+    发生于什么时间 可以空着 如果空着就不会进入涣愿终池」。
+    ⚠ 空着是常态（大部分词条说不清哪一天冒出来的），所以默认值就是空。
+  */
+  const dateInput = document.createElement('input');
+  dateInput.type = 'date';
+  dateInput.className = 'wfield__input';
+  dateInput.value = /^\d{4}-\d{2}-\d{2}$/.test(String(item.date ?? '')) ? item.date : '';
+  dateInput.addEventListener('input', () => {
+    item.date = dateInput.value;
+    dirty();
+  });
+  box.appendChild(
+    panelRow(
+      '可考据时间',
+      dateInput,
+      '填了就会出现在「涣愿终池」里那一天的池子里（历年同月同日）；留空 = 不进池子。'
+    )
+  );
 
   const state = document.createElement('p');
   state.className = `hint wice__descState${iceComplete(item) ? ' is-on' : ''}`;

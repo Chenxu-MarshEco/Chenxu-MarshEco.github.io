@@ -56,6 +56,24 @@ const diary = {
   href: withBase(diaryNode?.url || '/huaya/01nikki'),
   avatar: variantUrl(DIARY_AVATAR, 400),
 };
+
+/*
+  「涣愿终池」（2026-11-17）。
+
+  用户原话：「点击涣源溪水钟卡片右下角的【今天依然是等待篠雨的一天】（生日时会改变
+  显示的）按钮 会弹出提示卡前往涣愿终池 会跳转到一个独立的页面」。
+
+  所以右下角那个框从 <p> 变成了一个 <a>：
+    · 平时写「今天依然是等待篠雨的一天」，生日那天照旧换成「今天是 xxx 的生日」
+      （脚本写的是里面那个 span，不会把提示卡一起冲掉）；
+    · 悬停 / 键盘聚焦时弹出提示卡「前往涣愿终池」；
+    · 点它就进那一页。
+
+  地址**按 id 从版块数据里找**，不写死：站长在编辑器里改了那一页的地址，这里跟着变。
+*/
+const CISTERN_ID = 'page-mwt0cistern';
+const cisternNode = flattenBoards(site.homeBoards as BoardNode[]).find((f) => f.node.id === CISTERN_ID);
+const cisternHref = withBase(cisternNode?.url || '/huaya/memoriterminalcistern');
 ---
 
 <section class="cal" id="home-cal" data-cal aria-labelledby="cal-title">
@@ -76,13 +94,22 @@ const diary = {
 
   {
     /*
-      右下角那个小框：脚本会把今天的文案写进去（无特殊日子就用 idleText）。
+      右下角那个小框：脚本会把今天的文案写进里面那个 span（无特殊日子就用 idleText）。
       构建期先按今天渲染一遍，免得 JS 没跑到时是个空框。
+      ⚠ 它现在是个 <a>（点它去涣愿终池），所以脚本写文字时**必须写里面那个 span**
+      —— 直接写外层会把下面那张提示卡一起冲掉。
     */
   }
-  <p class="cal__today" data-cal-today>
-    {cal.idleText || '今天依然是等待篠雨的一天'}
-  </p>
+  <a class="cal__today" data-cal-today href={cisternHref} title="前往涣愿终池">
+    <span class="cal__todayText" data-cal-today-text>{cal.idleText || '今天依然是等待篠雨的一天'}</span>
+    {/*
+      ⚠ 提示卡里**只放这一个标题**，不许再补一句说明（站规：不加自己的文案）。
+      用户 2026-11-17 的原话就是「会弹出提示卡前往涣愿终池」。
+    */}
+    <span class="cal__todayPop" role="tooltip">
+      <b>前往涣愿终池</b>
+    </span>
+  </a>
 
   {/* 左下角：「铃忆的冰室日记」那一页的入口（和页头左上角那颗小圆片一个样子） */}
   <a class="cal__diary" href={diary.href} title={`去「${diary.title}」`}>
@@ -223,7 +250,9 @@ const diary = {
       if (todayBox) {
         const hit = eventOn(todayKey);
         const ev = hit?.ev;
-        todayBox.textContent = ev
+        /* 只写里面那个 span：外层是「去涣愿终池」的链接，里面还挂着提示卡 */
+        const target = todayBox.querySelector<HTMLElement>('[data-cal-today-text]') ?? todayBox;
+        target.textContent = ev
           ? (ev.text || cfg.specialText.replace('{title}', ev.title || ''))
           : cfg.idleText;
         todayBox.classList.toggle('cal__today--event', !!ev);
@@ -509,7 +538,7 @@ const diary = {
     cursor: pointer;
   }
 
-  /* 右下角那个小框 */
+  /* 右下角那个小框（2026-11-17 起它是个链接：点它去「涣愿终池」） */
   .cal__today {
     position: absolute;
     right: 0.7rem;
@@ -525,6 +554,64 @@ const diary = {
     font-size: 0.76rem;
     line-height: 1.5;
     text-align: right;
+    text-decoration: none;
+    display: block;
+    cursor: pointer;
+    transition: border-color 0.14s ease, box-shadow 0.14s ease, transform 0.14s ease;
+  }
+  /* 悬停 / 键盘聚焦：只加一圈光，字一个都不动（和站里别处的悬停一个规矩） */
+  .cal__today:hover,
+  .cal__today:focus-visible {
+    color: rgba(255, 236, 248, 0.98);
+    text-decoration: none;
+    border-color: rgba(255, 160, 210, 0.9);
+    box-shadow: 0 0 0 1px rgba(255, 120, 190, 0.35), 0 6px 18px -10px rgba(255, 120, 190, 0.9);
+    transform: translateY(-1px);
+  }
+  .cal__today-text {
+    display: block;
+  }
+  /*
+    悬停时弹出来的提示卡「前往涣愿终池」。
+    位置：贴在框的上方（框自己贴着卡片底边，往上弹才不会跑出卡片）。
+    样子照时间轴那张提示卡（深紫底 + 粉边），不另起一套。
+  */
+  .cal__todayPop {
+    position: absolute;
+    right: 0;
+    bottom: calc(100% + 0.4rem);
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+    padding: 0.32rem 0.6rem;
+    min-width: 12rem;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 120, 190, 0.6);
+    background: rgba(24, 3, 36, 0.97);
+    color: #ffd9ef;
+    text-align: left;
+    font-size: 0.74rem;
+    line-height: 1.5;
+    white-space: nowrap;
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity 0.14s ease, visibility 0.14s ease;
+    z-index: 5;
+  }
+  .cal__todayPop b {
+    font-weight: 700;
+    color: #ffd9ef;
+  }
+  .cal__todayPop em {
+    font-style: normal;
+    font-size: 0.7rem;
+    color: rgba(255, 190, 220, 0.8);
+  }
+  .cal__today:hover .cal__todayPop,
+  .cal__today:focus-visible .cal__todayPop {
+    opacity: 1;
+    visibility: visible;
   }
   .cal__today--event {
     border-color: rgba(255, 212, 71, 0.8);

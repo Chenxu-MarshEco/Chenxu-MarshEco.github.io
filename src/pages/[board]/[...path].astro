@@ -74,6 +74,13 @@ if (timelineDefault === null && timeline) {
     }
   }
 }
+
+/*
+  这一页是不是「涣愿终池」—— 判据是**页面里有没有那块核心区**，
+  不在节点上另存一个 theme 字段：块能挪、能删，主题自己就跟着走，
+  也不会出现"填了 theme 但没放块"这种半吊子状态。
+*/
+const cistern = data.page.some((b) => b.type === 'cistern');
 ---
 
 <BoardLayout
@@ -83,6 +90,7 @@ if (timelineDefault === null && timeline) {
   backLabel={backLabel}
   timeline={timeline}
   timelineDefault={timelineDefault}
+  cistern={cistern}
 >
   <NodeView
     trail={data.trail}

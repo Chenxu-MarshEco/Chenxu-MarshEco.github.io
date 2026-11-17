@@ -3319,6 +3319,21 @@
           ]
         }
       ]
+    },
+    {
+      "id": "page-mwt0cistern",
+      "title": "涣愿终池",
+      "subtitle": "",
+      "image": "",
+      "standalone": true,
+      "href": "/huaya/memoriterminalcistern",
+      "page": [
+        {
+          "id": "page-mwt0cistern-c1",
+          "type": "cistern",
+          "text": ""
+        }
+      ]
     }
   ]
 }

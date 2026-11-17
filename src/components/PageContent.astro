@@ -30,6 +30,7 @@ import Img from './Img.astro';
 import SubCard from './SubCard.astro';
 import NavBlock from './NavBlock.astro';
 import NavItem from './NavItem.astro';
+import CisternCore from './CisternCore.astro';
 import Pager from './Pager.astro';
 import { withBase } from '../utils/url';
 import { enhanceHtml, variantUrl, viewUrls } from '../utils/images';
@@ -1064,6 +1065,13 @@ function cardsForBlock(b: PageBlock): { list: BlockItem[]; missing: string[] } {
 
           {/* 导航表：引用「导航分类库」里的几个大分类（分类本身在编辑器里建、可被多页共用） */}
           {b.type === 'nav' && <NavBlock cats={b.cats} text={b.text} blockId={b.id} />}
+
+          {/*
+            涣愿终池的核心区（2026-11-17）：一块**每天自己换内容**的板块。
+            它自己什么都不存 —— 挑哪一天、摆哪四条，全在浏览器里按访问者的
+            "今天"算（见 CisternCore.astro）。所以这里只把标题和可选底图递过去。
+          */}
+          {b.type === 'cistern' && <CisternCore text={b.text} bg={b.bg} />}
         </div>
       );
     })

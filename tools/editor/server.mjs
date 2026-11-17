@@ -3745,6 +3745,24 @@ function cleanBlocks(raw, ownerId) {
       return;
     }
 
+    if (type === 'cistern') {
+      /*
+        涣愿终池的核心区（2026-11-17）：块里只有两样要存的东西 ——
+        那块的大标题（`text`）和可选的实景底图（`bg`）。内容一律不存进页面
+        （按"今天"在浏览器里从 /cistern.json 现挑）。
+
+        ⚠ 这里是"认不认这个块"的唯一关口：漏了这个分支，用户在编辑器里
+        一保存，这一页的核心区就**静默消失**（同 sidebar / album 那个坑）。
+      */
+      const block = { id, type };
+      const head = String(b.text || '').trim();
+      if (head) block.text = head;
+      const bg = String(b.bg || '').trim();
+      if (bg) block.bg = bg;
+      pushBlock(block);
+      return;
+    }
+
     if (type === 'album') {
       /*
         相册（2026-11-11）：一个块一组照片，每张可带描述。
@@ -5458,6 +5476,16 @@ function cleanIceberg(payload, current) {
         tags,
         desc: String(ri?.desc ?? '').trim(),
         href: String(ri?.href ?? '').trim(),
+        /*
+          「可考据的归属时间」（2026-11-17 加）：只用来进涣愿终池那一天。
+          只认 `YYYY-MM-DD`，别的写法（`2024/1/2`、乱填）一律当没填 ——
+          宁可这一条不进池子，也不要它每天跑到错的那一天里。
+        */
+        ...(() => {
+          const raw = String(ri?.date ?? '').trim();
+          const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(raw);
+          return m ? { date: raw } : {};
+        })(),
       });
     }
 

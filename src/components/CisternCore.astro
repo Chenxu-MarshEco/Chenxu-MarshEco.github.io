@@ -1,0 +1,313 @@
+---
+/**
+ * 「涣愿终池」的核心区 —— 页面里那一块会被**每天换内容**的板块。
+ *
+ * 用户 2026-11-17 的原话：
+ *   「跳转到一个独立的页面：涣愿终池 …… 要保留一块核心功能区：显示每一年的这一天的
+ *    冰室事件和精华 …… 四个板块 …… 这个页面每天都会更新」
+ *   「只有铃忆的冰室日记和时间轴是跳转按钮 其他的都是平铺在核心区里 就像精华页面那样
+ *    精华就按原格式 冰山则是如果有完备描述则详细铺开完备描述」
+ *
+ * 所以这一块分成两半：
+ *   · **平铺**：精华（照 /salon/ 那一条的样子）+ 可考据的冰山词条（有完备描述就整段铺开）；
+ *   · **跳转按钮**：时间轴（跳去放那条轴的那一页）+ 铃忆的冰室日记（跳去那一天的手记）。
+ *
+ * ⚠ 这一块**不许有任何自己写的说明句**（站规 2026-11-17）：HTML 里只有空盘子，
+ * 内容全在浏览器里按"今天"从 `/cistern.json` 挑；没有数据就空着，不补"还没有……"。
+ */
+import { withBase } from '../utils/url';
+
+interface Props {
+  /**
+   * 核心区的标题（面板里能改）。
+   * **留空就不渲染** —— 这一页的页头本来已经写着标题了，别再重复一遍。
+   */
+  text?: string;
+  /**
+   * 可选的实景底图（站内 /img/… 或站外地址）。
+   * 不填就是默认的 Frutiger Aero 场景：天空 / 水面 / 丁达尔光 / 泡泡。
+   */
+  bg?: string;
+}
+
+const { text = '', bg = '' } = Astro.props;
+const title = String(text ?? '').trim();
+const asSrc = (raw: string) => (/^https?:\/\//i.test(raw) ? raw : withBase(raw));
+---
+<section
+  class="cist"
+  data-cist
+  data-cist-bg={bg ? asSrc(bg) : undefined}
+  aria-labelledby={title ? 'cist-title' : undefined}
+>
+  {/* ---------- FA 布景：天空、太阳、丁达尔光、水面、泡泡 ---------- */}
+  <div class="cist__scene" aria-hidden="true">
+    <div class="cist__sky"></div>
+    <div class="cist__sun"></div>
+    <div class="cist__rays"></div>
+    <div class="cist__haze"></div>
+    <div class="cist__sea">
+      <div class="cist__wave cist__wave--1"></div>
+      <div class="cist__wave cist__wave--2"></div>
+      <div class="cist__wave cist__wave--3"></div>
+      <div class="cist__glint"></div>
+    </div>
+    <div class="cist__bubbles" data-cist-bubbles></div>
+    <div class="cist__vignette"></div>
+  </div>
+
+  <div class="cist__inner">
+    <header class="cist__head">
+      {title && <h2 class="cist__title" id="cist-title">{title}</h2>}
+      <p class="cist__when">
+        <b data-cist-day></b>
+      </p>
+      {/*
+        两条跳转（时间轴 / 冰室日记）。放哪儿由脚本按"这天有没有东西"填，
+        没有就一排空位都不占。
+      */}
+      <div class="cist__jumps" data-cist-jumps></div>
+    </header>
+
+    {/* 平铺：精华（照 /salon/ 那一条的格式） */}
+    <section class="cist__flat" data-cist-flat="essences" data-cist-panel="essences"></section>
+    {/* 平铺：可考据的冰山词条（有完备描述就整段铺开） */}
+    <section class="cist__flat" data-cist-flat="iceberg" data-cist-panel="iceberg"></section>
+  </div>
+
+  {/*
+    配置：这份 JSON 的地址 + 构建时的基础路径。
+    内容一律去 /cistern.json 取 —— 数据两百多 KB，塞进 HTML 会让每页都变胖。
+  */}
+  <script
+    type="application/json"
+    id="cist-cfg"
+    set:html={JSON.stringify({ json: withBase('/cistern.json') })}
+  />
+</section>
+
+<script>
+  /* ============================================================
+     涣愿终池：按**访问者本地的那一天**把核心区填满
+     ============================================================ */
+  type Essence = {
+    id: string;
+    date: string;
+    time: string;
+    member: string;
+    avatar: string;
+    text: string;
+    image: string;
+    href: string;
+  };
+  type Point = { id: string; timeline: string; timelineId: string; date: string; label: string; kind: string; href: string };
+  type Ice = {
+    id: string;
+    date: string;
+    name: string;
+    desc: string;
+    layer: string;
+    category: string;
+    emoji: string;
+    href: string;
+  };
+  type Note = { id: string; date: string; title: string; href: string };
+  type Day = { key: string; essences: Essence[]; points: Point[]; iceberg: Ice[]; notes: Note[] };
+  type Index = { days: Record<string, Day>; dayCount: number; timelineHref?: Record<string, string> };
+
+  const root = document.querySelector<HTMLElement>('[data-cist]');
+  const cfgEl = document.getElementById('cist-cfg');
+  if (root && cfgEl) {
+    const cfg = JSON.parse(cfgEl.textContent || '{}') as { json?: string };
+    const base = '';
+    const dayOf = (d: Date = new Date()) =>
+      `${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const WEEK = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+
+    let index: Index | null = null;
+    let painted = '';
+
+    /* ---------- 泡泡（画一次就够；位置固定，免得每次换天都跳一下） ---------- */
+    const bubbles = root.querySelector<HTMLElement>('[data-cist-bubbles]');
+    if (bubbles && !bubbles.childElementCount) {
+      for (let i = 0; i < 16; i += 1) {
+        const b = document.createElement('span');
+        b.className = 'cist__bubble';
+        b.style.setProperty('--x', `${((i * 61.803) % 100).toFixed(2)}%`);
+        b.style.setProperty('--s', `${8 + ((i * 17) % 46)}px`);
+        b.style.setProperty('--d', `${16 + ((i * 7) % 14)}s`);
+        b.style.setProperty('--delay', `${-((i * 2.7) % 20)}s`);
+        b.style.setProperty('--drift', `${((i % 5) - 2) * 18}px`);
+        bubbles.appendChild(b);
+      }
+    }
+
+    /* ---------- 小工具 ---------- */
+    const esc = (s: string) =>
+      String(s ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    const abs = (href: string) =>
+      !href ? '' : href.startsWith('http') || href.startsWith('#') ? href : base + href;
+    /** `2026-09-16` → `2026 年 9 月 16 日`（只转格式，不加字） */
+    const when = (iso: string) => {
+      const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso ?? ''));
+      return m ? `${Number(m[1])} 年 ${Number(m[2])} 月 ${Number(m[3])} 日` : String(iso ?? '');
+    };
+    const el = (tag: string, cls: string) => {
+      const n = document.createElement(tag);
+      n.className = cls;
+      return n;
+    };
+    const anchor = (href: string, cls: string) => {
+      const a = document.createElement('a');
+      a.className = cls;
+      a.href = abs(href);
+      if (/^https?:/i.test(href)) {
+        a.target = '_blank';
+        a.rel = 'noopener';
+      }
+      return a;
+    };
+
+    /* ---------- 平铺：精华（照 /salon/ 那一条的格式） ---------- */
+    function paintEssences(host: HTMLElement, items: Essence[]) {
+      for (const e of items) {
+        const card = el('article', 'cist__item');
+        const face = e.avatar
+          ? `<img class="cist__avatar" src="${esc(e.avatar)}" alt="" loading="lazy" decoding="async">`
+          : `<span class="cist__avatar cist__avatar--none"></span>`;
+        const text = e.text
+          ? `<p class="cist__bq">${esc(e.text).replace(/\n/g, '<br>')}</p>`
+          : '';
+        const pic = e.image
+          ? `<img class="cist__pic" src="${esc(e.image)}" alt="" loading="lazy" decoding="async">`
+          : '';
+        card.innerHTML =
+          `<div class="cist__who"><span class="cist__face">${face}</span>` +
+          `<b class="cist__name">${esc(e.member)}</b>` +
+          `<time class="cist__time">${esc(when(e.date))}${e.time ? ` ${esc(e.time)}` : ''}</time></div>` +
+          text +
+          pic;
+        if (e.href) {
+          const a = anchor(e.href, 'cist__hit');
+          a.setAttribute('aria-label', `${e.member} ${e.date}`);
+          a.append(card);
+          host.append(a);
+        } else {
+          host.append(card);
+        }
+      }
+    }
+
+    /* ---------- 平铺：冰山词条（有完备描述就整段铺开） ---------- */
+    function paintIceberg(host: HTMLElement, items: Ice[]) {
+      for (const it of items) {
+        const card = el('article', 'cist__item cist__item--ice');
+        const meta = [it.layer, it.category].filter(Boolean).map(esc).join(' · ');
+        const body = it.desc ? `<p class="cist__bq cist__bq--full">${esc(it.desc).replace(/\n/g, '<br>')}</p>` : '';
+        card.innerHTML =
+          `<div class="cist__who"><b class="cist__name">${it.emoji ? `<span class="cist__emoji">${esc(it.emoji)}</span>` : ''}${esc(it.name)}</b>` +
+          `<time class="cist__time">${esc(when(it.date))}</time></div>` +
+          (meta ? `<p class="cist__meta">${meta}</p>` : '') +
+          body;
+        if (it.href && it.href !== '/iceberg/') {
+          const a = anchor(it.href, 'cist__hit');
+          a.setAttribute('aria-label', it.name);
+          a.append(card);
+          host.append(a);
+        } else {
+          host.append(card);
+        }
+      }
+    }
+
+    /* ---------- 跳转按钮：时间轴（按轴各一个） / 冰室日记 ---------- */
+    function paintJumps(host: HTMLElement, day: Day) {
+      host.textContent = '';
+      /* 按轴分组：同一条轴上那天的点只出一个按钮，按钮上写着轴的名字（标明出处） */
+      const axes = new Map<string, { id: string; title: string }>();
+      for (const p of day.points) {
+        const key = p.timelineId || p.timeline;
+        if (!key || axes.has(key)) continue;
+        axes.set(key, { id: key, title: p.timeline || '时间轴事件与时刻' });
+      }
+      for (const axis of axes.values()) {
+        const href = index?.timelineHref?.[axis.id] || '';
+        if (!href) continue;
+        const a = anchor(href, 'cist__jump');
+        a.innerHTML = `<b>${esc(axis.title)}</b>`;
+        host.append(a);
+      }
+      for (const n of day.notes) {
+        const a = anchor(n.href, 'cist__jump');
+        a.innerHTML = `<b>铃忆的冰室日记</b><em>${esc(when(n.date))}</em>`;
+        host.append(a);
+      }
+    }
+
+    /* ---------- 把这一天的核心区全画一遍 ---------- */
+    function paint(key: string) {
+      const day: Day = index?.days?.[key] ?? { key, essences: [], points: [], iceberg: [], notes: [] };
+      const now = new Date();
+      const dayEl = root!.querySelector<HTMLElement>('[data-cist-day]');
+      if (dayEl) dayEl.textContent = `${now.getMonth() + 1} 月 ${now.getDate()} 日 · ${WEEK[now.getDay()]}`;
+
+      const jumps = root!.querySelector<HTMLElement>('[data-cist-jumps]');
+      if (jumps) paintJumps(jumps, day);
+
+      const e = root!.querySelector<HTMLElement>('[data-cist-flat="essences"]');
+      const i = root!.querySelector<HTMLElement>('[data-cist-flat="iceberg"]');
+      if (e) {
+        e.textContent = '';
+        paintEssences(e, day.essences);
+      }
+      if (i) {
+        i.textContent = '';
+        paintIceberg(i, day.iceberg);
+      }
+      painted = key;
+      root!.dataset.cistCurrent = key;
+      root!.dataset.cistReady = '1';
+    }
+
+    /* ---------- 取数据 ---------- */
+    const load = async (): Promise<Index | null> => {
+      if (index) return index;
+      try {
+        const res = await fetch(String(cfg.json || '/cistern.json'), { headers: { accept: 'application/json' } });
+        if (!res.ok) throw new Error(String(res.status));
+        index = (await res.json()) as Index;
+        return index;
+      } catch {
+        /* 取不到就空着（站规：不写"池子打不开"那种句子） */
+        return null;
+      }
+    };
+
+    void (async () => {
+      await load();
+      paint(dayOf());
+      window.setInterval(() => {
+        const key = dayOf();
+        if (key !== painted) paint(key);
+      }, 600_000);
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') {
+          const key = dayOf();
+          if (key !== painted) paint(key);
+        }
+      });
+    })();
+  }
+</script>
+
+<style is:global>
+  /*
+    ⚠ 样式全在 `src/styles/cistern.css`（BoardLayout 只在这一页注入）：
+    卡片是脚本 createElement 建的，节点上没有 `data-astro-cid` ——
+    组件作用域的样式一条都匹配不上。
+  */
+</style>

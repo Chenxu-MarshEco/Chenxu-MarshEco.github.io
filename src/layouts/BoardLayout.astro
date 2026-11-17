@@ -9,6 +9,12 @@ import BaseLayout from './BaseLayout.astro';
 import { bgStyle } from '../utils/images';
 import { withBase } from '../utils/url';
 import type { Timeline as TimelineData } from '../utils/timelines';
+/*
+  「涣愿终池」那一页整页要换成 Frutiger Aero（2026-11-17）。
+  ⚠ 用 `?raw` 把这套样式**当字符串**读进来，只在需要的那一页用 <style> 注入：
+  直接 import 的话全站每一页都会背上这十几 KB（而且那一页之前全是深紫，规则本来也用不上）。
+*/
+import cisternCss from '../styles/cistern.css?raw';
 
 interface Props {
   /** 页面标题，同时显示在 hero 上 */
@@ -22,6 +28,11 @@ interface Props {
   timeline?: TimelineData;
   /** 打开时间轴时默认停在哪（页面自己认领的时间点/时间段） */
   timelineDefault?: number | null;
+  /**
+   * 这一页是不是「涣愿终池」（页面里有那块核心区）。
+   * 是就给 <body> 挂上 `is-cistern`、并把 FA 那套样式注入进来。
+   */
+  cistern?: boolean;
 }
 
 const {
@@ -31,16 +42,18 @@ const {
   backLabel = '返回',
   timeline,
   timelineDefault = null,
+  cistern = false,
 } = Astro.props;
 ---
 
 <BaseLayout
   title={title}
-  bodyClass="is-board"
+  bodyClass={cistern ? 'is-board is-cistern' : 'is-board'}
   layoutPage="board"
   timeline={timeline}
   timelineDefault={timelineDefault}
 >
+  {cistern && <style is:global set:html={cisternCss} />}
   <div class="bp">
     {/* data-edit 是排版模式的锚点，配合 layout.json 的 board 组生效 */}
     <header class="bp__hero" data-edit="hero">
