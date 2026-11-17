@@ -3269,7 +3269,10 @@
                 {
                   "id": "huaya-r2-11-pmwk2x6hj16",
                   "type": "nav",
-                  "cats": [],
+                  "cats": [
+                    "navcat-mwk32ocx422",
+                    "navcat-mvampicd148"
+                  ],
                   "text": "导航"
                 }
               ]
