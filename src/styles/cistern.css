@@ -69,6 +69,30 @@ body.is-cistern .srch svg {
   stroke: #0b4a63;
   fill: none;
 }
+/*
+  右上角那颗「三条杠」（目录抽屉）：杠的颜色是 BoardDrawer 里写死的粉白，
+  选择器还自带 Astro 的 scope 属性（`body.is-board .drawer__bars[cid] i[cid]`），
+  光写 body.is-cistern 压不住 —— 所以直接挂到那颗按钮的 id 上。
+*/
+body.is-cistern #drawer-toggle .drawer__bars i {
+  background: #0b4a63;
+}
+/* 「关于我」那颗小圆片：原来深紫底 + 深紫字（压在浅色页头上几乎看不清），跟圆按钮同一套玻璃皮。
+   SiteHeader 里那套是 `body.is-board .about-pill[cid]`，所以这里要多带两个类才压得住。 */
+body.is-cistern.is-board .site-header .about-pill {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(214, 242, 251, 0.86));
+  border-color: rgba(255, 255, 255, 0.96);
+  color: #0b4a63;
+  box-shadow: inset 0 1px 0 #fff, 0 6px 16px -12px rgba(9, 74, 105, 0.8);
+}
+body.is-cistern.is-board .site-header .about-pill:hover,
+body.is-cistern.is-board .site-header .about-pill:focus-visible {
+  color: #0a7fae;
+  border-color: #9fe4ff;
+}
+body.is-cistern.is-board .site-header .about-pill__face {
+  border-color: rgba(30, 154, 212, 0.45);
+}
 body.is-cistern .srch__input {
   color: #0b4a63;
   background: transparent;

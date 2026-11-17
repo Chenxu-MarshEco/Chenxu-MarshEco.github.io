@@ -37,7 +37,7 @@ const root = process.argv[2] ? path.resolve(process.argv[2]) : path.resolve('dis
 const PORT = 4491;
 const DEBUG_PORT = 9491;
 const CHROME = chromePath();
-const PAGE = '/huaya/memoriterminalcistern';
+const PAGE = '/memoriterminalcistern';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const MIME = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css',
@@ -235,6 +235,34 @@ check('★ FA 布景齐了：天空 / 太阳 / 丁达尔光 / 水面 / 碎钻 / 
   shell.sceneLayers.length === 7, JSON.stringify(shell.sceneLayers));
 check('泡泡有 16 个而且真的在动（CSS 动画挂上了）',
   shell.bubbles === 16 && shell.bubbleAnim === 'cist-rise', `${shell.bubbles} 个 / ${shell.bubbleAnim}`);
+
+/* 地址：直接挂在站点根上（用户 2026-11-17：「直接把改页的链接改为 /memoriterminalcistern
+   让它返回会直接返回主页」），所以「返回」必须回首页、面包屑上不能还顶着「花娅陌域」 */
+const navBits = await cdp.ev(`(() => {
+  const back = document.querySelector('.bp__back');
+  return {
+    backText: back ? back.textContent.replace(/\\s+/g, ' ').trim() : '',
+    backHref: back ? back.getAttribute('href') : '',
+    crumbs: [...document.querySelectorAll('.crumbs a, .crumbs__here')].map((n) => n.textContent.trim()),
+  };
+})()`);
+check('★ 页面地址就是 /memoriterminalcistern（不再挂在 /huaya 下面）',
+  fs.existsSync(path.join(root, 'memoriterminalcistern', 'index.html')) &&
+    !fs.existsSync(path.join(root, 'huaya', 'memoriterminalcistern')),
+  JSON.stringify({ 新地址: fs.existsSync(path.join(root, 'memoriterminalcistern', 'index.html')),
+    旧地址: fs.existsSync(path.join(root, 'huaya', 'memoriterminalcistern')) }));
+check('★ hero 上那个「返回」直接回首页', /返回首页/.test(navBits.backText) && navBits.backHref === '/',
+  JSON.stringify(navBits));
+check('面包屑那一行也不见了（它不再挂着任何上级，只剩自己就不显示）',
+  navBits.crumbs.length === 0, JSON.stringify(navBits.crumbs));
+
+/* 右上角那颗「三条杠」也要跟着整页换色（原来那套是深色页的粉白） */
+const drawer = await cdp.ev(`(() => {
+  const bars = [...document.querySelectorAll('#drawer-toggle .drawer__bars i')];
+  return { n: bars.length, colors: bars.map((b) => getComputedStyle(b).backgroundColor) };
+})()`);
+check('★ 右上角「三条杠」是这一页的墨蓝（不是粉白）',
+  drawer.n === 3 && drawer.colors.every((c) => c === 'rgb(11, 74, 99)'), JSON.stringify(drawer));
 
 /* ------------------------------------------------------------------ 一个日子在页面上的样子 */
 /** 把页面按"某一天"重开一遍，把四个板块读到的东西全抓回来 */

@@ -163,7 +163,8 @@ try {
   const yearless = await cdp.ev(`(() => {
     const evDay = document.querySelector('.cal__day--event');
     const box = document.querySelector('[data-cal-today]');
-    const norm = document.querySelector('.cal__day:not(.cal__day--event)');
+    /* 「普通日」要挑一个**没被文章认领**的格子：认领过的那天是 <a>，aria-label 里带着文章标题 */
+    const norm = document.querySelector('span.cal__day:not(.cal__day--event)');
     return { events: document.querySelectorAll('.cal__day--event').length,
       isToday: evDay ? evDay.classList.contains('cal__day--today') : null,
       todayText: box ? box.textContent.trim() : null,
