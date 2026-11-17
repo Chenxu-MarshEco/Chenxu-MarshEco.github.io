@@ -389,7 +389,11 @@ const initialScaleText = `一刻度约 ${
             <span class="tl__tip" role="tooltip">
               <b>{p.label}</b>
               <em>{p.fuzzy ? '难以考据的时间' : `${p.shown}${p.live ? '（实时）' : ''}`}</em>
-              {p.href && <i>打开 ›</i>}
+              {/*
+                这里**不再**放「打开 ›」：卡片里的内容是脚本 paintTips() 按
+                data-label / data-date 重建的，服务端这份只是给"脚本还没跑"留个底。
+                那句提示只在手机端点开的卡里出现（见样式区 .tl__tipOpen i）。
+              */}
             </span>
           </div>
         );
@@ -758,6 +762,12 @@ const initialScaleText = `一刻度约 ${
     transform-origin: bottom center;
     color: #ffc857;
     filter: drop-shadow(0 0 4px rgba(255, 150, 40, 0.8));
+    /*
+      `scale`（而不是 transition: transform）：脚本会往 style 里写
+      `transform: rotate(...)` 让塔吊顺着半径转，那条行内样式压不过也没法共存；
+      `scale` 是**独立属性**，和 transform 各算各的，正好用来做"微微放大"。
+    */
+    transition: scale 0.16s ease;
   }
   /*
     「事件」那颗塔吊：**小一号、樱花粉**。它和「时刻」共用同一套位置、
@@ -871,14 +881,22 @@ const initialScaleText = `一刻度约 ${
     text-decoration: none;
     text-shadow: 0 1px 5px rgba(20, 0, 10, 0.9);
   }
-  /* 带链接的名字：指上去给条下划线，让人知道能点 */
+  /*
+    带链接的名字：**指上去只换一个"能点"的光标，字一个都不许变**。
+
+    用户 2026-11-17 的原话：「加了链接的只要鼠标移上去会变成可以点的手指样式
+    并且塔吊图标微微放大即可 框内的字不要变」。所以以前那套「变白 + 加下划线」
+    整个删掉 —— 能点的暗示交给光标和塔吊那一下微微放大（见下面 .tl__crane）。
+
+    `text-decoration: none` 这条**必须留着**：全局 `a:hover` 会给下划线、
+    还会换颜色，靠这里（选择器比 `a:hover` 具体）压住。颜色这边不写死 ——
+    名字的粉色分「时刻」「事件」两档，写死任何一个都会把另一档弄错。
+  */
   a.tl__name {
     cursor: pointer;
   }
   a.tl__name:hover {
-    color: #fff;
-    text-decoration: underline;
-    text-underline-offset: 0.2em;
+    text-decoration: none;
   }
   /*
     「事件」的文字也小一档（页面 0.8rem → 0.68rem），和它那颗小塔吊配一脸。
@@ -919,19 +937,39 @@ const initialScaleText = `一刻度约 ${
     pointer-events: none;
     transition: opacity 0.14s ease, visibility 0.14s ease;
   }
-  .tl__tip b {
+  /*
+    ⚠⚠ 从这一行往下的 `:global(...)` **不是可选项，别去掉**。
+
+    提示卡里的内容（b / em / i / a.tl__tipOpen / ul.tl__tipList …）是脚本
+    `paintTips()` 每次重排时用 createElement **重建**的（缩放、分组、实时日期
+    一变就重建一遍），新节点上根本没有 Astro 的 `data-astro-cid-…` 属性 ——
+    写成普通的 `.tl__tip b` 会被编译成 `.tl__tip[cid] b[cid]`，一条都匹配不上。
+
+    匹配不上会怎样（2026-11-17 用户报的就是这个）：这些字退回"没人管"的状态，
+    有链接的那一行还被包进 `<a>` 里，于是整行吃全局 `a { color: var(--c-link) }`
+    —— 浅色主题那套 token 是**棕色 #8f4a10**，压在深紫卡片上几乎看不见，
+    看着就像"悬停之后字变成了难以看清的棕色"。
+  */
+  :global(.tl__tip b) {
     font-weight: 700;
   }
-  .tl__tip em {
+  :global(.tl__tip em) {
     font-style: normal;
     color: rgba(255, 190, 220, 0.85);
     font-variant-numeric: tabular-nums;
   }
-  /* 有链接的时间点，悬停卡片末尾提示一句 */
-  .tl__tip i {
+  /*
+    有链接的时间点，卡片末尾那句「打开 ›」。
+    **只在手机上出现**（手指没有悬停，不说一句就不知道这行字能点）：
+    电脑上悬停时不许冒出来 —— 用户 2026-11-17：「多了个打开 不要有这些变化」。
+  */
+  :global(.tl__tip i) {
     font-style: normal;
     font-size: 0.72rem;
     color: #ff9ad5;
+  }
+  :global(.tl__tipOpen i) {
+    display: none;
   }
   /*
     合并成一组的提示：把这一组的名字按时间顺序（早的在上）全列出来 ——
@@ -943,7 +981,7 @@ const initialScaleText = `一刻度约 ${
     padding: 0.3rem 0.6rem;
     white-space: normal;
   }
-  .tl__tipList {
+  :global(.tl__tipList) {
     margin: 0;
     padding: 0;
     list-style: none;
@@ -951,23 +989,23 @@ const initialScaleText = `一刻度约 ${
     flex-direction: column;
     gap: 0.12rem;
   }
-  .tl__tipList li {
+  :global(.tl__tipList li) {
     display: flex;
     gap: 0.5rem;
     align-items: baseline;
   }
   /* 组里靠前的几条其实都长在轴上同一个位置，加一列小圆点暗示"这是一堆" */
-  .tl__tipList li:first-child b::before {
+  :global(.tl__tipList li:first-child b::before) {
     content: '▾ ';
     color: #ff9ad5;
   }
-  .tl__tipMark {
+  :global(.tl__tipMark) {
     margin-left: auto;
     color: #ff9ad5;
   }
-  /* 合并组行数封顶后那行"…还有 N 条" */
-  .tl__tipMore {
-    color: var(--c-text-faint);
+  /* 合并组行数封顶后那行"…还有 N 条"（浅色 token 的 --c-text-faint 是棕色，不能用） */
+  :global(.tl__tipMore) {
+    color: rgba(255, 217, 239, 0.6);
     font-size: 0.72rem;
   }
   /*
@@ -976,7 +1014,7 @@ const initialScaleText = `一刻度约 ${
     鼠标端提示卡是 pointer-events: none，这个链接点不到 —— 那没关系，
     鼠标直接把名字点走就行，这里只是照常显示。
   */
-  .tl__tipOpen {
+  :global(.tl__tipOpen) {
     display: flex;
     gap: 0.5rem;
     align-items: baseline;
@@ -984,16 +1022,28 @@ const initialScaleText = `一刻度约 ${
     text-decoration: none;
   }
   /* 在合并列表的一行里撑满，末尾那个「›」才能靠到最右边（和以前一个样） */
-  .tl__tipList li > .tl__tipOpen {
+  :global(.tl__tipList li > .tl__tipOpen) {
     flex: 1;
   }
   .tl__item:hover .tl__tip {
     opacity: 1;
     visibility: visible;
   }
-  .tl__item:hover .tl__crane,
-  .tl__item.is-open .tl__crane {
+  /*
+    悬停时的"我指着这一根"：
+      · **没链接**的点照旧染成淡黄（原来就这样，没动）；
+      · **有链接**的点不改色，只把塔吊**微微放大一点点** —— 用户 2026-11-17：
+        「加了链接的只要鼠标移上去会变成可以点的手指样式并且塔吊图标微微放大即可」。
+    放大走 `scale`，缩放原点是 `.tl__crane` 自己的 `transform-origin: bottom center`，
+    所以根还是钉在轴上，不会把塔吊整体往上顶起来。
+  */
+  .tl__item:not([data-href]):hover .tl__crane,
+  .tl__item:not([data-href]).is-open .tl__crane {
     color: #fff2b8;
+  }
+  .tl__item[data-href]:hover .tl__crane,
+  .tl__item[data-href].is-open .tl__crane {
+    scale: 1.16;
   }
 
   /*
@@ -1043,8 +1093,15 @@ const initialScaleText = `一刻度约 ${
       box-shadow: 0 12px 34px -12px rgb(0 0 0 / 0.85);
     }
     /* 手指比鼠标粗：卡片里每一行留出能点的高度 */
-    .tl__item.is-open .tl__tipOpen {
+    .tl__item.is-open :global(.tl__tipOpen) {
       padding: 0.2rem 0;
+    }
+    /*
+      「打开 ›」只在这一张卡里露出来（电脑上悬停时是 display: none，
+      见上面 `.tl__tipOpen i` 那一条）。
+    */
+    .tl__item.is-open :global(.tl__tipOpen i) {
+      display: inline;
     }
   }
 
@@ -1539,9 +1596,12 @@ const initialScaleText = `一刻度约 ${
   const KEY = 'tl-open-id';
 
   /**
-   * 提示卡里那句"点了能走"的提示。
-   * 手机端它同时也是一行字的链接（见 `.tl__tipOpen`），所以文案从
-   * 「点开看看」改成「打开」—— 手机上是**真的能点**，不是看着玩的。
+   * 提示卡里那句「打开 ›」。
+   *
+   * **只给手机**（`@media (hover: none)` + 卡片已点开时才显示）：
+   * 手指没有悬停，不说一句就不知道这行字能点。
+   * 电脑上悬停时是隐藏的 —— 用户 2026-11-17：「鼠标移上去……多了个打开
+   * 不要有这些变化 框内的字不要变」。所以文案和"能点"的暗示都留给手指那边。
    */
   const TOUCH_HINT = '打开 ›';
 
