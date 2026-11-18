@@ -376,6 +376,21 @@ check('手机端：三张卡都在、竖着堆（单列，不并排）',
   !!m.placeholder && !!m.cistern && !!m.farland && m.cistern.y > m.cal.bottom - 1 && m.placeholder.y > m.cistern.bottom - 1 && m.farland.y > m.placeholder.bottom - 1,
   JSON.stringify({ 日历底: m.cal?.bottom, 终池顶: m.cistern?.y, 预留顶: m.placeholder?.y, 远位面顶: m.farland?.y }));
 check('手机端：不横向溢出', m.overflowX <= 1, `${m.overflowX}px`);
+/*
+  手机上是单列，桌面那套"和上面一样高"的脚本不写高度 —— 于是这三张卡的高度
+  全靠自己撑。2026-11-18 实测：涣愿终池只剩 49px（一块图 + 一行标题）、
+  预留卡只剩 2px（空着的时候里面什么都没有）、花娅远位面只剩 62px（清单区被压扁，
+  滚轮等于没有）。所以三张各给了一个下限，这条盯住它别再塌回去。
+*/
+check('手机端：三张卡都撑得起来（涣愿终池 ≥150 / 预留卡 ≥100 / 花娅远位面 ≥200）',
+  m.cistern.h >= 150 && m.placeholder.h >= 100 && m.farland.h >= 200,
+  JSON.stringify({ 终池: m.cistern.h, 预留: m.placeholder.h, 远位面: m.farland.h }));
+const mFar = await cdp.ev(`(() => {
+  const s = document.querySelector('#home-farland .far__scroll');
+  return s ? { sh: s.scrollHeight, ch: s.clientHeight } : null;
+})()`);
+check('手机端：花娅远位面的清单区照样能滚（内容比可视区高）',
+  !!mFar && mFar.sh > mFar.ch, JSON.stringify(mFar));
 
 /* ------------------------------------------------------------------ 收尾 */
 const errs = cdp.errors.filter(Boolean);

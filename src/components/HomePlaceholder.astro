@@ -115,4 +115,14 @@ const Tag = url ? 'a' : 'div';
     -webkit-box-orient: vertical;
     overflow: hidden;
   }
+
+  /*
+    手机上是单列，桌面那套「和上面一样高」的脚本不写高度（见 HomeWidgets），
+    而这张卡空着的时候里面什么都没有 —— 不给下限就只剩一条 2px 的虚线。
+  */
+  @media (max-width: 760px) {
+    .phcard {
+      min-height: 120px;
+    }
+  }
 </style>

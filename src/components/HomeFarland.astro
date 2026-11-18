@@ -249,4 +249,15 @@ const kids = visibleChildren(node).map((k) => {
       transform: none;
     }
   }
+
+  /*
+    手机上是单列，桌面那套「和上面一样高」的脚本不写高度（见 HomeWidgets），
+    而这一块的高度全靠清单区自己撑 —— 不给下限的话清单区只剩十几像素，
+    滚轮等于没有。给一个能看见两张卡的高度。
+  */
+  @media (max-width: 760px) {
+    .far {
+      min-height: 240px;
+    }
+  }
 </style>

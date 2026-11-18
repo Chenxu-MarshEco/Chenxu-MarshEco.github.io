@@ -145,4 +145,14 @@ const url = external ? rawHref : withBase(rawHref);
     -webkit-box-orient: vertical;
     overflow: hidden;
   }
+
+  /*
+    手机上是单列，桌面那套「和日历一样高」的脚本不写高度（见 HomeWidgets），
+    这张卡里又只有一块铺满的图 + 一行标题 —— 不给个下限就只剩标题那一条。
+  */
+  @media (max-width: 760px) {
+    .cistcard {
+      min-height: 180px;
+    }
+  }
 </style>
