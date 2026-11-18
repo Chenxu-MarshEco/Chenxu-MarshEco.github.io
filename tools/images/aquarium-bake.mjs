@@ -13,8 +13,7 @@
  * 产出的东西：
  *   reef.webp            整张背景板（水体渐变 + 砂底 + 礁石 + 珊瑚，1200×656）
  *   caustic.webp         水底光网（自己算的，无缝）
- *   bubbles.webp         气泡柱
- *   fish-<名字>.webp     十条鱼（带 alpha）
+ *   fish-<名字>.webp     十条鱼（带 alpha，已经转正）
  *   fish-<名字>-far.webp 同样十条，压过对比的，给远处的鱼用
  *
  * 几个坑，改之前先读：
@@ -30,7 +29,12 @@
  *  ③ **鱼贴图全都朝左。**
  *     运行时往右游要水平镜像 —— 这个和游动方向不是一回事。
  *
- *  ④ 礁石不能直接摆图集切出来的精灵：精灵的边界就是图集格子的边界，
+ *  ④ **有几条鱼在原贴图里就是斜着的**（皇帝神仙、铜带蝴蝶鱼转了 25° 上下）。
+ *     不转正的话，它们在缸里就是斜着游的。tiltOf() 量出鱼身轴线歪多少，
+ *     烘的时候转回来。**符号别弄反**：tilt 是"尾巴比头低"（头朝上），
+ *     要逆时针转，也就是 sharp 的负角度。
+ *
+ *  ⑤ 礁石不能直接摆图集切出来的精灵：精灵的边界就是图集格子的边界，
  *     摆上去会留下笔直的竖边。所以是"一整条岩带 + 一块碎边轮廓遮罩"。
  * ============================================================================
  */
@@ -340,6 +344,32 @@ function defringe(data, w, h, erode = 1) {
   return data;
 }
 
+/**
+ * 一条鱼的身子歪了多少度。
+ *
+ * 取最左、最右各 12% 列的不透明像素，各自求重心的 y，两点连线就是鱼身方向。
+ * 返回正数 = 尾巴那头比头那头低（鱼头朝上），要顺时针转回来。
+ */
+function tiltOf(data, w, h, thr = 24) {
+  const { lab, boxes } = components(data, w, h, thr);
+  if (!boxes.length) return 0;
+  const main = boxes.reduce((a, b) => (b.count > a.count ? b : a));
+  const bw = main.x1 - main.x0 + 1;
+  const bandW = Math.max(3, Math.round(bw * 0.12));
+  let lY = 0, lN = 0, rY = 0, rN = 0;
+  for (let y = main.y0; y <= main.y1; y++) {
+    for (let x = main.x0; x <= main.x1; x++) {
+      const i = y * w + x;
+      if (lab[i] !== main.id) continue;
+      if (x < main.x0 + bandW) { lY += y; lN++; }
+      if (x > main.x1 - bandW) { rY += y; rN++; }
+    }
+  }
+  if (!lN || !rN) return 0;
+  const a = Math.atan2(rY / rN - lY / lN, bw - bandW) * 180 / Math.PI;
+  return Math.abs(a) > 45 ? 0 : a;
+}
+
 /* --------------------------------------------------------------- 常量表 */
 
 /** DDS 序号 → 鱼名。这些编号是 MA3 内嵌的顺序，不会变 */
@@ -434,6 +464,38 @@ async function main() {
   for (const [idx, name, maxW] of FISH) {
     const r = await raw(idx);
     const main2 = biggestBlob(r.data, r.w, r.h, 10);
+
+    /*
+      MA3 里有几条鱼是**斜着**画的（皇帝神仙、铜带蝴蝶鱼那几张整个身子转了 20 多度），
+      直接拿来当广告牌，鱼就是斜着游的。所以先量出鱼身轴线歪了多少，再转正。
+      量法：取最左和最右各 12% 列的不透明像素，各自求重心的 y，
+      两点连线就是鱼身方向。正角度 = 右边（尾巴）比左边（头）低 = 鱼头朝上，
+      要顺时针转回来（sharp 的正角度就是顺时针）。
+    */
+    const tilt = tiltOf(main2, r.w, r.h, 24);
+    if (Math.abs(tilt) > 1.5) {
+      // 转完之后的宽高**只能从输出取**（.metadata() 给的是输入尺寸，转过的画布更大）
+      // 方向：tilt 是"尾巴比头低"，那种鱼是头朝上的，要**逆时针**转回来。
+      const rot = await sharp(main2, { raw: { width: r.w, height: r.h, channels: 4 } })
+        .rotate(-tilt, { background: { r: 0, g: 0, b: 0, alpha: 0 } })
+        .ensureAlpha()
+        .raw()
+        .toBuffer({ resolveWithObject: true });
+      const t = trimRaw(Buffer.from(rot.data), rot.info.width, rot.info.height);
+      const scale = Math.min(1, maxW / t.w);
+      const w = Math.round(t.w * scale);
+      const h = Math.round(t.h * scale);
+      const clean = defringe(Buffer.from(t.buf), t.w, t.h, 1);
+      const opts = { quality: 90, alphaQuality: 95, effort: 6 };
+      const base = () => sharp(clean, { raw: { width: t.w, height: t.h, channels: 4 } })
+        .resize(w, h, { kernel: 'lanczos3' });
+      await base().webp(opts).toFile(path.join(OUT, `fish-${name}.webp`));
+      await base().modulate({ saturation: 0.82, brightness: 0.9 }).webp(opts)
+        .toFile(path.join(OUT, `fish-${name}-far.webp`));
+      log(`  fish-${name}  ${t.w}x${t.h} → ${w}x${h}  转正 ${tilt.toFixed(1)}°`);
+      continue;
+    }
+
     const t = trimRaw(main2, r.w, r.h);
     const clean = defringe(Buffer.from(t.buf), t.w, t.h, 1);
     const scale = Math.min(1, maxW / t.w);
@@ -491,15 +553,11 @@ async function main() {
     log('  caustic 320x320');
   }
 
-  /* ---- 气泡柱（08 号贴图） ---- */
-  {
-    const r = await raw(8);
-    const t = trimRaw(r.data, r.w, r.h, 4);
-    await sharp(t.buf, { raw: { width: t.w, height: t.h, channels: 4 } })
-      .webp({ quality: 88, alphaQuality: 94 })
-      .toFile(path.join(OUT, 'bubbles.webp'));
-    log(`  bubbles ${t.w}x${t.h}`);
-  }
+  /*
+    气泡**不出素材**：MA3 那张 Bubbles.dds 是一整条气泡柱，用 lighter 叠在蓝水上
+    会泛白到几乎看不见。运行时的气泡是画出来的（见 HomeAquarium.astro 里的
+    makeBubble / bubbles），比贴图柱清楚，也省掉一个文件。
+  */
 
   /* ---- 背景板 ---- */
   {

@@ -114,11 +114,10 @@ const base = import.meta.env.BASE_URL.replace(/\/+$/, '');
 
     const less = window.matchMedia('(prefers-reduced-motion: reduce)');
 
-    /* 素材：背景 / 焦散 / 气泡柱 / 十条鱼（远的那几条另有一份压过对比的） */
+    /* 素材：背景 / 焦散 / 十条鱼（远的那几条另有一份压过对比的） */
     const src: Record<string, string> = {
       reef: `${bust}/img/aquarium/reef.webp`,
       caustic: `${bust}/img/aquarium/caustic.webp`,
-      bubbles: `${bust}/img/aquarium/bubbles.webp`,
     };
     for (const f of FISH) {
       src[f.k] = `${bust}/img/aquarium/fish-${f.k}.webp`;
@@ -255,13 +254,22 @@ const base = import.meta.env.BASE_URL.replace(/\/+$/, '');
       */
       if (s.l === 0) ctx.globalAlpha = 0.92;
 
+      /*
+        每条竖带的目标宽度必须**严格等于** wpx/N。
+        早先为了让相邻两条不漏缝，把目标宽度多写了 1px —— 那样每条带子的内容
+        都会被横向拉长（40px 的鱼每条带子才 2px，多 1px 就是拉长五成），
+        结果整条鱼看着被"压扁"。现在改成多取一点**源**（源上重叠 2%），
+        目标尺寸不动，既不漏缝也不变形。
+      */
+      const d = s.wpx / N;
       for (let i = 0; i < N; i++) {
         // u: 0 是鱼头，1 是鱼尾
         const u = headLeft ? i / (N - 1) : 1 - i / (N - 1);
         const bend = Math.pow(u, 1.7) * s.h * 0.075;
         const dy = Math.sin(time * 3.1 + s.ph + u * 3.2) * bend;
-        // 每条多画 1px 盖住接缝
-        ctx.drawImage(im, i * sw, 0, sw, im.naturalHeight, (i * s.wpx) / N, y + dy, s.wpx / N + 1, s.h);
+        const sx0 = i * sw;
+        const swid = Math.min(sw * 1.02, im.naturalWidth - sx0);
+        ctx.drawImage(im, sx0, 0, swid, im.naturalHeight, i * d, y + dy, d, s.h);
       }
       ctx.restore();
     }
@@ -305,44 +313,116 @@ const base = import.meta.env.BASE_URL.replace(/\/+$/, '');
       ctx.restore();
     }
 
-    /** 光柱：从水面斜下来的几束白光 */
+    /**
+     * 丁达尔光柱：水面上方打下来的一束束光。
+     *
+     * 之前用的是"顶宽底窄的梯形 + 很淡的渐变"，在蓝色水上几乎看不出来。
+     * 现在每束都是**两道边 + 一层芯**：
+     *   · 芯：一条中间最亮的竖向渐变，宽；
+     *   · 边：两条更细更亮的描边，就是那种"光束边缘发白"的观感。
+     * 全部 lighter 叠加，位置和亮度缓慢摆动。
+     */
     function shafts(time: number) {
       ctx.save();
       ctx.globalCompositeOperation = 'lighter';
-      for (let i = 0; i < 5; i++) {
-        const sway = Math.sin(time * 0.16 + i * 1.7) * 0.04;
-        const x = (0.05 + i * 0.22 + sway) * cw;
-        const w = (0.075 + 0.03 * Math.sin(time * 0.21 + i)) * cw;
-        const g = ctx.createLinearGradient(x, 0, x + w * 1.4, ch * 0.85);
-        const a = 0.026 + 0.012 * Math.sin(time * 0.28 + i * 2.1);
-        g.addColorStop(0, `rgba(206,240,255,${a})`);
-        g.addColorStop(0.6, `rgba(170,225,255,${a * 0.3})`);
-        g.addColorStop(1, 'rgba(150,215,255,0)');
+      const n = 5;
+      for (let i = 0; i < n; i++) {
+        const phase = i * 1.63;
+        const sway = Math.sin(time * 0.14 + phase) * 0.045;
+        const topX = (0.06 + i * 0.215 + sway) * cw;
+        const topW = (0.045 + 0.018 * Math.sin(time * 0.19 + i * 1.1)) * cw;
+        // 光束往下张开，并向右斜
+        const botX = topX + cw * 0.16;
+        const botW = topW * 3.6;
+        const a = 0.14 + 0.05 * Math.sin(time * 0.24 + phase * 0.7);
+
+        // 芯
+        const g = ctx.createLinearGradient(topX, 0, botX, ch);
+        g.addColorStop(0, `rgba(214,244,255,${a})`);
+        g.addColorStop(0.35, `rgba(190,235,255,${a * 0.5})`);
+        g.addColorStop(0.8, `rgba(170,225,255,${a * 0.12})`);
+        g.addColorStop(1, 'rgba(160,220,255,0)');
         ctx.fillStyle = g;
-        // 边缘是斜的、上下都不切死，糊成一片柔光而不是一根根光柱
         ctx.beginPath();
-        ctx.moveTo(x, -ch * 0.1);
-        ctx.lineTo(x + w, -ch * 0.1);
-        ctx.lineTo(x + w * 2.4, ch * 0.95);
-        ctx.lineTo(x + w * 0.7, ch * 0.95);
+        ctx.moveTo(topX, -2);
+        ctx.lineTo(topX + topW, -2);
+        ctx.lineTo(botX + botW, ch);
+        ctx.lineTo(botX, ch);
         ctx.closePath();
         ctx.fill();
+
+        // 两侧亮边
+        ctx.strokeStyle = `rgba(226,248,255,${a * 0.55})`;
+        ctx.lineWidth = Math.max(0.7, cw * 0.004);
+        ctx.beginPath();
+        ctx.moveTo(topX, 0);
+        ctx.lineTo(botX, ch);
+        ctx.moveTo(topX + topW, 0);
+        ctx.lineTo(botX + botW, ch);
+        ctx.stroke();
       }
       ctx.restore();
     }
 
-    /** 气泡：气泡柱贴图整列往上滚 */
-    function bubbles(im: Shot, time: number) {
-      const colW = cw * 0.115;
-      const colH = (im.naturalHeight / im.naturalWidth) * colW;
+    /*
+      气泡：**画出来的**，不是贴图柱。
+
+      MA3 那张 Bubbles.dds 是一整条气泡柱，用 lighter 叠在蓝色水上会整体泛白、
+      几乎看不见（之前就是这个毛病）。所以这里一格格 SVG 都不用：
+      预先把一颗气泡画进离屏画布（外圈亮、中间透、左上一点高光），
+      运行时只是按不同速度往上挪 + 横向轻轻摆。开销是 N 次 drawImage，
+      比每帧建渐变便宜。
+    */
+    let bubbleSprite: HTMLCanvasElement | null = null;
+    function makeBubble() {
+      const S = 64;
+      const c = document.createElement('canvas');
+      c.width = S;
+      c.height = S;
+      const g = c.getContext('2d')!;
+      // 外圈亮环
+      const grad = g.createRadialGradient(S * 0.42, S * 0.38, S * 0.06, S / 2, S / 2, S / 2);
+      grad.addColorStop(0, 'rgba(255,255,255,0.15)');
+      grad.addColorStop(0.55, 'rgba(226,246,255,0.10)');
+      grad.addColorStop(0.86, 'rgba(236,250,255,0.62)');
+      grad.addColorStop(0.97, 'rgba(255,255,255,0.30)');
+      grad.addColorStop(1, 'rgba(255,255,255,0)');
+      g.fillStyle = grad;
+      g.beginPath();
+      g.arc(S / 2, S / 2, S / 2 - 1, 0, Math.PI * 2);
+      g.fill();
+      // 高光
+      const hi = g.createRadialGradient(S * 0.36, S * 0.30, 0, S * 0.36, S * 0.30, S * 0.20);
+      hi.addColorStop(0, 'rgba(255,255,255,0.95)');
+      hi.addColorStop(1, 'rgba(255,255,255,0)');
+      g.fillStyle = hi;
+      g.beginPath();
+      g.arc(S * 0.36, S * 0.30, S * 0.2, 0, Math.PI * 2);
+      g.fill();
+      bubbleSprite = c;
+    }
+
+    /** 一串泡泡往上冒：x 按 sin 摆，越往上越小、越淡 */
+    function bubbles(time: number) {
+      if (!bubbleSprite) makeBubble();
+      const spr = bubbleSprite!;
+      const COUNT = 30;
       ctx.save();
-      ctx.globalCompositeOperation = 'lighter';
-      for (const [cx, spd, al] of [[0.90, 0.13, 0.5], [0.845, 0.10, 0.3]] as const) {
-        const y0 = ((time * spd) % colH + colH) % colH;
-        ctx.globalAlpha = al;
-        for (let k = 0; k < Math.ceil(ch / colH) + 1; k++) {
-          ctx.drawImage(im, cx * cw - colW / 2, y0 - colH + k * colH, colW, colH);
-        }
+      for (let i = 0; i < COUNT; i++) {
+        // 每条泡泡有自己的相位和速度
+        const ph = i * 0.618;
+        const spd = 0.038 + (i % 6) * 0.007;
+        const life = (time * spd + ph) % 1;
+        // 摊开到整缸四分之三的宽度上，别全挤在右边一团
+        const baseX = 0.12 + ((i * 0.37) % 1) * 0.78;
+        const wob = Math.sin(time * 1.7 + ph * 6.283) * cw * 0.014;
+        const px = (baseX + wob / cw) * cw;
+        const py = ch * (1.04 - life * 1.1);
+        const r = (1.2 + ((i * 7) % 10) * 0.36) * (cw / 452) * (1.3 - life * 0.5);
+        // 刚冒出来淡入、快到水面淡出
+        const fade = Math.min(1, life * 8) * (1 - Math.max(0, life - 0.82) / 0.18);
+        ctx.globalAlpha = 0.85 * fade;
+        ctx.drawImage(spr, px - r, py - r, r * 2, r * 2);
       }
       ctx.restore();
     }
@@ -393,7 +473,7 @@ const base = import.meta.env.BASE_URL.replace(/\/+$/, '');
       // 近处的鱼
       for (const s of swim) if (s.l === 1) fish(s, time);
 
-      if (img.bubbles) bubbles(img.bubbles, time);
+      bubbles(time);
       surface(time);
     }
 
