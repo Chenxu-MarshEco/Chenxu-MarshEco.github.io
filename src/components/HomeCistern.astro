@@ -10,11 +10,19 @@
  *
  * 所以它现在占的是**日历正下方那张大卡**（和日历同宽同高），
  * 样子也换成大卡那一套：封面图铺满、标题压在底下。
- * 图没传就画一块水色的占位（位置留好了，传了立刻就在）。
+ *
+ * 2026-11-18 站长原话：
+ *   「接下来做一个大工程：全网搜索MarineAquarium3相关信息 在首页的涣愿终池卡片里
+ *    尝试复刻这个水族缸 不要求互动但是要求有基本的frutigerareo风格画面和鱼类
+ *    最终呈现效果可以参考图1 需要重点复刻鱼类和FA水光波光感以及图二的FA风格时钟
+ *    （改为中文日期时间格式）」
+ * 所以**没传封面图**时不再是一块纯色，而是那个水族缸（见 HomeAquarium.astro）；
+ * 传了图就还是图（站长自己传的优先）。
  *
  * 跳转地址：面板里填了就用填的；留空就**按版块 id 去版块树里找那一页**
  * （`page-mwt0cistern`）—— 站长在编辑器里改了那一页的地址，这里跟着变。
  */
+import HomeAquarium from './HomeAquarium.astro';
 import widgets from '../data/home-widgets.json';
 import site from '../site.config';
 import { flattenBoards, type BoardNode } from '../utils/boards';
@@ -56,8 +64,8 @@ const url = external ? rawHref : withBase(rawHref);
       img ? (
         <img class="cistcard__img" src={img} alt="" loading="lazy" decoding="async" />
       ) : (
-        /* 占位：一块水色（和那一页的 Frutiger Aero 一个调子），等站长传图 */
-        <span class="cistcard__ph" aria-hidden="true" />
+        /* 没传图：那个水族缸（鱼 / 水光 / FA 时钟），见 HomeAquarium.astro */
+        <HomeAquarium />
       )
     }
   </span>
@@ -99,6 +107,12 @@ const url = external ? rawHref : withBase(rawHref);
     inset: 0;
     display: block;
     background: linear-gradient(180deg, rgba(30, 8, 48, 0.9), rgba(10, 2, 18, 0.9));
+    /*
+      水族缸里的气泡大小、钟的字号都按**这张卡自己的宽**算（cqw）——
+      卡片在 1440 屏上 452px 宽、在 1024 屏上 300 多，写死 px 会一大一小。
+    */
+    container-type: size;
+    container-name: cistcard;
   }
   .cistcard__img {
     display: block;
@@ -109,16 +123,6 @@ const url = external ? rawHref : withBase(rawHref);
   }
   .cistcard:hover .cistcard__img {
     transform: scale(1.045);
-  }
-  /* 没传图：一块水色（天空 → 水面），和那一页的布景同一个调子 */
-  .cistcard__ph {
-    display: block;
-    width: 100%;
-    height: 100%;
-    background:
-      radial-gradient(80% 60% at 78% 6%, rgba(255, 255, 255, 0.9), rgba(255, 255, 255, 0) 62%),
-      linear-gradient(180deg, #9fdcff 0%, #cdeeff 46%, #43b6d6 74%, #1d7fa8 100%);
-    opacity: 0.72;
   }
 
   .cistcard__body {

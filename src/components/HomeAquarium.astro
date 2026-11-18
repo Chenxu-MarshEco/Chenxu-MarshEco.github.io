@@ -1,0 +1,628 @@
+---
+/**
+ * 首页「涣愿终池」大卡里那口水族缸。
+ *
+ * 站长 2026-11-18 的原话：
+ *   「接下来做一个大工程：全网搜索MarineAquarium3相关信息 在首页的涣愿终池卡片里
+ *    尝试复刻这个水族缸 不要求互动但是要求有基本的frutigerareo风格画面和鱼类
+ *    最终呈现效果可以参考图1 需要重点复刻鱼类和FA水光波光感以及图二的FA风格时钟
+ *    （改为中文日期时间格式）」
+ *   「你看一下我已经在C:\Program Files (x86)\SereneScreen\Marine Aquarium 3安装好了
+ *    这个软件 这个屏保软件在2000前后年的电脑上就能流畅运行 技术上应该在如今的电脑上
+ *    很容易复制到网站里 参考群友给的建议：法线贴图+obj模型播片+预烘焙背景应该花不了
+ *    多少性能 给我一个方案 再开始制作」
+ *
+ * 所以这里走的就是那条"花不了多少性能"的路：**贴图全是 MA3 自己的**。
+ * 素材（public/img/aquarium/ 下那 23 个 WebP）由 tools/images/aquarium-bake.mjs
+ * 从屏保里解出来烘好、进仓库；构建不依赖本机装没装 MA3。
+ * 运行时只用 canvas 2D 画：
+ *   背景板 → 远处的鱼 → 焦散 → 光柱 → 近处的鱼 → 气泡 → 水面亮带
+ *
+ * 为什么鱼是"竖着切片"画的：
+ *   MA3 里一条鱼就是**一张带 alpha 的贴图**贴在一块弯板上，尾巴的摆动是弯板
+ *   顶点在动，不是真的骨骼。所以这里把贴图切成 20 条竖带、每条按 sin 上下错开，
+ *   尾巴那段错得多、鱼头几乎不动 —— 看上去就是鱼在摆尾，开销只有 20 次 drawImage。
+ *
+ * ⚠ 几个改之前必须知道的：
+ *   ① 十条鱼的贴图**全都朝左**。往右游要水平镜像，别拿游动方向直接当 scaleX
+ *     （那样往右游的鱼会倒着游）。
+ *   ② 鱼走到缸壁**掉头往回游**，不是穿出画面消失（原作也是掉头）。
+ *     turn 0→1 的 0.62 秒里 scaleX 走 cos 从 +1 过 0 到 -1。
+ *   ③ 别用 ctx.filter 做远处的鱼：一次 drawImage 会从 0.1ms 涨到 8ms。
+ *     要用"压过对比"的图，构建时烘好（fish-*-far.webp）。
+ *
+ * 性能：卡片只有 452×247，DPR 封 2；素材等这张卡快滚进视口才开始下（约 238KB）；
+ * 不进视口 / 标签页在后台就整个停掉；系统要"减少动态效果"就只画一帧静止画面。
+ */
+import widgets from '../data/home-widgets.json';
+
+/* 面板里传了封面图就用图，这里的缸不出现（站长自己传的优先，见 HomeCistern） */
+const cfg = ((widgets as Record<string, unknown>).cistern ?? {}) as { image?: string };
+const hasCover = String(cfg.image ?? '').trim() !== '';
+const base = import.meta.env.BASE_URL.replace(/\/+$/, '');
+---
+
+{
+  !hasCover && (
+    <span class="aq" data-aq data-aq-base={base}>
+      <canvas class="aq__cv" data-aq-cv aria-hidden="true" />
+      <span class="aq__glass" />
+      <span class="aq__payer" />
+
+      {/* FA 时钟：磨砂玻璃 + 荧光字，中文日期时间 */}
+      <span class="aq-clock" data-aq-clock aria-hidden="true">
+        <b class="aq-clock__week" data-aq-week />
+        <b class="aq-clock__time" data-aq-time />
+        <span class="aq-clock__date" data-aq-date />
+      </span>
+    </span>
+  )
+}
+
+<script>
+  /*
+    鱼的清单：
+      k = 贴图，w = 占卡片宽的比例，
+      y = 活动高度（占缸高）—— 十条鱼各占一条高度带，尽量不互相压，
+      v = 速度（每秒游过几个卡片宽；0.05 就是 20 秒横穿一趟），
+      d = 初始朝向（-1 往左 / +1 往右），l = 图层（0 在焦散后面 / 1 在前面）
+  */
+  const FISH = [
+    { k: 'tang-brown', w: 0.150, y: [0.14, 0.19], v: 0.052, d: 1, l: 0, bob: 0.008 },
+    { k: 'idol', w: 0.092, y: [0.23, 0.28], v: 0.044, d: -1, l: 0, bob: 0.009 },
+    { k: 'tang-blue', w: 0.110, y: [0.32, 0.37], v: 0.070, d: -1, l: 1, bob: 0.010 },
+    { k: 'butterfly-raccoon', w: 0.076, y: [0.41, 0.46], v: 0.048, d: 1, l: 0, bob: 0.008 },
+    { k: 'angel-emperor', w: 0.100, y: [0.50, 0.55], v: 0.058, d: 1, l: 1, bob: 0.009 },
+    { k: 'tang-yellow', w: 0.084, y: [0.56, 0.60], v: 0.050, d: -1, l: 0, bob: 0.008 },
+    { k: 'butterfly-copper', w: 0.080, y: [0.18, 0.23], v: 0.046, d: 1, l: 1, bob: 0.008 },
+    { k: 'clown', w: 0.068, y: [0.45, 0.50], v: 0.054, d: 1, l: 1, bob: 0.007 },
+    { k: 'angel-flame', w: 0.060, y: [0.37, 0.42], v: 0.042, d: -1, l: 1, bob: 0.007 },
+    { k: 'angel-juvenile', w: 0.056, y: [0.27, 0.32], v: 0.040, d: -1, l: 0, bob: 0.006 },
+  ];
+
+  const WEEK = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'];
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const rnd = (a: number, b: number) => a + Math.random() * (b - a);
+
+  /* ------------------------------------------------------------- 时钟 */
+  function clock(el: HTMLElement) {
+    const w = el.querySelector<HTMLElement>('[data-aq-week]');
+    const t = el.querySelector<HTMLElement>('[data-aq-time]');
+    const d = el.querySelector<HTMLElement>('[data-aq-date]');
+    let last = '';
+    const tick = () => {
+      const now = new Date();
+      const key = `${now.getFullYear()}-${now.getMonth()}-${now.getDate()}-${now.getHours()}-${now.getMinutes()}`;
+      if (key === last) return;
+      last = key;
+      if (w) w.textContent = WEEK[now.getDay()]!;
+      if (t) t.textContent = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
+      if (d) d.textContent = `${now.getFullYear()}年${now.getMonth() + 1}月${now.getDate()}日`;
+    };
+    tick();
+    window.setInterval(tick, 1000);
+  }
+
+  /* ------------------------------------------------------------- 画缸 */
+  function aquarium(root: HTMLElement, bust = '') {
+    const cv = root.querySelector<HTMLCanvasElement>('[data-aq-cv]');
+    const host = cv?.parentElement;
+    if (!cv || !host) return;
+
+    const ctx = cv.getContext('2d', { alpha: false });
+    if (!ctx) return;
+
+    const less = window.matchMedia('(prefers-reduced-motion: reduce)');
+
+    /* 素材：背景 / 焦散 / 气泡柱 / 十条鱼（远的那几条另有一份压过对比的） */
+    const src: Record<string, string> = {
+      reef: `${bust}/img/aquarium/reef.webp`,
+      caustic: `${bust}/img/aquarium/caustic.webp`,
+      bubbles: `${bust}/img/aquarium/bubbles.webp`,
+    };
+    for (const f of FISH) {
+      src[f.k] = `${bust}/img/aquarium/fish-${f.k}.webp`;
+      if (f.l === 0) src[`${f.k}-far`] = `${bust}/img/aquarium/fish-${f.k}-far.webp`;
+    }
+
+    type Shot = HTMLImageElement;
+    const img: Record<string, Shot> = {};
+    let ready = 0;
+    const total = Object.keys(src).length;
+
+    /* 背景烘一次到离屏画布：每帧只 blit 一次，不用反复缩那张 1200×656 */
+    const bg = document.createElement('canvas');
+    const bgx = bg.getContext('2d')!;
+    let bgDone = false;
+
+    let cw = 0;
+    let ch = 0;
+    let dpr = 1;
+
+    function fit() {
+      const r = host!.getBoundingClientRect();
+      const nd = Math.min(2, window.devicePixelRatio || 1);
+      const nw = Math.max(1, Math.round(r.width));
+      const nh = Math.max(1, Math.round(r.height));
+      if (nw === cw && nh === ch && nd === dpr) return;
+      cw = nw;
+      ch = nh;
+      dpr = nd;
+      cv!.width = Math.round(cw * dpr);
+      cv!.height = Math.round(ch * dpr);
+      bg.width = cv!.width;
+      bg.height = cv!.height;
+      bgDone = false;
+    }
+
+    function bakeBg() {
+      if (!img.reef) return;
+      const W = bg.width;
+      const H = bg.height;
+      const iw = img.reef.naturalWidth;
+      const ih = img.reef.naturalHeight;
+      // cover
+      const s = Math.max(W / iw, H / ih);
+      const dw = iw * s;
+      const dh = ih * s;
+      bgx.setTransform(1, 0, 0, 1, 0, 0);
+      bgx.clearRect(0, 0, W, H);
+      bgx.drawImage(img.reef, (W - dw) / 2, (H - dh) / 2, dw, dh);
+      bgDone = true;
+    }
+
+    /* 鱼的运动状态 */
+    const swim = FISH.map((f, i) => ({
+      ...f,
+      img: null as Shot | null,
+      // 游动方向（-1 往左 / +1 往右）—— 和贴图本身朝哪边不是一回事，见 fish()
+      dir: f.d,
+      // 一开始就摊开：按黄金比错位，十来条鱼不会挤在同一个地方
+      x: 0.03 + (((i * 0.37 + 0.05) % 1) * 0.86),
+      y: (f.y[0] + f.y[1]) / 2,
+      h: 0,
+      wpx: 0,
+      ph: rnd(0, Math.PI * 2),
+      bp: rnd(0, Math.PI * 2),
+      bs: rnd(0.22, 0.48),
+      // 掉头动画：turn 0→1 走完就换方向，turnFrom 是转之前朝哪边
+      turn: 1,
+      turnFrom: f.d,
+      turnTo: f.d,
+    }));
+
+    let t0 = performance.now();
+    let last = t0;
+    let raf = 0;
+    let visible = true;
+    let onScreen = false;
+
+    function sizeFish() {
+      for (const s of swim) {
+        // 远处的鱼用那份压过对比的图（构建时就烘好了，运行时不用 filter）
+        const im = img[s.l === 0 ? `${s.k}-far` : s.k] ?? img[s.k];
+        if (!im) continue;
+        s.img = im;
+        s.wpx = Math.max(18, s.w * cw);
+        s.h = (im.naturalHeight / im.naturalWidth) * s.wpx;
+      }
+    }
+
+    /**
+     * 一条鱼：竖切 20 条，尾巴那段按 sin 上下错开 —— 这就是"摆尾"。
+     *
+     * ⚠ MA3 那 10 张鱼的贴图**全都朝左**（头在图的左边）。所以：
+     *   · 往左游（dir = -1）→ 原样画；
+     *   · 往右游（dir = +1）→ 水平镜像。
+     *   上一版拿 dir 直接当 scaleX 用，结果往右游的鱼全是倒着游的。
+     *
+     * 掉头的时候 scaleX 从 +1 连续过 0 再到 -1（cos 曲线），
+     * 看上去就是鱼把身子侧过来转了一个圈 —— 原作也是这么掉头的。
+     */
+    function fish(s: typeof swim[number], time: number) {
+      const im = s.img;
+      if (!im) return;
+      const N = 20;
+      const sw = im.naturalWidth / N;
+      const y = (s.y + Math.sin(time * s.bs * 0.31 + s.bp * 1.7) * 0.020 + Math.sin(time * s.bs + s.bp) * s.bob) * ch - s.h / 2;
+      const x = s.x * cw;
+
+      /*
+        sx = 这个瞬间的水平缩放。
+        贴图朝左，所以"面朝左"是 sx=+1，"面朝右"是 sx=-1；
+        s.dir 是**游动方向**，sx 取 -s.dir 才对得上。
+        掉头过程 turn: 0→1，sx 从 -s.turnFrom 走到 -s.turnTo。
+      */
+      let sx = -s.dir;
+      if (s.turn < 1) {
+        const e = s.turn * s.turn * (3 - 2 * s.turn); // smoothstep
+        sx = -s.turnFrom * Math.cos(Math.PI * e);
+        if (Math.abs(sx) < 0.06) sx = sx < 0 ? -0.06 : 0.06; // 别缩成一条线
+      }
+      // 鱼头在贴图的哪一侧：sx>0 时头在左（就是原图），sx<0 时头在右
+      const headLeft = sx > 0;
+
+      ctx.save();
+      ctx.translate(x + s.wpx / 2, 0);
+      ctx.scale(sx, 1);
+      ctx.translate(-s.wpx / 2, 0);
+
+      /*
+        远处的鱼（l=0）压一点对比：它们和背景之间隔着一层水，
+        和近处的鱼一样清楚的话，整缸就"扁"了。
+        这份"压过"的图是构建时烘的（fish-*-far.webp）—— 运行时用 ctx.filter
+        会把一次 drawImage 从 0.1ms 变成 8ms，整帧 2ms → 159ms，用不起。
+      */
+      if (s.l === 0) ctx.globalAlpha = 0.92;
+
+      for (let i = 0; i < N; i++) {
+        // u: 0 是鱼头，1 是鱼尾
+        const u = headLeft ? i / (N - 1) : 1 - i / (N - 1);
+        const bend = Math.pow(u, 1.7) * s.h * 0.075;
+        const dy = Math.sin(time * 3.1 + s.ph + u * 3.2) * bend;
+        // 每条多画 1px 盖住接缝
+        ctx.drawImage(im, i * sw, 0, sw, im.naturalHeight, (i * s.wpx) / N, y + dy, s.wpx / N + 1, s.h);
+      }
+      ctx.restore();
+    }
+
+    /**
+     * 焦散：把那张光网平铺，两层不同尺度不同速度地滚。
+     *
+     * 竖着分 10 条画、每条一个 alpha：水面的光网几乎看不见，越往下越明显
+     * （光被水面聚焦到底下的砂石上）。整层一次性铺满的话，鱼游过的地方
+     * 也糊着一层网格，看着像贴了张纱窗。
+     */
+    function caustic(im: Shot, time: number, tile: number, speed: [number, number], alpha: number) {
+      const pat = ctx.createPattern(im, 'repeat');
+      if (!pat) return;
+      const m = new DOMMatrix();
+      m.a = tile / im.naturalWidth;
+      m.d = tile / im.naturalHeight;
+      pat.setTransform(m);
+
+      const off = ((time * speed[0]) % tile + tile) % tile;
+      const offY = ((time * speed[1]) % tile + tile) % tile;
+      const BANDS = 10;
+
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.fillStyle = pat;
+      for (let i = 0; i < BANDS; i++) {
+        const y0 = (i / BANDS) * ch;
+        const y1 = ((i + 1) / BANDS) * ch;
+        // 0 在顶、1 在底；平方一下让上半段更干净
+        const t = (i + 0.5) / BANDS;
+        ctx.globalAlpha = alpha * Math.pow(t, 1.8);
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(0, y0, cw, y1 - y0 + 1);
+        ctx.clip();
+        ctx.translate(-off, -offY);
+        ctx.fillRect(0, 0, cw + tile * 2, ch + tile * 2);
+        ctx.restore();
+      }
+      ctx.restore();
+    }
+
+    /** 光柱：从水面斜下来的几束白光 */
+    function shafts(time: number) {
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      for (let i = 0; i < 5; i++) {
+        const sway = Math.sin(time * 0.16 + i * 1.7) * 0.04;
+        const x = (0.05 + i * 0.22 + sway) * cw;
+        const w = (0.075 + 0.03 * Math.sin(time * 0.21 + i)) * cw;
+        const g = ctx.createLinearGradient(x, 0, x + w * 1.4, ch * 0.85);
+        const a = 0.026 + 0.012 * Math.sin(time * 0.28 + i * 2.1);
+        g.addColorStop(0, `rgba(206,240,255,${a})`);
+        g.addColorStop(0.6, `rgba(170,225,255,${a * 0.3})`);
+        g.addColorStop(1, 'rgba(150,215,255,0)');
+        ctx.fillStyle = g;
+        // 边缘是斜的、上下都不切死，糊成一片柔光而不是一根根光柱
+        ctx.beginPath();
+        ctx.moveTo(x, -ch * 0.1);
+        ctx.lineTo(x + w, -ch * 0.1);
+        ctx.lineTo(x + w * 2.4, ch * 0.95);
+        ctx.lineTo(x + w * 0.7, ch * 0.95);
+        ctx.closePath();
+        ctx.fill();
+      }
+      ctx.restore();
+    }
+
+    /** 气泡：气泡柱贴图整列往上滚 */
+    function bubbles(im: Shot, time: number) {
+      const colW = cw * 0.115;
+      const colH = (im.naturalHeight / im.naturalWidth) * colW;
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      for (const [cx, spd, al] of [[0.90, 0.13, 0.5], [0.845, 0.10, 0.3]] as const) {
+        const y0 = ((time * spd) % colH + colH) % colH;
+        ctx.globalAlpha = al;
+        for (let k = 0; k < Math.ceil(ch / colH) + 1; k++) {
+          ctx.drawImage(im, cx * cw - colW / 2, y0 - colH + k * colH, colW, colH);
+        }
+      }
+      ctx.restore();
+    }
+
+    /** 水面：顶上一条亮光，FA 那种"水在水里"的感觉 */
+    function surface(time: number) {
+      const h = ch * 0.16;
+      const g = ctx.createLinearGradient(0, 0, 0, h);
+      g.addColorStop(0, 'rgba(186,232,255,0.30)');
+      g.addColorStop(0.45, 'rgba(150,215,246,0.09)');
+      g.addColorStop(1, 'rgba(140,205,240,0)');
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.lineTo(cw, 0);
+      ctx.lineTo(cw, h * 0.62);
+      const steps = 12;
+      for (let i = steps; i >= 0; i--) {
+        const x = (i / steps) * cw;
+        const y = h * 0.62 + Math.sin(i * 0.9 + time * 0.6) * h * 0.08 + Math.sin(i * 0.37 - time * 0.42) * h * 0.05;
+        ctx.lineTo(x, y);
+      }
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    }
+
+    function draw(time: number) {
+      if (!bgDone) bakeBg();
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.globalAlpha = 1;
+      ctx.globalCompositeOperation = 'source-over';
+
+      // 背景
+      ctx.drawImage(bg, 0, 0, cw, ch);
+
+      // 远处的鱼（焦散在它们前面 → 看起来更远）
+      for (const s of swim) if (s.l === 0) fish(s, time);
+
+      if (img.caustic) {
+        caustic(img.caustic, time, cw * 0.95, [9, 4], 0.17);
+        caustic(img.caustic, time * 0.71, cw * 0.55, [-6, 8], 0.10);
+      }
+      shafts(time);
+
+      // 近处的鱼
+      for (const s of swim) if (s.l === 1) fish(s, time);
+
+      if (img.bubbles) bubbles(img.bubbles, time);
+      surface(time);
+    }
+
+    function step(now: number) {
+      raf = 0;
+      const dt = Math.min(0.06, (now - last) / 1000);
+      last = now;
+      const time = (now - t0) / 1000;
+
+      if (!less.matches) {
+        for (const s of swim) {
+          /*
+            掉头：走到缸壁就原地转圈再往回游（原作就是这样，不会游出去消失）。
+            turn 从 0 到 1 走完 0.62 秒，转的过程中速度降到三成 ——
+            鱼在水里转身本来就是慢的，全速转看着像电风扇。
+          */
+          if (s.turn < 1) {
+            s.turn = Math.min(1, s.turn + dt / 0.62);
+            if (s.turn >= 1) s.dir = s.turnTo;
+          }
+          const slow = s.turn < 1 ? 0.3 : 1;
+          s.x += s.v * s.dir * dt * slow;
+
+          // 撞到缸壁之前就掉头（留一点余量，鱼嘴不会顶到画框上）
+          const wf = s.wpx / cw;
+          const hitLeft = s.dir < 0 && s.x <= 0.055;
+          const hitRight = s.dir > 0 && s.x + wf >= 0.945;
+          if ((hitLeft || hitRight) && s.turn >= 1) {
+            s.turn = 0;
+            s.turnFrom = s.dir;
+            s.turnTo = -s.dir;
+            s.x = hitLeft ? 0.055 : Math.max(0.055, 0.945 - wf);
+          }
+        }
+      }
+
+      draw(time);
+      if (visible && onScreen && !less.matches) raf = requestAnimationFrame(step);
+    }
+
+    function kick() {
+      if (raf || !visible || !onScreen) return;
+      last = performance.now();
+      raf = requestAnimationFrame(step);
+    }
+
+    function load() {
+      for (const [k, url] of Object.entries(src)) {
+        const im = new Image();
+        im.decoding = 'async';
+        im.onload = () => {
+          img[k] = im;
+          ready++;
+          if (k === 'reef') bgDone = false;
+          if (ready === total) {
+            fit();
+            sizeFish();
+            draw(0);
+            kick();
+          }
+        };
+        im.src = url;
+      }
+    }
+
+    /*
+      素材不是一上来就下：这口缸一共 240KB 左右（背景 89 + 焦散 + 十几条鱼），
+      首页首屏根本没它（它在第三行大卡里）。等这张卡快要滚进视口了才开始拉，
+      首屏就一个字节都不多付。
+    */
+    let started = false;
+    function start() {
+      if (started) return;
+      started = true;
+      load();
+    }
+
+    const ro = new ResizeObserver(() => {
+      fit();
+      sizeFish();
+      if (!raf) draw((performance.now() - t0) / 1000);
+    });
+    ro.observe(host);
+
+    const io = new IntersectionObserver((es) => {
+      onScreen = es.some((e) => e.isIntersecting);
+      if (onScreen) {
+        start();
+        kick();
+      } else if (raf) {
+        cancelAnimationFrame(raf);
+        raf = 0;
+      }
+    }, { rootMargin: '300px' });
+    io.observe(root);
+
+    document.addEventListener('visibilitychange', () => {
+      visible = !document.hidden;
+      if (visible) kick();
+      else if (raf) { cancelAnimationFrame(raf); raf = 0; }
+    });
+
+    less.addEventListener('change', () => {
+      if (less.matches && raf) { cancelAnimationFrame(raf); raf = 0; }
+      draw((performance.now() - t0) / 1000);
+      if (!less.matches) kick();
+    });
+  }
+
+  const root = document.querySelector<HTMLElement>('[data-aq]');
+  if (root) {
+    const c = root.querySelector<HTMLElement>('[data-aq-clock]');
+    if (c) clock(c);
+    aquarium(root, root.dataset.aqBase || '');
+  }
+</script>
+
+<style is:global>
+  /*
+    ⚠ 全局样式：canvas 和气泡都是 JS 造出来的，节点上没有 `data-astro-cid`，
+    作用域样式一条都匹配不上。所有选择器都带 `.aq` 前缀，不会漏到别处。
+  */
+  .aq {
+    position: absolute;
+    inset: 0;
+    display: block;
+    overflow: hidden;
+    contain: layout paint;
+    background: #14507f;
+    container-type: size;
+    container-name: cistcard;
+  }
+  .aq__cv {
+    position: absolute;
+    inset: 0;
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+
+  /* 玻璃：左上角一道反光 + 内缩一圈高光，FA 的"隔着玻璃看" */
+  .aq__glass {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background:
+      linear-gradient(118deg, rgba(255, 255, 255, 0.16) 0%, rgba(255, 255, 255, 0.05) 16%, rgba(255, 255, 255, 0) 34%),
+      radial-gradient(120% 90% at 50% 8%, rgba(198, 240, 255, 0.14), rgba(0, 0, 0, 0) 62%),
+      radial-gradient(110% 96% at 50% 104%, rgba(2, 22, 34, 0.52), rgba(0, 0, 0, 0) 58%);
+    box-shadow:
+      inset 0 1px 0 rgba(220, 250, 255, 0.34),
+      inset 0 0 0 1px rgba(160, 225, 255, 0.12);
+  }
+
+  /* 压在整张缸上的一层水色，把鱼和背景拉进同一缸水 */
+  .aq__payer {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: linear-gradient(180deg, rgba(56, 148, 210, 0.1), rgba(10, 74, 104, 0.16));
+    mix-blend-mode: soft-light;
+  }
+
+  /* ---------------------------------------------------------------- FA 时钟 */
+  .aq-clock {
+    position: absolute;
+    top: 8%;
+    right: 4%;
+    display: grid;
+    justify-items: center;
+    gap: 0.04em;
+    padding: 0.44em 0.72em 0.5em;
+    border-radius: 13px;
+    background: linear-gradient(
+      165deg,
+      rgba(255, 255, 255, 0.5) 0%,
+      rgba(190, 240, 255, 0.16) 42%,
+      rgba(8, 52, 78, 0.34) 100%
+    );
+    border: 1px solid rgba(255, 255, 255, 0.7);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.92),
+      inset 0 -10px 18px -12px rgba(0, 40, 70, 0.65),
+      0 10px 26px -14px rgba(0, 40, 70, 0.8);
+    backdrop-filter: blur(7px) saturate(1.25);
+    -webkit-backdrop-filter: blur(7px) saturate(1.25);
+    font-size: clamp(8px, 2.5cqw, 13px);
+    line-height: 1.1;
+    pointer-events: none;
+    overflow: hidden;
+  }
+  .aq-clock::before {
+    content: '';
+    position: absolute;
+    inset: 0 0 auto 0;
+    height: 46%;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.52), rgba(255, 255, 255, 0));
+    border-radius: 13px 13px 60% 60% / 13px 13px 100% 100%;
+    pointer-events: none;
+  }
+  .aq-clock__week,
+  .aq-clock__time,
+  .aq-clock__date {
+    position: relative;
+    display: block;
+    font-family: var(--font-sans);
+    font-variant-numeric: tabular-nums;
+    color: #d8ff8a;
+    text-shadow:
+      0 0 6px rgba(150, 255, 90, 0.85),
+      0 0 16px rgba(90, 220, 120, 0.55),
+      0 1px 0 rgba(0, 30, 20, 0.45);
+  }
+  .aq-clock__week {
+    font-size: 0.82em;
+    font-weight: 700;
+    letter-spacing: 0.22em;
+    text-indent: 0.22em;
+  }
+  .aq-clock__time {
+    font-size: 1.95em;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    line-height: 1;
+  }
+  .aq-clock__date {
+    font-size: 0.78em;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    opacity: 0.92;
+  }
+</style>

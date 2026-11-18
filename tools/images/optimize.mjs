@@ -96,6 +96,16 @@ const CFG = {
 const RASTER = new Set(['.jpg', '.jpeg', '.png', '.webp']);
 const SKIP_EXT = new Set(['.gif', '.svg', '.ico', '.avif', '.bmp']);
 
+/**
+ * 这些目录下的图**不进变体清单**，原样发。
+ *
+ * `img/aquarium/` 是首页水族缸（HomeAquarium.astro）的贴图：它们是 JS 里
+ * `new Image()` 拉进来给 canvas 用的，不走 `<img>` / `<picture>`，也从来不需要
+ * 多尺寸（卡片就 452px 宽）。跟着跑一遍变体只会往 dist 里多塞一份没人下载的
+ * 400/800/1200 + avif。
+ */
+const RAW_DIRS = new Set(['/img/aquarium']);
+
 // ---------------------------------------------------------------- sharp 加载
 
 let sharpPromise = null;
@@ -408,6 +418,7 @@ export async function optimizeAll(opts = {}) {
     const ext = path.extname(abs).toLowerCase();
     if (SKIP_EXT.has(ext) || !RASTER.has(ext)) continue;
     const key = srcKey(abs);
+    if (RAW_DIRS.has(path.posix.dirname(key))) continue;
     if (only && !only.includes(key)) continue;
     candidates.push({ abs, key });
   }

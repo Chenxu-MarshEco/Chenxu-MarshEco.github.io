@@ -254,7 +254,7 @@ const cist = await cdp.ev(`(() => {
     href: n.getAttribute('href'),
     title: (n.querySelector('.cistcard__title') || {}).textContent || '',
     hasImg: !!n.querySelector('img'),
-    hasPh: !!n.querySelector('.cistcard__ph'),
+    hasTank: !!n.querySelector('.aq canvas.aq__cv'),
     cursor: getComputedStyle(n).cursor,
   };
 })()`);
@@ -262,8 +262,8 @@ check('★ 涣愿终池那张卡是链接，指向 /memoriterminalcistern',
   cist?.tag === 'A' && cist.href === '/memoriterminalcistern', JSON.stringify(cist));
 check('涣愿终池卡上有标题（数据里那个，不是写死的）',
   cist?.title === (widgets.cistern?.title || '涣愿终池'), JSON.stringify(cist?.title));
-check('★ 还没传封面图时画的是占位（不是一块黑洞）',
-  cist?.hasImg === false && cist?.hasPh === true, JSON.stringify({ img: cist?.hasImg, ph: cist?.hasPh }));
+check('★ 还没传封面图时画的是水族缸（不是一块黑洞）',
+  cist?.hasImg === false && cist?.hasTank === true, JSON.stringify({ img: cist?.hasImg, tank: cist?.hasTank }));
 check('涣愿终池卡是能点的手型光标', cist?.cursor === 'pointer', cist?.cursor);
 
 /* ------------------------------------------------------------------ ⑤ 花娅远位面卡跟着版块树走 */
