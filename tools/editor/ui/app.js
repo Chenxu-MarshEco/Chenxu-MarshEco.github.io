@@ -11867,7 +11867,7 @@ async function openWidgetPanel(id, modal, editor, active) {
     · 曼沫砾总线 —— 公告在「公告」面板（src/data/announcements.json）。
 */
 
-/** 卡片选择条上的顺序 = 首页从上往下的顺序 */
+/** 卡片选择条上的顺序 = 首页从上往下的顺序（2026-11-18 涣愿终池挪到大卡那一格） */
 const HOME_CARDS = [
   { id: 'calendar', label: '日历' },
   { id: 'iceberg', label: '冰室冰山' },
@@ -12192,7 +12192,7 @@ function drawCisternCard(body, status) {
     setValue: (v) => { cfg.image = v; },
     onValue: (v) => { imgInput.value = v; },
     onChanged: () => markPanelDirty(status, 'widgets'),
-    hint: '建议横图：卡片是宽而扁的一条，图会按 cover 裁。',
+    hint: '这张卡是日历下方那一整格（和日历一样宽），图会按 cover 铺满整张卡。',
   });
   imgInput.addEventListener('input', () => {
     slot.sync(imgInput.value, true);
@@ -12236,7 +12236,7 @@ function drawCisternCard(body, status) {
   body.appendChild(texts);
 }
 
-/* ---------- 预留卡（日历下方那张） ---------- */
+/* ---------- 预留卡（涣愿终池右边那张小卡） ---------- */
 
 function drawPlaceholderCard(body, status) {
   const cfg = widgetsDraft.placeholder ?? (widgetsDraft.placeholder = {});

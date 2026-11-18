@@ -18,9 +18,11 @@
     "           ⚠ 论坛自己的数据（版块、评论系统）**不在这个文件里** —— 见 src/data/liyutang.json。",
     "daily      「每日精华」：title 是标题（点它进 href，默认 /salon/），",
     "           下面那条随机精华来自 src/data/salon.json（按访问者当天日期挑，同一天固定、隔天自动换）。",
-    "cistern    「涣愿终池」入口卡（2026-11-17 加）：title / image / text / href 四样，和 iceberg 一样。",
+    "cistern    「涣愿终池」卡（2026-11-17 加，2026-11-18 挪到日历下方那张大卡上）：",
+    "           title / image / text / href 四样，和 iceberg 一样。",
     "           href 留空就自动指向版块树里那一页（id = page-mwt0cistern）的地址。",
-    "placeholder 日历下方那张预留卡（2026-11-17 加）：title / image / text / href。",
+    "placeholder 涣愿终池右边那张小卡（2026-11-17 加，2026-11-18 挪到这个位置）：",
+    "           title / image / text / href。",
     "           四样全空就是一块空着的占位（虚线框），填了才显示内容。",
     "           「花娅远位面」那张卡**不在这里**：它直接读版块树里的 huaya-r3，",
     "           标题 / 地址 / 子栏目全跟着版块树走，加一个子版块首页就多一条。"

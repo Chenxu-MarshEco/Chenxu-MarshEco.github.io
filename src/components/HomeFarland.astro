@@ -138,7 +138,12 @@ const kids = visibleChildren(node).map((k) => {
     transform: translateX(2px);
   }
 
-  /* 清单区自己滚：卡片再高也不会把首页那一行顶起来 */
+  /*
+    清单区自己滚：卡片再高也不会把首页那一行顶起来。
+    2026-11-18 站长：「把花娅远位面里的页面块竖排并且可以用滚轮下滚 不要像现在这样挤在一起」
+    —— 所以里面是**一列**（不是两列），滚轮在卡片上直接滚这一列，
+    滚到头也不把首页带着一起滚（overscroll-behavior: contain）。
+  */
   .far__scroll {
     flex: 1 1 0;
     min-height: 0;
@@ -153,8 +158,8 @@ const kids = visibleChildren(node).map((k) => {
     margin: 0;
     padding: 0;
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 0.4rem;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.45rem;
   }
 
   /* 一张小卡：和 /huaya 上那个 .card 同一个味道，只是更矮 */
@@ -165,8 +170,8 @@ const kids = visibleChildren(node).map((k) => {
     justify-content: center;
     overflow: hidden;
     width: 100%;
-    min-height: 46px;
-    padding: 0.35rem 0.4rem;
+    min-height: 52px;
+    padding: 0.45rem 0.5rem;
     border-radius: 9px;
     border: 1px solid rgba(255, 120, 190, 0.4);
     background: rgba(60, 8, 82, 0.5);
@@ -176,7 +181,7 @@ const kids = visibleChildren(node).map((k) => {
     transition: background 0.16s ease, border-color 0.16s ease, transform 0.16s ease;
   }
   .far__card--cover {
-    min-height: 58px;
+    min-height: 64px;
     background-color: rgba(22, 2, 36, 0.9);
   }
   .far__card--cover::before {
@@ -206,11 +211,11 @@ const kids = visibleChildren(node).map((k) => {
     z-index: 1;
     max-width: 100%;
     /*
-      卡片只有一百来像素宽（首页那一格的一半），字号必须比 /huaya 上小一档，
-      而且**最多两行**：名字长的（「龙历院花娅支部」）折两行正好，
+      卡片现在是一整行宽（2026-11-18 改成竖排），字号可以比原来两列时大一档；
+      仍然**最多两行**：名字长的（「龙历院花娅支部」）折两行正好，
       再长就截断 —— 卡片本身是 overflow:hidden，不截的话字会顶出卡片。
     */
-    font-size: 0.72rem;
+    font-size: 0.8rem;
     line-height: 1.35;
     letter-spacing: 0.02em;
     overflow-wrap: anywhere;

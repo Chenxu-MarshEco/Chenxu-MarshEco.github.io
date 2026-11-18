@@ -1,5 +1,5 @@
 /*
- * 首页那两张新卡（2026-11-17）的验收 —— 真构建产物、真浏览器、真服务端。
+ * 首页那几张卡的验收 —— 真构建产物、真浏览器、真服务端。
  *
  * 站长原话（照抄）：
  *   「在涣源溪水钟下方加一个同尺寸的卡片 先不要做东西 留着占位」
@@ -9,16 +9,24 @@
  *    一样大且对齐」
  *   「花娅远位面的首页卡和花娅陌域里的花娅远位面卡同步 如果以后多了什么栏目
  *    映射到首页同步更新」
+ *   「把涣愿终池挪到它左边那个大卡片上 后面要给这张卡片做特效 稍后再说
+ *    原位置的小卡就留占位符」
+ *   「把花娅远位面里的页面块竖排并且可以用滚轮下滚 不要像现在这样挤在一起」
+ *   「注意到甬城晴雨和曼沫砾总线之间的缝隙 和曼沫砾总线和涣源溪水钟之间的缝隙
+ *    高度不一样 重新检查一遍首页所有卡片保证严格对齐」
  *
  * 所以这里盯这些事：
- *   ① 三张新卡都在、位置对（日历下方 / 冰山精华下方并排）；
- *   ② **尺寸对齐**：预留卡和日历同宽同高；涣愿终池 / 花娅远位面跟上面那两张小卡
+ *   ① 三张卡都在、位置对（涣愿终池占日历下方那张大卡；预留卡 + 花娅远位面
+ *      在冰山 / 精华下方并排）；
+ *   ② **尺寸对齐**：涣愿终池和日历同宽同高；预留卡 / 花娅远位面跟上面那两张小卡
  *      一样宽一样高、左右边缘对齐；
  *   ③ 预留卡默认是**空的**（一个字都没有，站规）；
  *   ④ 涣愿终池卡：是链接、指向那一页、能传封面图（没传时是占位不是黑洞）；
  *   ⑤ 花娅远位面卡：标题 / 地址 / 子栏目**全部来自版块树**（改树就跟着变，
- *      不是抄一份数据在首页）；
- *   ⑥ 换屏幕宽度、换月份（日历 5 行 / 6 行）之后对齐关系照样成立。
+ *      不是抄一份数据在首页）；子栏目**竖排一列**、能滚；
+ *   ⑥ 换屏幕宽度、换月份（日历 5 行 / 6 行）之后对齐关系照样成立；
+ *   ⑦ 首页所有行与行之间的缝**一样宽**（大板块→第一行、第一行→第二行、
+ *      第二行→第三行）。
  *
  * 用法：node tools/checks/home-cards-check.mjs [dist目录]
  */
@@ -149,16 +157,29 @@ const snap = async () => {
   return cdp.ev(`(() => {
     const box = (s) => { const n = document.querySelector(s); if (!n) return null;
       const r = n.getBoundingClientRect();
-      return { x: Math.round(r.left), y: Math.round(r.top + window.scrollY), w: Math.round(r.width),
-        h: Math.round(r.height), right: Math.round(r.right), bottom: Math.round(r.bottom + window.scrollY) }; };
+      /* 留一位小数：缝是 25.6px 这种值，取整之后会看着像 25 / 26 两个数 */
+      const q = (v) => Math.round(v * 10) / 10;
+      return { x: q(r.left), y: q(r.top + window.scrollY), w: q(r.width),
+        h: q(r.height), right: q(r.right), bottom: q(r.bottom + window.scrollY) }; };
+    const board = box('.boards .board');
+    const ann = box('#home-announce');
+    const lyt = box('#home-liyutang');
+    const cal = box('#home-cal');
+    const ice = box('.ice');
+    const daily = box('.daily');
+    const cistern = box('#home-cistern');
+    const placeholder = box('#home-placeholder');
+    const farland = box('#home-farland');
+    /* 行与行之间的缝（底边 → 顶边），用来验"所有缝一样宽" */
+    const gap = (a, b) => (a && b) ? Math.round((b.y - a.bottom) * 10) / 10 : null;
     return {
-      cal: box('#home-cal'),
-      ice: box('.ice'),
-      daily: box('.daily'),
-      placeholder: box('#home-placeholder'),
-      cistern: box('#home-cistern'),
-      farland: box('#home-farland'),
+      board, ann, lyt, cal, ice, daily, cistern, placeholder, farland,
       pairUnder: box('.extras__pair--under'),
+      gaps: {
+        boardToRow1: gap(board, ann),
+        row1ToRow2: gap(ann, cal),
+        row2ToRow3: gap(cal, cistern),
+      },
       kids: [...document.querySelectorAll('.extras__grid > *')].map((n) => n.id || n.className),
       overflowX: document.documentElement.scrollWidth - document.documentElement.clientWidth,
     };
@@ -172,33 +193,41 @@ await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 1000
 await cdp.goto('/');
 const g = await snap();
 info(`1440：日历 ${JSON.stringify(g.cal)}`);
-info(`1440：预留卡 ${JSON.stringify(g.placeholder)}`);
-info(`1440：涣愿终池 ${JSON.stringify(g.cistern)} / 花娅远位面 ${JSON.stringify(g.farland)}`);
+info(`1440：涣愿终池 ${JSON.stringify(g.cistern)}`);
+info(`1440：预留卡 ${JSON.stringify(g.placeholder)} / 花娅远位面 ${JSON.stringify(g.farland)}`);
 
-check('★ 三张新卡都在页面上（预留卡 / 涣愿终池 / 花娅远位面）',
-  !!g.placeholder && !!g.cistern && !!g.farland, JSON.stringify({ 预留: !!g.placeholder, 终池: !!g.cistern, 远位面: !!g.farland }));
-check('★ 预留卡在「涣源溪水钟」**正下方**（同一列、顶边在日历底边之下）',
-  !!g.placeholder && near(g.placeholder.x, g.cal.x) && g.placeholder.y >= g.cal.bottom - 1,
-  JSON.stringify({ 预留: g.placeholder, 日历底: g.cal?.bottom }));
-check('★ 涣愿终池 / 花娅远位面在「冰室冰山 / 每日精华」**正下方**',
-  !!g.cistern && !!g.farland && g.cistern.y >= g.ice.bottom - 1 && g.farland.y >= g.daily.bottom - 1,
-  JSON.stringify({ 终池顶: g.cistern?.y, 冰山底: g.ice?.bottom, 远位面顶: g.farland?.y, 精华底: g.daily?.bottom }));
-check('涣愿终池在左、花娅远位面在右（和上面冰山 / 精华同一个左右关系）',
-  g.cistern.x < g.farland.x && near(g.cistern.x, g.ice.x) && near(g.farland.right, g.daily.right),
-  JSON.stringify({ 终池x: g.cistern?.x, 冰山x: g.ice?.x, 远位面右: g.farland?.right, 精华右: g.daily?.right }));
+check('★ 三张卡都在页面上（涣愿终池 / 预留卡 / 花娅远位面）',
+  !!g.placeholder && !!g.cistern && !!g.farland, JSON.stringify({ 终池: !!g.cistern, 预留: !!g.placeholder, 远位面: !!g.farland }));
+check('★ 涣愿终池在「涣源溪水钟」**正下方**（同一列、同一格，顶边在日历底边之下）',
+  !!g.cistern && near(g.cistern.x, g.cal.x) && g.cistern.y >= g.cal.bottom - 1,
+  JSON.stringify({ 终池: g.cistern, 日历底: g.cal?.bottom }));
+check('★ 预留卡 / 花娅远位面在「冰室冰山 / 每日精华」**正下方**',
+  !!g.placeholder && !!g.farland && g.placeholder.y >= g.ice.bottom - 1 && g.farland.y >= g.daily.bottom - 1,
+  JSON.stringify({ 预留顶: g.placeholder?.y, 冰山底: g.ice?.bottom, 远位面顶: g.farland?.y, 精华底: g.daily?.bottom }));
+check('预留卡在左、花娅远位面在右（和上面冰山 / 精华同一个左右关系）',
+  g.placeholder.x < g.farland.x && near(g.placeholder.x, g.ice.x) && near(g.farland.right, g.daily.right),
+  JSON.stringify({ 预留x: g.placeholder?.x, 冰山x: g.ice?.x, 远位面右: g.farland?.right, 精华右: g.daily?.right }));
 
 /* ------------------------------------------------------------------ ② 尺寸对齐 */
-check('★ 预留卡和日历**同宽同高**（±2px）',
-  near(g.placeholder.w, g.cal.w) && near(g.placeholder.h, g.cal.h),
-  `${g.placeholder.w}×${g.placeholder.h} vs ${g.cal.w}×${g.cal.h}`);
-check('★ 涣愿终池 / 花娅远位面跟上面那两张小卡**一样宽一样高**（±2px）',
-  near(g.cistern.w, g.ice.w) && near(g.cistern.h, g.ice.h) &&
+check('★ 涣愿终池和日历**同宽同高**（±2px）',
+  near(g.cistern.w, g.cal.w) && near(g.cistern.h, g.cal.h),
+  `${g.cistern.w}×${g.cistern.h} vs ${g.cal.w}×${g.cal.h}`);
+check('★ 预留卡 / 花娅远位面跟上面那两张小卡**一样宽一样高**（±2px）',
+  near(g.placeholder.w, g.ice.w) && near(g.placeholder.h, g.ice.h) &&
     near(g.farland.w, g.daily.w) && near(g.farland.h, g.daily.h),
-  `终池 ${g.cistern.w}×${g.cistern.h} vs 冰山 ${g.ice.w}×${g.ice.h}；远位面 ${g.farland.w}×${g.farland.h} vs 精华 ${g.daily.w}×${g.daily.h}`);
-check('★ 两张新卡和上面那一行**底边对齐**（同一行高）',
-  near(g.cistern.bottom, g.farland.bottom) && near(g.cistern.h, g.farland.h),
-  `${g.cistern.bottom} / ${g.farland.bottom}`);
+  `预留 ${g.placeholder.w}×${g.placeholder.h} vs 冰山 ${g.ice.w}×${g.ice.h}；远位面 ${g.farland.w}×${g.farland.h} vs 精华 ${g.daily.w}×${g.daily.h}`);
+check('★ 第三行三张卡**底边对齐**（同一行高）',
+  near(g.cistern.bottom, g.placeholder.bottom) && near(g.placeholder.bottom, g.farland.bottom) &&
+    near(g.cistern.h, g.farland.h),
+  `${g.cistern.bottom} / ${g.placeholder.bottom} / ${g.farland.bottom}`);
 check('加了这三张卡之后首页没有横向溢出', g.overflowX <= 1, `${g.overflowX}px`);
+
+/* ------------------------------------------------------------------ ②b 所有缝一样宽 */
+const gapVals = Object.values(g.gaps);
+info(`1440：缝 ${JSON.stringify(g.gaps)}`);
+check('★ 首页行与行之间的缝**一样宽**（大板块→第一行 / 第一行→第二行 / 第二行→第三行，±2px）',
+  gapVals.every((v) => typeof v === 'number') && Math.max(...gapVals) - Math.min(...gapVals) <= 2,
+  JSON.stringify(g.gaps));
 
 /* ------------------------------------------------------------------ ③ 预留卡默认是空的 */
 const ph = await cdp.ev(`(() => {
@@ -241,15 +270,26 @@ check('涣愿终池卡是能点的手型光标', cist?.cursor === 'pointer', cis
 const far = await cdp.ev(`(() => {
   const n = document.querySelector('#home-farland');
   if (!n) return null;
+  const list = n.querySelector('.far__list');
+  const scroll = n.querySelector('.far__scroll');
+  const cards = [...n.querySelectorAll('.far__card')];
+  const boxes = cards.map((a) => { const r = a.getBoundingClientRect(); return { x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height) }; });
   return {
     title: (n.querySelector('.far__name') || {}).textContent || '',
     href: (n.querySelector('.far__name') || {}).getAttribute('href'),
-    kids: [...n.querySelectorAll('.far__card')].map((a) => ({
+    kids: cards.map((a) => ({
       text: (a.querySelector('.far__label') || {}).textContent || '',
       href: a.getAttribute('href'),
       cover: !!a.style.getPropertyValue('--cover'),
     })),
-    scrollable: (() => { const s = n.querySelector('.far__scroll'); return s ? s.scrollHeight > s.clientHeight : false; })(),
+    /* 竖排：一列、每张卡占满整行宽、上下依次排开 */
+    cols: list ? getComputedStyle(list).gridTemplateColumns.split(' ').length : 0,
+    boxes,
+    stacked: boxes.length > 1 && boxes.every((b, i) => i === 0 || b.y > boxes[i - 1].y),
+    fullWidth: boxes.length > 0 && boxes.every((b) => Math.abs(b.w - boxes[0].w) <= 1),
+    scrollable: scroll ? scroll.scrollHeight > scroll.clientHeight : false,
+    overflowY: scroll ? getComputedStyle(scroll).overflowY : null,
+    overscroll: scroll ? getComputedStyle(scroll).overscrollBehaviorY : null,
   };
 })()`);
 const wantKids = (farland?.children ?? []).filter((c) => c.standalone !== true);
@@ -262,7 +302,12 @@ check(`★ 子栏目和 /huaya 上那一块**完全一致**（${wantKids.length}
 check('子栏目里带封面的那几张，首页也带着封面（不是只剩名字）',
   far?.kids.some((k) => k.cover) === wantKids.some((k) => String(k.image ?? '').trim()),
   JSON.stringify(far?.kids.map((k) => k.cover)));
-check('清单区自己滚（卡片再多也不会把首页那一行顶高）', far?.scrollable === true, String(far?.scrollable));
+check('★ 子栏目**竖排一列**（不是挤成两列）', far?.cols === 1, `${far?.cols} 列`);
+check('★ 竖排之后每张卡上下依次排开、都占满整行宽',
+  far?.stacked === true && far?.fullWidth === true, JSON.stringify(far?.boxes));
+check('★ 清单区能用滚轮往下滚（内容比卡片高）', far?.scrollable === true, String(far?.scrollable));
+check('清单区是 overflow-y:auto，滚到头不会把首页带着一起滚',
+  far?.overflowY === 'auto' && far?.overscroll === 'contain', JSON.stringify({ y: far?.overflowY, o: far?.overscroll }));
 
 /* 和 /huaya 上那一块对一遍：名字集合必须一样 */
 await cdp.goto('/huaya', 1600);
@@ -282,14 +327,17 @@ for (const w of [1920, 1280, 1024, 900]) {
   await cdp.goto('/');
   const s = await snap();
   const ok =
-    near(s.placeholder.w, s.cal.w) && near(s.placeholder.h, s.cal.h) &&
-    near(s.cistern.w, s.ice.w) && near(s.cistern.h, s.ice.h) &&
+    near(s.cistern.w, s.cal.w) && near(s.cistern.h, s.cal.h) &&
+    near(s.placeholder.w, s.ice.w) && near(s.placeholder.h, s.ice.h) &&
     near(s.farland.w, s.daily.w) && near(s.farland.h, s.daily.h) &&
-    near(s.cistern.bottom, s.farland.bottom);
-  check(`${w}：三张新卡和上面那几张照样同宽同高、底边齐平`, ok,
-    `预留 ${s.placeholder.w}×${s.placeholder.h} / 日历 ${s.cal.w}×${s.cal.h}；` +
-      `终池 ${s.cistern.w}×${s.cistern.h} / 冰山 ${s.ice.w}×${s.ice.h}；` +
+    near(s.cistern.bottom, s.placeholder.bottom) && near(s.placeholder.bottom, s.farland.bottom);
+  check(`${w}：三张卡和上面那几张照样同宽同高、底边齐平`, ok,
+    `终池 ${s.cistern.w}×${s.cistern.h} / 日历 ${s.cal.w}×${s.cal.h}；` +
+      `预留 ${s.placeholder.w}×${s.placeholder.h} / 冰山 ${s.ice.w}×${s.ice.h}；` +
       `远位面 ${s.farland.w}×${s.farland.h} / 精华 ${s.daily.w}×${s.daily.h}`);
+  const gv = Object.values(s.gaps);
+  check(`${w}：行与行之间的缝照样一样宽（±2px）`,
+    gv.every((v) => typeof v === 'number') && Math.max(...gv) - Math.min(...gv) <= 2, JSON.stringify(s.gaps));
   check(`${w}：不横向溢出`, s.overflowX <= 1, `${s.overflowX}px`);
 }
 
@@ -302,20 +350,20 @@ for (let i = 0; i < 4; i++) {
   const rows = await cdp.ev(`(() => {
     const g = document.querySelector('.cal__grid');
     return g ? getComputedStyle(g).gridTemplateRows.split(' ').length : 0; })()`);
-  monthHeights.push({ rows, calH: s.cal.h, phH: s.placeholder.h, same: near(s.cal.h, s.placeholder.h) });
+  monthHeights.push({ rows, calH: s.cal.h, cisH: s.cistern.h, same: near(s.cal.h, s.cistern.h) });
   await cdp.ev(`(() => { const b = document.querySelector('[data-cal-next]'); if (b) b.click(); return true; })()`);
   await sleep(500);
 }
 info(`四个月：${JSON.stringify(monthHeights)}`);
-check('★ 翻月之后预留卡照样和日历一样高（每个月都对得上）',
+check('★ 翻月之后涣愿终池照样和日历一样高（每个月都对得上）',
   monthHeights.every((m) => m.same), JSON.stringify(monthHeights));
 /*
   日历的格子是**固定 6 行**（`--cal-cell` 定死、行数不随月份变），
   所以"换个月高度就变"这件事本身不会发生 —— 这里验的是**它真的没变**：
-  四个月量下来高度必须一模一样，预留卡也就一直跟得住。
-  （万一以后有人把行数改成按月份给，这条会红，提醒他去看预留卡还跟不跟得上。）
+  四个月量下来高度必须一模一样，第三行也就一直跟得住。
+  （万一以后有人把行数改成按月份给，这条会红，提醒他去看第三行还跟不跟得上。）
 */
-check('日历四个月高度一致（格子固定 6 行，预留卡因此一直跟得住）',
+check('日历四个月高度一致（格子固定 6 行，第三行因此一直跟得住）',
   new Set(monthHeights.map((m) => m.calH)).size === 1 && monthHeights.every((m) => m.rows === 6),
   JSON.stringify(monthHeights.map((m) => `${m.rows}行/${m.calH}px`)));
 
@@ -324,9 +372,9 @@ console.log('\n================ 手机端（单列）================');
 await cdp.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 2, mobile: true });
 await cdp.goto('/');
 const m = await snap();
-check('手机端：三张新卡都在、竖着堆（单列，不并排）',
-  !!m.placeholder && !!m.cistern && !!m.farland && m.cistern.y > m.ice.bottom - 1 && m.farland.y > m.cistern.bottom - 1,
-  JSON.stringify({ 冰山底: m.ice?.bottom, 终池顶: m.cistern?.y, 远位面顶: m.farland?.y }));
+check('手机端：三张卡都在、竖着堆（单列，不并排）',
+  !!m.placeholder && !!m.cistern && !!m.farland && m.cistern.y > m.cal.bottom - 1 && m.placeholder.y > m.cistern.bottom - 1 && m.farland.y > m.placeholder.bottom - 1,
+  JSON.stringify({ 日历底: m.cal?.bottom, 终池顶: m.cistern?.y, 预留顶: m.placeholder?.y, 远位面顶: m.farland?.y }));
 check('手机端：不横向溢出', m.overflowX <= 1, `${m.overflowX}px`);
 
 /* ------------------------------------------------------------------ 收尾 */
