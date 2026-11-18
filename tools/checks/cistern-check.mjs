@@ -324,8 +324,24 @@ check('数据里能找到"有精华 / 有冰山 / 有时刻 / 有日记"的日�
   JSON.stringify({ 精华: dayEss?.[0], 冰山: dayIce?.[0], 时刻: dayPtsLinked?.[0], 日记: dayNote?.[0] }));
 
 /* ------------------------------------------------------------------ ③ 空日子：四个板块各留一句占位 */
-const bare = await onDay('11-17');
-check('★ 11.17 这天四块都是空的（数据里确实一条都没有）',
+/*
+  ⚠ 空日子**不能写死**某一天：数据会长（2026-11-17 那天后来就有了冰室日记），
+  写死的话这条会在数据长出来之后凭空变红 —— 页面没坏，是这条断言过期了。
+  所以从 /cistern.json 里现挑一个四块全空的日子。
+*/
+const emptyKey = (() => {
+  for (let m = 1; m <= 12; m++) {
+    for (let d = 1; d <= 28; d++) {
+      const k = `${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+      const day = idx.days[k];
+      if (!day || (!day.essences.length && !day.iceberg.length && !day.points.length && !day.notes.length)) return k;
+    }
+  }
+  return '';
+})();
+check('数据里找得到一个四块全空的日子（下面那几条要用它）', !!emptyKey, emptyKey);
+const bare = await onDay(emptyKey);
+check(`★ ${emptyKey} 这天四块都是空的（数据里确实一条都没有）`,
   bare.essences === 0 && bare.iceberg === 0 && bare.ticks.length === 0 && bare.jumps.length === 0,
   JSON.stringify({ 精华: bare.essences, 冰山: bare.iceberg, 时刻: bare.ticks.length, 日记: bare.jumps.length }));
 check('★ 空着的四个板块各自写着占位「历史上的今天还没有精华 / 冰山 / 时刻 / 冰室日记」',
@@ -506,7 +522,7 @@ const dirs = fs.readdirSync(path.join(root, 'huaya')).filter((d) => /^\d{2}-\d{2
 check('站点上没有按天存的副本（昨天的页面直接被今天的盖掉）', dirs.length === 0, JSON.stringify(dirs));
 
 /* ------------------------------------------------------------------ ⑦ 站规：不许有 AI 写出来的文案 */
-await onDay('11-17');
+await onDay(emptyKey);
 const prose = await cdp.ev(`(() => {
   const inner = document.querySelector('.cist__inner');
   return {

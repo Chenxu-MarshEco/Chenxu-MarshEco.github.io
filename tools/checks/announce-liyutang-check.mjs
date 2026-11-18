@@ -310,10 +310,22 @@ try {
   check('公告卡右上角「全部公告」指向 /zongxian/', geo.more === '/zongxian/', `${geo.more}`);
   check('黎语堂卡指向 /liyutang/', geo.lytHref === '/liyutang/', `${geo.lytHref}`);
 
-  /* 每一条的去向：事项公告 -> /zongxian/<id>/；更新提醒 -> 它填的 href */
+  /* 每一条的去向：事项公告 -> /zongxian/<id>/；更新提醒 -> 它填的 href
+     ⚠ 排序要和站点那份（src/utils/announce.ts 的 announceList）**完全一样**：
+       置顶的永远在最前，然后按日期倒序，同一天保持文件里的先后。
+       2026-11-02 加了「置顶」之后这里没跟上，于是首页那条一直对不上——
+       不是页面错了，是这段期望值的算法漏了 pinned。 */
   const sorted = annItems
     .map((it, i) => ({ it, i }))
-    .sort((a, b) => (a.it.date === b.it.date ? a.i - b.i : a.it.date < b.it.date ? 1 : -1))
+    .sort((a, b) =>
+      a.it.pinned !== b.it.pinned
+        ? (a.it.pinned ? -1 : 1)
+        : a.it.date === b.it.date
+          ? a.i - b.i
+          : a.it.date < b.it.date
+            ? 1
+            : -1
+    )
     .map((x) => x.it)
     .slice(0, expectShown);
   const expectedHrefs = sorted.map((i) => (i.kind === 'update' ? i.href || '(不可点)' : `/zongxian/${i.id}/`));
@@ -347,10 +359,24 @@ try {
     board.noticeLinks.length === notices.length && board.noticeLinks.every((h) => /^\/zongxian\/[^/]+\/$/.test(h)),
     board.noticeLinks.join(' , ')
   );
+  /* 页面上的顺序 = src/utils/announce.ts 的 announceList（置顶优先、再按日期倒序），
+     不是文件里的先后 —— 期望值也按同一套排一遍再比（2026-11-02 加了置顶之后没跟上） */
+  const updatesInOrder = updates
+    .map((it, i) => ({ it, i }))
+    .sort((a, b) =>
+      a.it.pinned !== b.it.pinned
+        ? (a.it.pinned ? -1 : 1)
+        : a.it.date === b.it.date
+          ? a.i - b.i
+          : a.it.date < b.it.date
+            ? 1
+            : -1
+    )
+    .map((x) => x.it);
   check(
     '更新提醒在公告栏页直接指向外部地址',
     board.updateLinks.length === updates.length &&
-      board.updateLinks.every((h, i) => h === (updates[i].href || null)),
+      board.updateLinks.every((h, i) => h === (updatesInOrder[i].href || null)),
     board.updateLinks.join(' , ')
   );
   check('顶上那段话报了条数', board.lead.includes(String(annItems.length)), board.lead.trim().slice(0, 60));
@@ -706,34 +732,49 @@ try {
   check('更新提醒存下来了（有 href、没有正文）', !!addedUp && addedUp.kind === 'update' && addedUp.href === '/salon/' && !('body' in addedUp));
   check('更新提醒**没有**自己的页面', !!addedUp && !fs.existsSync(path.join(DST, 'dist', 'zongxian', addedUp.id)));
 
-  /* ---------------- ④ 黎语堂面板（首页那张卡） ---------------- */
-  console.log('\n=== ④ 编辑器「黎语堂」面板（只管卡片这一张皮）===');
-  await cdp.ev(`window.__openWs('liyutang')`, 0);
-  await sleep(900);
-  const lytPanel = await cdp.ev(`(() => {
-    const modal = document.getElementById('liyutang-modal');
+  /* ---------------- ④ 首页卡片面板里的「黎语堂」那张卡 ----------------
+     2026-11-17：原来「黎语堂」是一个独立面板，站长说这种"一个面板只管一张卡"的
+     按钮重复冗余，全并进了「首页卡片」——所以这里先开那个面板、再点「黎语堂」那张卡。 */
+  console.log('\n=== ④ 编辑器「首页卡片」面板 →「黎语堂」那张卡 ===');
+  await cdp.ev(`window.__openWs('home')`, 0);
+  await sleep(1200);
+  const lytPanel = await cdp.ev(`(async () => {
+    const pick = () => [...document.querySelectorAll('.wpanel')].find((el) => el.getBoundingClientRect().height > 0);
+    const w = pick();
+    if (!w) return { open: false };
+    const tab = [...w.querySelectorAll('.wcards__btn')].find((b) => b.textContent.trim() === '黎语堂');
+    if (tab) { tab.click(); await new Promise((r) => setTimeout(r, 500)); }
+    const w2 = pick();
+    const modal = document.getElementById('home-modal');
     return {
-      open: modal && !modal.hidden,
-      labels: [...document.querySelectorAll('#lyt-editor .wrow__label')].map((l) => l.textContent.trim()),
-      imgSlot: !!document.querySelector('#lyt-editor .wimg'),
-      forumBtn: !![...document.querySelectorAll('#lyt-editor button')].find((b) => b.textContent.includes('黎语堂管理')),
+      open: !!modal && !modal.hidden,
+      tabs: [...w2.querySelectorAll('.wcards__btn')].map((b) => b.textContent.trim()),
+      labels: [...w2.querySelectorAll('.wrow__label')].map((l) => l.textContent.trim()),
+      imgSlot: !!w2.querySelector('.wimg'),
+      forumBtn: !![...w2.querySelectorAll('button')].find((b) => b.textContent.includes('黎语堂管理')),
     };
   })()`);
-  check('「黎语堂」面板打得开', lytPanel.open === true);
+  check('「首页卡片」面板打得开（里面一条卡片选择条）', lytPanel.open === true);
   check(
-    '三样东西都在：标题 / 副标题 / 背景图',
+    '卡片选择条上有全部七张卡：日历 / 冰室冰山 / 每日精华 / 涣愿终池 / 预留卡 / 花娅远位面 / 黎语堂',
+    JSON.stringify(lytPanel.tabs) ===
+      JSON.stringify(['日历', '冰室冰山', '每日精华', '涣愿终池', '预留卡', '花娅远位面', '黎语堂']),
+    JSON.stringify(lytPanel.tabs)
+  );
+  check(
+    '「黎语堂」那张卡三样东西都在：标题 / 副标题 / 背景图',
     lytPanel.labels.includes('标题') && lytPanel.labels.includes('副标题') && lytPanel.imgSlot,
     lytPanel.labels.join(' / ')
   );
-  check('面板里有一条去路（打开黎语堂管理）', lytPanel.forumBtn === true);
+  check('卡片里有一条去路（打开黎语堂管理）', lytPanel.forumBtn === true);
 
   const NEW_SUB = '验收写的副标题';
-  await setField('副标题', 'input.input', NEW_SUB, '#lyt-editor');
-  await realClick(cdp, btnByText('#lyt-editor button', '保存并重新构建'), '保存并重新构建（黎语堂卡片）');
+  await setField('副标题', 'input.input', NEW_SUB, '#home-editor');
+  await realClick(cdp, btnByText('#home-editor button', '保存并重新构建'), '保存并重新构建（黎语堂卡片）');
   saved = '';
   for (let i = 0; i < 400; i++) {
     await sleep(400);
-    saved = await cdp.ev(`(document.querySelector('#lyt-editor .wpanel__status') || {}).textContent || ''`);
+    saved = await cdp.ev(`(document.querySelector('#home-editor .wpanel__status') || {}).textContent || ''`);
     if (/已保存并重新构建|已保存，但重新构建没成功|出错了/.test(saved)) break;
   }
   check('黎语堂卡片保存成功', /已保存并重新构建/.test(saved), saved.trim());

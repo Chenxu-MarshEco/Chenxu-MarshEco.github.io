@@ -1,0 +1,117 @@
+---
+/**
+ * 首页「涣源溪水钟」下方那张**预留卡**（2026-11-17 加）。
+ *
+ * 站长原话：
+ *   「在涣源溪水钟下方加一个同尺寸的卡片 先不要做东西 留着占位」
+ *
+ * 所以它默认是**一块空的占位**：只有一个虚线框，一个字都没有
+ * （站规：不许自己写任何给人看的文案）。站长以后想往里放东西，
+ * 在编辑器「首页卡片」面板里填标题 / 图 / 一句话 / 链接，填了才显示。
+ *
+ * 尺寸和位置由 HomeWidgets 的栅格保证（和日历同一列、同一行高）。
+ */
+import widgets from '../data/home-widgets.json';
+import { variantUrl } from '../utils/images';
+import { withBase } from '../utils/url';
+
+const cfg = ((widgets as Record<string, unknown>).placeholder ?? {}) as {
+  title?: string;
+  image?: string;
+  text?: string;
+  href?: string;
+};
+
+const title = String(cfg.title ?? '').trim();
+const text = String(cfg.text ?? '').trim();
+const imgRaw = String(cfg.image ?? '').trim();
+const img = imgRaw ? variantUrl(imgRaw, 800) : '';
+const rawHref = String(cfg.href ?? '').trim();
+const external = /^https?:/i.test(rawHref);
+const url = rawHref ? (external ? rawHref : withBase(rawHref)) : '';
+
+/** 四样全空 = 还没往里放东西，就画那块空占位 */
+const empty = !title && !text && !img && !url;
+const Tag = url ? 'a' : 'div';
+---
+
+<Tag
+  class:list={['phcard', empty && 'phcard--empty']}
+  id="home-placeholder"
+  href={url || undefined}
+  {...external ? { target: '_blank', rel: 'noopener' } : {}}
+>
+  {img && <span class="phcard__bg" style={`background-image:url(${img})`} aria-hidden="true" />}
+  {!empty && (
+    <span class="phcard__body">
+      {title && <b class="phcard__title">{title}</b>}
+      {text && <span class="phcard__text">{text}</span>}
+    </span>
+  )}
+</Tag>
+
+<style>
+  .phcard {
+    position: relative;
+    display: flex;
+    align-items: flex-end;
+    height: 100%;
+    min-width: 0;
+    overflow: hidden;
+    border: 1px solid rgba(255, 120, 190, 0.4);
+    border-radius: 16px;
+    background: linear-gradient(180deg, rgba(38, 6, 54, 0.86), rgba(20, 3, 32, 0.9));
+    box-shadow: 0 14px 40px -22px rgb(0 0 0 / 0.8);
+    text-decoration: none;
+    color: inherit;
+    transition: transform 0.16s ease, border-color 0.16s ease;
+  }
+  /* 还空着：虚线框，一眼看出"这里留了位置" */
+  .phcard--empty {
+    border-style: dashed;
+    border-color: rgba(255, 120, 190, 0.28);
+    background: rgba(24, 3, 36, 0.35);
+    box-shadow: none;
+  }
+  a.phcard:hover,
+  a.phcard:focus-visible {
+    transform: translateY(-2px);
+    border-color: rgba(255, 120, 190, 0.8);
+  }
+
+  .phcard__bg {
+    position: absolute;
+    inset: 0;
+    background-size: cover;
+    background-position: center;
+    transition: transform 0.5s ease;
+  }
+  a.phcard:hover .phcard__bg {
+    transform: scale(1.045);
+  }
+
+  .phcard__body {
+    position: relative;
+    display: block;
+    width: 100%;
+    padding: 0.6rem 0.75rem 0.65rem;
+    background: linear-gradient(180deg, rgba(12, 0, 20, 0), rgba(12, 0, 20, 0.88));
+  }
+  .phcard__title {
+    display: block;
+    font-size: 0.98rem;
+    letter-spacing: 0.12em;
+    color: #ffd9ef;
+  }
+  .phcard__text {
+    display: block;
+    margin-top: 0.2rem;
+    font-size: 0.8rem;
+    line-height: 1.6;
+    color: rgba(255, 236, 248, 0.72);
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+</style>

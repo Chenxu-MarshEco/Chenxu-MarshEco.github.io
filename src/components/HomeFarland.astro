@@ -1,0 +1,247 @@
+---
+/**
+ * 首页「花娅远位面」卡（2026-11-17 加）。
+ *
+ * 站长原话：
+ *   「右边是花娅远位面 直接照搬花娅陌域里那个我已经做好的花娅远位面即可
+ *    但是要压缩一下长宽让这两个卡片和上面冰山精华的小卡片一样大且对齐」
+ *   「花娅远位面的首页卡和花娅陌域里的花娅远位面卡同步 如果以后多了什么栏目
+ *    映射到首页同步更新」
+ *
+ * 所以这一块**不存任何自己的数据**：标题、地址、子栏目全部现读版块树里的
+ * 那个节点（`huaya-r3`）。站长在编辑器里给「花娅远位面」加一个子版块、
+ * 改一个名字、换一张封面，首页这张卡下一次构建就跟着变 —— 只有一份真相。
+ *
+ * 样子照 /huaya 上那一块（表头 + 一摞带封面小卡），只是压扁：
+ * 表头一行、卡片两列、清单区自己滚，整块高度由首页那一行决定。
+ */
+import site from '../site.config';
+import { coverUrl, coverUrlHd } from '../utils/images';
+import { visibleChildren, type BoardNode } from '../utils/boards';
+import { withBase } from '../utils/url';
+
+/** 版块树里「花娅远位面」那个节点的 id（/huaya 上那一块就是它） */
+const FARLAND_ID = 'huaya-r3';
+
+/** 在整棵树里按 id 找节点（不递归进 children 以外的地方） */
+function findNode(nodes: BoardNode[], id: string): BoardNode | null {
+  for (const n of nodes) {
+    if (n.id === id) return n;
+    const hit = findNode(n.children ?? [], id);
+    if (hit) return hit;
+  }
+  return null;
+}
+
+const node = findNode(site.homeBoards as BoardNode[], FARLAND_ID);
+const title = String(node?.title ?? '').trim() || '花娅远位面';
+const href = withBase(String(node?.href ?? '').trim() || '/huaya/farland');
+
+/**
+ * 子栏目：和 /huaya 上那一块用的是同一个函数（`visibleChildren`），
+ * 所以「独立页面 / 隐藏的」两边一起滤掉，顺序也一样。
+ * 链接版块（填了 link 的）点了直接跳走，站内的照常进它自己那一页。
+ */
+const kids = visibleChildren(node).map((k) => {
+  const link = String(k.link ?? '').trim();
+  const external = /^(https?:\/\/|mailto:|tel:)/i.test(link);
+  const url = link || String(k.href ?? '').trim() || '#';
+  const image = String(k.image ?? '').trim();
+  return {
+    id: k.id,
+    title: String(k.title ?? '').trim(),
+    url: external ? url : withBase(url),
+    external,
+    cover: image ? coverUrl(image, 800) : null,
+    coverHd: image ? coverUrlHd(image, 400, 800) : null,
+  };
+});
+---
+
+<section class="far" id="home-farland" aria-labelledby="far-title">
+  <header class="far__head">
+    <a class="far__name" id="far-title" href={href}>{title}</a>
+    <a class="far__enter" href={href} aria-label={title}>进入 ›</a>
+  </header>
+
+  <div class="far__scroll">
+    <ul class="far__list">
+      {
+        kids.map((k) => (
+          <li>
+            <a
+              class:list={['far__card', k.cover && 'far__card--cover']}
+              href={k.url}
+              {...k.external ? { target: '_blank', rel: 'noopener' } : {}}
+              style={[k.cover ? `--cover:${k.cover}` : '', k.coverHd ? `--cover-hd:${k.coverHd}` : '']
+                .filter(Boolean)
+                .join(';') || undefined}
+            >
+              <span class="far__label">{k.title}</span>
+            </a>
+          </li>
+        ))
+      }
+    </ul>
+  </div>
+</section>
+
+<style>
+  /*
+    整块和「冰室冰山 / 涣愿终池」那两张一样高（由首页那一行撑开），
+    里面是「表头 + 可滚动的两列小卡」—— 就是 /huaya 上那一块压扁后的样子。
+  */
+  .far {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+    border: 1px solid rgba(255, 120, 190, 0.42);
+    border-radius: 16px;
+    background: rgba(38, 4, 52, 0.55);
+    box-shadow:
+      0 0 0 1px rgba(0, 0, 0, 0.3) inset,
+      0 14px 40px -22px rgb(0 0 0 / 0.8);
+    backdrop-filter: blur(3px);
+  }
+
+  .far__head {
+    display: flex;
+    align-items: baseline;
+    gap: 0.5rem;
+    flex: none;
+    padding: 0.5rem 0.7rem 0.45rem;
+    border-bottom: 1px solid rgba(255, 120, 190, 0.22);
+  }
+  .far__name {
+    font-size: 0.98rem;
+    letter-spacing: 0.12em;
+    color: #ffd9ef;
+    text-decoration: none;
+    text-shadow: 0 0 10px rgba(255, 79, 163, 0.85);
+  }
+  .far__name:hover {
+    color: #fff;
+  }
+  .far__enter {
+    margin-left: auto;
+    font-size: 0.72rem;
+    letter-spacing: 0.12em;
+    color: rgba(255, 226, 244, 0.72);
+    text-decoration: none;
+    transition: color 0.16s ease, transform 0.16s ease;
+  }
+  .far:hover .far__enter {
+    color: #ffd9ef;
+    transform: translateX(2px);
+  }
+
+  /* 清单区自己滚：卡片再高也不会把首页那一行顶起来 */
+  .far__scroll {
+    flex: 1 1 0;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 0.5rem;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 120, 190, 0.85) rgba(255, 255, 255, 0.07);
+  }
+  .far__list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.4rem;
+  }
+
+  /* 一张小卡：和 /huaya 上那个 .card 同一个味道，只是更矮 */
+  .far__card {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    width: 100%;
+    min-height: 46px;
+    padding: 0.35rem 0.4rem;
+    border-radius: 9px;
+    border: 1px solid rgba(255, 120, 190, 0.4);
+    background: rgba(60, 8, 82, 0.5);
+    text-align: center;
+    text-decoration: none;
+    color: #ffe6f6;
+    transition: background 0.16s ease, border-color 0.16s ease, transform 0.16s ease;
+  }
+  .far__card--cover {
+    min-height: 58px;
+    background-color: rgba(22, 2, 36, 0.9);
+  }
+  .far__card--cover::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image: var(--cover);
+    background-size: cover;
+    background-position: center;
+    opacity: 0.82;
+    transition: opacity 0.18s ease, transform 0.4s ease;
+  }
+  /* 缺 --cover-hd 时退回单张（理由见 SubCard.astro 里那段注释） */
+  @supports (background-image: image-set(url(a.png) 1x)) {
+    .far__card--cover::before {
+      background-image: var(--cover-hd, var(--cover));
+    }
+  }
+  .far__card--cover::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(130% 130% at 50% 50%, rgba(12, 0, 20, 0.22) 0%, rgba(12, 0, 20, 0.62) 100%);
+  }
+  .far__label {
+    position: relative;
+    z-index: 1;
+    max-width: 100%;
+    /*
+      卡片只有一百来像素宽（首页那一格的一半），字号必须比 /huaya 上小一档，
+      而且**最多两行**：名字长的（「龙历院花娅支部」）折两行正好，
+      再长就截断 —— 卡片本身是 overflow:hidden，不截的话字会顶出卡片。
+    */
+    font-size: 0.72rem;
+    line-height: 1.35;
+    letter-spacing: 0.02em;
+    overflow-wrap: anywhere;
+    text-wrap: balance;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    text-shadow: 0 1px 6px rgba(10, 0, 18, 0.9), 0 0 16px rgba(10, 0, 18, 0.7);
+  }
+  .far__card:hover,
+  .far__card:focus-visible {
+    border-color: #ffb3dd;
+    color: #fff;
+    transform: translateY(-1px);
+  }
+  .far__card:not(.far__card--cover):hover {
+    background: rgba(212, 0, 123, 0.72);
+  }
+  .far__card--cover:hover::before {
+    opacity: 0.96;
+    transform: scale(1.04);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .far__card,
+    .far__card--cover::before {
+      transition: none;
+    }
+    .far__card:hover {
+      transform: none;
+    }
+  }
+</style>

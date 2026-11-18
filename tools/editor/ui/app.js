@@ -167,33 +167,18 @@ const els = {
   lnS: $('ln-s'),
 
   /*
-    首页那几块（src/data/home-widgets.json）：日历 / 关于我 / 冰室冰山。
-    三个面板各写文件里的一块，所以它们是三个独立的工作面，共用一份
-    widgetsDraft（见 panels 那一节）。
-
-    *Save 那几个按钮是 app.js 自己画出来的（panelShell 的动作条），
-    这里取到的是 null，画完在各自的 renderXxxPanel 里指到真按钮上。
-    顶栏没有这五个入口：它们只从「☰ 工作台」和面板顶上那条「切换」进。
+    首页卡片（src/data/home-widgets.json）：**一个面板管全部**（2026-11-17 合并）。
+    以前是「日历 / 冰室冰山 / 黎语堂」三个独立面板，站长说重复冗余，
+    现在合成一个「首页卡片」，里面一条卡片选择条，一次画一张卡的表单。
+    关于我（页头小圆片 + /about-me/ 正文）不是首页卡，仍然是独立面板。
   */
-  calendarModal: $('calendar-modal'),
-  calEditor: $('cal-editor'),
-  calSave: $('cal-save'),
+  homeModal: $('home-modal'),
+  homeEditor: $('home-editor'),
+  homeSave: $('home-save'),
 
   aboutModal: $('about-modal'),
   aboutEditor: $('about-editor'),
   aboutSave: $('about-save'),
-
-  icebergModal: $('iceberg-modal'),
-  icebergEditor: $('iceberg-editor'),
-  icebergSave: $('iceberg-save'),
-
-  /*
-    黎语堂（首页那张板块卡，home-widgets.json 的 liyutang —— 2026-10-06 加）。
-    论坛自己的数据不在这儿，见 announceModal 下面那段和 LIYUTANG_ADMIN。
-  */
-  liyutangModal: $('liyutang-modal'),
-  lytEditor: $('lyt-editor'),
-  lytSave: $('lyt-save'),
 
   /* 曼沫砾总线（src/data/announcements.json）：公告栏的两个面板内容都在这一份里 */
   announceModal: $('announce-modal'),
@@ -1998,9 +1983,14 @@ const WORKSPACES = [
     首页那几块（src/data/home-widgets.json）+ 冰室精华（src/data/salon.json）。
     放在最后：这几个是后来加的，前八个的顺序和用户已经点熟的位置一个字没动。
   */
-  { id: 'calendar', label: '日历', hint: '首页日历：特殊日子、以及今天那句话' },
+  /*
+    2026-11-17：原来这里是「日历 / 冰室冰山 / 黎语堂」三个面板，站长说
+    「编辑器里现在有两个按钮块只是负责编辑黎语堂首页卡和冰山首页卡 重复冗余无意义
+    把这些所有对首页卡UI的编辑整合到一个功能里」—— 所以合成一个「首页卡片」，
+    里面一条卡片选择条（日历 / 冰室冰山 / 每日精华 / 涣愿终池 / 预留卡 / 花娅远位面 / 黎语堂）。
+  */
+  { id: 'home', label: '首页卡片', hint: '首页上每一张卡：日历 / 冰室冰山 / 每日精华 / 涣愿终池 / 预留卡 / 花娅远位面 / 黎语堂' },
   { id: 'about', label: '关于我', hint: '页头小圆片的头像 + /about-me/ 的正文' },
-  { id: 'iceberg', label: '冰室冰山', hint: '首页「冰室冰山」那块：图、一句话、链接' },
   { id: 'ice-chart', label: '冰山图', hint: '冰山图（/iceberg/）：分类 / 标签 / 层级 / 条目' },
   { id: 'essences', label: '精华', hint: '冰室精华（/salon/）：可搜索 / 新增 / 改删' },
   { id: 'members', label: '成员', hint: '精华的成员表：改名 / 换头像，他所有精华跟着变' },
@@ -2008,12 +1998,10 @@ const WORKSPACES = [
     2026-10-06 新加的两个大板块的入口：
       announce  曼沫砾总线（本站公告栏，src/data/announcements.json）——
                 两种公告在同一个面板里写；
-      liyutang  首页「黎语堂」那张卡（home-widgets.json）——
-                **只管卡片这一张皮**，论坛自己的版块 / 评论在另一个页面
-                （右上角那颗「黎语堂管理」，见 LIYUTANG_ADMIN）。
+      liyutang  黎语堂**论坛自己**的管理页（版块 / 评论系统）——
+                首页那张卡的皮已经并进「首页卡片」了，这里只剩一条去路。
   */
   { id: 'announce', label: '公告', hint: '曼沫砾总线：事项公告（有正文）/ 更新提醒（只有标题和链接）' },
-  { id: 'liyutang', label: '黎语堂', hint: '首页「黎语堂」板块卡：标题 / 副标题 / 背景图' },
   /*
     站点文案（2026-10-11 加，src/data/site-copy.json）：
     站点上那些**写死、站长改不了**的介绍 / 说明句（页头签名、分享卡片那句描述、
@@ -2055,14 +2043,12 @@ function closeWorkspace(id) {
   else if (id === 'timelines') closeTimelinesModal();
   else if (id === 'music') closeMusicModal();
   else if (id === 'layout') closeLayoutModal();
-  else if (id === 'calendar') closeCalendarModal();
+  else if (id === 'home') closeHomeModal();
   else if (id === 'about') closeAboutModal();
-  else if (id === 'iceberg') closeIcebergModal();
   else if (id === 'ice-chart') closeIceChartModal();
   else if (id === 'essences') closeEssencesModal();
   else if (id === 'members') closeMembersModal();
   else if (id === 'announce') closeAnnounceModal();
-  else if (id === 'liyutang') closeLiyutangModal();
   else if (id === 'copy') closeCopyModal();
   else if (id === 'collab') closeCollabModal();
   else if (id === 'versions') closeVersionsModal();
@@ -2099,14 +2085,12 @@ async function openWorkspace(id) {
   else if (id === 'music') await openMusicModal();
   else if (id === 'layout') await openLayoutModal();
   else if (id === 'maps') await openMapsModal();
-  else if (id === 'calendar') await openCalendarModal();
+  else if (id === 'home') await openHomeModal();
   else if (id === 'about') await openAboutModal();
-  else if (id === 'iceberg') await openIcebergModal();
   else if (id === 'ice-chart') await openIceChartModal();
   else if (id === 'essences') await openEssencesModal();
   else if (id === 'members') await openMembersModal();
   else if (id === 'announce') await openAnnounceModal();
-  else if (id === 'liyutang') await openLiyutangModal();
   else if (id === 'copy') await openCopyModal();
   else if (id === 'collab') await openCollabModal();
   else if (id === 'versions') await openVersionsModal();
@@ -11862,25 +11846,108 @@ async function openWidgetPanel(id, modal, editor, active) {
   }
 }
 
-/* ---------- 日历 ---------- */
+/* ---------- 首页卡片（一个面板管全部） ---------- */
 
-async function openCalendarModal() {
-  if (!(await openWidgetPanel('calendar', els.calendarModal, els.calEditor))) return;
-  renderCalendarPanel();
+/*
+  2026-11-17 合并。
+
+  站长原话：
+    「首页这些卡片都开放一个可编辑通道 不要东一个西一个的 编辑器里现在有两个按钮块
+     只是负责编辑黎语堂首页卡和冰山首页卡 重复冗余无意义 把这些所有对首页卡UI的编辑
+     整合到一个功能里」
+
+  所以原来那三个面板（日历 / 冰室冰山 / 黎语堂）合成这一个：
+  顶上一条卡片选择条，一次只画一张卡的表单，底下**一个**保存按钮。
+  数据还是同一份 src/data/home-widgets.json（草稿 widgetsDraft 也还是那一份），
+  所以「在日历里改一笔、切到冰山再改一笔、一次保存」这条路照旧成立。
+
+  两张卡的数据不在这个文件里，面板上只给一条去路：
+    · 花娅远位面 —— 标题 / 地址 / 子栏目全读版块树（huaya-r3），
+      所以改它要去「子版块」面板；
+    · 曼沫砾总线 —— 公告在「公告」面板（src/data/announcements.json）。
+*/
+
+/** 卡片选择条上的顺序 = 首页从上往下的顺序 */
+const HOME_CARDS = [
+  { id: 'calendar', label: '日历' },
+  { id: 'iceberg', label: '冰室冰山' },
+  { id: 'daily', label: '每日精华' },
+  { id: 'cistern', label: '涣愿终池' },
+  { id: 'placeholder', label: '预留卡' },
+  { id: 'farland', label: '花娅远位面' },
+  { id: 'liyutang', label: '黎语堂' },
+];
+
+/** 现在画的是哪一张卡（切走再切回来还停在那一张） */
+let homeCard = 'calendar';
+
+async function openHomeModal() {
+  markWorkspaceActive('home');
+  els.homeModal.hidden = false;
+  els.homeEditor.textContent = '正在读取…';
+  try {
+    await loadWidgets();
+  } catch (err) {
+    els.homeEditor.textContent = `读取失败：${err.message}`;
+    return;
+  }
+  renderHomePanel();
 }
 
-function closeCalendarModal() {
-  els.calendarModal.hidden = true;
+function closeHomeModal() {
+  els.homeModal.hidden = true;
 }
 
-function renderCalendarPanel() {
-  const cal = widgetsDraft.calendar;
-  const { body, foot, status } = panelShell(els.calEditor, {
+function renderHomePanel() {
+  const { body, foot, status } = panelShell(els.homeEditor, {
     hint:
-      '首页日历上的特殊日子。日历显示的是**访问者当天那个月**，所以这里按 YYYY-MM-DD 匹配 —— ' +
-      '写 2024-06-04 就是每年的 6 月 4 日都会变色（不看年份）；今天没有特殊日子时右下角那个小框写 idleText。',
+      '首页上每一张卡都在这里改：上面选哪一张，下面就画哪一张的表单。' +
+      '改完按底下的「保存并重新构建」，一次写进 src/data/home-widgets.json。',
     group: 'widgets',
   });
+
+  /* ---- 卡片选择条 ---- */
+  const tabs = document.createElement('div');
+  tabs.className = 'wcards';
+  for (const c of HOME_CARDS) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'wcards__btn';
+    b.dataset.card = c.id;
+    b.textContent = c.label;
+    if (c.id === homeCard) b.classList.add('is-active');
+    b.addEventListener('click', () => {
+      homeCard = c.id;
+      renderHomePanel();
+    });
+    tabs.appendChild(b);
+  }
+  body.appendChild(tabs);
+
+  /* ---- 这一张卡的表单 ---- */
+  if (homeCard === 'calendar') drawCalendarCard(body, status);
+  else if (homeCard === 'iceberg') drawIcebergCard(body, status);
+  else if (homeCard === 'daily') drawDailyCard(body, status);
+  else if (homeCard === 'cistern') drawCisternCard(body, status);
+  else if (homeCard === 'placeholder') drawPlaceholderCard(body, status);
+  else if (homeCard === 'farland') drawFarlandCard(body);
+  else if (homeCard === 'liyutang') drawLiyutangCard(body, status);
+
+  foot.append(
+    panelBtn('关闭面板', '关掉这个面板（没保存的改动留着，切回来还在）', () => openWorkspace('docs')),
+    panelBtn('打开首页', '在新标签页打开预览站点的首页（要先构建过）', () => {
+      window.open(`${PREVIEW_URL}/`, '_blank', 'noopener');
+    }),
+    panelBtn('保存并重新构建', '写进 src/data/home-widgets.json 并重新构建站点', () =>
+      saveWidgets(els.homeSave, status, homeCard), true, 'home-save'),
+  );
+  els.homeSave = $('home-save');
+}
+
+/* ---------- 日历 ---------- */
+
+function drawCalendarCard(body, status) {
+  const cal = widgetsDraft.calendar;
 
   /* ---- 两个句式 ---- */
   const texts = panelBox('今天那句话', '右下角小框里的文案。「{title}」会被换成那天事件的名字。');
@@ -11949,7 +12016,7 @@ function renderCalendarPanel() {
       if (!confirm(`删掉 ${date}（${ev.title || '没写名字'}）这一天？`)) return;
       delete events[date];
       markPanelDirty(status, 'widgets');
-      renderCalendarPanel();
+      renderHomePanel();
     });
     head.append(tag, del);
 
@@ -11963,14 +12030,14 @@ function renderCalendarPanel() {
           if (!next || next === date) return;
           if (events[next]) {
             toast(`${next} 已经有特殊日子了，先改那一天的日期`, true);
-            renderCalendarPanel();
+            renderHomePanel();
             return;
           }
           // 键换了：重建这一项，顺便保持原来的顺序（重画后按日期重排）
           events[next] = ev;
           delete events[date];
           markPanelDirty(status, 'widgets');
-          renderCalendarPanel();
+          renderHomePanel();
         }),
         '日历按**月-日**匹配，年份不参与判断（填 2004-07-14 就是每年 7 月 14 日都会变色）。日期直接敲数字就行。',
       )
@@ -12021,27 +12088,296 @@ function renderCalendarPanel() {
     }
     events[key] = { title: '', href: '', text: '' };
     markPanelDirty(status, 'widgets');
-    renderCalendarPanel();
+    renderHomePanel();
   });
   list.appendChild(add);
   body.appendChild(list);
+}
 
-  foot.append(
-    panelBtn('关闭面板', '关掉这个面板（没保存的改动留着，切回来还在）', () => openWorkspace('docs')),
-    panelBtn('重新读取', '把盘上的值重新读一遍（没保存的改动会丢）', async () => {
-      if (!confirm('重新读盘会丢掉还没保存的改动，确定吗？')) return;
-      widgetsDraft = null;
-      widgetsDirty = false;
-      await loadWidgets();
-      renderCalendarPanel();
-    }),
-    panelBtn('打开首页', '在新标签页打开预览站点的首页（要先构建过）', () => {
-      window.open(`${PREVIEW_URL}/`, '_blank', 'noopener');
-    }),
-    panelBtn('保存并重新构建', '写进 src/data/home-widgets.json 并重新构建站点', () =>
-      saveWidgets(els.calSave, status, 'calendar'), true, 'cal-save'),
+/* ---------- 冰室冰山 ---------- */
+
+function drawIcebergCard(body, status) {
+  const ice = widgetsDraft.iceberg;
+
+  const box = panelBox('这张图');
+  const iceInput = boardInput(ice.image ?? '', '/img/uploads/xxx.png 或 https://…', () => {});
+  const slot = imageSlot({
+    label: '冰山图',
+    getValue: () => ice.image,
+    setValue: (v) => { ice.image = v; },
+    onValue: (v) => { iceInput.value = v; },
+    onChanged: () => markPanelDirty(status, 'widgets'),
+  });
+  iceInput.addEventListener('input', () => {
+    slot.sync(iceInput.value, true);
+    markPanelDirty(status, 'widgets');
+  });
+  box.appendChild(panelRow('图片', slot.el));
+  box.appendChild(panelRow('图片地址', iceInput));
+  body.appendChild(box);
+
+  const texts = panelBox('文字和链接');
+  texts.appendChild(
+    panelRow(
+      '标题',
+      boardInput(ice.title ?? '', '冰室冰山', (v) => {
+        ice.title = v;
+        markPanelDirty(status, 'widgets');
+      }),
+      '不能留空。',
+    )
   );
-  els.calSave = $('cal-save');
+  texts.appendChild(
+    panelRow(
+      '一句话介绍',
+      panelArea(ice.text ?? '', '一句话就好', 3, (v) => {
+        ice.text = v;
+        markPanelDirty(status, 'widgets');
+      }),
+      '纯文本，这一块不支持 Markdown（页面上就是一行小字）。',
+    )
+  );
+  texts.appendChild(
+    panelRow(
+      '跳转地址',
+      linkField(ice.href ?? '', '/iceberg/ 或 https://…', (v) => {
+        ice.href = v;
+        markPanelDirty(status, 'widgets');
+      }, { anchor: true }),
+      '留空的话整块都不好点。',
+    )
+  );
+  body.appendChild(texts);
+}
+
+/* ---------- 每日精华 ---------- */
+
+function drawDailyCard(body, status) {
+  const daily = widgetsDraft.daily ?? (widgetsDraft.daily = {});
+
+  const box = panelBox('这张卡', '卡片下面那条精华来自 src/data/salon.json，按访问者当天挑一条 —— 要改精华本身去「精华」面板。');
+  box.appendChild(
+    panelRow(
+      '标题',
+      boardInput(daily.title ?? '', '每日精华', (v) => {
+        daily.title = v;
+        markPanelDirty(status, 'widgets');
+      }),
+      '不能留空。',
+    )
+  );
+  box.appendChild(
+    panelRow(
+      '跳转地址',
+      linkField(daily.href ?? '', '/salon/', (v) => {
+        daily.href = v;
+        markPanelDirty(status, 'widgets');
+      }, { anchor: true }),
+      '标题和右上角「看全部 ›」都去这个地址，默认 /salon/。',
+    )
+  );
+  body.appendChild(box);
+}
+
+/* ---------- 涣愿终池 ---------- */
+
+function drawCisternCard(body, status) {
+  const cfg = widgetsDraft.cistern ?? (widgetsDraft.cistern = {});
+
+  const box = panelBox('这张图');
+  const imgInput = boardInput(cfg.image ?? '', '/img/uploads/xxx.png 或 https://…', () => {});
+  const slot = imageSlot({
+    label: '涣愿终池封面图',
+    getValue: () => cfg.image,
+    setValue: (v) => { cfg.image = v; },
+    onValue: (v) => { imgInput.value = v; },
+    onChanged: () => markPanelDirty(status, 'widgets'),
+    hint: '建议横图：卡片是宽而扁的一条，图会按 cover 裁。',
+  });
+  imgInput.addEventListener('input', () => {
+    slot.sync(imgInput.value, true);
+    markPanelDirty(status, 'widgets');
+  });
+  box.appendChild(panelRow('图片', slot.el));
+  box.appendChild(panelRow('图片地址', imgInput));
+  body.appendChild(box);
+
+  const texts = panelBox('文字和链接');
+  texts.appendChild(
+    panelRow(
+      '标题',
+      boardInput(cfg.title ?? '', '涣愿终池', (v) => {
+        cfg.title = v;
+        markPanelDirty(status, 'widgets');
+      }),
+      '留空就用「涣愿终池」。',
+    )
+  );
+  texts.appendChild(
+    panelRow(
+      '一句话介绍',
+      panelArea(cfg.text ?? '', '', 3, (v) => {
+        cfg.text = v;
+        markPanelDirty(status, 'widgets');
+      }),
+      '纯文本，留空就不显示。',
+    )
+  );
+  texts.appendChild(
+    panelRow(
+      '跳转地址',
+      linkField(cfg.href ?? '', '留空 = 自动指向版块树里那一页', (v) => {
+        cfg.href = v;
+        markPanelDirty(status, 'widgets');
+      }, { anchor: true }),
+      '留空时按版块 id（page-mwt0cistern）去版块树里找那一页的地址 —— 在编辑器里改了那一页的地址，这里跟着变。',
+    )
+  );
+  body.appendChild(texts);
+}
+
+/* ---------- 预留卡（日历下方那张） ---------- */
+
+function drawPlaceholderCard(body, status) {
+  const cfg = widgetsDraft.placeholder ?? (widgetsDraft.placeholder = {});
+
+  const box = panelBox('这张图');
+  const imgInput = boardInput(cfg.image ?? '', '/img/uploads/xxx.png 或 https://…', () => {});
+  const slot = imageSlot({
+    label: '预留卡封面图',
+    getValue: () => cfg.image,
+    setValue: (v) => { cfg.image = v; },
+    onValue: (v) => { imgInput.value = v; },
+    onChanged: () => markPanelDirty(status, 'widgets'),
+  });
+  imgInput.addEventListener('input', () => {
+    slot.sync(imgInput.value, true);
+    markPanelDirty(status, 'widgets');
+  });
+  box.appendChild(panelRow('图片', slot.el));
+  box.appendChild(panelRow('图片地址', imgInput));
+  body.appendChild(box);
+
+  const texts = panelBox('文字和链接', '四样全空就是一块空着的占位（虚线框），填了才显示内容。');
+  texts.appendChild(
+    panelRow(
+      '标题',
+      boardInput(cfg.title ?? '', '', (v) => {
+        cfg.title = v;
+        markPanelDirty(status, 'widgets');
+      }),
+    )
+  );
+  texts.appendChild(
+    panelRow(
+      '一句话介绍',
+      panelArea(cfg.text ?? '', '', 3, (v) => {
+        cfg.text = v;
+        markPanelDirty(status, 'widgets');
+      }),
+      '纯文本，留空就不显示。',
+    )
+  );
+  texts.appendChild(
+    panelRow(
+      '跳转地址',
+      linkField(cfg.href ?? '', '/xxx/ 或 https://…（留空就点不动）', (v) => {
+        cfg.href = v;
+        markPanelDirty(status, 'widgets');
+      }, { anchor: true }),
+    )
+  );
+  body.appendChild(texts);
+}
+
+/* ---------- 花娅远位面（只读：数据在版块树里） ---------- */
+
+function drawFarlandCard(body) {
+  const box = panelBox(
+    '花娅远位面',
+    '这张卡**不存自己的数据**：标题、地址、子栏目全部现读版块树里的「花娅远位面」那一项（id = huaya-r3）。' +
+      '在「子版块」面板里给它加一个子版块、改一个名字、换一张封面，首页这张卡下一次构建就跟着变。',
+  );
+  const bar = document.createElement('div');
+  bar.className = 'wann__formbar';
+  bar.appendChild(
+    panelBtn('去「子版块」面板改它 ›', '在版块树里改「花娅远位面」的标题 / 地址 / 子栏目', () => {
+      openWorkspace('boards');
+    })
+  );
+  bar.appendChild(
+    panelBtn('打开 /huaya/farland', '在新标签页打开预览站点里的这一页（要先构建过）', () => {
+      window.open(`${PREVIEW_URL}/huaya/farland`, '_blank', 'noopener');
+    })
+  );
+  box.appendChild(bar);
+  body.appendChild(box);
+}
+
+/* ---------- 黎语堂 ---------- */
+
+function drawLiyutangCard(body, status) {
+  const lyt = widgetsDraft.liyutang ?? (widgetsDraft.liyutang = {});
+
+  const box = panelBox('这张卡');
+  const imgInput = boardInput(lyt.image ?? '', '/img/uploads/xxx.png 或 https://…', () => {});
+  const slot = imageSlot({
+    label: '黎语堂背景图',
+    getValue: () => lyt.image,
+    setValue: (v) => {
+      lyt.image = v;
+    },
+    onValue: (v) => {
+      imgInput.value = v;
+    },
+    onChanged: () => markPanelDirty(status, 'widgets'),
+    hint: '建议横图：卡片是宽而扁的一条，图会按 cover 裁。',
+  });
+  imgInput.addEventListener('input', () => {
+    slot.sync(imgInput.value, true);
+    markPanelDirty(status, 'widgets');
+  });
+  box.appendChild(panelRow('背景图', slot.el));
+  box.appendChild(panelRow('背景图地址', imgInput));
+  body.appendChild(box);
+
+  const texts = panelBox('文字');
+  texts.appendChild(
+    panelRow(
+      '标题',
+      boardInput(lyt.title ?? '', '黎语堂', (v) => {
+        lyt.title = v;
+        markPanelDirty(status, 'widgets');
+      }),
+      '不能留空。/liyutang 那一页的标题也读这一个值。'
+    )
+  );
+  texts.appendChild(
+    panelRow(
+      '副标题',
+      boardInput(lyt.subtitle ?? '', '花涧堂的静态论坛', (v) => {
+        lyt.subtitle = v;
+        markPanelDirty(status, 'widgets');
+      }),
+      '卡片标题下面那行小字。'
+    )
+  );
+  body.appendChild(texts);
+
+  /*
+    论坛自己的那一半：这里只放一条**去路**，不把版块 / 评论搬进来。
+    用户明确说过「不要将其接入原有的编辑器系统」。
+  */
+  const forum = panelBox('论坛本身（版块 / 评论）', '黎语堂有自己的管理系统，不在这套编辑器面板里。');
+  const bar = document.createElement('div');
+  bar.className = 'wann__formbar';
+  bar.appendChild(
+    panelBtn('打开黎语堂管理 ›', '另开一个页面：版块、评论系统（Giscus / Waline）', () => {
+      window.open(LIYUTANG_ADMIN, '_blank', 'noopener');
+    })
+  );
+  forum.appendChild(bar);
+  body.appendChild(forum);
 }
 
 /* ---------- 站点文案（src/data/site-copy.json） · 2026-10-11 加 ---------- */
@@ -13139,86 +13475,6 @@ function renderAboutPanel() {
   els.aboutSave = $('about-save');
 }
 
-/* ---------- 冰室冰山 ---------- */
-
-async function openIcebergModal() {
-  if (!(await openWidgetPanel('iceberg', els.icebergModal, els.icebergEditor))) return;
-  renderIcebergPanel();
-}
-
-function closeIcebergModal() {
-  els.icebergModal.hidden = true;
-}
-
-function renderIcebergPanel() {
-  const ice = widgetsDraft.iceberg;
-  const { body, foot, status } = panelShell(els.icebergEditor, {
-    hint: '首页中间那一块。图没传就画一个带塔吊的占位；链接留空的话整块不可点。',
-    group: 'widgets',
-  });
-
-  const box = panelBox('这张图');
-  const iceInput = boardInput(ice.image ?? '', '/img/uploads/xxx.png 或 https://…', () => {});
-  const slot = imageSlot({
-    label: '冰山图',
-    getValue: () => ice.image,
-    setValue: (v) => { ice.image = v; },
-    onValue: (v) => { iceInput.value = v; },
-    onChanged: () => markPanelDirty(status, 'widgets'),
-  });
-  // 同上：slot 有了才挂回调
-  iceInput.addEventListener('input', () => {
-    slot.sync(iceInput.value, true);
-    markPanelDirty(status, 'widgets');
-  });
-  box.appendChild(panelRow('图片', slot.el));
-  box.appendChild(panelRow('图片地址', iceInput));
-  body.appendChild(box);
-
-  const texts = panelBox('文字和链接');
-  texts.appendChild(
-    panelRow(
-      '标题',
-      boardInput(ice.title ?? '', '冰室冰山', (v) => {
-        ice.title = v;
-        markPanelDirty(status, 'widgets');
-      }),
-      '不能留空。',
-    )
-  );
-  texts.appendChild(
-    panelRow(
-      '一句话介绍',
-      panelArea(ice.text ?? '', '一句话就好', 3, (v) => {
-        ice.text = v;
-        markPanelDirty(status, 'widgets');
-      }),
-      '纯文本，这一块不支持 Markdown（页面上就是一行小字）。',
-    )
-  );
-  texts.appendChild(
-    panelRow(
-      '跳转地址',
-      linkField(ice.href ?? '', '/iceberg/ 或 https://…', (v) => {
-        ice.href = v;
-        markPanelDirty(status, 'widgets');
-      }, { anchor: true }),
-      '留空的话整块都不好点。',
-    )
-  );
-  body.appendChild(texts);
-
-  foot.append(
-    panelBtn('关闭面板', '关掉这个面板（没保存的改动留着，切回来还在）', () => openWorkspace('docs')),
-    panelBtn('打开 /iceberg/', '在新标签页打开预览站点里的这一页（要先构建过）', () => {
-      window.open(`${PREVIEW_URL}/iceberg/`, '_blank', 'noopener');
-    }),
-    panelBtn('保存并重新构建', '写进 src/data/home-widgets.json 并重新构建站点', () =>
-      saveWidgets(els.icebergSave, status, 'iceberg'), true, 'iceberg-save'),
-  );
-  els.icebergSave = $('iceberg-save');
-}
-
 /* ---------------------------------------------------------------
    曼沫砾总线（src/data/announcements.json）—— 本站的公告栏
 
@@ -13662,103 +13918,6 @@ function annForm(host, item, isNew, status) {
   );
   form.append(box, bar);
   host.appendChild(form);
-}
-
-/* ---------------------------------------------------------------
-   黎语堂（首页那张板块卡，home-widgets.json 的 liyutang）
-
-   用户要求：「在花涧堂编辑器的页面内可以管理黎语堂这个板块卡片的标题 副标题 背景图片」。
-   所以这里只有三样东西 —— 论坛自己的版块和评论系统**不在这儿**，
-   它们在另一个页面（LIYUTANG_ADMIN，右上角那颗「黎语堂管理」）。
-   --------------------------------------------------------------- */
-
-async function openLiyutangModal() {
-  if (!(await openWidgetPanel('liyutang', els.liyutangModal, els.lytEditor))) return;
-  renderLiyutangPanel();
-}
-
-function closeLiyutangModal() {
-  els.liyutangModal.hidden = true;
-}
-
-function renderLiyutangPanel() {
-  const lyt = widgetsDraft.liyutang;
-  const { body, foot, status } = panelShell(els.lytEditor, {
-    hint:
-      '首页第一行右格那张「黎语堂」卡片。标题 / 副标题 / 背景图就是卡片上的三样东西；' +
-      '图没传就画一块粉紫占位（位置留好了，传了立刻就在）。',
-    group: 'widgets',
-  });
-
-  const box = panelBox('这张卡');
-  const imgInput = boardInput(lyt.image ?? '', '/img/uploads/xxx.png 或 https://…', () => {});
-  const slot = imageSlot({
-    label: '黎语堂背景图',
-    getValue: () => lyt.image,
-    setValue: (v) => {
-      lyt.image = v;
-    },
-    onValue: (v) => {
-      imgInput.value = v;
-    },
-    onChanged: () => markPanelDirty(status, 'widgets'),
-    hint: '建议横图：卡片是宽而扁的一条，图会按 cover 裁。',
-  });
-  imgInput.addEventListener('input', () => {
-    slot.sync(imgInput.value, true);
-    markPanelDirty(status, 'widgets');
-  });
-  box.appendChild(panelRow('背景图', slot.el));
-  box.appendChild(panelRow('背景图地址', imgInput));
-  body.appendChild(box);
-
-  const texts = panelBox('文字');
-  texts.appendChild(
-    panelRow(
-      '标题',
-      boardInput(lyt.title ?? '', '黎语堂', (v) => {
-        lyt.title = v;
-        markPanelDirty(status, 'widgets');
-      }),
-      '不能留空。/liyutang 那一页的标题也读这一个值。'
-    )
-  );
-  texts.appendChild(
-    panelRow(
-      '副标题',
-      boardInput(lyt.subtitle ?? '', '花涧堂的静态论坛', (v) => {
-        lyt.subtitle = v;
-        markPanelDirty(status, 'widgets');
-      }),
-      '卡片标题下面那行小字。'
-    )
-  );
-  body.appendChild(texts);
-
-  /*
-    论坛自己的那一半：这里只放一条**去路**，不把版块 / 评论搬进来。
-    用户明确说过「不要将其接入原有的编辑器系统」。
-  */
-  const forum = panelBox('论坛本身（版块 / 评论）', '黎语堂有自己的管理系统，不在这套编辑器面板里。');
-  const bar = document.createElement('div');
-  bar.className = 'wann__formbar';
-  bar.appendChild(
-    panelBtn('打开黎语堂管理 ›', '另开一个页面：版块、评论系统（Giscus / Waline）', () => {
-      window.open(LIYUTANG_ADMIN, '_blank', 'noopener');
-    })
-  );
-  forum.appendChild(bar);
-  body.appendChild(forum);
-
-  foot.append(
-    panelBtn('关闭面板', '关掉这个面板（没保存的改动留着，切回来还在）', () => openWorkspace('docs')),
-    panelBtn('打开 /liyutang/', '在新标签页打开站点上的黎语堂（要先构建过）', () => {
-      window.open(`${PREVIEW_URL}/liyutang/`, '_blank', 'noopener');
-    }),
-    panelBtn('保存并重新构建', '写进 src/data/home-widgets.json 并重新构建站点', () =>
-      saveWidgets(els.lytSave, status, 'liyutang'), true, 'lyt-save')
-  );
-  els.lytSave = $('lyt-save');
 }
 
 /* ---------------------------------------------------------------
@@ -16184,10 +16343,8 @@ function bindEvents() {
     这里只管「点遮罩 / 点取消关掉」，和别的面板一个规矩。
   */
   for (const [modal, close] of [
-    [els.calendarModal, closeCalendarModal],
+    [els.homeModal, closeHomeModal],
     [els.aboutModal, closeAboutModal],
-    [els.icebergModal, closeIcebergModal],
-    [els.liyutangModal, closeLiyutangModal],
     [els.announceModal, closeAnnounceModal],
     [els.copyModal, closeCopyModal],
     [els.icechartModal, closeIceChartModal],
@@ -16281,10 +16438,8 @@ function bindEvents() {
     */
     if (ev.key === 'Escape') {
       for (const [modal, close] of [
-        [els.calendarModal, closeCalendarModal],
+        [els.homeModal, closeHomeModal],
         [els.aboutModal, closeAboutModal],
-        [els.icebergModal, closeIcebergModal],
-        [els.liyutangModal, closeLiyutangModal],
         [els.announceModal, closeAnnounceModal],
         [els.copyModal, closeCopyModal],
         [els.icechartModal, closeIceChartModal],

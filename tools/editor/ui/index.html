@@ -674,43 +674,27 @@
       HTML 里再写一个就会画出两条一模一样的「切换」条（踩过一次）。
     -->
 
-    <!-- 日历：home-widgets.json 的 calendar -->
-    <div class="modal" id="calendar-modal" hidden>
+    <!--
+      首页卡片（2026-11-17 合并）：原来「日历 / 冰室冰山 / 黎语堂」是三个独立面板，
+      站长说「编辑器里现在有两个按钮块只是负责编辑黎语堂首页卡和冰山首页卡
+      重复冗余无意义 把这些所有对首页卡UI的编辑整合到一个功能里」。
+      现在它们（加上每日精华 / 涣愿终池 / 预留卡 / 花娅远位面）都在这一个面板里，
+      顶上一条卡片选择条，一次只画一张卡的表单，底下**一个**保存按钮。
+    -->
+    <div class="modal" id="home-modal" hidden>
       <div class="modal__mask" data-close="1"></div>
-      <div class="modal__panel modal__panel--full" role="dialog" aria-modal="true" aria-label="日历">
-        <h3 class="modal__title">首页 · 日历</h3>
-        <div id="cal-editor"></div>
+      <div class="modal__panel modal__panel--full" role="dialog" aria-modal="true" aria-label="首页卡片">
+        <h3 class="modal__title">首页 · 卡片</h3>
+        <div id="home-editor"></div>
       </div>
     </div>
 
-    <!-- 关于我：home-widgets.json 的 about -->
+    <!-- 关于我：home-widgets.json 的 about（页头那颗小圆片 + /about-me/ 正文，不是首页卡） -->
     <div class="modal" id="about-modal" hidden>
       <div class="modal__mask" data-close="1"></div>
       <div class="modal__panel modal__panel--full" role="dialog" aria-modal="true" aria-label="关于我">
         <h3 class="modal__title">首页 · 关于我</h3>
         <div id="about-editor"></div>
-      </div>
-    </div>
-
-    <!-- 冰室冰山：home-widgets.json 的 iceberg -->
-    <div class="modal" id="iceberg-modal" hidden>
-      <div class="modal__mask" data-close="1"></div>
-      <div class="modal__panel modal__panel--full" role="dialog" aria-modal="true" aria-label="冰室冰山">
-        <h3 class="modal__title">首页 · 冰室冰山</h3>
-        <div id="iceberg-editor"></div>
-      </div>
-    </div>
-
-    <!--
-      黎语堂（板块卡片）：home-widgets.json 的 liyutang —— 2026-10-06 加。
-      只改首页那张卡的标题 / 副标题 / 背景图；论坛自己的版块和评论系统
-      在另一个页面（/liyutang-admin，右上角那颗「黎语堂管理」）。
-    -->
-    <div class="modal" id="liyutang-modal" hidden>
-      <div class="modal__mask" data-close="1"></div>
-      <div class="modal__panel modal__panel--full" role="dialog" aria-modal="true" aria-label="黎语堂">
-        <h3 class="modal__title">首页 · 黎语堂</h3>
-        <div id="lyt-editor"></div>
       </div>
     </div>
 

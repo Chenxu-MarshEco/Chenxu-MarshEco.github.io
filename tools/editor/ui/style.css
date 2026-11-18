@@ -1539,6 +1539,45 @@ body[data-type="notes"] .field--posts-only {
 }
 
 /* ---------------------------------------------------------------
+   首页卡片面板顶上那条「卡片选择条」（2026-11-17 合并面板时加的）
+
+   原来「日历 / 冰室冰山 / 黎语堂」是三个独立面板（三个按钮），站长说重复冗余，
+   于是合成一个面板：这里一条横着的卡片按钮，下面是选中那张卡的表单。
+   样子和上面那条工作面切换（.wsswitch__btn）一个风格，稍微大一点、更醒目 ——
+   它决定的是"现在在改首页的哪一张卡"。
+--------------------------------------------------------------- */
+.wcards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 12px;
+  padding: 0 0 12px;
+  border-bottom: 1px solid var(--border);
+}
+.wcards__btn {
+  padding: 5px 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 12.5px;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+.wcards__btn:hover {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+.wcards__btn.is-active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* ---------------------------------------------------------------
    独立页面工作台的面板尺寸：和「页面」工作台一样铺满
 --------------------------------------------------------------- */
 #solo-modal .modal__panel {

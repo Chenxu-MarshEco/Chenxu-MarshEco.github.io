@@ -1,6 +1,6 @@
 ---
 /**
- * 首页这一屏（挂在两个大板块**下面**，一行两块，一共两行）。
+ * 首页这一屏（挂在两个大板块**下面**，一行两块，一共四行）。
  *
  * 位置按用户历轮的要求排（原话见 README）：
  *   第一行 · 曼沫砾总线（公告栏）在「甬城晴雨」正下方
@@ -9,10 +9,15 @@
  *          · 冰室冰山 / 每日精华 **和日历一样高**
  *          · 冰室冰山的左边对齐「花娅陌域」的左边
  *          · 每日精华的右边对齐「花娅陌域」的右边
+ *   第三行（2026-11-17 加）· 日历正下方一张**同尺寸的预留卡**（先空着占位）
+ *   第四行（2026-11-17 加）· 冰室冰山 / 每日精华正下方再并排两张同尺寸的卡：
+ *                          左 = 涣愿终池入口（可传封面图），右 = 花娅远位面
+ *                          （照搬 /huaya 上那一块，随版块树同步）
  *
  * ⚠ 2026-10-06 加第一行时**没有动第二行的任何一条规则**：`.extras__pair` 还是那一套、
  * 日历还是 height:100%，所以「日历 / 冰山 / 每日精华 三张一样高」这个关系一点没变 ——
  * 新增的第一行是独立的一行，行高由公告卡和黎语堂卡自己决定，不会往下传染。
+ * 2026-11-17 加的两行同理：都是独立的一行，行高由自己那一行决定。
  *
  * 怎么保证"对齐"这件事不靠眼睛：这一屏的列定义和大板块那一行**一模一样**
  * （`repeat(2, minmax(0,1fr))` + 同样的 13% 列间距），所以第一格天然就是
@@ -24,8 +29,11 @@
 import HomeAnnounce from './HomeAnnounce.astro';
 import HomeLiyutang from './HomeLiyutang.astro';
 import HomeCalendar from './HomeCalendar.astro';
+import HomePlaceholder from './HomePlaceholder.astro';
 import HomeIceberg from './HomeIceberg.astro';
 import HomeDailyEssence from './HomeDailyEssence.astro';
+import HomeCistern from './HomeCistern.astro';
+import HomeFarland from './HomeFarland.astro';
 import { editVars } from '../utils/layout';
 
 /** 只跟随大板块的**横向**微调（竖向按自己这一屏的节奏排） */
@@ -38,7 +46,7 @@ const boardDx = (() => {
 
 <section
   class="extras"
-  aria-label="首页：曼沫砾总线 / 黎语堂 / 涣源溪水钟 / 冰室冰山 / 每日精华"
+  aria-label="首页：曼沫砾总线 / 黎语堂 / 涣源溪水钟 / 冰室冰山 / 每日精华 / 涣愿终池 / 花娅远位面"
 >
   <div class="extras__grid" style={boardDx}>
     {/*
@@ -53,6 +61,19 @@ const boardDx = (() => {
     <div class="extras__pair">
       <HomeIceberg />
       <HomeDailyEssence />
+    </div>
+    {/*
+      第三行（2026-11-17）：日历正下方那张预留卡。
+      它只占左列，右列这一行空着 —— 站长要的就是"日历下方一张同尺寸的卡"。
+    */}
+    <HomePlaceholder />
+    {/*
+      第四行（2026-11-17）：冰室冰山 / 每日精华正下方再并排两张。
+      左 = 涣愿终池入口，右 = 花娅远位面（照搬 /huaya 上那一块）。
+    */}
+    <div class="extras__pair extras__pair--under">
+      <HomeCistern />
+      <HomeFarland />
     </div>
   </div>
 </section>
@@ -93,8 +114,20 @@ const boardDx = (() => {
   }
 
   /*
+    第三行那两张（预留卡 / 涣愿终池 + 花娅远位面）要和**上面那一行**一样高：
+    站长原话「同尺寸的卡片」「和上面冰山精华的小卡片一样大且对齐」。
+    高度由脚本量出来、**直接写成行内 min-height**（见文件末尾那段）——
+    日历是 5 行还是 6 行会差 20px，写死一个数换个月就对不齐了；
+    而 CSS 里没有"让这一行和上一行一样高"的写法。
+    ⚠ 不能在这里写 `min-height: var(--under-h)`：上面那条
+    `.extras__grid > *` 的 `min-height: 0` 权重更高（两个类 + 两个 scope 属性），
+    会把这条压掉（实测：写在这儿量出来还是 62px）。行内样式才压得住。
+  */
+
+  /*
     窄屏：和大板块保持同一个断点（760px 以下大板块也是单列）。
-    单列时不要求对齐，三张卡按自己的自然高度堆着。
+    单列时不要求对齐，卡片按自己的自然高度堆着 —— 脚本在窄屏下也不写那个高度：
+    手机上日历是整幅宽、比桌面高得多，硬拉成一样高只会多出两块空盒子。
   */
   @media (max-width: 760px) {
     .extras__grid {
@@ -105,3 +138,35 @@ const boardDx = (() => {
     }
   }
 </style>
+
+<script>
+  /*
+    把「日历那一行」的高度量出来，交给下面那一行（预留卡 / 涣愿终池 + 花娅远位面）。
+    为什么不用纯 CSS：日历的高度取决于这个月排 5 行还是 6 行（差 20px），
+    写死一个数换个月就对不齐了；而 CSS 里没有"让这一行和上一行一样高"的写法。
+    量一次 + 窗口变化时再量一次就够，代价可以忽略。
+  */
+  (() => {
+    const cal = document.querySelector<HTMLElement>('#home-cal');
+    const targets = [
+      document.querySelector<HTMLElement>('#home-placeholder'),
+      document.querySelector<HTMLElement>('.extras__pair--under'),
+    ].filter((n): n is HTMLElement => !!n);
+    if (!cal || !targets.length) return;
+
+    const sync = () => {
+      /* 窄屏是单列，不要求一样高（见样式里那条 @media） */
+      const narrow = window.matchMedia('(max-width: 760px)').matches;
+      const h = narrow ? 0 : Math.round(cal.getBoundingClientRect().height);
+      for (const el of targets) {
+        if (h > 0) el.style.minHeight = `${h}px`;
+        else el.style.removeProperty('min-height');
+      }
+    };
+
+    sync();
+    /* 日历换月会多一行 / 少一行，高度跟着变 —— 盯着它 */
+    if (typeof ResizeObserver === 'function') new ResizeObserver(sync).observe(cal);
+    window.addEventListener('resize', sync);
+  })();
+</script>

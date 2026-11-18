@@ -4418,6 +4418,30 @@ function cleanWidgets(payload, current) {
     file.daily = current.daily;
   }
 
+  /*
+    ---- cistern / placeholder：首页那两张新卡（2026-11-17 加）----
+    站长原话：「在冰室冰山和每日精华下方也加两个同尺寸的卡片 左边是涣愿终池的入口
+    和冰室冰山一样可以传封面图」「在涣源溪水钟下方加一个同尺寸的卡片 先不要做东西
+    留着占位」。
+
+    两张卡都是「图 + 标题 + 一句话 + 链接」，所以清洗规则和 iceberg 一样；
+    区别只有一条：**标题可以留空**（预留卡默认就是空的，一个字都没有）。
+    href 也允许留空 —— 涣愿终池那张留空时站点自己按版块 id 找那一页。
+  */
+  for (const key of ['cistern', 'placeholder']) {
+    if (has(key)) {
+      const raw = payload[key] && typeof payload[key] === 'object' ? payload[key] : {};
+      file[key] = {
+        title: String(raw.title ?? '').trim(),
+        image: String(raw.image ?? '').trim(),
+        text: String(raw.text ?? '').trim(),
+        href: String(raw.href ?? '').trim(),
+      };
+    } else if (current[key]) {
+      file[key] = current[key];
+    }
+  }
+
   return { file, dropped };
 }
 

@@ -1,0 +1,136 @@
+---
+/**
+ * 首页「涣愿终池」入口卡（2026-11-17 加）。
+ *
+ * 站长原话：
+ *   「在冰室冰山和每日精华下方也加两个同尺寸的卡片 左边是涣愿终池的入口
+ *    和冰室冰山一样可以传封面图」
+ *
+ * 所以它和「冰室冰山」是同一套东西：一张封面图 + 标题 + 一句话，整张可点。
+ * 图没传就画一块水色的占位（位置留好了，传了立刻就在）。
+ *
+ * 跳转地址：面板里填了就用填的；留空就**按版块 id 去版块树里找那一页**
+ * （`page-mwt0cistern`）—— 站长在编辑器里改了那一页的地址，这里跟着变。
+ */
+import widgets from '../data/home-widgets.json';
+import site from '../site.config';
+import { flattenBoards, type BoardNode } from '../utils/boards';
+import { variantUrl } from '../utils/images';
+import { withBase } from '../utils/url';
+
+const CISTERN_ID = 'page-mwt0cistern';
+
+const cfg = ((widgets as Record<string, unknown>).cistern ?? {}) as {
+  title?: string;
+  image?: string;
+  text?: string;
+  href?: string;
+};
+
+const title = String(cfg.title ?? '').trim() || '涣愿终池';
+const text = String(cfg.text ?? '').trim();
+const imgRaw = String(cfg.image ?? '').trim();
+const img = imgRaw ? variantUrl(imgRaw, 800) : '';
+
+/** 面板里填了地址就用它；没填就按 id 找那一页（找不到就退回默认地址） */
+const rawHref =
+  String(cfg.href ?? '').trim() ||
+  flattenBoards(site.homeBoards as BoardNode[]).find((f) => f.node.id === CISTERN_ID)?.url ||
+  '/memoriterminalcistern';
+const external = /^https?:/i.test(rawHref);
+const url = external ? rawHref : withBase(rawHref);
+---
+
+<a
+  class="cistcard"
+  id="home-cistern"
+  href={url}
+  title={title}
+  {...external ? { target: '_blank', rel: 'noopener' } : {}}
+>
+  <span class="cistcard__art">
+    {
+      img ? (
+        <img class="cistcard__img" src={img} alt="" loading="lazy" decoding="async" />
+      ) : (
+        /* 占位：一块水色（和那一页的 Frutiger Aero 一个调子），等站长传图 */
+        <span class="cistcard__ph" aria-hidden="true" />
+      )
+    }
+  </span>
+
+  <span class="cistcard__body">
+    <b class="cistcard__title">{title}</b>
+    {text && <span class="cistcard__text">{text}</span>}
+  </span>
+</a>
+
+<style>
+  /* 和「冰室冰山」那张卡同一套骨架：图吃掉剩下的高度，标题压在底下 */
+  .cistcard {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    position: relative;
+    overflow: hidden;
+    border: 1px solid rgba(255, 120, 190, 0.4);
+    border-radius: 16px;
+    background: linear-gradient(180deg, rgba(38, 6, 54, 0.86), rgba(20, 3, 32, 0.9));
+    box-shadow: 0 14px 40px -22px rgb(0 0 0 / 0.8);
+    text-decoration: none;
+    color: inherit;
+    transition: transform 0.16s ease, border-color 0.16s ease;
+  }
+  .cistcard:hover,
+  .cistcard:focus-visible {
+    transform: translateY(-2px);
+    border-color: rgba(255, 120, 190, 0.8);
+  }
+
+  .cistcard__art {
+    display: block;
+    flex: 1 1 auto;
+    min-height: 0;
+    background: linear-gradient(180deg, rgba(30, 8, 48, 0.9), rgba(10, 2, 18, 0.9));
+  }
+  .cistcard__img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  /* 没传图：一块水色（天空 → 水面），和那一页的布景同一个调子 */
+  .cistcard__ph {
+    display: block;
+    width: 100%;
+    height: 100%;
+    background:
+      radial-gradient(80% 60% at 78% 6%, rgba(255, 255, 255, 0.9), rgba(255, 255, 255, 0) 62%),
+      linear-gradient(180deg, #9fdcff 0%, #cdeeff 46%, #43b6d6 74%, #1d7fa8 100%);
+    opacity: 0.72;
+  }
+
+  .cistcard__body {
+    display: block;
+    flex: none;
+    padding: 0.5rem 0.75rem 0.6rem;
+    border-top: 1px solid rgba(255, 120, 190, 0.3);
+  }
+  .cistcard__title {
+    display: block;
+    font-size: 0.98rem;
+    letter-spacing: 0.12em;
+    color: #ffd9ef;
+  }
+  .cistcard__text {
+    display: block;
+    margin-top: 0.2rem;
+    font-size: 0.8rem;
+    line-height: 1.6;
+    color: rgba(255, 236, 248, 0.72);
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+</style>

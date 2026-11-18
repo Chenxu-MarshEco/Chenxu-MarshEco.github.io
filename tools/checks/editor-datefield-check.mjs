@@ -105,7 +105,8 @@ await sleep(2000);
 
 try {
   /* 打开「日历」面板 */
-  await cdp.ev(`(async () => { await window.__openWs('calendar'); await new Promise((r) => setTimeout(r, 1200)); return true; })()`);
+  /* 2026-11-17：日历并进了「首页卡片」面板，默认画的就是日历那张卡 */
+  await cdp.ev(`(async () => { await window.__openWs('home'); await new Promise((r) => setTimeout(r, 1200)); return true; })()`);
 
   const shape = await cdp.ev(`(() => {
     const panel = [...document.querySelectorAll('.wpanel')].find((el) => el.getBoundingClientRect().height > 0);

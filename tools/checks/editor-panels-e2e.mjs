@@ -522,16 +522,27 @@ try {
       navs3.categories.push(extra);
       await api('POST', '/api/navs', { categories: navs3.categories });
       const tree3 = readJson(path.join(DST, 'src', 'data', 'home-boards.json'));
-      const findNavBlock = (list) => {
+      /*
+        ⚠ 要改的是**正在量的那一页**上的导航块，不是"树里第一个引用这个分类的块"。
+        2026-11-11 起同一个分类被两页引用（冰室 / 2026冰室国庆大聚会），
+        按"第一个"找会改到另一页上，于是这一页永远只有一个分类、断言必红。
+        所以按地址匹配：navPage.rel 是 dist 里的相对路径，节点 href 是站内地址。
+      */
+      const pagePath = '/' + navPage.rel.replace(/index\.html$/, '');
+      const findNavBlock = (list, wantHref) => {
         for (const n of list ?? []) {
-          const b = (n?.page ?? []).find((x) => x.type === 'nav' && (x.cats ?? []).includes(cat.id));
-          if (b) return b;
-          const hit = findNavBlock(n?.children);
+          const href = String(n?.href ?? '').trim();
+          const same = href && (href === wantHref || href + '/' === wantHref || href === wantHref.replace(/\/$/, ''));
+          if (same) {
+            const b = (n?.page ?? []).find((x) => x.type === 'nav' && (x.cats ?? []).includes(cat.id));
+            if (b) return b;
+          }
+          const hit = findNavBlock(n?.children, wantHref);
           if (hit) return hit;
         }
         return null;
       };
-      const block = findNavBlock(tree3.boards);
+      const block = findNavBlock(tree3.boards, pagePath);
       if (block) block.cats = [cat.id, extra.id];
       await api('POST', '/api/boards', { boards: tree3.boards });
       await api('POST', '/api/build');
@@ -774,7 +785,8 @@ try {
       plainRadius: plain && cs(plain, '::before').borderRadius,
       plainTip: plain && cs(plain, '::after').borderTopColor,
       plainHue: plain && HUE(bgOf(plain) || ''),
-      todayText: (document.querySelector('.cal__today') || {}).textContent,
+      /* 那个框现在是个 <a>（点它去涣愿终池），里面还挂着提示卡 —— 只读里面那个 span */
+      todayText: ((document.querySelector('.cal__today [data-cal-today-text]') || document.querySelector('.cal__today') || {}).textContent || '').trim(),
       gridDays: document.querySelectorAll('.cal__day').length,
       width: innerWidth,
     };
@@ -818,7 +830,7 @@ try {
     calendar: { ...wBody.calendar, events: { ...wBody.calendar.events, [today]: { title: '篠雨的生日', href: '/salon/', text: '验收写的事件' } } },
   });
   await cdp.goto('/', 1200);
-  const box2 = await cdp.ev(`(() => ({ text: (document.querySelector('.cal__today') || {}).textContent,
+  const box2 = await cdp.ev(`(() => ({ text: ((document.querySelector('.cal__today [data-cal-today-text]') || document.querySelector('.cal__today') || {}).textContent || '').trim(),
     event: document.querySelectorAll('.cal__day--event').length, orange: /255,\\s*(15[0-9]|2[0-9][0-9])/.test(getComputedStyle(document.querySelector('.cal__day--event'), '::before').backgroundImage) }))()`);
   check('日历：那一格填了「自定义文案」就用它（面板上说明过的口子，不算串文案）',
     rw2.json?.built === true && box2.text === '验收写的事件' && box2.event === monthEventDays(),
@@ -1097,9 +1109,8 @@ try {
   /* 关键字用来确认"开出来的确实是这一块"：面板是按工作面分开的容器，
      不开的那些还留在 DOM 里（只是 hidden），所以必须挑**可见**的那个 .wpanel */
   const wanted = [
-    ['calendar', '日历', '特殊日子'],
+    ['home', '首页卡片', '首页上每一张卡'],
     ['about', '关于我', '小圆片'],
-    ['iceberg', '冰室冰山', '塔吊'],
     ['ice-chart', '冰山图', '完备标识'],
     ['essences', '精华', '冰室精华'],
     ['members', '成员', '成员 id'],

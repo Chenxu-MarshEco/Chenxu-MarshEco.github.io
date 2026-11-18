@@ -150,9 +150,8 @@ try {
 
   /* ---------- ① 五个工作面都能开，开的是那一块 ---------- */
   const wanted = [
-    ['calendar', '日历', '特殊日子'],
+    ['home', '首页卡片', '首页上每一张卡'],
     ['about', '关于我', '小圆片'],
-    ['iceberg', '冰室冰山', '塔吊'],
     ['ice-chart', '冰山图', '完备标识'],
     ['essences', '精华', '冰室精华'],
     ['members', '成员', '成员 id'],
@@ -200,10 +199,39 @@ try {
 
   /* ②b 图和链接这两个"预留接口"在 UI 上也要有入口（选图片 / 拖进来 / 粘贴） */
   check('「关于我」面板里有头像上传口', panels.about.files >= 1, `input[type=file] ${panels.about.files} 个`);
-  check('「冰室冰山」面板里有图片上传口', panels.iceberg.files >= 1, `input[type=file] ${panels.iceberg.files} 个`);
-  check('「日历」面板能写事件（特殊日子那张表有「＋ 添加一天」）',
-    panels.calendar.textareas >= 2 && panels.calendar.boxes.some((t) => t.includes('特殊日子')),
-    JSON.stringify({ textareas: panels.calendar.textareas, boxes: panels.calendar.boxes }));
+  /*
+    2026-11-17 起「日历 / 冰室冰山 / 黎语堂」并成了同一个「首页卡片」面板
+    （站长：「重复冗余无意义 把这些所有对首页卡UI的编辑整合到一个功能里」），
+    所以图片上传口和特殊日子表都要在**那张卡自己的表单**里找：
+    面板默认画的是「日历」，切到「冰室冰山」才有图。
+  */
+  const homeIce = await cdp.ev(`(async () => {
+    const pick = () => [...document.querySelectorAll('.wpanel')].find((el) => el.getBoundingClientRect().height > 0);
+    /* 上面那几条把「成员」面板开着了，先切回「首页卡片」再找卡片选择条 */
+    await window.__openWs('home');
+    await new Promise((r) => setTimeout(r, 900));
+    const w = pick();
+    const tab = [...w.querySelectorAll('.wcards__btn')].find((b) => b.textContent.trim() === '冰室冰山');
+    if (tab) { tab.click(); await new Promise((r) => setTimeout(r, 400)); }
+    const w2 = pick();
+    return { files: w2.querySelectorAll('input[type=file]').length, tabs: w2.querySelectorAll('.wcards__btn').length }; })()`);
+  check('「首页卡片」面板切到「冰室冰山」时有图片上传口', homeIce.files >= 1, `input[type=file] ${homeIce.files} 个`);
+  const homeCal = await cdp.ev(`(async () => {
+    const pick = () => [...document.querySelectorAll('.wpanel')].find((el) => el.getBoundingClientRect().height > 0);
+    await window.__openWs('home');
+    await new Promise((r) => setTimeout(r, 900));
+    const w = pick();
+    const tab = [...w.querySelectorAll('.wcards__btn')].find((b) => b.textContent.trim() === '日历');
+    if (tab) { tab.click(); await new Promise((r) => setTimeout(r, 400)); }
+    const w2 = pick();
+    return { textareas: w2.querySelectorAll('textarea').length,
+      boxes: [...w2.querySelectorAll('.wbox__title')].map((n) => n.textContent),
+      addBtn: [...w2.querySelectorAll('button')].some((b) => b.textContent.includes('添加一天')) }; })()`);
+  check('「首页卡片」面板的「日历」那张卡能写事件（特殊日子表 + 「＋ 添加一天」）',
+    homeCal.textareas >= 2 && homeCal.boxes.some((t) => t.includes('特殊日子')) && homeCal.addBtn === true,
+    JSON.stringify(homeCal));
+  /* 下面那一段（马甲）要在「成员」面板里跑，切回去 */
+  await cdp.ev(`(async () => { await window.__openWs('members'); await new Promise((r) => setTimeout(r, 900)); return true; })()`);
   /* ---------- ②c 马甲：芯片式输入（2026-09-27 加的那一栏） ----------
      用户原话：「为成员编辑器里增加一个马甲功能……应当可以给成员编入多条马甲。」
      这里在**真界面**上把这一栏用一遍：填、逗号切、去重、点 ✕ 删、到上限。
@@ -841,7 +869,7 @@ try {
 
   /* ---------- ⑥ 草稿保护：改字 → 切走 → 切回来 ---------- */
   const draft = await cdp.ev(`(async () => {
-    await window.__openWs('calendar');
+    await window.__openWs('home');
     await new Promise((r) => setTimeout(r, 900));
     const w = [...document.querySelectorAll('.wpanel')].find((el) => el.getBoundingClientRect().height > 0);
     const ta = w.querySelector('textarea');
@@ -851,7 +879,7 @@ try {
     await new Promise((r) => setTimeout(r, 300));
     await window.__openWs('about');
     await new Promise((r) => setTimeout(r, 700));
-    await window.__openWs('calendar');
+    await window.__openWs('home');
     await new Promise((r) => setTimeout(r, 900));
     const w2 = [...document.querySelectorAll('.wpanel')].find((el) => el.getBoundingClientRect().height > 0);
     const ta2 = w2.querySelector('textarea');
