@@ -210,11 +210,22 @@ function components(data, w, h, thr) {
 
 /* ------------------------------------------------------------- 鱼的处理 */
 
-/** 只留最大的一块连通区域（先腐蚀切断细桥，再腐蚀回来） */
-function biggestBlob(data, w, h, thr = 10) {
+/**
+ * 只留鱼身那一块，把旁边悬空的碎鳍（还有图集格子蹭过来的碎片）全去掉。
+ *
+ * 做法：**按"实心"连线**——只有 alpha > 96 的像素才算连在一起。
+ * 那些碎鳍和鱼身之间只靠一两个 alpha 很低的像素吊着，按实心判断就断开了；
+ * 断开之后只保留最大的一块，再把这块往外扩 3px 把软边收回来，
+ * 最后用 `min(原 alpha, 扩出来的范围)` 做遮罩 —— 软边保留，碎鳍掉落。
+ *
+ * （早先是按 alpha>10 判连通再腐蚀 2px，腐蚀量不足以切断那种细桥，
+ *   皇帝神仙那张的上下两片碎鳍就一直挂着。）
+ */
+function biggestBlob(data, w, h, solid = 96) {
   const n = w * h;
   const a0 = new Uint8Array(n);
   for (let i = 0; i < n; i++) a0[i] = data[i * 4 + 3];
+
   const morph = (src, r, min) => {
     const out = new Uint8Array(n);
     for (let y = 0; y < h; y++) {
@@ -235,21 +246,52 @@ function biggestBlob(data, w, h, thr = 10) {
     }
     return out;
   };
-  const eroded = morph(a0, 2, true);
-  const { lab, boxes } = components(
-    Array.from({ length: n }, (_, i) => [0, 0, 0, eroded[i]]).flat(),
-    w, h, thr,
-  );
+
+  // 按"实心"做连通判定
+  const solidMask = Buffer.alloc(n * 4);
+  for (let i = 0; i < n; i++) solidMask[i * 4 + 3] = a0[i] > solid ? 255 : 0;
+  const { lab, boxes } = components(solidMask, w, h, 127);
   if (!boxes.length) return data;
+
   const max = Math.max(...boxes.map((b) => b.count));
-  const grow = new Uint8Array(n);
+  const keep = new Uint8Array(n);
   for (let i = 0; i < n; i++) {
     const l = lab[i];
-    if (l >= 0 && boxes[l].count >= max * 0.3) grow[i] = 255;
+    if (l >= 0 && boxes[l].count >= max * 0.3) keep[i] = 255;
   }
-  const grown = morph(grow, 2, false);
+  const grown = morph(keep, 3, false);
   for (let i = 0; i < n; i++) data[i * 4 + 3] = Math.min(a0[i], grown[i]);
   return data;
+}
+
+/**
+ * 把一张图按"实心"连通块拆开，返回 [{buf,w,h}...]（第 0 块最大 = 鱼身）。
+ * 鱼身和鳍就是这样分开的。
+ */
+async function splitParts(data, w, h, solid = 96) {
+  const mask = Buffer.alloc(w * h * 4);
+  for (let i = 0; i < w * h; i++) mask[i * 4 + 3] = data[i * 4 + 3] > solid ? 255 : 0;
+  const { lab, boxes } = components(mask, w, h, 127);
+  const sorted = [...boxes].sort((a, b) => b.count - a.count);
+  const out = [];
+  for (const b of sorted) {
+    const bw = b.x1 - b.x0 + 1;
+    const bh = b.y1 - b.y0 + 1;
+    const buf = Buffer.alloc(bw * bh * 4);
+    for (let y = 0; y < bh; y++) {
+      for (let x = 0; x < bw; x++) {
+        const si = (b.y0 + y) * w + (b.x0 + x);
+        if (lab[si] !== b.id) continue;
+        const di = (y * bw + x) * 4;
+        buf[di] = data[si * 4];
+        buf[di + 1] = data[si * 4 + 1];
+        buf[di + 2] = data[si * 4 + 2];
+        buf[di + 3] = data[si * 4 + 3];
+      }
+    }
+    out.push({ buf, w: bw, h: bh, count: b.count });
+  }
+  return out;
 }
 
 /** 裁到 alpha 的内容框 */
@@ -372,18 +414,25 @@ function tiltOf(data, w, h, thr = 24) {
 
 /* --------------------------------------------------------------- 常量表 */
 
-/** DDS 序号 → 鱼名。这些编号是 MA3 内嵌的顺序，不会变 */
+/**
+ * DDS 序号 → [鱼名, 目标宽, 转正角度]
+ *
+ * **转正角度是手调出来写死的，不要改成自动测量。** 试过按"最左/最右列重心连线"
+ * 自动量：鱼的背鳍和臀鳍一头高一头低，量出来的角度里混进了鱼本身的形状，
+ * 转一次只能去掉四成，反复迭代还会转过头。这几个数是照着一张张调、看完图定下的。
+ * 符号：正数 = 顺时针（sharp 的约定），尾巴比头低的鱼（头朝上）要给负数。
+ */
 const FISH = [
-  [1, 'tang-brown', 220],
-  [32, 'tang-blue', 220],
-  [5, 'angel-emperor', 176],
-  [49, 'idol', 170],
-  [35, 'butterfly-copper', 150],
-  [46, 'butterfly-raccoon', 150],
-  [22, 'angel-flame', 126],
-  [30, 'clown', 132],
-  [50, 'tang-yellow', 140],
-  [27, 'angel-juvenile', 124],
+  [1, 'tang-brown', 220, 0],
+  [32, 'tang-blue', 220, 6],
+  [5, 'angel-emperor', 176, -22],
+  [49, 'idol', 170, 8],
+  [35, 'butterfly-copper', 150, -26],
+  [46, 'butterfly-raccoon', 150, -8],
+  [22, 'angel-flame', 126, 0],
+  [30, 'clown', 132, 0],
+  [50, 'tang-yellow', 140, -7],
+  [27, 'angel-juvenile', 124, 0],
 ];
 
 const W = 1200;
@@ -460,43 +509,32 @@ async function main() {
     return { data: Buffer.from(data), w: info.width, h: info.height };
   };
 
-  /* ---- 鱼 ---- */
-  for (const [idx, name, maxW] of FISH) {
-    const r = await raw(idx);
-    const main2 = biggestBlob(r.data, r.w, r.h, 10);
+  /** 每条鱼的鳍：{ 鱼名: [{file,w,h}...] }，最后写成 fins.json 给前端用 */
+  const finsFor = {};
 
-    /*
-      MA3 里有几条鱼是**斜着**画的（皇帝神仙、铜带蝴蝶鱼那几张整个身子转了 20 多度），
-      直接拿来当广告牌，鱼就是斜着游的。所以先量出鱼身轴线歪了多少，再转正。
-      量法：取最左和最右各 12% 列的不透明像素，各自求重心的 y，
-      两点连线就是鱼身方向。正角度 = 右边（尾巴）比左边（头）低 = 鱼头朝上，
-      要顺时针转回来（sharp 的正角度就是顺时针）。
-    */
-    const tilt = tiltOf(main2, r.w, r.h, 24);
-    if (Math.abs(tilt) > 1.5) {
-      // 转完之后的宽高**只能从输出取**（.metadata() 给的是输入尺寸，转过的画布更大）
-      // 方向：tilt 是"尾巴比头低"，那种鱼是头朝上的，要**逆时针**转回来。
-      const rot = await sharp(main2, { raw: { width: r.w, height: r.h, channels: 4 } })
-        .rotate(-tilt, { background: { r: 0, g: 0, b: 0, alpha: 0 } })
+  /* ---- 鱼 ---- */
+  for (const [idx, name, maxW, rot] of FISH) {
+    const r = await raw(idx);
+    const original = Buffer.from(r.data);
+
+    // 先把悬空的碎鳍切掉（按"实心"做连通判定，见 biggestBlob 的注释）
+    let blob = biggestBlob(Buffer.from(original), r.w, r.h, 96);
+    let bw = r.w;
+    let bh = r.h;
+
+    // 手调的转正角度（见 FISH 上面那段注释：别改成自动测量）
+    if (rot) {
+      const out = await sharp(blob, { raw: { width: bw, height: bh, channels: 4 } })
+        .rotate(rot, { background: { r: 0, g: 0, b: 0, alpha: 0 } })
         .ensureAlpha()
         .raw()
         .toBuffer({ resolveWithObject: true });
-      const t = trimRaw(Buffer.from(rot.data), rot.info.width, rot.info.height);
-      const scale = Math.min(1, maxW / t.w);
-      const w = Math.round(t.w * scale);
-      const h = Math.round(t.h * scale);
-      const clean = defringe(Buffer.from(t.buf), t.w, t.h, 1);
-      const opts = { quality: 90, alphaQuality: 95, effort: 6 };
-      const base = () => sharp(clean, { raw: { width: t.w, height: t.h, channels: 4 } })
-        .resize(w, h, { kernel: 'lanczos3' });
-      await base().webp(opts).toFile(path.join(OUT, `fish-${name}.webp`));
-      await base().modulate({ saturation: 0.82, brightness: 0.9 }).webp(opts)
-        .toFile(path.join(OUT, `fish-${name}-far.webp`));
-      log(`  fish-${name}  ${t.w}x${t.h} → ${w}x${h}  转正 ${tilt.toFixed(1)}°`);
-      continue;
+      blob = Buffer.from(out.data);
+      bw = out.info.width;
+      bh = out.info.height;
     }
 
-    const t = trimRaw(main2, r.w, r.h);
+    const t = trimRaw(blob, bw, bh);
     const clean = defringe(Buffer.from(t.buf), t.w, t.h, 1);
     const scale = Math.min(1, maxW / t.w);
     const w = Math.round(t.w * scale);
@@ -504,11 +542,42 @@ async function main() {
     const opts = { quality: 90, alphaQuality: 95, effort: 6 };
     const base = () => sharp(clean, { raw: { width: t.w, height: t.h, channels: 4 } })
       .resize(w, h, { kernel: 'lanczos3' });
-
     await base().webp(opts).toFile(path.join(OUT, `fish-${name}.webp`));
     await base().modulate({ saturation: 0.82, brightness: 0.9 }).webp(opts)
       .toFile(path.join(OUT, `fish-${name}-far.webp`));
-    log(`  fish-${name}  ${t.w}x${t.h} → ${w}x${h}`);
+
+    /*
+      鳍单独出一份。
+
+      MA3 的一条鱼其实是**好几块板子**：鱼身一块，两片胸鳍/腹鳍各自一块，
+      贴图里这几片鳍就摊在图集的空角上（比如皇帝神仙那片黄鳍在右上角、
+      白扇在左下角），运行时靠网格把它们各自摆到鱼身上、并绕着根部扇动。
+      早先我把这些小块当成"图集串过来的碎片"删了 —— 于是所有鱼都没了胸鳍。
+      现在鱼身和鳍分开存，摆哪儿由前端那张表决定（见 HomeAquarium.astro 的 FINS）。
+    */
+    const parts = await splitParts(original, r.w, r.h, 96);
+    const fins = [];
+    for (let k = 1; k < parts.length && fins.length < 3; k++) {
+      const p = parts[k];
+      if (p.w < 8 || p.h < 6) continue;
+      const buf = defringe(Buffer.from(p.buf), p.w, p.h, 1);
+      const fname = `fish-${name}f${fins.length + 1}.webp`;
+      await sharp(buf, { raw: { width: p.w, height: p.h, channels: 4 } })
+        .webp({ quality: 92, alphaQuality: 96, effort: 6 })
+        .toFile(path.join(OUT, fname));
+      fins.push({ f: fname, w: p.w, h: p.h });
+    }
+    if (fins.length) finsFor[name] = fins;
+    log(`  fish-${name}  ${t.w}x${t.h} → ${w}x${h}  转 ${rot}°  鳍 ${fins.length} 片`);
+  }
+
+  if (Object.keys(finsFor).length) {
+    await fsp.writeFile(
+      path.join(OUT, 'fins.json'),
+      JSON.stringify(finsFor, null, 1) + '\n',
+      'utf8',
+    );
+    log(`  鳍清单：${Object.keys(finsFor).length} 条鱼`);
   }
 
   /* ---- 焦散：抖动网格的 Voronoi 边界（环绕距离，所以无缝） ---- */

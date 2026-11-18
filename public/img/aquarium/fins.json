@@ -1,0 +1,83 @@
+{
+ "tang-brown": [
+  {
+   "f": "fish-tang-brownf1.webp",
+   "w": 73,
+   "h": 26
+  },
+  {
+   "f": "fish-tang-brownf2.webp",
+   "w": 69,
+   "h": 10
+  }
+ ],
+ "tang-blue": [
+  {
+   "f": "fish-tang-bluef1.webp",
+   "w": 30,
+   "h": 43
+  }
+ ],
+ "angel-emperor": [
+  {
+   "f": "fish-angel-emperorf1.webp",
+   "w": 33,
+   "h": 35
+  },
+  {
+   "f": "fish-angel-emperorf2.webp",
+   "w": 40,
+   "h": 35
+  }
+ ],
+ "idol": [
+  {
+   "f": "fish-idolf1.webp",
+   "w": 23,
+   "h": 39
+  },
+  {
+   "f": "fish-idolf2.webp",
+   "w": 30,
+   "h": 29
+  }
+ ],
+ "butterfly-copper": [
+  {
+   "f": "fish-butterfly-copperf1.webp",
+   "w": 33,
+   "h": 35
+  },
+  {
+   "f": "fish-butterfly-copperf2.webp",
+   "w": 35,
+   "h": 36
+  }
+ ],
+ "butterfly-raccoon": [
+  {
+   "f": "fish-butterfly-raccoonf1.webp",
+   "w": 30,
+   "h": 31
+  }
+ ],
+ "clown": [
+  {
+   "f": "fish-clownf1.webp",
+   "w": 23,
+   "h": 19
+  },
+  {
+   "f": "fish-clownf2.webp",
+   "w": 23,
+   "h": 13
+  }
+ ],
+ "angel-juvenile": [
+  {
+   "f": "fish-angel-juvenilef1.webp",
+   "w": 21,
+   "h": 21
+  }
+ ]
+}

@@ -13,17 +13,25 @@
  *    多少性能 给我一个方案 再开始制作」
  *
  * 所以这里走的就是那条"花不了多少性能"的路：**贴图全是 MA3 自己的**。
- * 素材（public/img/aquarium/ 下那 23 个 WebP）由 tools/images/aquarium-bake.mjs
+ * 素材（public/img/aquarium/ 下那些 WebP）由 tools/images/aquarium-bake.mjs
  * 从屏保里解出来烘好、进仓库；构建不依赖本机装没装 MA3。
  * 运行时只用 canvas 2D 画：
  *   背景板 → 远处的鱼 → 焦散 → 光柱 → 近处的鱼 → 气泡 → 水面亮带
  *
- * 为什么鱼是"竖着切片"画的：
- *   MA3 里一条鱼就是**一张带 alpha 的贴图**贴在一块弯板上，尾巴的摆动是弯板
- *   顶点在动，不是真的骨骼。所以这里把贴图切成 20 条竖带、每条按 sin 上下错开，
- *   尾巴那段错得多、鱼头几乎不动 —— 看上去就是鱼在摆尾，开销只有 20 次 drawImage。
+ * ⚠ **一条鱼是好几块板子**。MA3 里鱼身、两片胸鳍（腹鳍）各是一块独立的板，
+ *   贴图里那几片鳍就摊在图集的空角上（皇帝神仙的黄鳍在右上、白扇在左下），
+ *   运行时靠网格把它们摆到鱼身上并绕着根部扇动。
+ *   所以烘焙会把「鱼身」和「鳍」分开存（fish-x.webp / fish-xf1.webp），
+ *   摆位由下面的 FIN_SLOT 决定 —— **千万不要把那几片鳍当成碎片删掉**，
+ *   删了就是所有鱼都没有胸鳍。
  *
- * ⚠ 几个改之前必须知道的：
+ * 为什么鱼是"竖着切片"画的：
+ *   尾巴的摆动是弯板顶点在动，不是真的骨骼。所以这里把鱼身切成 20 条竖带、
+ *   每条按 sin 上下错开，尾巴那段错得多、鱼头几乎不动。
+ *   ⚠ 每条带子的**目标宽度必须严格是 wpx/N**：早先为了补缝多写了 1px，
+ *   40px 的鱼每条带子才 2px，多 1px 就横向拉长五成，整条鱼看着被压扁。
+ *
+ * ⚠ 其它几个改之前必须知道的：
  *   ① 十条鱼的贴图**全都朝左**。往右游要水平镜像，别拿游动方向直接当 scaleX
  *     （那样往右游的鱼会倒着游）。
  *   ② 鱼走到缸壁**掉头往回游**，不是穿出画面消失（原作也是掉头）。
@@ -31,20 +39,35 @@
  *   ③ 别用 ctx.filter 做远处的鱼：一次 drawImage 会从 0.1ms 涨到 8ms。
  *     要用"压过对比"的图，构建时烘好（fish-*-far.webp）。
  *
- * 性能：卡片只有 452×247，DPR 封 2；素材等这张卡快滚进视口才开始下（约 238KB）；
+ * 性能：卡片只有 452×247，DPR 封 2；素材等这张卡快滚进视口才开始下；
  * 不进视口 / 标签页在后台就整个停掉；系统要"减少动态效果"就只画一帧静止画面。
  */
+import fs from 'node:fs';
+import path from 'node:path';
 import widgets from '../data/home-widgets.json';
 
 /* 面板里传了封面图就用图，这里的缸不出现（站长自己传的优先，见 HomeCistern） */
 const cfg = ((widgets as Record<string, unknown>).cistern ?? {}) as { image?: string };
 const hasCover = String(cfg.image ?? '').trim() !== '';
 const base = import.meta.env.BASE_URL.replace(/\/+$/, '');
+
+/*
+  每条鱼单独存着的鳍（烘焙时切出来的，见 tools/images/aquarium-bake.mjs）。
+  读不到就当没有 —— 页面照常出，只是那几条鱼没有胸鳍。
+*/
+let finData: Record<string, { f: string; w: number; h: number }[]> = {};
+try {
+  finData = JSON.parse(
+    fs.readFileSync(path.join(process.cwd(), 'public', 'img', 'aquarium', 'fins.json'), 'utf8'),
+  );
+} catch {
+  finData = {};
+}
 ---
 
 {
   !hasCover && (
-    <span class="aq" data-aq data-aq-base={base}>
+    <span class="aq" data-aq data-aq-base={base} data-aq-fins={JSON.stringify(finData)}>
       <canvas class="aq__cv" data-aq-cv aria-hidden="true" />
       <span class="aq__glass" />
       <span class="aq__payer" />
@@ -78,6 +101,20 @@ const base = import.meta.env.BASE_URL.replace(/\/+$/, '');
     { k: 'clown', w: 0.068, y: [0.45, 0.50], v: 0.054, d: 1, l: 1, bob: 0.007 },
     { k: 'angel-flame', w: 0.060, y: [0.37, 0.42], v: 0.042, d: -1, l: 1, bob: 0.007 },
     { k: 'angel-juvenile', w: 0.056, y: [0.27, 0.32], v: 0.040, d: -1, l: 0, bob: 0.006 },
+  ];
+
+  /*
+    胸鳍/腹鳍摆在哪。坐标是**鱼身方框的比例**：
+      x = 鳍根在鱼身长度方向的位置（0 鱼头、1 鱼尾），
+      y = 鳍根在鱼身高度方向的位置（0 背、1 腹），
+      s = 鳍画多大（相对贴图里的原始比例），
+      tilt = 静止时鳍相对水平的方向，rate/phase 是扇动的快慢和错相。
+    一片鱼的图里通常有两片（近侧大、远侧小且在鱼身后面一点），所以两套槽位。
+    这几行是照着一张张看图调出来的，改之前最好先渲染一遍看看。
+  */
+  const FIN_SLOT = [
+    { x: 0.34, y: 0.56, s: 0.55, tilt: 0.10, rate: 1.0, phase: 0.0 },
+    { x: 0.29, y: 0.46, s: 0.45, tilt: -0.06, rate: 1.0, phase: 1.7 },
   ];
 
   const WEEK = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'];
@@ -114,7 +151,15 @@ const base = import.meta.env.BASE_URL.replace(/\/+$/, '');
 
     const less = window.matchMedia('(prefers-reduced-motion: reduce)');
 
-    /* 素材：背景 / 焦散 / 十条鱼（远的那几条另有一份压过对比的） */
+    /* 每条鱼的鳍（烘焙产物里的清单，见 HomeAquarium.astro 开头的说明） */
+    let finData: Record<string, { f: string; w: number; h: number }[]> = {};
+    try {
+      finData = JSON.parse(root.dataset.aqFins || '{}');
+    } catch {
+      finData = {};
+    }
+
+    /* 素材：背景 / 焦散 / 十条鱼（远的那几条另有一份压过对比的）+ 各条鱼的鳍 */
     const src: Record<string, string> = {
       reef: `${bust}/img/aquarium/reef.webp`,
       caustic: `${bust}/img/aquarium/caustic.webp`,
@@ -122,6 +167,7 @@ const base = import.meta.env.BASE_URL.replace(/\/+$/, '');
     for (const f of FISH) {
       src[f.k] = `${bust}/img/aquarium/fish-${f.k}.webp`;
       if (f.l === 0) src[`${f.k}-far`] = `${bust}/img/aquarium/fish-${f.k}-far.webp`;
+      for (const fin of finData[f.k] ?? []) src[fin.f] = `${bust}/img/aquarium/${fin.f}`;
     }
 
     type Shot = HTMLImageElement;
@@ -271,6 +317,37 @@ const base = import.meta.env.BASE_URL.replace(/\/+$/, '');
         const swid = Math.min(sw * 1.02, im.naturalWidth - sx0);
         ctx.drawImage(im, sx0, 0, swid, im.naturalHeight, i * d, y + dy, d, s.h);
       }
+
+      /*
+        胸鳍/腹鳍：鱼身画完再叠上去。
+        MA3 里这是**独立的板子**，贴在鳃盖后面一点、身体中线略下方，
+        游动时绕着根部一开一合。这里同样是"绕根部转一个小角度"。
+        坐标用鱼身方框的比例，所以鱼大鱼小都对得上。
+      */
+      const fins = finData[s.k] ?? [];
+      if (fins.length) {
+        const scale = s.wpx / im.naturalWidth;
+        for (let i = 0; i < fins.length; i++) {
+          const fin = fins[i];
+          const fim = img[fin.f];
+          if (!fim) continue;
+          const slot = FIN_SLOT[i] ?? FIN_SLOT[FIN_SLOT.length - 1]!;
+          const fw = fin.w * scale * slot.s;
+          const fh = fin.h * scale * slot.s;
+          // 根部（贴在鱼身上那一点）在鱼身方框里的位置
+          const rootX = slot.x * s.wpx;
+          const rootY = y + slot.y * s.h;
+          // 扇动：绕根部转 ±13°，和摆尾错开相位
+          const flap = Math.sin(time * 3.1 * slot.rate + s.ph + slot.phase) * 0.23;
+          const dir = headLeft ? 1 : -1;
+          ctx.save();
+          ctx.translate(rootX, rootY);
+          ctx.rotate(dir * (slot.tilt + flap));
+          ctx.drawImage(fim, 0, -fh / 2, fw, fh);
+          ctx.restore();
+        }
+      }
+
       ctx.restore();
     }
 
@@ -406,7 +483,7 @@ const base = import.meta.env.BASE_URL.replace(/\/+$/, '');
     function bubbles(time: number) {
       if (!bubbleSprite) makeBubble();
       const spr = bubbleSprite!;
-      const COUNT = 30;
+      const COUNT = 24;
       ctx.save();
       for (let i = 0; i < COUNT; i++) {
         // 每条泡泡有自己的相位和速度
