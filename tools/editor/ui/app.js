@@ -1188,7 +1188,14 @@ function updateCoverPreview() {
     els.coverImg.hidden = true;
     els.coverEmpty.hidden = false;
   }
+  /* 「截取」按钮跟着有没有图亮灭（见 bindCoverCrop） */
+  coverCropBtn?.sync?.();
 }
+
+/** 封面上那个「截取」按钮，绑定的时候才有 */
+let coverCropBtn = null;
+/** 插入图片弹窗里那个「截取」按钮，同理 */
+let modalCropBtn = null;
 
 /*
   ⚠ 这里原来有个 readFileAsDataURL —— 把文件读成 base64 的 data URL 再上传。
@@ -1811,6 +1818,7 @@ function openImageModal() {
   els.modalUploadHint.textContent = '支持 png / jpeg / gif / webp / svg，多大的图都行（上传时会自动压小）。';
   els.imgModal.hidden = false;
   els.modalUrl.focus();
+  modalCropBtn?.sync?.();
 }
 
 function closeImageModal() {
@@ -1828,6 +1836,452 @@ function doInsertImage() {
   closeImageModal();
   blockInsert(`![${alt}](${url})`);
   toast('已插入图片');
+}
+
+/* ---------------------------------------------------------------
+   截取图片（2026-11-19）
+
+   站长原话：「为网页编辑器所有上传图片的部分加一个功能 上传完图片以后
+   可以点一个按钮进行截取 就像市面上大部分软件一样 点开后的页面有一个
+   虚线框标记 可以自由缩放移动图片 最后只让对应的卡片或位置只显示虚线框
+   以内的部分」
+
+   做法：**真裁一张新图再传上去**，不是存一组裁切参数。
+   因为图位太多（卡片封面、版块图标、地图、相册、图片块、精华、正文插图），
+   每个消费方都去读裁切参数等于把这件事复制十几遍；裁成新图则一处都不用改，
+   站点那边照旧 `<img src>`。
+
+   手势：
+     · 虚线框里按住拖 = 挪框；八个白点 = 拉伸框（选了比例就锁住比例）
+     · 框外面按住拖 = 挪图；滚轮 = 以指针为中心缩放图
+   框外那一圈变暗是框自己投的 box-shadow，所以「框里那块就是要留下的」一眼能看见。
+   --------------------------------------------------------------- */
+
+const cropC = (v, a, b) => (v < a ? a : v > b ? b : v);
+
+/** 裁完存成什么名字：原名去掉扩展名 +「-裁剪」 */
+function cropFileName(src) {
+  const base = String(src || '').split(/[?#]/)[0].split('/').pop() || 'image';
+  const stem = base.replace(/\.[^.]+$/, '') || 'image';
+  return `${stem}-裁剪.webp`;
+}
+
+/** 同一时间只开一层 */
+let cropLive = null;
+
+/**
+ * 打开截取层。resolve 一个 Blob（裁好的图）；取消 / 开不起来就 resolve null。
+ * @param {string} src 要裁的图（站内路径或站外地址；站外图浏览器不让读像素，确定时会报错）
+ * @param {{title?: string}} [opts]
+ */
+function openCropper(src, opts = {}) {
+  const modal = $('crop-modal');
+  const stage = $('crop-stage');
+  const imgEl = $('crop-img');
+  const boxEl = $('crop-box');
+  const sizeEl = $('crop-size');
+  const ratios = $('crop-ratios');
+  const okBtn = $('crop-ok');
+  const resetBtn = $('crop-reset');
+  const titleEl = $('crop-title');
+  if (!modal || !stage || !imgEl || !boxEl || cropLive) return Promise.resolve(null);
+
+  return new Promise((resolve) => {
+    const st = {
+      ready: false,
+      iw: 0,
+      ih: 0,
+      k0: 1,
+      scale: 1,
+      tx: 0,
+      ty: 0,
+      box: { x: 0, y: 0, w: 0, h: 0 },
+      ratio: 0,
+      drag: null,
+      done: false,
+    };
+    cropLive = st;
+
+    if (titleEl) titleEl.textContent = opts.title || '截取';
+    modal.hidden = false;
+    if (ratios) {
+      for (const b of ratios.querySelectorAll('.crop__ratio')) {
+        b.classList.toggle('is-active', Number(b.dataset.ratio) === 0);
+      }
+    }
+    if (sizeEl) sizeEl.textContent = '';
+    if (okBtn) okBtn.disabled = true;
+
+    const size = () => ({ w: stage.clientWidth, h: stage.clientHeight });
+
+    /* 按当前 scale / tx / ty 算出图的显示矩形，顺手把样式写到 DOM 上 */
+    function layout() {
+      const { w: sw, h: sh } = size();
+      const k = st.k0 * st.scale;
+      const dw = st.iw * k;
+      const dh = st.ih * k;
+      const ix = (sw - dw) / 2 + st.tx;
+      const iy = (sh - dh) / 2 + st.ty;
+      imgEl.style.width = `${dw}px`;
+      imgEl.style.height = `${dh}px`;
+      imgEl.style.left = `${ix}px`;
+      imgEl.style.top = `${iy}px`;
+      return { sw, sh, k, dw, dh, ix, iy };
+    }
+
+    /* 框必须在图里面，图也必须盖住框 —— 两个都靠这里收 */
+    function clampAll() {
+      const g = layout();
+      const bw = Math.max(24, Math.min(st.box.w, g.dw, g.sw));
+      const bh = Math.max(24, Math.min(st.box.h, g.dh, g.sh));
+      st.box.w = Math.min(bw, g.dw);
+      st.box.h = Math.min(bh, g.dh);
+      const loX = Math.max(0, g.ix);
+      const hiX = Math.min(g.sw - st.box.w, g.ix + g.dw - st.box.w);
+      const loY = Math.max(0, g.iy);
+      const hiY = Math.min(g.sh - st.box.h, g.iy + g.dh - st.box.h);
+      st.box.x = cropC(st.box.x, Math.min(loX, hiX), Math.max(loX, hiX));
+      st.box.y = cropC(st.box.y, Math.min(loY, hiY), Math.max(loY, hiY));
+      return g;
+    }
+
+    function paint() {
+      const g = layout();
+      boxEl.style.left = `${st.box.x}px`;
+      boxEl.style.top = `${st.box.y}px`;
+      boxEl.style.width = `${st.box.w}px`;
+      boxEl.style.height = `${st.box.h}px`;
+      if (sizeEl) {
+        sizeEl.textContent = `${Math.max(1, Math.round(st.box.w / g.k))} × ${Math.max(1, Math.round(st.box.h / g.k))}`;
+      }
+    }
+
+    /* 框回到「整张图」或者「这个比例下最大的那块」 */
+    function fitBox() {
+      const g = layout();
+      const pad = st.ratio ? 0 : 0.04;
+      const ax = g.ix + g.dw * pad;
+      const ay = g.iy + g.dh * pad;
+      const aw = g.dw * (1 - pad * 2);
+      const ah = g.dh * (1 - pad * 2);
+      let w = aw;
+      let h = ah;
+      if (st.ratio) {
+        if (aw / ah > st.ratio) w = ah * st.ratio;
+        else h = aw / st.ratio;
+      }
+      st.box = { x: ax + (aw - w) / 2, y: ay + (ah - h) / 2, w, h };
+      clampAll();
+      paint();
+    }
+
+    /* 换比例：绕框心重新摆一块 */
+    function applyRatio(r) {
+      st.ratio = r;
+      if (ratios) {
+        for (const b of ratios.querySelectorAll('.crop__ratio')) {
+          b.classList.toggle('is-active', Number(b.dataset.ratio) === r);
+        }
+      }
+      if (!r) return;
+      const g = layout();
+      const cx = st.box.x + st.box.w / 2;
+      const cy = st.box.y + st.box.h / 2;
+      let w = Math.min(st.box.w, g.dw);
+      let h = w / r;
+      if (h > g.dh) {
+        h = g.dh;
+        w = h * r;
+      }
+      st.box = { x: cx - w / 2, y: cy - h / 2, w, h };
+      clampAll();
+      paint();
+    }
+
+    function resizeTo(px, py, dir) {
+      const L = dir.includes('w');
+      const R = dir.includes('e');
+      const T = dir.includes('n');
+      const B = dir.includes('s');
+      let x1 = st.box.x;
+      let y1 = st.box.y;
+      let x2 = st.box.x + st.box.w;
+      let y2 = st.box.y + st.box.h;
+      if (L) x1 = Math.min(px, x2 - 24);
+      if (R) x2 = Math.max(px, x1 + 24);
+      if (T) y1 = Math.min(py, y2 - 24);
+      if (B) y2 = Math.max(py, y1 + 24);
+      let w = x2 - x1;
+      let h = y2 - y1;
+      if (st.ratio) {
+        if (L || R) h = w / st.ratio;
+        else w = h * st.ratio;
+        if (L) x1 = x2 - w;
+        else x2 = x1 + w;
+        if (T) y1 = y2 - h;
+        else y2 = y1 + h;
+        w = x2 - x1;
+        h = y2 - y1;
+      }
+      st.box = { x: x1, y: y1, w, h };
+      clampAll();
+      paint();
+    }
+
+    const local = (ev) => {
+      const r = stage.getBoundingClientRect();
+      return { px: ev.clientX - r.left, py: ev.clientY - r.top };
+    };
+
+    function onDown(ev) {
+      if (!st.ready || ev.button !== 0) return;
+      const { px, py } = local(ev);
+      const handle = ev.target && ev.target.closest ? ev.target.closest('[data-h]') : null;
+      const inside =
+        px >= st.box.x && px <= st.box.x + st.box.w && py >= st.box.y && py <= st.box.y + st.box.h;
+      if (handle) st.drag = { mode: 'resize', dir: handle.dataset.h };
+      else if (inside) st.drag = { mode: 'move', dx: px - st.box.x, dy: py - st.box.y };
+      else st.drag = { mode: 'pan', px, py, tx: st.tx, ty: st.ty };
+      try {
+        stage.setPointerCapture(ev.pointerId);
+      } catch {
+        /* 指针已经不在了，按没捕获处理 */
+      }
+      ev.preventDefault();
+    }
+
+    function onMove(ev) {
+      if (!st.drag) return;
+      const { px, py } = local(ev);
+      if (st.drag.mode === 'move') {
+        st.box.x = px - st.drag.dx;
+        st.box.y = py - st.drag.dy;
+        clampAll();
+        paint();
+      } else if (st.drag.mode === 'pan') {
+        st.tx = st.drag.tx + (px - st.drag.px);
+        st.ty = st.drag.ty + (py - st.drag.py);
+        clampAll();
+        paint();
+      } else {
+        resizeTo(px, py, st.drag.dir);
+      }
+    }
+
+    function onUp(ev) {
+      if (!st.drag) return;
+      st.drag = null;
+      try {
+        stage.releasePointerCapture(ev.pointerId);
+      } catch {
+        /* 忽略 */
+      }
+    }
+
+    /* 滚轮缩放：以指针为中心，指针底下那个像素别乱跑 */
+    function onWheel(ev) {
+      if (!st.ready) return;
+      ev.preventDefault();
+      const { px, py } = local(ev);
+      const { w: sw, h: sh } = size();
+      const k0 = st.k0 * st.scale;
+      const next = cropC(st.scale * (ev.deltaY < 0 ? 1.12 : 1 / 1.12), 1, 10);
+      if (next === st.scale) return;
+      const k1 = st.k0 * next;
+      const ax = (px - sw / 2 - st.tx) / k0;
+      const ay = (py - sh / 2 - st.ty) / k0;
+      st.tx += (k0 - k1) * ax;
+      st.ty += (k0 - k1) * ay;
+      st.scale = next;
+      clampAll();
+      paint();
+    }
+
+    function onResizeWindow() {
+      if (!st.ready) return;
+      const { w: sw, h: sh } = size();
+      const prev = st.k0;
+      st.k0 = Math.min(sw / st.iw, sh / st.ih) || 1;
+      if (prev !== st.k0) {
+        const f = st.k0 / prev;
+        st.tx *= f;
+        st.ty *= f;
+        st.box.x *= f;
+        st.box.y *= f;
+        st.box.w *= f;
+        st.box.h *= f;
+      }
+      clampAll();
+      paint();
+    }
+
+    function onKey(ev) {
+      if (ev.key === 'Escape') {
+        ev.preventDefault();
+        done(null);
+      } else if (ev.key === 'Enter' && (ev.ctrlKey || ev.metaKey)) {
+        ev.preventDefault();
+        confirm();
+      }
+    }
+
+    function bind(on) {
+      const f = on ? 'addEventListener' : 'removeEventListener';
+      stage[f]('pointerdown', onDown);
+      stage[f]('pointermove', onMove);
+      stage[f]('pointerup', onUp);
+      stage[f]('pointercancel', onUp);
+      stage[f]('wheel', onWheel, { passive: false });
+      window[f]('pointermove', onMove);
+      window[f]('pointerup', onUp);
+      window[f]('resize', onResizeWindow);
+      document[f]('keydown', onKey);
+    }
+
+    function done(blob) {
+      if (st.done) return;
+      st.done = true;
+      bind(false);
+      modal.hidden = true;
+      imgEl.removeAttribute('src');
+      imgEl.style.width = '';
+      imgEl.style.height = '';
+      cropLive = null;
+      resolve(blob || null);
+    }
+
+    /* 确定：把框里那块按原图分辨率画进 canvas，再编成 webp */
+    async function confirm() {
+      if (!st.ready || st.done) return;
+      const g = layout();
+      const x0 = Math.max(0, (st.box.x - g.ix) / g.k);
+      const y0 = Math.max(0, (st.box.y - g.iy) / g.k);
+      const x1 = Math.min(st.iw, (st.box.x - g.ix + st.box.w) / g.k);
+      const y1 = Math.min(st.ih, (st.box.y - g.iy + st.box.h) / g.k);
+      const w = Math.round(x1 - x0);
+      const h = Math.round(y1 - y0);
+      if (w < 1 || h < 1) return;
+
+      const cv = document.createElement('canvas');
+      cv.width = w;
+      cv.height = h;
+      const ctx = cv.getContext('2d');
+      if (!ctx) {
+        done(null);
+        return;
+      }
+      ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(imgEl, x0, y0, w, h, 0, 0, w, h);
+
+      if (okBtn) okBtn.disabled = true;
+      try {
+        let blob = await new Promise((res) => cv.toBlob(res, 'image/webp', 0.94));
+        if (!blob) blob = await new Promise((res) => cv.toBlob(res, 'image/png'));
+        if (!blob) throw new Error('浏览器没能编码这张图');
+        done(blob);
+      } catch (err) {
+        done(null);
+        toast(`截取失败：${err?.message || '浏览器不让读这张图的像素（站外图片）'}`, true);
+      } finally {
+        if (okBtn) okBtn.disabled = false;
+      }
+    }
+
+    function init() {
+      if (st.ready || st.done) return;
+      if (!imgEl.naturalWidth || !imgEl.naturalHeight) return;
+      st.ready = true;
+      st.iw = imgEl.naturalWidth;
+      st.ih = imgEl.naturalHeight;
+      const { w: sw, h: sh } = size();
+      st.k0 = Math.min(sw / st.iw, sh / st.ih) || 1;
+      st.scale = 1;
+      st.tx = 0;
+      st.ty = 0;
+      st.ratio = 0;
+      layout();
+      fitBox();
+      if (okBtn) okBtn.disabled = false;
+      bind(true);
+    }
+
+    imgEl.addEventListener('load', init, { once: true });
+    imgEl.addEventListener(
+      'error',
+      () => {
+        toast('这张图打不开，截不了', true);
+        done(null);
+      },
+      { once: true },
+    );
+    imgEl.src = previewImgSrc(src);
+    if (imgEl.complete && imgEl.naturalWidth > 0) init();
+
+    /*
+      这里用 onclick 赋值而不是 addEventListener：这一层会反复开，
+      一次性监听（once）第二次就没了，不 once 又会越叠越多 —— 直接赋值最省事。
+    */
+    for (const b of modal.querySelectorAll('[data-crop-close]')) {
+      b.onclick = () => done(null);
+    }
+    if (okBtn) okBtn.onclick = () => confirm();
+    if (resetBtn) {
+      resetBtn.onclick = () => {
+        if (st.ready) fitBox();
+      };
+    }
+    if (ratios) {
+      ratios.onclick = (ev) => {
+        const b = ev.target && ev.target.closest ? ev.target.closest('.crop__ratio') : null;
+        if (!b || !st.ready) return;
+        applyRatio(Number(b.dataset.ratio) || 0);
+      };
+    }
+  });
+}
+
+/**
+ * 给一个「图位」配一个「截取」按钮。
+ *
+ * `get` 每次现读值（面板重画后也对得上），`set` 只管把值写回数据，
+ * `after` 是写完之后的重新绘制 / 标脏。返回的按钮上挂了 `sync()`，
+ * 图位一变就调一下 —— 没图时它是灰的。
+ *
+ * @param {{get: () => string, set: (url: string) => void, after?: () => void, label?: string}} o
+ */
+function cropButton(o) {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'btn btn--ghost boardedit__mini';
+  b.textContent = '截取';
+  b.title = '框一块出来，只留框里那部分（存成一张新图，替换掉现在这张）';
+  let busy = false;
+  const sync = () => {
+    b.disabled = busy || !String(o.get() || '').trim();
+  };
+  b.addEventListener('click', async () => {
+    const src = String(o.get() || '').trim();
+    if (!src || busy) return;
+    busy = true;
+    sync();
+    try {
+      const blob = await openCropper(src, { title: o.label ? `截取 · ${o.label}` : '截取' });
+      if (!blob) return;
+      const file = new File([blob], cropFileName(src), { type: blob.type || 'image/webp' });
+      const p = await uploadImage(file);
+      o.set(p);
+      if (o.after) o.after(p);
+      toastUploaded('截取好了');
+    } catch (err) {
+      toast(`截取失败：${err.message}`, true);
+    } finally {
+      busy = false;
+      sync();
+    }
+  });
+  b.sync = sync;
+  sync();
+  return b;
 }
 
 /* ---------------------------------------------------------------
@@ -3584,7 +4038,23 @@ function mapFields(block) {
       markStudioDirty();
     });
 
-    row.append(thumb, pick, alt, file);
+    row.append(
+      thumb,
+      pick,
+      cropButton({
+        label: '地图图',
+        get: () => String(page.src || ''),
+        set: (v) => {
+          page.src = v;
+        },
+        after: () => {
+          markStudioDirty();
+          redraw();
+        },
+      }),
+      alt,
+      file,
+    );
     wrap.appendChild(row);
 
     /* ---------- 2. 简介（真会显示在地图下方的那句话） ---------- */
@@ -5045,6 +5515,14 @@ function albumFields(block) {
         [block.photos[i + 1], block.photos[i]] = [block.photos[i], block.photos[i + 1]];
         renderPageEditor();
       }),
+      cropButton({
+        label: '相册图片',
+        get: () => String(ph.src || ''),
+        set: (v) => {
+          ph.src = v;
+        },
+        after: () => renderPageEditor(),
+      }),
       mini('删除', '从相册里删掉这张', () => {
         block.photos.splice(i, 1);
         renderPageEditor();
@@ -5175,7 +5653,21 @@ function blockFields(block) {
       block.width = v;
     });
 
-    row.append(thumb, pick, alt, width, file);
+    row.append(
+      thumb,
+      pick,
+      cropButton({
+        label: '图片块',
+        get: () => String(block.src || ''),
+        set: (v) => {
+          block.src = v;
+        },
+        after: () => paint(),
+      }),
+      alt,
+      width,
+      file,
+    );
     wrap.appendChild(row);
     return wrap;
   }
@@ -6460,6 +6952,15 @@ function boardCoverControl(node, onChange = renderBoardsEditor, opts = {}) {
     },
   });
 
+  const crop = cropButton({
+    label: label.pick,
+    get: () => String(node.image || ''),
+    set: (v) => {
+      node.image = v;
+    },
+    after: () => onChange(),
+  });
+
   const clear = document.createElement('button');
   clear.type = 'button';
   clear.className = 'btn btn--ghost boardedit__mini';
@@ -6470,7 +6971,7 @@ function boardCoverControl(node, onChange = renderBoardsEditor, opts = {}) {
     onChange();
   });
 
-  wrap.append(thumb, pick, clear, file);
+  wrap.append(thumb, pick, crop, clear, file);
   return wrap;
 }
 
@@ -11648,11 +12149,13 @@ function imageSlot({ label, getValue, setValue, onChanged, onValue, accept, mult
     写进数据 + 立刻把缩略图和旁边那个地址输入框一起刷新。
     上传（拖 / 粘 / 选文件）和清空都走这儿，保证几处显示永远是一个值。
   */
+  let cropBtn = null;
   const write = (v) => {
     setValue(v);
     paint();
     onValue?.(v);
     onChanged?.();
+    cropBtn?.sync?.();
   };
 
   const file = document.createElement('input');
@@ -11673,6 +12176,13 @@ function imageSlot({ label, getValue, setValue, onChanged, onValue, accept, mult
   ops.append(pick, file);
 
   if (!multiple) {
+    cropBtn = cropButton({
+      label,
+      get: () => String(getValue() || ''),
+      set: (v) => write(v),
+    });
+    ops.appendChild(cropBtn);
+
     const clear = document.createElement('button');
     clear.type = 'button';
     clear.className = 'btn btn--ghost boardedit__mini boardedit__del';
@@ -15511,7 +16021,17 @@ function openEssenceForm(host, status, existing = null) {
         draft.images.splice(i, 1);
         paintImgs();
       });
-      cell.append(img, del);
+      const cut = cropButton({
+        label: '精华图片',
+        get: () => String(draft.images[i] || ''),
+        set: (v) => {
+          draft.images[i] = v;
+        },
+        after: () => paintImgs(),
+      });
+      cut.className = 'wess__imgdel wess__imgcrop';
+      cut.textContent = '裁';
+      cell.append(img, cut, del);
       imgWrap.appendChild(cell);
     });
   };
@@ -16033,6 +16553,22 @@ function bindEvents() {
 
   // 封面：按钮 / 拖进来 / 粘进来，三条路都汇到下面这个 onFiles
   els.btnCoverUpload.addEventListener('click', () => els.coverFile.click());
+  /* 封面上那个「截取」（有图才亮，靠 updateCoverPreview 里的 sync） */
+  coverCropBtn = cropButton({
+    label: '封面图',
+    get: () => els.cover.value,
+    set: (v) => {
+      els.cover.value = v;
+    },
+    after: () => {
+      updateCoverPreview();
+      onFormChanged();
+    },
+  });
+  coverCropBtn.classList.add('btn--sm');
+  coverCropBtn.id = 'btn-cover-crop';
+  els.btnCoverUpload.after(coverCropBtn);
+  coverCropBtn.sync();
   attachImageIntake({
     el: els.cover.closest('.cover') || els.cover,
     input: els.coverFile,
@@ -16154,6 +16690,22 @@ function bindEvents() {
 
   // 图片弹窗：上传那一格也接拖 / 粘
   els.modalPick.addEventListener('click', () => els.modalFile.click());
+  /* 「截取」跟着「图片地址」那个框走：框里有图才亮 */
+  const modalCrop = cropButton({
+    label: '插入图片',
+    get: () => els.modalUrl.value,
+    set: (v) => {
+      els.modalUrl.value = v;
+    },
+    after: () => {
+      const note = takeUploadNote();
+      els.modalUploadHint.textContent = `已截取：${els.modalUrl.value}${note ? `（${note}）` : ''}`;
+    },
+  });
+  modalCrop.classList.add('btn--sm');
+  els.modalPick.after(modalCrop);
+  modalCropBtn = modalCrop;
+  els.modalUrl.addEventListener('input', () => modalCrop.sync());
   attachImageIntake({
     el: els.modalPick.closest('.field') || els.modalFile.parentNode,
     input: els.modalFile,

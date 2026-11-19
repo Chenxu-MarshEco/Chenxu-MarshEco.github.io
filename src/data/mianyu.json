@@ -155,7 +155,7 @@
     {
       "id": "log-20261119",
       "date": "2026.11.19",
-      "text": "首页「涣愿终池」那张大卡不再画水族缸了。站长看完上一轮复刻的鱼说\"效果非常不尽人意、直接放弃这条路\"，于是把卡恢复成只能放图片的样子：传了封面图就铺满，没传就空着，一个字都不写；原来那个 canvas 缸（`HomeAquarium.astro`）从卡上撤掉，组件和贴图都留着没删。\n\n图上盖一层水光：图本身先过一道 SVG 位移滤镜（feTurbulence + feDisplacementMap，scale 在 4.5~6.5 之间慢慢呼吸），这就是那股微微的水体扭曲；上面再叠两层慢慢漂的白焦散，加一道十几秒扫过去一次的光。\n\n焦散贴图是新烤的 `public/img/aquarium/water-light.webp`：256 见方，Voronoi 在环面上算所以平铺无缝，模糊也是先铺 3×3 再裁中心；生成脚本 `tools/images/water-tile.mjs`。两层都用 screen 叠，只加光不压暗底下那张照片；漂移只走 transform，交给合成器，所以 rAF 间隔 6.1ms，和没这层时一样。\n\n水光只在传了图的时候才渲染，空框上不凭空做水。\n\n验收：`home-cards-check` 51/51（有图和无图两种数据都跑过）、`a11y-names`、`no-broken-assets`、`site-copy-check`、`encoding-check` 全过。"
+      "text": "首页「涣愿终池」那张大卡不再画水族缸了。站长看完上一轮复刻的鱼说\"效果非常不尽人意、直接放弃这条路\"，于是把卡恢复成只能放图片的样子：传了封面图就铺满，没传就空着；原来那个 canvas 缸（`HomeAquarium.astro`）从卡上撤掉，组件和贴图都留着没删。图上盖一层水光：图本身过一道 SVG 位移滤镜（feTurbulence + feDisplacementMap）做出微微的水体扭曲，再叠两层慢慢漂的白焦散和一道扫光。焦散贴图是新烤的 `public/img/aquarium/water-light.webp`（Voronoi 在环面上算所以平铺无缝），生成脚本 `tools/images/water-tile.mjs`；漂移只走 transform，rAF 间隔 6.1ms。\n\n编辑器的每个图位都多了「截取」（站长下午要的）：点开是一层弹窗，图上压虚线框、框外压暗，框能拖、八个把手能拉伸，图能拖能滚轮缩放，带 1:1 / 3:2 / 4:3 / 16:9 比例。点确定才把框里那块**真裁成一张新图重新上传**（`原名-裁剪.webp`），地址自动换掉 —— 图位太多，裁新图就不用改任何消费方。代码在 `app.js` 的「截取图片」一节（`openCropper` / `cropButton`），版块封面与图标、地图、相册、图片块、精华、头像、文章封面、插图弹窗都接上了；正文里直接插图的那两条路没接（那里不是图位）。\n\n验收：`editor-crop-check` 21/21（真浏览器 + 真落盘）、`editor-ui-check` 80/80、`home-cards-check` 51/51、`site-smoke` 160/160。"
     }
   ]
 }

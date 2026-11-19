@@ -5245,3 +5245,108 @@ body.pblock-dragging * {
   line-height: 1.7;
 }
 
+/* ---------------------------------------------------------------
+   截取图片（2026-11-19）
+
+   图层顺序：舞台（黑底、裁掉溢出）→ 图 → 虚线框。
+   框外那一圈变暗是框自己投的超大 box-shadow 做的 —— 比再盖一层遮罩省事，
+   而且框一移动，亮区跟着走，不用同步两个元素。
+   --------------------------------------------------------------- */
+.modal--crop {
+  /* 截取可能从别的弹窗里开（页面工作台、首页卡片），得压在上面 */
+  z-index: 70;
+}
+.modal__panel--crop {
+  width: min(760px, calc(100vw - 32px));
+}
+
+.crop__stage {
+  position: relative;
+  height: min(52vh, 520px);
+  min-height: 220px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: #0b0f14;
+  touch-action: none;
+  user-select: none;
+  cursor: crosshair;
+}
+/* 图是铺在舞台里的绝对定位块，尺寸/位置全由 JS 按 scale 算 */
+.crop__img {
+  position: absolute;
+  left: 0;
+  top: 0;
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+.crop__box {
+  position: absolute;
+  box-sizing: border-box;
+  border: 1px dashed #fff;
+  box-shadow: 0 0 0 9999px rgba(4, 8, 12, 0.62);
+  cursor: move;
+}
+/* 三分线：对着框里那块的构图看看，别切掉主体 */
+.crop__grid {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(to right, rgba(255, 255, 255, 0.22) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.22) 1px, transparent 1px);
+  background-size: 33.333% 33.333%;
+  background-position: -1px -1px;
+}
+
+.crop__h {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  margin: -6px 0 0 -6px;
+  border: 1px solid #0b0f14;
+  border-radius: 2px;
+  background: #fff;
+}
+.crop__h--nw { left: 0; top: 0; cursor: nwse-resize; }
+.crop__h--n { left: 50%; top: 0; cursor: ns-resize; }
+.crop__h--ne { left: 100%; top: 0; cursor: nesw-resize; }
+.crop__h--e { left: 100%; top: 50%; cursor: ew-resize; }
+.crop__h--se { left: 100%; top: 100%; cursor: nwse-resize; }
+.crop__h--s { left: 50%; top: 100%; cursor: ns-resize; }
+.crop__h--sw { left: 0; top: 100%; cursor: nesw-resize; }
+.crop__h--w { left: 0; top: 50%; cursor: ew-resize; }
+
+.crop__bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.crop__ratios {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.crop__ratio.is-active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.crop__size {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 精华图片格子左上角那个「裁」（右下角是 ×，别打架） */
+.wess__imgcrop {
+  right: auto;
+  left: 2px;
+  font-size: 11px;
+  line-height: 1;
+}
+
+
