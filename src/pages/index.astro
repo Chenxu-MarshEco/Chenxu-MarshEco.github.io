@@ -41,6 +41,17 @@ const boardUrl = (id: string) =>
 /** 首页各元素的排版微调值（编辑器「排版」模式写入 src/data/layout.json） */
 const styleOf = (key: string) => editVars('home', key) ?? undefined;
 /*
+  「回到欣赏页」那个小箭头要**和大板块踩在同一个横向基准上**（2026-11-19）。
+  大板块被排版微调挪过 dx 的话，箭头不跟着挪就会偏出两块大板的正中间 ——
+  站长原话：「箭头并不在两个大卡片的正中间对称处 看起来还是会歪 要严格按照整个屏幕对称」。
+  所以这里把 boards 的 --dx 原样接给箭头；dy 不接（箭头是 sticky 的，跟着竖向挪会乱跑）。
+*/
+const backDx = (() => {
+  const v = styleOf('boards');
+  const m = v ? /--dx:\s*([^;]+)/.exec(v) : null;
+  return m ? `--dx:${m[1].trim()}` : undefined;
+})();
+/*
   封面上那两句（「点击进入花涧堂」/「回到首页欣赏」）归「文案」面板
   （site-data/site-copy.json 的 home.enter / home.back；留空 = 那句小字/无障碍名字不出现）
 */
@@ -761,6 +772,7 @@ const backText = text(copy.home?.back);
         data-flip="out"
         title={backText || undefined}
         aria-label={backText || '回到封面'}
+        style={backDx}
       >
         <span class="cards__arrow" aria-hidden="true">↑</span>
         {backText && <span class="sr-only" data-copy="home.back">{backText}</span>}
@@ -1486,6 +1498,12 @@ const backText = text(copy.home?.back);
     justify-content: center;
     height: 0;
     pointer-events: none;
+    /*
+      横向跟着大板块的排版微调走（--dx 由 frontmatter 的 backDx 传进来）。
+      translate 的百分比是相对**自身宽**算的，和 .boards 宽度一样，所以两边挪出来
+      是同一个像素数 —— 箭头才会正好落在两块大板的正中间。
+    */
+    translate: var(--dx, 0) 0;
   }
   /*
     箭头默认**藏着**，只有进了卡片区（body.is-cards，脚本按滚动位置加）才亮出来。

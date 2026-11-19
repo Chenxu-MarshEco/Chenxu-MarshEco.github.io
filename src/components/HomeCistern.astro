@@ -64,9 +64,11 @@ const url = external ? rawHref : withBase(rawHref);
       img ? (
         <>
           <img class="cistcard__img" src={img} alt="" loading="lazy" decoding="async" />
+          <span class="cistcard__veil" aria-hidden="true" />
           <span class="cistcard__water" aria-hidden="true" />
           <span class="cistcard__water cistcard__water--far" aria-hidden="true" />
           <span class="cistcard__sheen" aria-hidden="true" />
+          <canvas class="cistcard__bubbles" aria-hidden="true"></canvas>
         </>
       ) : null
     }
@@ -119,7 +121,8 @@ const url = external ? rawHref : withBase(rawHref);
   .cistcard {
     position: relative;
     display: flex;
-    align-items: flex-end;
+    /* 标题在**左上角**（和「曼沫砾总线 / 涣源溪水钟」那两张一样），不是压在底下 */
+    align-items: flex-start;
     height: 100%;
     min-width: 0;
     overflow: hidden;
@@ -137,12 +140,36 @@ const url = external ? rawHref : withBase(rawHref);
     border-color: rgba(255, 120, 190, 0.8);
   }
 
+  /*
+    板块的底色（2026-11-19 改）：站长传的是**透明底**的图，所以这一层就是卡片的
+    "底色"。按他说的换成 Frutiger Aero 那套天蓝 —— 上面一层白到透明的顶光（Aero
+    的招牌），下面是天蓝到海蓝的竖渐变。图不透明时它只露出一圈边，透明底时整块都是它。
+  */
   .cistcard__art {
     position: absolute;
     inset: 0;
     display: block;
     overflow: hidden;
-    background: linear-gradient(180deg, rgba(30, 8, 48, 0.9), rgba(10, 2, 18, 0.9));
+    background:
+      radial-gradient(132% 68% at 50% -12%, rgba(255, 255, 255, 0.74) 0%, rgba(255, 255, 255, 0) 62%),
+      linear-gradient(180deg, #a7e7fb 0%, #6dcdf1 38%, #35a6db 74%, #1b7fb5 100%);
+  }
+
+  /*
+    和「甬城晴雨 / 花娅陌域」那两块大板一样的滤镜蒙版（`.board__veil` 那一套），
+    只是换成水色的。2026-11-19 标题挪到左上角之后，上头也压一点，标题才压得住。
+  */
+  .cistcard__veil {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: linear-gradient(
+      180deg,
+      rgba(12, 74, 108, 0.44) 0%,
+      rgba(38, 122, 164, 0.12) 20%,
+      rgba(96, 196, 234, 0.12) 54%,
+      rgba(20, 96, 140, 0.5) 100%
+    );
   }
 
   /*
@@ -247,18 +274,44 @@ const url = external ? rawHref : withBase(rawHref);
     overflow: hidden;
   }
 
+  /* 气泡那一层：和焦散一样铺满整张卡，不吃点击 */
+  .cistcard__bubbles {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+  }
+
+  /* 标题这一行按「曼沫砾总线 / 涣源溪水钟」那一套摆：左上角、跟那条 head 同一个字号 */
   .cistcard__body {
     position: relative;
     display: block;
     width: 100%;
-    padding: 0.6rem 0.75rem 0.65rem;
-    background: linear-gradient(180deg, rgba(12, 0, 20, 0), rgba(12, 0, 20, 0.88));
+    padding: 0.62rem 0.8rem 0.7rem;
+    background: none;
   }
+  /*
+    千禧风「塑料绿」的字（2026-11-19 站长要的；他没给色号，说的是"去网上找点资料就能
+    看到那种风格"）。千禧年那批东西是**透明/糖果塑料**：iMac G3 的 Lime（1999）、
+    Nokia 那种酸性绿、Y2K 色卡里的"有毒绿"，共同点是 —— 上沿一道近白的高光、
+    中间是偏黄的饱和青柠绿、下沿压暗成塑料的厚度。
+    所以这里是**三层**：左上一点白色高光 + 白→青柠→深绿的竖渐变，全填进笔画里
+    （background-clip: text）。注意不能用 text-shadow：字是 transparent 的，
+    阴影会透进笔画糊成一团，所以改用 drop-shadow 垫一道白边一道深影。
+  */
   .cistcard__title {
     display: block;
-    font-size: 0.98rem;
-    letter-spacing: 0.12em;
-    color: #ffd9ef;
+    font-size: 1rem;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    background:
+      radial-gradient(120% 90% at 22% 4%, rgba(255, 255, 255, 0.92) 0%, rgba(255, 255, 255, 0) 46%),
+      linear-gradient(180deg, #f7ffe1 0%, #ddff9b 24%, #b0f640 50%, #86d314 74%, #4e8f0c 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    filter: drop-shadow(0 1px 0 rgba(255, 255, 255, 0.5)) drop-shadow(0 2px 5px rgba(6, 44, 26, 0.62));
   }
   .cistcard__text {
     display: block;
@@ -293,3 +346,136 @@ const url = external ? rawHref : withBase(rawHref);
     }
   }
 </style>
+
+<script>
+  /*
+    气泡（2026-11-19 搬过来的，不是新做的）。
+
+    画法原样沿用 `HomeAquarium.astro` 里那一段（站长：「你之前做好过 直接搬过来就行
+    不要重新做」）：先把一颗气泡画进离屏画布（外圈亮环、中间透、左上一点高光），
+    运行时只是按不同速度往上挪 + 横向轻摆 —— 24 次 drawImage，不每帧建渐变。
+
+    这里只剩这一层，所以没有整缸那套：滚出屏幕就停、页面隐藏也停。
+  */
+  (() => {
+    const cv = document.querySelector<HTMLCanvasElement>('.cistcard__bubbles');
+    if (!cv) return;
+    const ctx = cv.getContext('2d');
+    if (!ctx) return;
+
+    const less = window.matchMedia('(prefers-reduced-motion: reduce)');
+    let cw = 0;
+    let ch = 0;
+    let dpr = 0;
+    let raf = 0;
+    let t0 = 0;
+    let shown = false;
+
+    let sprite: HTMLCanvasElement | null = null;
+    function makeBubble() {
+      const S = 64;
+      const c = document.createElement('canvas');
+      c.width = S;
+      c.height = S;
+      const g = c.getContext('2d')!;
+      // 外圈亮环
+      const grad = g.createRadialGradient(S * 0.42, S * 0.38, S * 0.06, S / 2, S / 2, S / 2);
+      grad.addColorStop(0, 'rgba(255,255,255,0.15)');
+      grad.addColorStop(0.55, 'rgba(226,246,255,0.10)');
+      grad.addColorStop(0.86, 'rgba(236,250,255,0.62)');
+      grad.addColorStop(0.97, 'rgba(255,255,255,0.30)');
+      grad.addColorStop(1, 'rgba(255,255,255,0)');
+      g.fillStyle = grad;
+      g.beginPath();
+      g.arc(S / 2, S / 2, S / 2 - 1, 0, Math.PI * 2);
+      g.fill();
+      // 高光
+      const hi = g.createRadialGradient(S * 0.36, S * 0.30, 0, S * 0.36, S * 0.30, S * 0.20);
+      hi.addColorStop(0, 'rgba(255,255,255,0.95)');
+      hi.addColorStop(1, 'rgba(255,255,255,0)');
+      g.fillStyle = hi;
+      g.beginPath();
+      g.arc(S * 0.36, S * 0.30, S * 0.2, 0, Math.PI * 2);
+      g.fill();
+      sprite = c;
+    }
+
+    /** 一串泡泡往上冒：x 按 sin 摆，越往上越小、越淡 */
+    function draw(time: number) {
+      if (!sprite) makeBubble();
+      const spr = sprite!;
+      const COUNT = 24;
+      ctx.save();
+      for (let i = 0; i < COUNT; i++) {
+        const ph = i * 0.618;
+        const spd = 0.038 + (i % 6) * 0.007;
+        const life = (time * spd + ph) % 1;
+        const baseX = 0.12 + ((i * 0.37) % 1) * 0.78;
+        const wob = Math.sin(time * 1.7 + ph * 6.283) * cw * 0.014;
+        const px = (baseX + wob / cw) * cw;
+        const py = ch * (1.04 - life * 1.1);
+        const r = (1.2 + ((i * 7) % 10) * 0.36) * (cw / 452) * (1.3 - life * 0.5);
+        const fade = Math.min(1, life * 8) * (1 - Math.max(0, life - 0.82) / 0.18);
+        ctx.globalAlpha = 0.85 * fade;
+        ctx.drawImage(spr, px - r, py - r, r * 2, r * 2);
+      }
+      ctx.restore();
+    }
+
+    function resize() {
+      const r = cv!.getBoundingClientRect();
+      const d = Math.min(2, window.devicePixelRatio || 1);
+      const w = Math.max(1, Math.round(r.width));
+      const h = Math.max(1, Math.round(r.height));
+      if (w === cw && h === ch && d === dpr) return;
+      cw = w;
+      ch = h;
+      dpr = d;
+      cv!.width = Math.round(w * d);
+      cv!.height = Math.round(h * d);
+      ctx!.setTransform(d, 0, 0, d, 0, 0);
+    }
+
+    function frame(now: number) {
+      raf = 0;
+      if (!t0) t0 = now;
+      resize();
+      ctx!.clearRect(0, 0, cw, ch);
+      draw((now - t0) / 1000);
+      if (shown && !less.matches) raf = requestAnimationFrame(frame);
+    }
+
+    function start() {
+      if (raf) return;
+      if (less.matches) {
+        // 不动的时候也画一帧，静态的泡泡总比一块空的好
+        resize();
+        ctx!.clearRect(0, 0, cw, ch);
+        draw(0);
+        return;
+      }
+      raf = requestAnimationFrame(frame);
+    }
+
+    function stop() {
+      if (raf) {
+        cancelAnimationFrame(raf);
+        raf = 0;
+      }
+    }
+
+    const io = new IntersectionObserver(
+      (list) => {
+        shown = list.some((e) => e.isIntersecting);
+        if (shown) start();
+        else stop();
+      },
+      { rootMargin: '120px' },
+    );
+    io.observe(cv);
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) stop();
+      else if (shown) start();
+    });
+  })();
+</script>

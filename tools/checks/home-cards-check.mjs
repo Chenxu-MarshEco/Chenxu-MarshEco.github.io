@@ -257,6 +257,20 @@ const cist = await cdp.ev(`(() => {
     title: (n.querySelector('.cistcard__title') || {}).textContent || '',
     hasImg: !!img,
     hasCanvas: !!n.querySelector('canvas'),
+    /* 那口缸的 canvas（.aq 那一套）撤掉了；气泡是自己的 canvas，不算 */
+    hasTank: !!n.querySelector('.aq canvas, canvas[data-aq-cv]'),
+    hasBubbles: !!n.querySelector('canvas.cistcard__bubbles'),
+    titleTop: (() => {
+      const t = n.querySelector('.cistcard__title');
+      if (!t) return null;
+      const r = t.getBoundingClientRect();
+      const c = n.getBoundingClientRect();
+      return { up: Math.round(r.top - c.top), left: Math.round(r.left - c.left) };
+    })(),
+    titleFill: (() => {
+      const t = n.querySelector('.cistcard__title');
+      return t ? getComputedStyle(t).webkitBackgroundClip || getComputedStyle(t).backgroundClip : '';
+    })(),
     waterCount: n.querySelectorAll('.cistcard__water').length,
     waterPe: water ? getComputedStyle(water).pointerEvents : '',
     waterHidden: water ? water.getAttribute('aria-hidden') : null,
@@ -271,7 +285,15 @@ check('★ 涣愿终池那张卡是链接，指向 /memoriterminalcistern',
   cist?.tag === 'A' && cist.href === '/memoriterminalcistern', JSON.stringify(cist));
 check('涣愿终池卡上有标题（数据里那个，不是写死的）',
   cist?.title === (widgets.cistern?.title || '涣愿终池'), JSON.stringify(cist?.title));
-check('★ 水族缸已经撤掉了（卡里不该再有 canvas）', cist?.hasCanvas === false, String(cist?.hasCanvas));
+check('★ 水族缸已经撤掉了（那口缸的 canvas 不在卡里）', cist?.hasTank === false, String(cist?.hasTank));
+check('★ 气泡那一层在（画在 canvas 上，从水族缸那段搬过来的画法）',
+  cist?.hasImg ? cist.hasBubbles === true : true, String(cist?.hasBubbles));
+check('★ 标题在**左上角**（和曼沫砾总线 / 涣源溪水钟同一个摆法）',
+  cist?.titleTop ? cist.titleTop.up >= 4 && cist.titleTop.up <= 40 && cist.titleTop.left >= 4 && cist.titleTop.left <= 40 : false,
+  JSON.stringify(cist?.titleTop));
+check('★ 标题是渐变填进笔画里的（拟物塑料那几个字，不是一块纯色）',
+  /text/.test(String(cist?.titleFill || '')) && !/border-box/.test(String(cist?.titleFill || '')),
+  String(cist?.titleFill));
 check('★ 传了封面图才盖水光；没传就空着，不在空框上凭空做水',
   cist?.hasImg ? cist.waterCount === 2 : cist?.waterCount === 0,
   JSON.stringify({ img: cist?.hasImg, water: cist?.waterCount }));
