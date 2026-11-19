@@ -3375,15 +3375,23 @@ function renderStudioFields() {
 
   /*
     时间轴：这一页用哪条轴，以及这一页自己认领哪个时间点/时间段。
-    换了轴，之前认领的点/段都是旧轴上的 id，留着就是悬空的，
-    所以一并清掉 —— 界面上那个下拉也会跟着变成「不指定」。
+    ⚠ 2026-11-19 起是**三态**（站长：「默认为所有页面都套上花娅年代记的时间轴…
+       后续新建页面也是一样默认有…但是可以手动改」，站点那边见 utils/timelines.ts
+       的 pageTimeline）：
+         · 不写这个字段 → 默认「花娅年代记」
+         · 空串 ''      → 这一页明确不要时间轴
+         · 具体 id      → 用指定的那条
+    所以下拉里有「默认 / 不显示 / 具体某一条」三种，不能再用"空 = 没有"。
+    换了轴，之前认领的点/段都是旧轴上的 id，留着就是悬空的，所以一并清掉。
   */
-  const tlOptions = [['', '（没有时间轴）']].concat(
+  const tlOptions = [['__default__', '默认（花娅年代记）'], ['__none__', '不显示']].concat(
     (timelinesDraft?.timelines ?? []).map((t) => [t.id, t.title])
   );
-  const tlSel = pageSelect(tlOptions, node.timeline ?? '', (v) => {
-    if (v) node.timeline = v;
-    else delete node.timeline;
+  const tlCurrent = node.timeline === undefined ? '__default__' : node.timeline === '' ? '__none__' : node.timeline;
+  const tlSel = pageSelect(tlOptions, tlCurrent, (v) => {
+    if (v === '__default__') delete node.timeline;
+    else if (v === '__none__') node.timeline = '';
+    else node.timeline = v;
     delete node.timePoint;
     delete node.timeSpan;
     markStudioDirty();
@@ -3392,11 +3400,11 @@ function renderStudioFields() {
   });
   grid.appendChild(
     pwField('时间轴', tlSel, timelinesDraft?.timelines?.length
-      ? '这一页右侧显示哪条时间轴；好几页可以共用同一条'
+      ? '不填就是「花娅年代记」，想换一条就选别的，选「不显示」这一页就没有'
       : '还没有时间轴 —— 先到顶栏「时间轴」里建一条')
   );
 
-  if (node.timeline) {
+  if (node.timeline !== '') {
     const claim = timeSelect(() => readTime(node), (v) => {
       writeTime(node, v);
       markStudioDirty();
@@ -7373,9 +7381,20 @@ function writeTime(target, value) {
 }
 
 /** 页面工作台当前那一页用的时间轴（没选就没有） */
+/**
+ * 站点那边「页面不填 timeline 就用花娅年代记」（见 src/utils/timelines.ts 的 pageTimeline）。
+ * 编辑器这边按**标题**找，和站点保持同一个口径；找不到就退回第一条。
+ */
+function defaultTimelineId() {
+  const list = timelinesDraft?.timelines ?? [];
+  return (list.find((t) => t.title === '花娅年代记') ?? list[0])?.id ?? '';
+}
+
 function currentTimeline() {
-  const id = studioNode?.timeline || pageNode?.timeline;
-  if (!id || !timelinesDraft) return null;
+  const raw = studioNode?.timeline ?? pageNode?.timeline;
+  if (raw === '') return null;              // 明确「这一页不要时间轴」
+  if (!timelinesDraft) return null;
+  const id = raw || defaultTimelineId();    // 不填 = 默认那条
   return timelinesDraft.timelines.find((t) => t.id === id) ?? null;
 }
 

@@ -8,6 +8,7 @@ import TableOfContents from '../../components/TableOfContents.astro';
 import { entryUrl, getPosts, neighbors, readingTime } from '../../utils/content';
 import { formatDateFull, toISODate } from '../../utils/date';
 import { trailsOf, type BoardNode } from '../../utils/boards';
+import { pageTimeline } from '../../utils/timelines';
 import { withBase } from '../../utils/url';
 import site from '../../site.config';
 
@@ -27,6 +28,12 @@ const hasToc = site.showToc && headings.filter((h) => h.depth >= 2 && h.depth <=
 
 /** 这篇文章归在哪条版块链上（subs 为空时就是空的，顶部不显示面包屑） */
 const trails = trailsOf(site.homeBoards as BoardNode[], data.subs);
+
+/*
+  文章页也默认挂「花娅年代记」那条轴（2026-11-19 站长要的）。
+  frontmatter 里写了 `timeline: ''` 就是这一篇不要。
+*/
+const timeline = pageTimeline({ timeline: (data as { timeline?: string }).timeline });
 ---
 
 <BaseLayout
@@ -38,6 +45,7 @@ const trails = trailsOf(site.homeBoards as BoardNode[], data.subs);
   narrow
   layoutPage="post"
   bodyClass="is-crt"
+  timeline={timeline}
   preloadImage={data.cover}
   preloadImageSizes="(max-width: 760px) 100vw, 760px"
 >

@@ -6,6 +6,7 @@ import PostTrail from '../../components/PostTrail.astro';
 import { entryUrl, getNotes, neighbors } from '../../utils/content';
 import { formatDateFull, toISODate } from '../../utils/date';
 import { trailsOf, type BoardNode } from '../../utils/boards';
+import { pageTimeline } from '../../utils/timelines';
 import { withBase } from '../../utils/url';
 import site from '../../site.config';
 
@@ -23,6 +24,9 @@ const { prev, next } = neighbors(all, entry.id);
 
 /** 手记和文章一样靠 subs 归类，所以也要有来路 */
 const trails = trailsOf(site.homeBoards as BoardNode[], data.subs);
+
+/* 手记页也默认挂「花娅年代记」（2026-11-19）；frontmatter 里写 `timeline: ''` 就是不要 */
+const timeline = pageTimeline({ timeline: (data as { timeline?: string }).timeline });
 ---
 
 <BaseLayout
@@ -33,6 +37,7 @@ const trails = trailsOf(site.homeBoards as BoardNode[], data.subs);
   narrow
   layoutPage="post"
   bodyClass="is-crt"
+  timeline={timeline}
 >
   {/* 和文章页同一套「老电视」皮肤：背景在动，正文框干净 */}
   <CrtScreen />

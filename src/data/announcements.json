@@ -27,8 +27,16 @@
   "title": "曼沫砾总线",
   "subtitle": "",
   "latest": 5,
-  "updated": "2026-11-13",
+  "updated": "2026-11-19",
   "items": [
+    {
+      "id": "an-20261119-01",
+      "kind": "update",
+      "date": "2026-11-19",
+      "title": "涣愿终池板块已上线！",
+      "href": "/memoriterminalcistern#blk-page-mwt0cistern-c1",
+      "pinned": true
+    },
     {
       "id": "an-20261113-01",
       "kind": "update",
@@ -41,8 +49,7 @@
       "kind": "update",
       "date": "2026-11-11",
       "title": "2026冰室国庆大聚会相册已上传~",
-      "href": "/huaya/bingshi/photo/20261001#blk-page-mwbs12vg-pmwbuy9xs61",
-      "pinned": true
+      "href": "/huaya/bingshi/photo/20261001#blk-page-mwbs12vg-pmwbuy9xs61"
     },
     {
       "id": "an-20261010-01",

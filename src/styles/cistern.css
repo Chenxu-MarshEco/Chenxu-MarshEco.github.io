@@ -723,3 +723,61 @@ a.cist__tick:focus-visible .cist__crane {
     width: 70vw;
   }
 }
+
+/* ============================================================================
+ *  时间轴外壳的适配（2026-11-19）
+ *
+ *  Timeline.astro 默认是深紫底 + 粉边 + 粉字，和右侧抽屉一套。这一页是 FA 天蓝的，
+ *  粉的压在上面很跳，所以换成**深水色**：墨蓝玻璃的面板 + 淡青的边和字。
+ *
+ *  为什么面板本身不做成浅色玻璃：轴本身（弧线、刻度尺、塔吊、落日）是浅色的，
+ *  页脚那几行字也是浅色，压在浅底上直接看不见（试过，整条轴糊成一片）。
+ *  深色面板反而更像"从水面往下看的那一格"，也保住了它自己的配色。
+ *
+ *  书签（贴在页面右边缘那个）是浅色玻璃 —— 它压在浅蓝色的页面上，
+ *  跟着页面走才不突兀。
+ * ========================================================================= */
+body.is-cistern .tl__tab {
+  border-color: rgba(180, 235, 255, 0.42);
+  background: linear-gradient(90deg, rgba(9, 66, 92, 0.94), rgba(5, 40, 58, 0.96));
+  color: #d9f2ff;
+  box-shadow: -8px 0 24px -18px rgba(6, 56, 76, 0.8);
+}
+body.is-cistern .tl__tab:hover {
+  color: #fff;
+}
+
+body.is-cistern .tl__panel {
+  background:
+    radial-gradient(120% 60% at 80% -10%, rgba(120, 210, 255, 0.2) 0%, rgba(120, 210, 255, 0) 62%),
+    linear-gradient(180deg, rgba(9, 66, 92, 0.965), rgba(5, 36, 52, 0.985));
+  border-left-color: rgba(160, 226, 255, 0.32);
+  box-shadow: -18px 0 50px -24px rgba(3, 26, 38, 0.85);
+  color: #eaf8ff;
+}
+body.is-cistern .tl.is-pinned .tl__panel {
+  border-color: rgba(160, 226, 255, 0.28);
+}
+
+body.is-cistern .tl__head {
+  border-bottom-color: rgba(160, 226, 255, 0.26);
+}
+body.is-cistern .tl__title {
+  color: #eaf8ff;
+  text-shadow: 0 0 12px rgba(120, 210, 255, 0.55);
+}
+body.is-cistern .tl__close {
+  color: #bfe9ff;
+}
+body.is-cistern .tl__close:hover {
+  color: #fff;
+}
+body.is-cistern .tl__foot {
+  border-top-color: rgba(160, 226, 255, 0.26);
+  color: #cfeeff;
+}
+body.is-cistern .tl__name,
+body.is-cistern .tl__nowDate {
+  color: #dff4ff;
+}
+

@@ -40,6 +40,13 @@ const posts = defineCollection({
      * 编辑器里就是日期旁边那个勾选框（2026-10-06 加）。
      */
     calendar: z.boolean().default(false),
+    /**
+     * 这一篇右侧显示哪条时间轴（`src/data/timelines.json` 里的 id）。
+     *
+     * **不写 = 默认「花娅年代记」**（2026-11-19 站长要的：所有页面默认都套上它）；
+     * 写空串 `''` = 这一篇不要时间轴；写 id = 用指定的那条。
+     */
+    timeline: z.string().optional(),
   }),
 });
 
@@ -64,6 +71,8 @@ const notes = defineCollection({
     subs: z.array(z.string()).default([]),
     /** 同 posts.calendar：认领这一天（首页日历上那一天可点） */
     calendar: z.boolean().default(false),
+    /** 同 posts.timeline：不写 = 默认「花娅年代记」，写 '' = 不要 */
+    timeline: z.string().optional(),
   }),
 });
 

@@ -588,3 +588,52 @@ body.is-crt .crt-screen .archive-year + .archive-year {
     padding: 1.25rem 1.1rem;
   }
 }
+
+/* ============================================================================
+ *  时间轴外壳的适配（2026-11-19）
+ *
+ *  这几页是「老式电视机」皮：底是 #120a20 那种深紫黑，点缀色是落日橙 #ffb547。
+ *  Timeline.astro 默认用的是站点的亮粉（#ffd9ef / rgba(255,120,190,…)），
+ *  压在深紫黑上偏"粉紫"，所以**只换外壳**的书签 / 面板 / 标题 / 页脚，
+ *  跟着这几页的令牌走。轴本身（弧线、刻度、塔吊、落日）不动。
+ * ========================================================================= */
+body.is-crt .tl__tab {
+  border-color: rgba(255, 181, 71, 0.36);
+  background: linear-gradient(90deg, rgba(28, 17, 50, 0.94), rgba(13, 7, 24, 0.96));
+  color: #ffe9c4;
+  box-shadow: -8px 0 24px -18px rgb(0 0 0 / 0.9);
+}
+body.is-crt .tl__tab:hover {
+  color: #ffd894;
+}
+
+body.is-crt .tl__panel {
+  background: linear-gradient(180deg, rgba(28, 17, 50, 0.985), rgba(13, 7, 24, 0.99));
+  border-left-color: rgba(255, 181, 71, 0.24);
+  box-shadow: -18px 0 50px -22px rgb(0 0 0 / 0.8);
+}
+body.is-crt .tl.is-pinned .tl__panel {
+  border-color: rgba(255, 181, 71, 0.24);
+}
+
+body.is-crt .tl__head {
+  border-bottom-color: rgba(255, 181, 71, 0.2);
+}
+body.is-crt .tl__title {
+  color: #fff3dc;
+  text-shadow: 0 0 12px rgba(255, 181, 71, 0.5);
+}
+body.is-crt .tl__close {
+  color: #d6c9ee;
+}
+body.is-crt .tl__close:hover {
+  color: #ffd894;
+}
+body.is-crt .tl__foot {
+  border-top-color: rgba(255, 181, 71, 0.2);
+  color: #d6c9ee;
+}
+body.is-crt .tl__nowDate {
+  color: #d6c9ee;
+}
+

@@ -146,6 +146,32 @@ export const timelines: Timeline[] = ((raw as { timelines?: Timeline[] }).timeli
 export const getTimeline = (id?: string | null): Timeline | undefined =>
   id ? timelines.find((t) => t.id === id) : undefined;
 
+/*
+  页面**默认**挂哪条时间轴（2026-11-19 站长要的）。
+
+  原话：「默认为所有页面都套上花娅年代记的时间轴 除了我已经修改过的
+         后续新建页面也是一样默认有花娅年代记时间轴但是可以手动改」
+
+  所以页面数据里的 `timeline` 变成**三态**：
+    · 没有这个字段（或不是字符串）→ 用默认这条（全站一样，新建的页面天然就有）
+    · 空串 ''                      → 明确「不要时间轴」
+    · 具体 id                      → 用指定的那条（老页面已经改过的走这条）
+
+  默认那条按**标题**去找而不是写死 id：站长在编辑器里改名 / 重建一条轴之后，
+  这里不至于指到一个已经不存在的 id 上。找不到就退回第一条。
+*/
+export const DEFAULT_TIMELINE_TITLE = '花娅年代记';
+
+export const defaultTimeline = (): Timeline | undefined =>
+  timelines.find((t) => t.title === DEFAULT_TIMELINE_TITLE) ?? timelines[0];
+
+/** 这一页实际用哪条时间轴（undefined = 这一页不显示） */
+export function pageTimeline(node?: { timeline?: string } | null): Timeline | undefined {
+  const id = node?.timeline;
+  if (id === '') return undefined;
+  return (id ? getTimeline(id) : undefined) ?? defaultTimeline();
+}
+
 /** `yyyy-mm-dd` → 天数。算排序和中点用，认不出来给 NaN */
 export function dayOf(date?: string): number {
   const s = String(date ?? '').trim();

@@ -12,7 +12,7 @@ import NodeView from '../../components/NodeView.astro';
 import site from '../../site.config';
 import { flattenBoards, urlSegs, type BoardNode } from '../../utils/boards';
 import { nodePageData } from '../../utils/boardPage';
-import { getTimeline, refParam } from '../../utils/timelines';
+import { pageTimeline, refParam } from '../../utils/timelines';
 
 export async function getStaticPaths() {
   const all = flattenBoards(site.homeBoards as BoardNode[]);
@@ -62,7 +62,7 @@ const backLabel = data.parent ? `返回 ${data.parent.title}` : '返回首页';
   默认停在哪儿：优先这一页自己认领的时间点/时间段；
   自己没认领就看第一个认领了的成分 —— 打开时正好对着屏幕上那段内容。
 */
-const timeline = getTimeline(data.timeline);
+const timeline = pageTimeline(data);
 const ownsRef = { point: data.timePoint, span: data.timeSpan };
 let timelineDefault = refParam(timeline, ownsRef);
 if (timelineDefault === null && timeline) {
