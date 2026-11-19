@@ -249,12 +249,21 @@ check('预留卡空着时不是链接（点了不该装作能点）', ph?.tag !=
 const cist = await cdp.ev(`(() => {
   const n = document.querySelector('#home-cistern');
   if (!n) return null;
+  const water = n.querySelector('.cistcard__water');
+  const img = n.querySelector('img');
   return {
     tag: n.tagName,
     href: n.getAttribute('href'),
     title: (n.querySelector('.cistcard__title') || {}).textContent || '',
-    hasImg: !!n.querySelector('img'),
-    hasTank: !!n.querySelector('.aq canvas.aq__cv'),
+    hasImg: !!img,
+    hasCanvas: !!n.querySelector('canvas'),
+    waterCount: n.querySelectorAll('.cistcard__water').length,
+    waterPe: water ? getComputedStyle(water).pointerEvents : '',
+    waterHidden: water ? water.getAttribute('aria-hidden') : null,
+    waterBlend: water ? getComputedStyle(water).mixBlendMode : '',
+    sheen: !!n.querySelector('.cistcard__sheen'),
+    filterDef: !!document.querySelector('#ci-water'),
+    imgFilter: img ? getComputedStyle(img).filter : '',
     cursor: getComputedStyle(n).cursor,
   };
 })()`);
@@ -262,8 +271,21 @@ check('★ 涣愿终池那张卡是链接，指向 /memoriterminalcistern',
   cist?.tag === 'A' && cist.href === '/memoriterminalcistern', JSON.stringify(cist));
 check('涣愿终池卡上有标题（数据里那个，不是写死的）',
   cist?.title === (widgets.cistern?.title || '涣愿终池'), JSON.stringify(cist?.title));
-check('★ 还没传封面图时画的是水族缸（不是一块黑洞）',
-  cist?.hasImg === false && cist?.hasTank === true, JSON.stringify({ img: cist?.hasImg, tank: cist?.hasTank }));
+check('★ 水族缸已经撤掉了（卡里不该再有 canvas）', cist?.hasCanvas === false, String(cist?.hasCanvas));
+check('★ 传了封面图才盖水光；没传就空着，不在空框上凭空做水',
+  cist?.hasImg ? cist.waterCount === 2 : cist?.waterCount === 0,
+  JSON.stringify({ img: cist?.hasImg, water: cist?.waterCount }));
+check('★ 水光层盖在图上，但不吃点击（整张卡还得能点进去）',
+  cist?.hasImg ? cist.waterPe === 'none' : true, String(cist?.waterPe));
+check('水光层对读屏是隐藏的（纯装饰）',
+  cist?.hasImg ? cist.waterHidden === 'true' : true, String(cist?.waterHidden));
+check('水光是 screen 叠上去的（只加光，不压暗底下的图）',
+  cist?.hasImg ? cist.waterBlend === 'screen' : true, String(cist?.waterBlend));
+check('扫光那一层在', cist?.hasImg ? cist.sheen === true : true, String(cist?.sheen));
+check('水体扭曲的滤镜定义在文档里（#ci-water）', cist?.filterDef === true, String(cist?.filterDef));
+check('★ 传了封面图时，图上挂着水体扭曲滤镜',
+  cist?.hasImg ? /ci-water/.test(cist.imgFilter || '') : true,
+  JSON.stringify({ img: cist?.hasImg, filter: cist?.imgFilter }));
 check('涣愿终池卡是能点的手型光标', cist?.cursor === 'pointer', cist?.cursor);
 
 /* ------------------------------------------------------------------ ⑤ 花娅远位面卡跟着版块树走 */

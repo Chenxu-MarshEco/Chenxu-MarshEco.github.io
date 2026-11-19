@@ -8,21 +8,21 @@
  *   「把涣愿终池挪到它左边那个大卡片上 后面要给这张卡片做特效 稍后再说
  *    原位置的小卡就留占位符」
  *
- * 所以它现在占的是**日历正下方那张大卡**（和日历同宽同高），
- * 样子也换成大卡那一套：封面图铺满、标题压在底下。
+ * 2026-11-18 第二次，站长看完复刻的水族缸之后：
+ *   「你暂时先把涣愿终池的框恢复到只是可以放图片的样子
+ *    然后给它蒙上一层水光波纹的滤镜即可
+ *    水光可以打在我上传的图片上并且有那种微微的水体扭曲感」
  *
- * 2026-11-18 站长原话：
- *   「接下来做一个大工程：全网搜索MarineAquarium3相关信息 在首页的涣愿终池卡片里
- *    尝试复刻这个水族缸 不要求互动但是要求有基本的frutigerareo风格画面和鱼类
- *    最终呈现效果可以参考图1 需要重点复刻鱼类和FA水光波光感以及图二的FA风格时钟
- *    （改为中文日期时间格式）」
- * 所以**没传封面图**时不再是一块纯色，而是那个水族缸（见 HomeAquarium.astro）；
- * 传了图就还是图（站长自己传的优先）。
+ * 所以这张卡现在只有两样东西：
+ *   ① 站长自己传的封面图（没传就空着，一个字都不写）；
+ *   ② 盖在图上的一层水光 —— 图本身先过一道 SVG 位移滤镜（微微扭），
+ *      再叠两层慢慢漂的白焦散和一道扫光。
+ * 原来那个 canvas 水族缸（HomeAquarium.astro）暂时从这张卡上撤下来了，
+ * 组件和贴图都还在，没有删。
  *
  * 跳转地址：面板里填了就用填的；留空就**按版块 id 去版块树里找那一页**
  * （`page-mwt0cistern`）—— 站长在编辑器里改了那一页的地址，这里跟着变。
  */
-import HomeAquarium from './HomeAquarium.astro';
 import widgets from '../data/home-widgets.json';
 import site from '../site.config';
 import { flattenBoards, type BoardNode } from '../utils/boards';
@@ -62,11 +62,13 @@ const url = external ? rawHref : withBase(rawHref);
   <span class="cistcard__art">
     {
       img ? (
-        <img class="cistcard__img" src={img} alt="" loading="lazy" decoding="async" />
-      ) : (
-        /* 没传图：那个水族缸（鱼 / 水光 / FA 时钟），见 HomeAquarium.astro */
-        <HomeAquarium />
-      )
+        <>
+          <img class="cistcard__img" src={img} alt="" loading="lazy" decoding="async" />
+          <span class="cistcard__water" aria-hidden="true" />
+          <span class="cistcard__water cistcard__water--far" aria-hidden="true" />
+          <span class="cistcard__sheen" aria-hidden="true" />
+        </>
+      ) : null
     }
   </span>
 
@@ -75,6 +77,39 @@ const url = external ? rawHref : withBase(rawHref);
     {text && <span class="cistcard__text">{text}</span>}
   </span>
 </a>
+
+{/*
+  水体扭曲：位移量跟着一张噪声图走，scale 在 6~10 之间慢慢呼吸。
+  位移会把边缘拉出画框，所以 .cistcard__img 恒常放大 1.06 倍兜住。
+*/}
+<svg class="cistcard__defs" aria-hidden="true" focusable="false">
+  <filter
+    id="ci-water"
+    x="-10%"
+    y="-10%"
+    width="120%"
+    height="120%"
+    color-interpolation-filters="sRGB"
+  >
+    <feTurbulence
+      type="fractalNoise"
+      baseFrequency="0.012 0.021"
+      numOctaves="2"
+      seed="9"
+      result="ciNoise"
+    ></feTurbulence>
+    <feDisplacementMap
+      in="SourceGraphic"
+      in2="ciNoise"
+      scale="5"
+      xChannelSelector="R"
+      yChannelSelector="G"
+    >
+      <animate attributeName="scale" values="4.5;6.5;4.5" dur="21s" repeatCount="indefinite" />
+    </feDisplacementMap>
+    <feGaussianBlur stdDeviation="0.25"></feGaussianBlur>
+  </filter>
+</svg>
 
 <style>
   /*
@@ -106,23 +141,110 @@ const url = external ? rawHref : withBase(rawHref);
     position: absolute;
     inset: 0;
     display: block;
+    overflow: hidden;
     background: linear-gradient(180deg, rgba(30, 8, 48, 0.9), rgba(10, 2, 18, 0.9));
-    /*
-      水族缸里的气泡大小、钟的字号都按**这张卡自己的宽**算（cqw）——
-      卡片在 1440 屏上 452px 宽、在 1024 屏上 300 多，写死 px 会一大一小。
-    */
-    container-type: size;
-    container-name: cistcard;
   }
+
+  /*
+    图本身微微扭。1.06 是给位移留的余量 —— 不放大，被拉出去的那一圈就是空的。
+    filter 里那个 url 指到下面 <svg> 的 #ci-water。
+  */
   .cistcard__img {
     display: block;
     width: 100%;
     height: 100%;
     object-fit: cover;
+    transform: scale(1.06);
+    filter: url(#ci-water);
     transition: transform 0.5s ease;
   }
   .cistcard:hover .cistcard__img {
-    transform: scale(1.045);
+    transform: scale(1.1);
+  }
+
+  /*
+    两层焦散：都是白色细纹的透明贴图（我自己算的 Voronoi，不是屏保里的东西），
+    screen 叠在图上只加光不减光。inset 给到 -50% 是为了让它一直在画框外有余量，
+    平移只走 transform（合成器就能干，不用重绘）。
+    位移的距离 = 贴图的边长，走完一整张正好接回原点，看不出接缝。
+  */
+  .cistcard__water {
+    position: absolute;
+    inset: -50%;
+    pointer-events: none;
+    background-image: url('/img/aquarium/water-light.webp');
+    background-repeat: repeat;
+    background-size: 132px 132px;
+    mix-blend-mode: screen;
+    opacity: 0.26;
+    will-change: transform;
+    animation: ci-drift-a 47s linear infinite;
+  }
+  .cistcard__water--far {
+    background-size: 208px 208px;
+    opacity: 0.15;
+    animation: ci-drift-b 71s linear infinite;
+  }
+
+  @keyframes ci-drift-a {
+    from {
+      transform: translate3d(0, 0, 0);
+    }
+    to {
+      transform: translate3d(-132px, 132px, 0);
+    }
+  }
+  @keyframes ci-drift-b {
+    from {
+      transform: translate3d(0, 0, 0);
+    }
+    to {
+      transform: translate3d(208px, -208px, 0);
+    }
+  }
+
+  /* 一道很淡的光斜着扫过去，隔十几秒来一次 */
+  .cistcard__sheen {
+    position: absolute;
+    inset: -40%;
+    pointer-events: none;
+    background: linear-gradient(
+      112deg,
+      transparent 40%,
+      rgba(170, 235, 255, 0.14) 47%,
+      rgba(255, 255, 255, 0.1) 51%,
+      transparent 60%
+    );
+    mix-blend-mode: screen;
+    opacity: 0;
+    will-change: transform, opacity;
+    animation: ci-sheen 17s ease-in-out infinite;
+  }
+
+  @keyframes ci-sheen {
+    0%,
+    24% {
+      opacity: 0;
+      transform: translate3d(-14%, 0, 0);
+    }
+    38% {
+      opacity: 1;
+    }
+    62% {
+      opacity: 0.55;
+    }
+    76%,
+    100% {
+      opacity: 0;
+      transform: translate3d(14%, 0, 0);
+    }
+  }
+
+  .cistcard__defs {
+    position: absolute;
+    width: 0;
+    height: 0;
+    overflow: hidden;
   }
 
   .cistcard__body {
@@ -148,6 +270,17 @@ const url = external ? rawHref : withBase(rawHref);
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
     overflow: hidden;
+  }
+
+  /* 不想看动的东西就把漂和扫光都停掉，图上的静态水纹留着 */
+  @media (prefers-reduced-motion: reduce) {
+    .cistcard__water,
+    .cistcard__sheen {
+      animation: none;
+    }
+    .cistcard__sheen {
+      display: none;
+    }
   }
 
   /*
