@@ -227,10 +227,21 @@ const feed = await recentActivity();
     gap: 0.08rem;
     scrollbar-width: thin;
   }
+  /*
+    每条**均分整列高度**（站长 2026-11-20：卡片高一点下面就空一片，而且和右边不等高）。
+    这样不管窗口多高、几条公告，整列永远正好填满，和右栏同高。
+  */
   .ann__row {
     min-width: 0;
+    overflow: hidden;
+    flex: 1 1 0;
+    min-height: 0;
+    display: flex;
   }
   .ann__link {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
     display: flex;
     align-items: center;
     gap: 0.34rem;

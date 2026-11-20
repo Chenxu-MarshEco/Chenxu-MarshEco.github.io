@@ -88,7 +88,6 @@ const pickLabel = pick ? `跳到冰室精华里的这一条：${pickName} ${pick
         <h3 class="daily__titleWrap">
           <a class="daily__title" id="daily-title" href={href}>{daily.title || '每日精华'}</a>
         </h3>
-        <a class="daily__more" href={href}>看全部 ›</a>
       </header>
 
       {/* 左边这一栏：每日精华（原来整块就是它） */}
@@ -180,10 +179,16 @@ const pickLabel = pick ? `跳到冰室精华里的这一条：${pickName} ${pick
             )
           }
         </a>
+          <div class="daily__foot">
+            <a class="daily__more" href={href}>冰室精华 ›</a>
+          </div>
           </div>
         {/* 右边这一栏：每日圣经（站长说先空着，之后再做） */}
         <div class="daily__col daily__col--bible">
           <div class="daily__colLabel">每日圣经</div>
+          <div class="daily__foot">
+            <a class="daily__more" href={withBase('/bellie/')}>铃忆圣经 ›</a>
+          </div>
         </div>
       </div>
     </div>
@@ -556,7 +561,7 @@ const pickLabel = pick ? `跳到冰室精华里的这一条：${pickName} ${pick
   /* 栏名就用站长给的那两个词（「每日精华」「每日圣经」），不加任何别的话 */
   .daily__colLabel {
     flex: none;
-    margin-bottom: 0.06rem;
+    margin-bottom: 0.04rem;
     color: rgba(255, 226, 244, 0.55);
     font-size: 0.72rem;
     letter-spacing: 0.08em;
@@ -593,6 +598,15 @@ const pickLabel = pick ? `跳到冰室精华里的这一条：${pickName} ${pick
   .daily__more:hover {
     color: #ffb3dd;
   }
+  /* 每栏右下角那个入口（冰室精华 / 铃忆圣经） */
+  .daily__foot {
+    flex: none;
+    margin-top: auto;
+    display: flex;
+    justify-content: flex-end;
+    padding-top: 0.1rem;
+    line-height: 1.2;
+  }
 
   /* ---------- 两个按钮（随机精华 / 回到每日精华） ----------
      这块卡片很窄（1440 下 190px、900 下只有 150px），两个带字的按钮在窄屏上必然
@@ -600,8 +614,8 @@ const pickLabel = pick ? `跳到冰室精华里的这一条：${pickName} ${pick
   .daily__acts {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.25rem;
-    margin: 0 0 0.1rem;
+    gap: 0.22rem;
+    margin: 0 0 0.08rem;
     flex: none;
   }
   .daily__acts[hidden] {
@@ -664,7 +678,16 @@ const pickLabel = pick ? `跳到冰室精华里的这一条：${pickName} ${pick
     display: flex;
     flex-direction: column;
     gap: 0.28rem;
-    flex: 1;
+    /*
+      按内容长高，不硬撑满这一栏：
+        原文是 `flex: 1`，短句的时候卡片照样拉满整栏，框里剩一大片空白
+        （站长 2026-11-20 圈出来的就是那块）。
+      现在 `flex: 0 1 auto` + `max-height: 100%`：
+        · 短句 → 卡片就矮，框贴着字；
+        · 长句 → 一直长到这一栏的高度为止，再多才由 line-clamp 收尾。
+    */
+    flex: 1 1 auto;
+    max-height: 100%;
     min-height: 0;
     /* 卡片只有这一格这么高：内容一律在这块里裁掉，不许撑破卡片 */
     overflow: hidden;
@@ -752,14 +775,16 @@ const pickLabel = pick ? `跳到冰室精华里的这一条：${pickName} ${pick
   }
   :global(.daily__text) {
     margin: 0;
+    flex: 1 1 auto;
+    min-height: 0;
     color: rgba(255, 236, 248, 0.9);
-    font-size: 0.8rem;
-    line-height: 1.45;
+    font-size: 0.82rem;
+    line-height: 1.52;
     white-space: pre-wrap;
     word-break: break-word;
     /* 首页这一格高度是定死的：文字按行数裁，剩下的空间留给图片；全文看悬停浮层 */
     display: -webkit-box;
-    -webkit-line-clamp: 3;
+    -webkit-line-clamp: 4;
     -webkit-box-orient: vertical;
     overflow: hidden;
     flex: 0 1 auto;
