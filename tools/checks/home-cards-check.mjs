@@ -177,8 +177,9 @@ const snap = async () => {
       pairUnder: box('.extras__pair--under'),
       gaps: {
         boardToRow1: gap(board, ann),
-        row1ToRow2: gap(ann, cal),
-        row2ToRow3: gap(cal, cistern),
+        /* 第二行现在是「涣愿终池 + 黎语堂」，第三行是「涣源溪水钟 + 冰山/远位面」（2026-11-21 换的） */
+        row1ToRow2: gap(ann, cistern),
+        row2ToRow3: gap(cistern, cal),
       },
       kids: [...document.querySelectorAll('.extras__grid > *')].map((n) => n.id || n.className),
       overflowX: document.documentElement.scrollWidth - document.documentElement.clientWidth,
@@ -198,16 +199,18 @@ info(`1440：预留卡 ${JSON.stringify(g.placeholder)} / 花娅远位面 ${JSON
 
 check('★ 三张卡都在页面上（涣愿终池 / 冰室冰山 / 花娅远位面）',
   !!g.ice && !!g.cistern && !!g.farland, JSON.stringify({ 终池: !!g.cistern, 冰山: !!g.ice, 远位面: !!g.farland }));
-check('★ 涣愿终池在「涣源溪水钟」**正下方**（同一列、同一格，顶边在日历底边之下）',
-  !!g.cistern && near(g.cistern.x, g.cal.x) && g.cistern.y >= g.cal.bottom - 1,
-  JSON.stringify({ 终池: g.cistern, 日历底: g.cal?.bottom }));
 /*
-  第三行右边那一对：站长 2026-11-20 把冰室冰山从第二行挪到了原来预留卡那一格，
-  所以现在这一对是「冰室冰山 / 花娅远位面」，在**日历 / 黎语堂**那一行正下方。
+  行序 2026-11-21 换过一次（站长：「交换涣源溪水钟和涣愿终池的位置 让涣愿终池在黎语堂的左边」）：
+    第二行 = 涣愿终池（左）+ 黎语堂（右）
+    第三行 = 涣源溪水钟（左）+ 冰室冰山 / 花娅远位面（右）
 */
-check('★ 冰室冰山 / 花娅远位面在「日历 / 黎语堂」**正下方**',
-  !!g.ice && !!g.farland && g.ice.y >= g.cal.bottom - 1 && g.farland.y >= g.lyt.bottom - 1,
-  JSON.stringify({ 冰山顶: g.ice?.y, 日历底: g.cal?.bottom, 远位面顶: g.farland?.y, 黎语堂底: g.lyt?.bottom }));
+check('★ 涣愿终池在「黎语堂」**左边**、和它同一行（顶边齐平、底边齐平）',
+  !!g.cistern && g.cistern.x < g.lyt.x && near(g.cistern.y, g.lyt.y) && near(g.cistern.bottom, g.lyt.bottom),
+  JSON.stringify({ 终池: g.cistern, 黎语堂: g.lyt }));
+check('★ 涣源溪水钟挪到了**第三行左边**，冰室冰山 / 花娅远位面在它右边同一行',
+  !!g.cal && g.cal.y >= g.cistern.bottom - 1
+  && g.ice.y >= g.cistern.bottom - 1 && near(g.cal.y, g.ice.y) && near(g.cal.bottom, g.ice.bottom),
+  JSON.stringify({ 终池底: g.cistern?.bottom, 日历顶: g.cal?.y, 冰山顶: g.ice?.y, 远位面顶: g.farland?.y }));
 check('冰室冰山在左、花娅远位面在右，左右边各自贴齐那一列',
   g.ice.x < g.farland.x && near(g.ice.x, g.lyt.x) && near(g.farland.right, g.lyt.right),
   JSON.stringify({ 冰山x: g.ice?.x, 黎语堂左: g.lyt?.x, 远位面右: g.farland?.right, 黎语堂右: g.lyt?.right }));
@@ -219,10 +222,13 @@ check('★ 涣愿终池和日历**同宽同高**（±2px）',
 check('★ 冰室冰山 / 花娅远位面**一样宽一样高**（同一对里的两张，±2px）',
   near(g.ice.w, g.farland.w) && near(g.ice.h, g.farland.h),
   `冰山 ${g.ice.w}×${g.ice.h}；远位面 ${g.farland.w}×${g.farland.h}`);
-check('★ 第三行三张卡**底边对齐**（同一行高）',
-  near(g.cistern.bottom, g.ice.bottom) && near(g.ice.bottom, g.farland.bottom) &&
-    near(g.cistern.h, g.farland.h),
-  `${g.cistern.bottom} / ${g.ice.bottom} / ${g.farland.bottom}`);
+check('★ 第三行三张卡**底边对齐**（日历 = 冰山 = 远位面，同一行高）',
+  near(g.cal.bottom, g.ice.bottom) && near(g.ice.bottom, g.farland.bottom) &&
+    near(g.cal.h, g.farland.h),
+  `${g.cal.bottom} / ${g.ice.bottom} / ${g.farland.bottom}`);
+check('★ 第二行两张也一样高（涣愿终池 = 黎语堂）',
+  near(g.cistern.bottom, g.lyt.bottom) && near(g.cistern.h, g.lyt.h),
+  `${g.cistern.h} / ${g.lyt.h}`);
 check('加了这三张卡之后首页没有横向溢出', g.overflowX <= 1, `${g.overflowX}px`);
 
 /* ------------------------------------------------------------------ ②b 所有缝一样宽 */
@@ -258,7 +264,8 @@ const cist = await cdp.ev(`(() => {
       if (!t) return null;
       const r = t.getBoundingClientRect();
       const c = n.getBoundingClientRect();
-      return { up: Math.round(r.top - c.top), left: Math.round(r.left - c.left) };
+      /* up 从"离卡片上沿"改成"离卡片下沿"：标题挪到左下角了（和黎语堂一样的位置） */
+      return { down: Math.round(c.bottom - r.bottom), left: Math.round(r.left - c.left), fs: getComputedStyle(t).fontSize };
     })(),
     titleFill: (() => {
       const t = n.querySelector('.cistcard__title');
@@ -281,9 +288,27 @@ check('涣愿终池卡上有标题（数据里那个，不是写死的）',
 check('★ 水族缸已经撤掉了（那口缸的 canvas 不在卡里）', cist?.hasTank === false, String(cist?.hasTank));
 check('★ 气泡那一层在（画在 canvas 上，从水族缸那段搬过来的画法）',
   cist?.hasImg ? cist.hasBubbles === true : true, String(cist?.hasBubbles));
-check('★ 标题在**左上角**（和曼沫砾总线 / 涣源溪水钟同一个摆法）',
-  cist?.titleTop ? cist.titleTop.up >= 4 && cist.titleTop.up <= 40 && cist.titleTop.left >= 4 && cist.titleTop.left <= 40 : false,
-  JSON.stringify(cist?.titleTop));
+/*
+  标题位置 2026-11-21 改了：站长「修改涣愿终池四个字的位置 使其和黎语堂相对自己页面卡片的位置一样
+  黎语堂和涣愿终池标题字位置一致大小一致只是风格颜色不同」——
+  所以现在它和黎语堂一样在**左下角**，离左边 / 下边的距离和黎语堂的标题一模一样，字号也一样。
+*/
+const lytTitle = await cdp.ev(`(() => {
+  const n = document.querySelector('#home-liyutang');
+  const t = n ? n.querySelector('.lyt__title') : null;
+  if (!t) return null;
+  const r = t.getBoundingClientRect();
+  const c = n.getBoundingClientRect();
+  return { down: Math.round(c.bottom - r.bottom), left: Math.round(r.left - c.left), fs: getComputedStyle(t).fontSize };
+})()`);
+info(`终池标题 ${JSON.stringify(cist?.titleTop)} / 黎语堂标题 ${JSON.stringify(lytTitle)}`);
+check('★ 标题在**左下角**，和「黎语堂」的标题位置一模一样（离左边 / 下边同一距离）',
+  !!cist?.titleTop && !!lytTitle
+  && Math.abs(cist.titleTop.down - lytTitle.down) <= 1 && Math.abs(cist.titleTop.left - lytTitle.left) <= 1,
+  JSON.stringify({ 终池: cist?.titleTop, 黎语堂: lytTitle }));
+check('★ 标题字号和「黎语堂」一样大',
+  !!cist?.titleTop && !!lytTitle && cist.titleTop.fs === lytTitle.fs,
+  `${cist?.titleTop?.fs} vs ${lytTitle?.fs}`);
 check('★ 标题是渐变填进笔画里的（拟物塑料那几个字，不是一块纯色）',
   /text/.test(String(cist?.titleFill || '')) && !/border-box/.test(String(cist?.titleFill || '')),
   String(cist?.titleFill));
@@ -366,7 +391,8 @@ for (const w of [1920, 1280, 1024, 900]) {
   const ok =
     near(s.cistern.w, s.cal.w) && near(s.cistern.h, s.cal.h) &&
     near(s.ice.w, s.farland.w) && near(s.ice.h, s.farland.h) &&
-    near(s.cistern.bottom, s.ice.bottom) && near(s.ice.bottom, s.farland.bottom);
+    near(s.cistern.bottom, s.lyt.bottom) &&
+    near(s.cal.bottom, s.ice.bottom) && near(s.ice.bottom, s.farland.bottom);
   check(`${w}：三张卡照样同宽同高、底边齐平`, ok,
     `终池 ${s.cistern.w}×${s.cistern.h} / 日历 ${s.cal.w}×${s.cal.h}；` +
       `冰山 ${s.ice.w}×${s.ice.h} / 远位面 ${s.farland.w}×${s.farland.h}`);
@@ -408,8 +434,10 @@ await cdp.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, 
 await cdp.goto('/');
 const m = await snap();
 check('手机端：三张卡都在、竖着堆（单列，不并排）',
-  !!m.ice && !!m.cistern && !!m.farland && m.cistern.y > m.cal.bottom - 1 && m.ice.y > m.cistern.bottom - 1 && m.farland.y > m.ice.bottom - 1,
-  JSON.stringify({ 日历底: m.cal?.bottom, 终池顶: m.cistern?.y, 冰山顶: m.ice?.y, 远位面顶: m.farland?.y }));
+  !!m.ice && !!m.cistern && !!m.farland
+  && m.cistern.y > m.ann.bottom - 1 && m.lyt.y > m.cistern.bottom - 1
+  && m.cal.y > m.lyt.bottom - 1 && m.ice.y > m.cal.bottom - 1 && m.farland.y > m.ice.bottom - 1,
+  JSON.stringify({ 公告底: m.ann?.bottom, 终池顶: m.cistern?.y, 黎语堂顶: m.lyt?.y, 日历顶: m.cal?.y, 冰山顶: m.ice?.y, 远位面顶: m.farland?.y }));
 check('手机端：不横向溢出', m.overflowX <= 1, `${m.overflowX}px`);
 /*
   手机上是单列，桌面那套"和上面一样高"的脚本不写高度 —— 于是这几张卡的高度

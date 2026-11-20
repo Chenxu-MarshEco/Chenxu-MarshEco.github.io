@@ -17,15 +17,17 @@ interface Props {
   items: ActivityEntry[];
   /** 紧凑一点（首页那一格高度是卡死的） */
   dense?: boolean;
-  /** 要不要明细卡片（鼠标移上去弹的那张） */
+  /** 要不要明细卡片（鼠标移上去弹的那张，首页用） */
   details?: boolean;
+  /** 明细直接铺在这一条下面（`/feed/` 那页用，不用悬停也看得见、点得着） */
+  inline?: boolean;
   /** 这一串的 id（`/feed/` 那页翻页脚本要按它找） */
   id?: string;
   /** 每条 li 打上翻页脚本认的标记（`/feed/` 那页要分页） */
   pager?: boolean;
 }
 
-const { items, dense = false, details = false, id = undefined, pager = false } = Astro.props;
+const { items, dense = false, details = false, inline = false, id = undefined, pager = false } = Astro.props;
 
 /** 「刚刚 / 12 分钟前 / 昨天…」—— 和编辑器里那个 timeAgo 同一套说法 */
 const timeAgo = (iso: string): string => {
@@ -74,42 +76,51 @@ const CHANGE_MARK: Record<string, string> = { add: '+', edit: '~', del: '−' };
           <div class="feed__what" tabindex={details ? '0' : undefined} data-feed-detail={details ? c.short : undefined}>
             {c.panels.length ? c.panels.join('、') : '（没列改了什么）'}
           </div>
-        </div>
 
-        {
-          details && (
-            <div class="feed__detail" data-feed-card={c.short}>
-              {c.detail.length ? (
-                c.detail.map((p) => (
+          {/*
+            明细：两块面板名 + 每一行是一个能点的条目（新增 / 改动 / 删除）。
+              · 首页：`display: none`，鼠标移上去由脚本搬进浮层（`data-feed-card`）；
+              · `/feed/`：`inline`，直接铺在这一条下面，不用悬停也看得见、点得着。
+            放在 `.feed__main` 里，inline 时才会自然地排在「改了哪几块」下面而不是并到一行里。
+          */}
+          {
+            (details || inline) && (
+              <div
+                class:list={['feed__detail', inline && 'feed__detail--inline']}
+                data-feed-card={details ? c.short : undefined}
+              >
+                {c.detail.length ? (
+                  c.detail.map((p) => (
+                    <div class="feed__detailGroup">
+                      <div class="feed__detailPanel">{p.panel}</div>
+                      <ul class="feed__detailList">
+                        {p.items.map((it) => (
+                          <li class:list={['feed__detailRow', `is-${it.change}`]}>
+                            {it.href ? (
+                              <a class="feed__detailLink" href={it.href}>
+                                <span class="feed__detailMark" aria-hidden="true">{CHANGE_MARK[it.change]}</span>
+                                <span class="feed__detailText">{it.label}</span>
+                              </a>
+                            ) : (
+                              <span class="feed__detailLink feed__detailLink--dead">
+                                <span class="feed__detailMark" aria-hidden="true">{CHANGE_MARK[it.change]}</span>
+                                <span class="feed__detailText">{it.label}</span>
+                              </span>
+                            )}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ))
+                ) : (
                   <div class="feed__detailGroup">
-                    <div class="feed__detailPanel">{p.panel}</div>
-                    <ul class="feed__detailList">
-                      {p.items.map((it) => (
-                        <li class:list={['feed__detailRow', `is-${it.change}`]}>
-                          {it.href ? (
-                            <a class="feed__detailLink" href={it.href}>
-                              <span class="feed__detailMark" aria-hidden="true">{CHANGE_MARK[it.change]}</span>
-                              <span class="feed__detailText">{it.label}</span>
-                            </a>
-                          ) : (
-                            <span class="feed__detailLink feed__detailLink--dead">
-                              <span class="feed__detailMark" aria-hidden="true">{CHANGE_MARK[it.change]}</span>
-                              <span class="feed__detailText">{it.label}</span>
-                            </span>
-                          )}
-                        </li>
-                      ))}
-                    </ul>
+                    <div class="feed__detailPanel">{c.panels.join('、') || '（没列改了什么）'}</div>
                   </div>
-                ))
-              ) : (
-                <div class="feed__detailGroup">
-                  <div class="feed__detailPanel">{c.panels.join('、') || '（没列改了什么）'}</div>
-                </div>
-              )}
-            </div>
-          )
-        }
+                )}
+              </div>
+            )
+          }
+        </div>
       </li>
     ))
   }
@@ -178,7 +189,8 @@ const CHANGE_MARK: Record<string, string> = { add: '+', edit: '~', del: '−' };
   }
   .feed__when {
     flex: none;
-    color: rgba(255, 226, 244, 0.5);
+    /* 深底上 0.5 的透明度实测只有 4.4:1（首页那格），往上提到 0.62 才稳过 4.5 */
+    color: rgba(255, 226, 244, 0.62);
     font-size: 0.67rem;
     font-variant-numeric: tabular-nums;
   }
@@ -209,6 +221,17 @@ const CHANGE_MARK: Record<string, string> = { add: '+', edit: '~', del: '−' };
   /* 明细卡片：**平时不画**（不占位、不参与任何容器的滚动区），显示时由脚本搬进浮层 */
   .feed__detail {
     display: none;
+  }
+  /*
+    `/feed/` 那一页：明细**常驻**铺在这一条下面（站长 2026-11-21：
+    「点入推流动态详情页后 里面的内容也要和首页一样详细显示改了哪些部分 可以点击链接跳转」）。
+    左边一条细线把它和这一条的上半截分开，缩进一点，看着是"挂在下面"而不是新的条目。
+  */
+  .feed__detail--inline {
+    display: block;
+    margin-top: 0.5rem;
+    padding-left: 0.6rem;
+    border-left: 1px solid rgba(255, 120, 190, 0.3);
   }
   .feed__detailGroup + .feed__detailGroup {
     margin-top: 0.4rem;
@@ -327,6 +350,17 @@ const CHANGE_MARK: Record<string, string> = { add: '+', edit: '~', del: '−' };
     white-space: normal;
     word-break: break-word;
   }
+  /* `/feed/` 的明细比首页浮层里那张松一点（这一页是拿来读的） */
+  .feed:not(.feed--dense) .feed__detail--inline {
+    max-width: 62rem;
+  }
+  .feed:not(.feed--dense) .feed__detailPanel {
+    font-size: 0.78rem;
+  }
+  .feed:not(.feed--dense) .feed__detailLink {
+    font-size: 0.84rem;
+    padding: 0.12rem 0.36rem;
+  }
 </style>
 
 {
@@ -346,7 +380,10 @@ const CHANGE_MARK: Record<string, string> = { add: '+', edit: '~', del: '−' };
           ① 触发点只挂在「改了哪几块」那一行小字上 —— 目标太小，得瞄准；
           ② `pointermove` 里每次都调两遍 `getBoundingClientRect()` —— 每移动一像素强排一次版；
           ③ 收起是 220ms + 每 220ms 再重算一次的计时器 —— 移开以后还赖着不走。
-        现在：整行都能触发、几何只在打开/滚动时算一次、收起宽限 120ms。
+        现在：整行都能触发、几何只在打开/滚动时算一次、收起宽限 280ms。
+        换卡另外加了一条"停住才算"（`SWITCH_DELAY`）—— 卡片弹在这一行上方，
+        鼠标往上挪进卡片必然要经过上面那一行；以前一路上就把卡片换成上面那一行的，
+        结果那张卡里的链接永远点不到（站长 2026-11-21 报的）。
 
         ⚠ 不能像每日精华那样纯 CSS `:hover`：这张卡在带 `overflow:auto` 的列表里，
           一超出就被裁掉 —— 必须搬进 position:fixed 的 `.annlayer`
@@ -362,6 +399,39 @@ const CHANGE_MARK: Record<string, string> = { add: '+', edit: '~', del: '−' };
         let hideTimer = 0;
         /** 整行 + 卡片的外接矩形（打开和滚动时算一次，**绝不在 pointermove 里重算**） */
         let zone: { l: number; t: number; r: number; b: number } | null = null;
+        /** 想换到另一行去：指针要**在那一行停住**才算数（见下面 pointermove） */
+        let pending: HTMLElement | null = null;
+        let switchTimer = 0;
+
+        /*
+          停多久才算"想换到这一行"。
+          为什么要有它（站长 2026-11-21 报的那个 bug）：
+            卡片是弹在**这一行上方**的，鼠标从这一行往上挪到卡片里，路上**必然**经过上面那一行 ——
+            以前一经过就立刻换成上面那一行的卡片，于是手指永远够不到自己那张卡里的链接。
+          现在：第一张立刻开（不觉得慢），换卡要指针在这一行上"停下来" `SWITCH_DELAY` 毫秒；
+          只要还在移动就把计时器重来（pointermove 里重排），于是快速穿行不会换卡。
+          收起宽限放到 280ms：穿行到卡片这一小段路上，旧卡片不会被顺手关掉。
+        */
+        const SWITCH_DELAY = 170;
+        const HIDE_DELAY = 280;
+
+        const clearSwitch = () => {
+          window.clearTimeout(switchTimer);
+          switchTimer = 0;
+          pending = null;
+        };
+
+        const armSwitch = (li: HTMLElement) => {
+          pending = li;
+          window.clearTimeout(switchTimer);
+          switchTimer = window.setTimeout(() => {
+            switchTimer = 0;
+            if (pending === li && li.isConnected) {
+              pending = null;
+              show(li);
+            }
+          }, SWITCH_DELAY);
+        };
 
         const ensureLayer = (): HTMLElement => {
           if (layer && layer.isConnected) return layer;
@@ -372,6 +442,17 @@ const CHANGE_MARK: Record<string, string> = { add: '+', edit: '~', del: '−' };
           return layer;
         };
 
+        /*
+          摆位（站长 2026-11-21 改）：**放在这一行的右侧**，不是上方。
+          原话：「现在这样会导致如果浏览中间的卡片时 想要再直接看上面的卡片
+                 需要先把鼠标移走关闭卡片才能点到被卡片遮住的上一条动态 非常麻烦
+                 建议对推流动态做特殊处理 让卡片出现在该条动态的右侧 这样就不会挡住正常区域」。
+          所以：
+            · 右侧放得下就贴右侧（和这一行顶边齐，竖向夹在视口里）；
+            · 右侧放不下（窄屏 / 贴右边缘）就放到这一行左边；
+            · 两边都放不下（手机）才退回"上方 / 下方"。
+          这样卡片永远不会压住别的动态行，往上下挪鼠标也不经过它。
+        */
         const place = (row: HTMLElement, el: HTMLElement) => {
           const r = row.getBoundingClientRect();
           el.style.left = '-9999px';
@@ -379,8 +460,21 @@ const CHANGE_MARK: Record<string, string> = { add: '+', edit: '~', del: '−' };
           const cr = el.getBoundingClientRect();
           const pad = 8;
           const gap = 6;
-          let left = r.left;
-          left = Math.max(pad, Math.min(window.innerWidth - cr.width - pad, left));
+          const clampTop = (top: number) =>
+            Math.max(pad, Math.min(window.innerHeight - cr.height - pad, top));
+
+          let left = r.right + gap;
+          if (left + cr.width > window.innerWidth - pad) left = r.left - cr.width - gap;
+
+          if (left >= pad) {
+            const top = clampTop(r.top);
+            el.style.left = `${Math.round(left)}px`;
+            el.style.top = `${Math.round(top)}px`;
+            return { l: left, t: top, r: left + cr.width, b: top + cr.height };
+          }
+
+          /* 两侧都放不下：退回上下（手机那种整幅宽的一行） */
+          left = Math.max(pad, Math.min(window.innerWidth - cr.width - pad, r.left));
           let top = r.top - cr.height - gap;
           if (top < pad) top = Math.min(window.innerHeight - cr.height - pad, r.bottom + gap);
           el.style.left = `${Math.round(left)}px`;
@@ -403,6 +497,7 @@ const CHANGE_MARK: Record<string, string> = { add: '+', edit: '~', del: '−' };
         const hide = () => {
           window.clearTimeout(hideTimer);
           hideTimer = 0;
+          clearSwitch();
           const el = card;
           const back = home;
           card = null;
@@ -417,7 +512,7 @@ const CHANGE_MARK: Record<string, string> = { add: '+', edit: '~', del: '−' };
 
         const scheduleHide = () => {
           if (hideTimer) return;
-          hideTimer = window.setTimeout(hide, 120);
+          hideTimer = window.setTimeout(hide, HIDE_DELAY);
         };
 
         const show = (li: HTMLElement) => {
@@ -425,6 +520,7 @@ const CHANGE_MARK: Record<string, string> = { add: '+', edit: '~', del: '−' };
           if (!el) return;
           window.clearTimeout(hideTimer);
           hideTimer = 0;
+          clearSwitch();
           if (card === el) return;
           if (card) hide();
           ensureLayer().append(el);
@@ -437,6 +533,15 @@ const CHANGE_MARK: Record<string, string> = { add: '+', edit: '~', del: '−' };
         document.addEventListener(
           'pointermove',
           (event) => {
+            const t = event.target as Element | null;
+            const over = t && t.closest ? (t.closest('.feed__item') as HTMLElement | null) : null;
+
+            /* 想换行：指针还在移动就重新计时，停住了才换（见上面 SWITCH_DELAY 那段说明） */
+            if (pending) {
+              if (over && over === pending) armSwitch(over);
+              else clearSwitch();
+            }
+
             if (!card) return;
             if (inZone(event.clientX, event.clientY)) {
               if (hideTimer) {
@@ -453,12 +558,28 @@ const CHANGE_MARK: Record<string, string> = { add: '+', edit: '~', del: '−' };
         document.addEventListener('pointerover', (event) => {
           const t = event.target as Element | null;
           if (!t || !t.closest) return;
-          const li = t.closest('.feed__item') as HTMLElement | null;
-          if (li && li.querySelector('[data-feed-card]')) {
-            show(li);
+          /* 已经在卡片里：什么都不做（否则会把卡片自己关掉） */
+          if (t.closest('.annlayer')) {
+            window.clearTimeout(hideTimer);
+            hideTimer = 0;
+            clearSwitch();
             return;
           }
-          if (card && !t.closest('.annlayer')) scheduleHide();
+          const li = t.closest('.feed__item') as HTMLElement | null;
+          if (li && li.querySelector('[data-feed-card]')) {
+            /* 同一行：撤销一切计时 */
+            if (card && home === li) {
+              window.clearTimeout(hideTimer);
+              hideTimer = 0;
+              clearSwitch();
+              return;
+            }
+            /* 还没开卡：立刻开；已经开着别的：等指针在那一行停住再换 */
+            if (card) armSwitch(li);
+            else show(li);
+            return;
+          }
+          if (card) scheduleHide();
         });
 
         document.addEventListener('focusin', (event) => {
@@ -475,6 +596,7 @@ const CHANGE_MARK: Record<string, string> = { add: '+', edit: '~', del: '−' };
         });
 
         const reflow = () => {
+          clearSwitch();
           if (!card || !home || !home.isConnected) return;
           measure(home, place(home, card));
         };

@@ -166,7 +166,8 @@ const isExternal = (href: string) => /^(https?:|mailto:|tel:)/i.test(href);
     color: var(--c-text-muted);
   }
   .navblk__barLabel {
-    color: var(--c-accent);
+    /* 用强调色的"深一档"那个令牌：这条压在浅色底盘上，原色只有 3.9:1（2026-11-21 调亮） */
+    color: var(--c-accent-hover);
     letter-spacing: 0.06em;
   }
   .navblk__barLink {

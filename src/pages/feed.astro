@@ -29,7 +29,7 @@ const entries = await allActivity();
 <BoardLayout title="推流动态" backLabel="返回首页">
   <div class="pulse" data-activity-board>
     <div class="feedList" id="feed-list" data-activity-feed>
-      <ActivityList items={entries} pager />
+      <ActivityList items={entries} pager inline />
     </div>
   </div>
   <Pager target="#feed-list" total={entries.length} pageSize={PAGE_SIZE} label="推流动态翻页" />

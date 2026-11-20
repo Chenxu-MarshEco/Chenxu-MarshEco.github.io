@@ -64,6 +64,97 @@ function blob(sha, file, cwd = ROOT) {
   return out;
 }
 
+/**
+ * 一次把所有需要的历史版本读进来（`git cat-file --batch`，**一个进程**）。
+ *
+ * 为什么要有它（2026-11-21）：`/feed/` 那一页要把 317 条提交的明细都列出来。
+ * 按老写法每条文件各 `git show` 两次 = 三四千次进程启动，实测要四十多秒；
+ * 换成一次 `cat-file --batch` 之后同样的活在一两秒内做完。
+ *
+ * `--batch` 的输出是「`<spec> <type> <size>` 换行 + 那么多个字节 + 换行」，缺席的写
+ * 「`<spec> missing`」。所以这里**按字节**切（中文一个字三字节，按字符数切会错位）。
+ */
+const BATCH_MAX = 512 * 1024 * 1024;
+function batchBlobs(specs, cwd) {
+  const got = new Map();
+  if (!specs.length) return got;
+  let buf;
+  try {
+    buf = execFileSync('git', ['cat-file', '--batch'], {
+      cwd,
+      input: `${specs.join('\n')}\n`,
+      timeout: 180000,
+      stdio: ['pipe', 'pipe', 'ignore'],
+      maxBuffer: BATCH_MAX,
+    });
+  } catch {
+    return got;
+  }
+  /*
+    ⚠ 回显的是**解析出来的对象 id**（`1c569e74… blob 45034`），不是传进去的那个 spec
+    （`<sha>:<file>`）—— 所以不能拿头部那串当键（2026-11-21 踩过：全部对不上，
+    明细整块变空，只剩文章/手记那条兜底）。响应与请求**同序**，按顺序配对即可。
+  */
+  let at = 0;
+  let idx = 0;
+  while (at < buf.length) {
+    const nl = buf.indexOf(0x0a, at);
+    if (nl < 0) break;
+    const header = buf.toString('utf8', at, nl);
+    at = nl + 1;
+    const m = /^(.+) (\S+) (\d+)$/.exec(header);
+    const spec = specs[idx];
+    idx += 1;
+    /* 「<id> missing」这一行没有 type/size：这个 spec 就是缺席 */
+    if (!m) {
+      if (spec) got.set(spec, null);
+      continue;
+    }
+    const size = Number(m[3]);
+    if (at + size > buf.length) break;
+    const body = buf.subarray(at, at + size).toString('utf8');
+    at += size + 1; /* 对象内容后面跟一个换行 */
+    if (spec) got.set(spec, m[2] === 'blob' ? body : null);
+  }
+  return got;
+}
+
+/** 这个文件会不会产生明细（内容文件或数据文件）—— 别的文件不值当去读历史版本 */
+const relevantFile = (file) => RESOLVERS.some((r) => r.re.test(file)) || CONTENT.some((r) => r.re.test(file));
+
+/**
+ * 预读一批提交要用到的历史版本（填进 `blobCache`，之后 `detailForCommit` 就一次 git 都不用起）。
+ * @returns 读了多少个版本
+ */
+export function prefetchBlobs(commits, cwd = ROOT) {
+  const specs = [];
+  const seen = new Set();
+  for (const c of commits ?? []) {
+    const sha = String(c?.sha ?? '');
+    if (!sha) continue;
+    for (const file of c.files ?? []) {
+      if (!relevantFile(file)) continue;
+      for (const spec of [`${sha}:${file}`, `${sha}^:${file}`]) {
+        if (seen.has(spec) || blobCache.has(`${cwd}:${spec}`)) continue;
+        seen.add(spec);
+        specs.push(spec);
+      }
+    }
+  }
+  const got = batchBlobs(specs, cwd);
+  for (const spec of specs) {
+    /* 读不到的也记成 null：不然每条明细还会再单独 spawn 一次 git 去确认它不存在 */
+    blobCache.set(`${cwd}:${spec}`, got.has(spec) ? got.get(spec) : null);
+  }
+  return specs.length;
+}
+
+/** 一批提交的明细（先预读再一次算完；`/feed/` 那页用这个） */
+export function detailsForCommits(commits, cwd = ROOT) {
+  prefetchBlobs(commits, cwd);
+  return (commits ?? []).map((c) => detailForCommit({ sha: String(c?.sha ?? ''), files: c.files ?? [], cwd }));
+}
+
 const json = (text) => {
   if (!text) return null;
   try {

@@ -50,7 +50,8 @@ const groups = announceGroups(all);
                     <time class="alb__date" datetime={it.date}>
                       {announceDateText(it.date)}
                     </time>
-                    <span class:list={['alb__kind', it.kind === 'update' && 'alb__kind--update']}>{kind}</span>`n                            {it.pinned && <span class="alb__pin" title="置顶公告：一直排在最前面，首页也会显示">置顶</span>}
+                    <span class:list={['alb__kind', it.kind === 'update' && 'alb__kind--update']}>{kind}</span>
+                    {it.pinned && <span class="alb__pin" title="置顶公告：一直排在最前面，首页也会显示">置顶</span>}
                     {href ? (
                       <a
                         class="alb__title"
@@ -146,6 +147,22 @@ const groups = announceGroups(all);
     border-color: rgba(255, 180, 70, 0.6);
     background: rgba(224, 74, 8, 0.28);
     color: #ffe9c0;
+  }
+  /*
+    「置顶」这颗原来**一条样式都没有**：文字沿用了主题里浅色底那套深棕（#46280f），
+    压在这条深紫底上实测对比度 1.43:1，等于看不见（站长 2026-11-21 说的"看不清的字"）。
+    这里按 `.alb__kind` 那颗的形状给一套深底上的配色（字用近白、底用粉紫）。
+  */
+  .alb__pin {
+    flex: none;
+    padding: 0.08rem 0.42rem;
+    border: 1px solid rgba(255, 120, 190, 0.55);
+    border-radius: 999px;
+    background: rgba(255, 120, 190, 0.18);
+    color: #ffe6f6;
+    font-size: 0.7rem;
+    letter-spacing: 0.06em;
+    white-space: nowrap;
   }
 
   .alb__title {

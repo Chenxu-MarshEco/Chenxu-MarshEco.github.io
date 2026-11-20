@@ -207,14 +207,19 @@ try {
       g.ice && g.farland && near(g.ice.w, g.farland.w, 1) && near(g.farland.r, R.r),
       JSON.stringify({ 冰山: g.ice && g.ice.w, 远位面: g.farland && g.farland.w, 右: g.farland && g.farland.r, 板右: R.r }));
 
+    /*
+      行序 2026-11-21 换过一次（站长：「交换涣源溪水钟和涣愿终池的位置 让涣愿终池在黎语堂的左边」）：
+        第二行 = 涣愿终池（左）+ 黎语堂（右）；第三行 = 涣源溪水钟（左）+ 冰山 / 远位面（右）。
+      所以"第二行到第三行"的缝是 涣源溪水钟顶边 - 涣愿终池底边。
+    */
     const g1 = g.announce ? Math.round((g.announce.y - L.b) * 10) / 10 : null;
-    const g2 = g.cal && g.announce ? Math.round((g.cal.y - g.announce.b) * 10) / 10 : null;
-    const g3 = g.cistern && g.cal ? Math.round((g.cistern.y - g.cal.b) * 10) / 10 : null;
+    const g2 = g.cistern && g.announce ? Math.round((g.cistern.y - g.announce.b) * 10) / 10 : null;
+    const g3 = g.cal && g.cistern ? Math.round((g.cal.y - g.cistern.b) * 10) / 10 : null;
     check(`${w}：行缝一样宽（${g1} / ${g2} / ${g3}）`,
       g1 !== null && g2 !== null && g3 !== null && Math.abs(g1 - g2) <= 1 && Math.abs(g2 - g3) <= 1,
       JSON.stringify({ 板到第一行: g1, 第一行到第二行: g2, 第二行到第三行: g3 }));
 
-    const leftBottom = g.cistern?.b;
+    const leftBottom = g.cal?.b;
     const rightBottom = g.farland?.b;
     check(`${w}：两列的**最后一行底边齐平**（${leftBottom} / ${rightBottom}）`,
       near(leftBottom, rightBottom, 1), JSON.stringify({ 左: leftBottom, 右: rightBottom }));

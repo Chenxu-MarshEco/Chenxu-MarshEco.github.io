@@ -241,18 +241,22 @@ try {
     const box = (s) => { const el = q(s); if (!el) return null; const r = el.getBoundingClientRect(); return { left: Math.round(r.left), right: Math.round(r.right), top: Math.round(r.top), bottom: Math.round(r.bottom), w: Math.round(r.width), h: Math.round(r.height) }; };
     const order = [...document.querySelectorAll('.boards > .board')].map((b) => b.id);
     /*
-      只数**卡片**：组件里带的 <script> / <style> 也是 .extras__grid 的直接子元素
-      （Astro 把小组件的脚本内联在它原处），但它们 display:none、不占格子，
-      算进"第几个格子"里只会让这条断言假红（2026-11-20 曼沫砾总线加明细卡片脚本时踩到）。
+      只数**占格子的卡**：组件里带的 <script> / <style> 是 .extras__grid 的直接子元素
+      （Astro 把小组件的脚本内联在它原处），但它们 display:none；
+      涣愿终池那张卡还带一个不放框里的定义区（.cistcard__defs，position:absolute、宽高 0），
+      也不占格子。这两类都要滤掉，否则"第几个格子"整个错位
+      （2026-11-21 换行序时踩到：cistern 后面多出一个 SVG，把黎语堂挤到第 5 位）。
     */
     const kids = [...document.querySelectorAll('.extras__grid > *')]
-      .filter((el) => !['SCRIPT', 'STYLE', 'LINK', 'TEMPLATE'].includes(el.tagName))
+      .filter((el) => !['SCRIPT', 'STYLE', 'LINK', 'TEMPLATE', 'SVG'].includes(el.tagName.toUpperCase()))
+      .filter((el) => getComputedStyle(el).position !== 'absolute')
       .map((el) => el.id || el.className);
     return {
       yongcheng: box('#yongcheng'),
       huaya: box('#huaya'),
       announce: box('#home-announce'),
       liyutang: box('#home-liyutang'),
+      cistern: box('#home-cistern'),
       cal: box('#home-cal'),
       ice: box('.ice'),
       daily: box('.dailyWrap'),
@@ -273,28 +277,30 @@ try {
   info(`新一屏的格子顺序：${geo.extraKids.join(' / ')}`);
   check('大板块那一行还是「甬城晴雨 / 花娅陌域」两块，顺序没变', geo.boardIds.join(',') === 'yongcheng,huaya');
   /*
-    行序（站长 2026-11-20 换的）：
+    行序（2026-11-20 换的；2026-11-21 又交换了「涣源溪水钟 ↔ 涣愿终池」）：
       第一行 曼沫砾总线 + 精华大殿（dailyWrap）
-      第二行 日历 + 黎语堂
-      第三行 终池 + 冰山/远位面
+      第二行 涣愿终池 + 黎语堂
+      第三行 涣源溪水钟 + 冰山/远位面
   */
   check(
-    '新一屏第一行是「曼沫砾总线 + 精华大殿」，第二行才是日历和黎语堂',
+    '新一屏第一行是「曼沫砾总线 + 精华大殿」，第二行是「涣愿终池 + 黎语堂」，第三行才是日历',
     geo.extraKids[0] === 'home-announce' &&
       geo.extraKids[1] === 'dailyWrap' &&
-      geo.extraKids[2] === 'home-cal' &&
-      geo.extraKids[3] === 'home-liyutang',
+      geo.extraKids[2] === 'home-cistern' &&
+      geo.extraKids[3] === 'home-liyutang' &&
+      geo.extraKids[4] === 'home-cal',
     geo.extraKids.join(' / ')
   );
   check(
-    '曼沫砾总线在甬城晴雨**下面**、日历**上面**',
+    '曼沫砾总线在甬城晴雨**下面**、第二行**上面**',
     geo.announce.top >= geo.yongcheng.bottom && geo.announce.bottom <= geo.cal.top,
     `甬城晴雨底 ${geo.yongcheng.bottom} ≤ 公告卡 ${geo.announce.top}..${geo.announce.bottom} ≤ 日历顶 ${geo.cal.top}`
   );
   check(
-    '黎语堂在花娅陌域**下面**、和日历**同一行**',
-    geo.liyutang.top >= geo.huaya.bottom && Math.abs(geo.liyutang.top - geo.cal.top) <= 2,
-    `花娅陌域底 ${geo.huaya.bottom} ≤ 黎语堂 ${geo.liyutang.top}..${geo.liyutang.bottom} / 日历顶 ${geo.cal.top}`
+    '黎语堂在花娅陌域**下面**、和涣愿终池**同一行**（涣愿终池在它左边）',
+    geo.liyutang.top >= geo.huaya.bottom && Math.abs(geo.liyutang.top - geo.cistern.top) <= 2
+      && geo.cistern.left < geo.liyutang.left,
+    `花娅陌域底 ${geo.huaya.bottom} ≤ 黎语堂 ${geo.liyutang.top}..${geo.liyutang.bottom} / 涣愿终池 ${geo.cistern.left},${geo.cistern.top}`
   );
   check(
     '公告卡和甬城晴雨**同一列**（左边缘对齐）',
@@ -313,9 +319,14 @@ try {
   );
   check('加了这两块之后首页没有横向溢出', geo.overflow <= 1, `${geo.overflow}px`);
   check(
-    '第二行「日历 / 黎语堂」顶边齐平',
-    Math.abs(geo.cal.top - geo.liyutang.top) <= 2,
-    `${geo.cal.top} / ${geo.liyutang.top}`
+    '第二行「涣愿终池 / 黎语堂」顶边齐平、底边也齐平',
+    Math.abs(geo.cistern.top - geo.liyutang.top) <= 2 && Math.abs(geo.cistern.bottom - geo.liyutang.bottom) <= 2,
+    `终池 ${geo.cistern.top}..${geo.cistern.bottom} / 黎语堂 ${geo.liyutang.top}..${geo.liyutang.bottom}`
+  );
+  check(
+    '涣源溪水钟在第三行（涣愿终池 / 黎语堂下面）',
+    geo.cal.top >= geo.cistern.bottom - 1,
+    `第二行底 ${geo.cistern.bottom} → 日历顶 ${geo.cal.top}`
   );
 
   /* ---------------- 首页：公告卡的条数和去向 ---------------- */

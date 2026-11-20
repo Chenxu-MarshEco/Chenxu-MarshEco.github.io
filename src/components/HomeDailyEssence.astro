@@ -1384,7 +1384,28 @@ const bibleLabel = biblePick ? `跳到铃忆圣经里的这一条：${bibleName}
     bibleCol?.addEventListener('pointerenter', () => setPop('bible'));
     essenceCol?.addEventListener('focusin', () => setPop('essence'));
     bibleCol?.addEventListener('focusin', () => setPop('bible'));
-    root.addEventListener('pointerleave', clearPop);
+    /*
+      浮层什么时候收起：指针**既不在这一块里、也不在成员名片（含它上面放大的头像）上**时才收。
+      为什么要放行 `.memlayer`（站长 2026-11-21）：
+        浮层 / 卡片里的成员名一悬停，名片就会被搬到 `.memlayer`（挂在 body 上的 position:fixed 层）——
+        它一出现，指针就"离开了这一块"。原来这里一离开就清标记，于是名片刚弹出、
+        精华 / 圣经的浮层立刻没了；再往名片里那颗头像上挪，头像放大的浮层又把名片顶掉，
+        一层套一层，最后什么都看不成。
+        原话：「放大成员头像后不要关闭成员和精华/圣经窗口 鼠标移开头像区域后正常关闭成员头像」。
+        名片和放大的头像都在 `.memlayer` 里，所以这里把那一层一起算成"还在里面"；
+        指针挪到别处时下一条 pointermove 就把它收起来。
+    */
+    const inMemLayer = (t: Element | null) => !!(t && t.closest && t.closest('.memlayer'));
+    document.addEventListener(
+      'pointermove',
+      (event) => {
+        if (!root.dataset.pop) return;
+        const t = event.target as Element | null;
+        if (t && (root.contains(t) || inMemLayer(t))) return;
+        clearPop();
+      },
+      { passive: true }
+    );
     root.addEventListener('focusout', (e) => {
       if (!root.contains((e as FocusEvent).relatedTarget as Node | null)) clearPop();
     });

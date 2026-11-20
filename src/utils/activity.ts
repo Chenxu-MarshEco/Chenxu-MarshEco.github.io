@@ -18,12 +18,13 @@
  *   站点每次发布都会重新构建，所以"后续推流动态也在那里显示"是成立的。
  */
 import { readCommits } from '../../tools/git/activity.mjs';
-import { detailForCommit } from '../../tools/git/activity-detail.mjs';
+import { detailForCommit, detailsForCommits } from '../../tools/git/activity-detail.mjs';
 import { ensureActors, resolveActor } from '../../tools/git/avatar-map.mjs';
 import site from '../site.config';
 import { flattenBoards, type BoardNode } from './boards';
 import { announceHref, announceList } from './announce';
 import { salonEssences } from './salon';
+import { toIso } from './logs';
 import { navCategories } from './navs';
 import { timelines } from './timelines';
 import { withBase } from './url';
@@ -107,7 +108,13 @@ const hrefOf = (panel: string, id: string): string => {
   if (panel === '导航') return navUrl.get(id) ?? '';
   if (panel === '时间轴') return timelineUrl.get(id) ?? '';
   if (panel === '文章' || panel === '手记') return id;
-  if (panel === '眠鱼志') return `/logs/${id}/`;
+  /*
+    ⚠ 眠鱼志的 id 是日志里那个点号日期（`2026.10.9`），单日页的地址却是补零的
+    `/logs/2026-10-09/`。所以要过一遍 `toIso`（和日志页自己用的是同一个函数）——
+    原来直接把点换成横线，`2026.10.9` 就成了 `/logs/2026-10-9/`，点进去全是 404
+    （站长 2026-11-21 报的）。
+  */
+  if (panel === '眠鱼志') return `/logs/${toIso(String(id))}/`;
   return '';
 };
 
@@ -135,8 +142,10 @@ let fullCache: ActivityEntry[] | null = null;
 /**
  * 算一批动态。
  * @param limit       读多少条提交（`Infinity` = 全部）
- * @param withDetails 要不要算「具体改了哪几条」（首页那 4 条要，整页列表不要 ——
- *                    317 条每条都去 diff 一遍要四十多秒，那一页也用不上）
+ * @param withDetails 要不要算「具体改了哪几条」
+ *                    首页那几条和 `/feed/` 整页都要（站长 2026-11-21：
+ *                    「点入推流动态详情页后 里面的内容也要和首页一样详细显示改了哪些部分」）。
+ *                    历史版本走 `prefetchBlobs` 一次批量读，所以整页也算得动。
  */
 async function build(limit: number, withDetails: boolean): Promise<ActivityEntry[]> {
   let data: { commits?: Record<string, unknown>[] } | null = null;
@@ -144,6 +153,24 @@ async function build(limit: number, withDetails: boolean): Promise<ActivityEntry
     data = readCommits({ limit: Number.isFinite(limit) ? limit : 100000 });
   } catch {
     data = null;
+  }
+  /*
+    明细要用到"改动前 / 改动后"两份文件。先一次性把它们从 git 里批量读出来
+    （`git cat-file --batch`，一个进程），后面每条提交就不用再各起一堆 git 了 ——
+    否则 `/feed/` 那种三百多条的页面光读历史版本就得四十多秒。
+  */
+  const detailBySha = new Map<string, ReturnType<typeof detailForCommit>>();
+  if (withDetails) {
+    try {
+      const commits = (data?.commits ?? []) as { sha?: string; files?: string[] }[];
+      const all = detailsForCommits(commits, process.cwd());
+      commits.forEach((c, i) => {
+        const sha = String(c?.sha ?? '');
+        if (sha) detailBySha.set(sha, all[i] ?? []);
+      });
+    } catch {
+      /* 明细算不出来不影响列表本身 */
+    }
   }
   /*
     署名 → GitHub 用户名 / 头像（一次请求，失败就退化）。
@@ -166,22 +193,18 @@ async function build(limit: number, withDetails: boolean): Promise<ActivityEntry
     const files = Array.isArray(c.files) ? (c.files as string[]) : [];
     const detail: ActivityPanel[] = [];
     if (withDetails) {
-      try {
-        /* ⚠ cwd 显式传：构建时这个模块被 Vite 打包，import.meta.url 算出来的根是错的 */
-        for (const p of detailForCommit({ sha, files, cwd: process.cwd() })) {
-          const items = p.items
-            .map((it, i) => ({
-              key: `${sha}-${p.panel}-${i}`,
-              change: it.change,
-              label: it.label,
-              href: link(hrefOf(p.panel, it.id)),
-            }))
-            /* 明细太多就截断：卡片里放不下，也没人看得完 */
-            .slice(0, 24);
-          if (items.length) detail.push({ panel: p.panel, items });
-        }
-      } catch {
-        /* 明细算不出来不影响这一条动态本身 */
+      /* 历史版本已经在上面批量读过（detailBySha），这里只是把它按面板整理出来 */
+      for (const p of detailBySha.get(sha) ?? []) {
+        const items = p.items
+          .map((it, i) => ({
+            key: `${sha}-${p.panel}-${i}`,
+            change: it.change,
+            label: it.label,
+            href: link(hrefOf(p.panel, it.id)),
+          }))
+          /* 明细太多就截断：卡片里放不下，也没人看得完 */
+          .slice(0, 24);
+        if (items.length) detail.push({ panel: p.panel, items });
       }
     }
     const author = (c.author ?? {}) as { name?: string; email?: string };
@@ -223,8 +246,12 @@ export async function recentActivity(limit = LIMIT): Promise<ActivityEntry[]> {
  * 站长 2026-11-20：「加个推流动态按钮可以跳转到一个页面可以查看所有推流动态
  * 并且进去的都可以一直储存在那里 就像日志一样」——
  * 所以这里**不封顶**：git 里有多少条提交就列多少条，一条都不会因为时间久了消失。
+ *
+ * 2026-11-21 起**带明细**（站长：「点入推流动态详情页后 里面的内容也要和首页一样
+ * 详细显示改了哪些部分 可以点击链接跳转 现在里面什么跳转都没有」）。
+ * 历史版本是 `git cat-file --batch` 一次性读的，三百多条也只是一两秒。
  */
 export async function allActivity(): Promise<ActivityEntry[]> {
-  if (!fullCache) fullCache = await build(Number.POSITIVE_INFINITY, false);
+  if (!fullCache) fullCache = await build(Number.POSITIVE_INFINITY, true);
   return fullCache;
 }

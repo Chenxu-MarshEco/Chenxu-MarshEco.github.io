@@ -39,8 +39,12 @@ export interface LogDay {
   excerpt: string;
 }
 
-/** `2026.9.14` → `2026-09-14`；认不出来就把点换成横线，URL 里照样能用 */
-function toIso(date: string): string {
+/**
+ * `2026.9.14` → `2026-09-14`；认不出来就把点换成横线，URL 里照样能用。
+ * 导出是给推流动态那边用的（它的 id 就是日志里那个点号日期，拼地址要同一套写法，
+ * 否则 `/logs/2026-10-9/` 这种少一个零的地址会 404 —— 2026-11-21 踩过）。
+ */
+export function toIso(date: string): string {
   const m = /^(\d{4})[.\-/](\d{1,2})[.\-/](\d{1,2})$/.exec(date.trim());
   if (!m) return date.trim().replace(/[.\s/]+/g, '-');
   return `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}`;

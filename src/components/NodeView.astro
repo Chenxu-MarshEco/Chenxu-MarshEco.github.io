@@ -271,7 +271,8 @@ const layout = wantLayout === 'region' && children.length >= 4 ? 'region' : 'sta
     text-shadow: 0 0 10px rgba(255, 79, 163, 0.9);
   }
   .crumbs__sep {
-    color: rgba(255, 226, 244, 0.45);
+    /* 0.45 压在这块深紫底上只有 3.9:1，提到 0.62（站长 2026-11-21 让把看不清的字都调亮） */
+    color: rgba(255, 226, 244, 0.62);
   }
   .crumbs__here {
     color: rgba(255, 226, 244, 0.7);

@@ -121,8 +121,12 @@ const url = external ? rawHref : withBase(rawHref);
   .cistcard {
     position: relative;
     display: flex;
-    /* 标题在**左上角**（和「曼沫砾总线 / 涣源溪水钟」那两张一样），不是压在底下 */
-    align-items: flex-start;
+    /*
+      标题在**左下角**，和「黎语堂」那张卡同一个位置（站长 2026-11-21：
+      「修改涣愿终池四个字的位置 使其和黎语堂相对自己页面卡片的位置一样
+       黎语堂和涣愿终池标题字位置一致大小一致只是风格颜色不同」）。
+    */
+    align-items: flex-end;
     height: 100%;
     min-width: 0;
     overflow: hidden;
@@ -283,12 +287,15 @@ const url = external ? rawHref : withBase(rawHref);
     pointer-events: none;
   }
 
-  /* 标题这一行按「曼沫砾总线 / 涣源溪水钟」那一套摆：左上角、跟那条 head 同一个字号 */
+  /*
+    标题这一行的内边距和「黎语堂」那张卡一致（同一个 clamp）——
+    两张卡并排时标题离左边 / 底边的距离必须一样。
+  */
   .cistcard__body {
     position: relative;
     display: block;
     width: 100%;
-    padding: 0.62rem 0.8rem 0.7rem;
+    padding: clamp(0.85rem, 2vw, 1.3rem);
     background: none;
   }
   /*
@@ -302,9 +309,10 @@ const url = external ? rawHref : withBase(rawHref);
   */
   .cistcard__title {
     display: block;
-    font-size: 1rem;
+    /* 字号和字距跟「黎语堂」的标题一模一样，只是颜色 / 材质是千禧绿那套 */
+    font-size: clamp(1.2rem, 2.2vw, 1.7rem);
     font-weight: 700;
-    letter-spacing: 0.14em;
+    letter-spacing: 0.12em;
     background:
       radial-gradient(120% 90% at 22% 4%, rgba(255, 255, 255, 0.92) 0%, rgba(255, 255, 255, 0) 46%),
       linear-gradient(180deg, #f7ffe1 0%, #ddff9b 24%, #b0f640 50%, #86d314 74%, #4e8f0c 100%);
