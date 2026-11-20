@@ -1181,6 +1181,49 @@ body.is-iceberg .site-footer {
     transform: none;
   }
 }
+/* 首页「曼沫砾总线」右栏那块推流动态的明细卡片浮层（和上面的 .memlayer 一个套路）。
+   卡片本身在 HomeAnnounce.astro 里是 `display:none`，脚本把它搬进这里再显示 ——
+   固定定位不受任何祖先 overflow 影响，也不会给谁增加滚动区。 */
+.annlayer {
+  position: fixed;
+  inset: 0;
+  z-index: 9980;
+  pointer-events: none;
+}
+.annlayer .ann__detail[data-feed-card] {
+  position: fixed;
+  display: block;
+  max-width: min(24rem, 86vw);
+  max-height: min(58vh, 26rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid rgba(255, 120, 190, 0.6);
+  border-radius: 12px;
+  background: rgba(24, 3, 36, 0.97);
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.4) inset,
+    0 16px 40px -18px rgb(0 0 0 / 0.92);
+  backdrop-filter: blur(5px);
+  pointer-events: auto;
+  scrollbar-width: thin;
+  /*
+    手感照每日精华那张卡（HomeDailyEssence 的 .daily__pop）：
+    0.15s 的透明度 + 位移过渡，**不是** keyframes 入场 ——
+    入场动画每次重播会让人觉得"慢半拍"，过渡则跟手。
+  */
+  opacity: 0;
+  transform: translateY(6px) scale(0.99);
+  transform-origin: 0 100%;
+  transition:
+    opacity 0.15s ease,
+    transform 0.15s ease;
+}
+.annlayer .ann__detail.is-open {
+  opacity: 1;
+  transform: none;
+}
+
 
 /* ---------------------------------------------------------------------------
    头像：平时 42px 圆；鼠标移上去 → 放大成一个方形框显示**整张图**

@@ -240,7 +240,14 @@ try {
     const q = (s) => document.querySelector(s);
     const box = (s) => { const el = q(s); if (!el) return null; const r = el.getBoundingClientRect(); return { left: Math.round(r.left), right: Math.round(r.right), top: Math.round(r.top), bottom: Math.round(r.bottom), w: Math.round(r.width), h: Math.round(r.height) }; };
     const order = [...document.querySelectorAll('.boards > .board')].map((b) => b.id);
-    const kids = [...document.querySelectorAll('.extras__grid > *')].map((el) => el.id || el.className);
+    /*
+      只数**卡片**：组件里带的 <script> / <style> 也是 .extras__grid 的直接子元素
+      （Astro 把小组件的脚本内联在它原处），但它们 display:none、不占格子，
+      算进"第几个格子"里只会让这条断言假红（2026-11-20 曼沫砾总线加明细卡片脚本时踩到）。
+    */
+    const kids = [...document.querySelectorAll('.extras__grid > *')]
+      .filter((el) => !['SCRIPT', 'STYLE', 'LINK', 'TEMPLATE'].includes(el.tagName))
+      .map((el) => el.id || el.className);
     return {
       yongcheng: box('#yongcheng'),
       huaya: box('#huaya'),
@@ -379,7 +386,12 @@ try {
       board.updateLinks.every((h, i) => h === (updatesInOrder[i].href || null)),
     board.updateLinks.join(' , ')
   );
-  check('顶上那段话报了条数', board.lead.includes(String(annItems.length)), board.lead.trim().slice(0, 60));
+  /*
+    这条原来断的是「顶上那段话报了条数」—— 站长 2026-11-20 点名把那句话删了
+    （原话：「删掉曼沫砾总线里 本站的公告栏：一共 7 条 ——…」），
+    所以现在反过来断**它确实不在了**。
+  */
+  check('顶上那段报条数的话已经删掉', board.lead.trim() === '', board.lead.trim().slice(0, 60));
 
   /* ---------------- 事项公告正文页 ---------------- */
   console.log('\n=== ② 事项公告正文页（和文章 / 手记一套皮）===');

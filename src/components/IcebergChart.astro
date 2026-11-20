@@ -180,6 +180,8 @@ const dataOf = (it: { name: string; tags: string[]; desc: string }, tagNames: st
                   return (
                     <li
                       class="ibk__cell"
+                      /* 锚点：首页「近期更新」的明细卡片点进来要落在这一条上（/iceberg/#i102） */
+                      id={it.id}
                       data-cats={it.categoryIds.join(' ')}
                       data-done={done ? '1' : '0'}
                       hidden={allOff ? true : undefined}
@@ -416,6 +418,23 @@ const dataOf = (it: { name: string; tags: string[]; desc: string }, tagNames: st
   }
   .ibk__cell {
     display: inline-flex;
+    /*
+      从别处点进来（首页「近期更新」的明细卡片 → /iceberg/#i102）时，
+      这一条要落在吸顶那排分类卡下面，不能被它压住。
+    */
+    scroll-margin-top: calc(var(--ibk-top, 4.5rem) + 3.4rem);
+  }
+  /* 跳过来的那一条闪一下，让人一眼看到"就是它" */
+  .ibk__cell:target .ibk__item {
+    animation: ibkHit 1.8s ease-out;
+  }
+  @keyframes ibkHit {
+    0% {
+      box-shadow: 0 0 0 2px rgba(255, 120, 190, 0.9), 0 0 22px rgba(255, 79, 163, 0.8);
+    }
+    100% {
+      box-shadow: 0 0 0 0 rgba(255, 120, 190, 0), 0 0 0 rgba(255, 79, 163, 0);
+    }
   }
   /*
     条目文字用 --ink：深底上就是分类色本身（亮色才看得清）。

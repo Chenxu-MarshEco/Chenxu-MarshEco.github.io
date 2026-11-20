@@ -29,18 +29,10 @@ const missingHref = text(copy.announce?.missingHref);
 const emptyText = text(copy.announce?.empty);
 const all = announceList();
 const groups = announceGroups(all);
-const noticeCount = all.filter((a) => a.kind === 'notice').length;
-const updateCount = all.length - noticeCount;
 ---
 
 <BoardLayout title={board.title} backLabel="返回首页">
   <div class="alb" data-announce-board>
-    <p class="alb__lead">
-      {board.subtitle || '本站的公告栏'}：一共 {all.length} 条 ——
-      <b>事项公告</b> {noticeCount} 条（有正文，点标题进那一页）、
-      <b>更新提醒</b> {updateCount} 条（点标题直接跳过去）。
-    </p>
-
     {
       groups.length === 0 ? (
         emptyText && <p class="alb__empty" data-copy="announce.empty">{emptyText}</p>
@@ -89,17 +81,7 @@ const updateCount = all.length - noticeCount;
     padding-bottom: 3rem;
   }
 
-  .alb__lead {
-    margin: 0 0 1.4rem;
-    font-size: 0.9rem;
-    line-height: 1.9;
-    color: rgba(255, 226, 244, 0.8);
-  }
-  .alb__lead b {
-    color: #ffd9ef;
-    font-weight: 600;
-  }
-
+    
   .alb__group + .alb__group {
     margin-top: 1.6rem;
   }
