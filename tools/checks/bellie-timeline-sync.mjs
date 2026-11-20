@@ -99,6 +99,12 @@ class CDP {
   }
 }
 
+/** 在正文那一栏里发一次真的滚轮事件（比 window.scrollBy 更接近用户的手） */
+const pageWheel = async (cdp, dy) => {
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseWheel', x: 720, y: 450, deltaX: 0, deltaY: dy, modifiers: 0, pointerType: 'mouse' });
+  await sleep(320);
+};
+
 /* 读数：轴上的"当前日期" + 视口中心那条的日期 + 装载了多少条 */
 const SNAP = `(() => {
   const now = document.querySelector('[data-tl-nowdate]');
@@ -192,8 +198,7 @@ try {
     })()`);
     check(`[${label}] 点时间轴上的塔吊会跳到那一条（页面真的滚了）`, jumped.ok && jumped.after !== jumped.before, JSON.stringify(jumped));
 
-    /* 分块里的成员名有没有名片 */
-    const mem = await cdp.ev(`(() => {
+    /* 分块里的成员名有没有名片 */    const mem = await cdp.ev(`(() => {
       const chunks = [...document.querySelectorAll('.salon__chunk')];
       const dyn = chunks.filter((b) => b.dataset.chunk !== String(document.querySelector('[data-salon]')?.dataset.chunkLast));
       const inDyn = dyn.reduce((n, b) => n + b.querySelectorAll('.mem').length, 0);
@@ -274,6 +279,69 @@ try {
       `[${label}] 点成员卡只看这个人的条目、再点一下恢复`,
       filt.ok && filt.shown > 0 && filt.wrong === 0 && filt.after === filt.before,
       JSON.stringify(filt)
+    );
+
+    /*
+      手动滚一下轴（指针放在左边那条轴里）、再滚页面：
+      轴必须被"接回来"按页面重新算 —— 站长 2026-11-21：「一旦鼠标手动滚动了时间轴
+      或是点击了时间轴上的点进行跳转后 继续滚动圣经页 时间轴又不会跟着动了」。
+    */
+    const axisBox = await cdp.ev(`(() => {
+      const b = document.querySelector('[data-tl-body]');
+      if (!b) return null;
+      const r = b.getBoundingClientRect();
+      return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) };
+    })()`);
+    for (let i = 0; i < 4; i += 1) {
+      await cdp.send('Input.dispatchMouseEvent', {
+        type: 'mouseWheel', x: axisBox.x, y: axisBox.y, deltaX: 0, deltaY: -320, modifiers: 0, pointerType: 'mouse',
+      });
+      await sleep(90);
+    }
+    const afterAxis = await cdp.ev(SNAP);
+    const afterAxisTrace = [];
+    for (let k = 0; k < 3; k += 1) {
+      /* 往下滚（前面几次跳转可能已经把我们带到列表最顶上，那儿再往上滚是不动的，
+         页面不动就不会有 scroll 事件 —— 那样测的就不是"接回来"了） */
+      await pageWheel(cdp, +520);
+      await sleep(500);
+      afterAxisTrace.push(await cdp.ev(SNAP));
+    }
+    const axisBackOff = afterAxisTrace.filter((t) => t.mid && ymd(t.now) && ymd(t.now) !== ymd(t.mid));
+    check(
+      `[${label}] 手动滚过轴之后，再滚页面轴会被接回来（不是一直冻在手动滚到的位置）`,
+      afterAxisTrace.length === 3 && axisBackOff.length === 0,
+      `手动滚到 ${afterAxis.now} → ` +
+        (axisBackOff.length ? axisBackOff.map((t) => `轴${ymd(t.now)}≠列表${ymd(t.mid)}`).join('、') : afterAxisTrace.map((t) => t.now).join(' → ')) +
+        ``
+    );
+
+    /*
+      点轴上的塔吊跳一次，然后再往上 / 往下滚：每屏都要对得上
+      （整簇被换掉的时候名单会整个过期，正是这里出过"轴从此不动"的毛病）。
+    */
+    await cdp.ev(`(() => {
+      const list = [...document.querySelectorAll('.tl [data-tl-item]')].filter((el) => {
+        const r = el.getBoundingClientRect();
+        return el.style.visibility !== 'hidden' && r.top > 120 && r.top < innerHeight - 120;
+      });
+      const it = list[Math.floor(list.length / 2)];
+      if (it) it.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+      return !!it;
+    })()`);
+    await sleep(2200);
+    const jumpTrace = [];
+    for (const dy of [+450, +450, -450, -450, +450]) {
+      await pageWheel(cdp, dy);
+      await sleep(500);
+      jumpTrace.push(await cdp.ev(SNAP));
+    }
+    const jumpOff = jumpTrace.filter((t) => t.mid && ymd(t.now) && ymd(t.now) !== ymd(t.mid));
+    check(
+      `[${label}] 点轴跳转之后再上上下下滚，轴每一屏都还跟得上`,
+      jumpOff.length === 0,
+      jumpOff.length ? jumpOff.map((t) => `轴${ymd(t.now)}≠列表${ymd(t.mid)}`).join('、') : jumpTrace.map((t) => t.now).join(' → ') +
+        ``
     );
 
     check(`[${label}] 这一趟没有 JS 报错`, cdp.errors.length === 0, cdp.errors.slice(0, 3).join(' | '));

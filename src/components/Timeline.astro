@@ -2763,30 +2763,52 @@ const initialScaleText = `一刻度约 ${
       一进去就冻住；精华那一页条目跨度大，冻住的地方离落地位置远，才显得"一直正常"。
     */
     let marked: HTMLElement[] = [];
-    /** 重新认一遍页面上认领了时间点的成分（文档顺序，二分要靠它递增） */
-    function collectMarked(): HTMLElement[] {
-      marked = Array.from(document.querySelectorAll<HTMLElement>('[data-tl-param]'));
-      return marked;
-    }
-    collectMarked();
-    let activeEl: HTMLElement | null = null;
     /** 每条成分中线的文档 y（随文档顺序递增），null = 还没量过 */
     let idxMid: number[] | null = null;
     let idxDirty = true;
+    /**
+     * 重新认一遍页面上认领了时间点的成分（文档顺序，二分要靠它递增）。
+     * ⚠ 认到的如果是**另一批元素**（哪怕数量一样），位置缓存就作废 —— 页面重建窗口时
+     * 「数量不变、人全换了」是可能的，只比长度会漏掉（2026-11-21 那次冻结就是这么漏的）。
+     */
+    function collectMarked(): HTMLElement[] {
+      const next = Array.from(document.querySelectorAll<HTMLElement>('[data-tl-param]'));
+      const changed =
+        next.length !== marked.length ||
+        (next.length > 0 && (next[0] !== marked[0] || next[next.length - 1] !== marked[marked.length - 1]));
+      marked = next;
+      if (changed) idxDirty = true;
+      return marked;
+    }
+    collectMarked();
     const markDirty = () => {
       idxDirty = true;
     };
 
     function ensureIndex() {
-      if (!idxDirty && idxMid && idxMid.length === marked.length) return;
+      /*
+        「名单过期了」的三种样子，任何一种都得重来一遍：
+          ① 有人喊过 `tl:reindex`（分块装载、筛选都喊）；
+          ② 成分数量变了；
+          ③ **名单里第一条已经不在文档里了** —— 这一条是给"整簇被换掉"用的
+             （`/bellie/` 点轴跳转离得远时，页面会把窗口整段重建：旧簇 remove、新簇 insert）。
+             ③ 是 O(1) 的 `isConnected`，不用再查一遍 DOM，所以每帧都能负担。
+        不查这一下会怎样（2026-11-21 站长报的第二个 bug）：重建之后 `marked`/`idxMid` 还是旧的
+        那一批元素，它们已经从文档上摘下来了，二分就在这些"看不见的元素"上挑 ——
+        挑出来的 param 永远是老那一天的，于是**轴从此不再跟着滚**，而页面本身滚得好好的。
+      */
+      const stale =
+        idxDirty ||
+        !idxMid ||
+        idxMid.length !== marked.length ||
+        (marked.length > 0 && !marked[0].isConnected);
+      if (!stale) return;
       /*
         走到这儿就说明"布局真的变了"，而布局变往往意味着成分也多了/少了
         （分块装载插进来新的、搜索筛选藏掉一批、置顶重画整簇），所以先重认一遍。
         纯算术，不碰布局；和下面那次 rect 读取放在一起，不多一次强制同步布局。
       */
       collectMarked();
-      /* 被重画掉的那个（innerHTML 换过）已经不在文档里了，别让它继续挡着更新 */
-      if (activeEl && !activeEl.isConnected) activeEl = null;
       const sy = window.scrollY;
       idxMid = marked.map((el) => {
         const r = el.getBoundingClientRect();
@@ -2822,17 +2844,33 @@ const initialScaleText = `一刻度约 ${
     }
 
     function syncFromPage() {
-      if (!open || !marked.length) return;
+      if (!open) return;
       const i = nearestIndex();
       if (i < 0) return;
       const best = marked[i];
-      if (!best || best === activeEl) return;
-      activeEl = best;
-      const t = Number(best.dataset.tlParam);
-      if (Number.isFinite(t)) {
-        cur = t;
-        paint();
+      if (!best) return;
+      /*
+        挑到一条**已经不在文档里**的（整簇被换掉之后缓存还在）：这一次别用它的 param，
+        先作废缓存、下一帧按新的名单再算。
+      */
+      if (!best.isConnected) {
+        markDirty();
+        queueSync();
+        return;
       }
+      const t = Number(best.dataset.tlParam);
+      if (!Number.isFinite(t)) return;
+      /*
+        ⚠ 判据是"轴现在停的位置和页面上该停的位置**对不对得上**"，不是"是不是同一条"。
+        原来这里存了一个 `activeEl`（上次同步到的那条），只要它还是最近的那条就早退 ——
+        手动滚过轴之后，`cur` 已经被滚到别处去了，可 `activeEl` 还指着页面上那条，
+        于是下一次页面滚动照样早退：轴就那样冻住（站长 2026-11-21：「一旦鼠标手动滚动了
+        时间轴……继续滚动圣经页 时间轴又不会跟着动了」）。改用 param 比较之后，
+        只要两边不一致就重新对齐，手动滚过也会被接回来。
+      */
+      if (Math.abs(t - cur) < 1e-6) return;
+      cur = t;
+      paint();
     }
 
     /* 一帧最多同步一次：滚一下可能来好几个 scroll 事件，没必要跟着跑好几遍 */
@@ -2952,7 +2990,6 @@ const initialScaleText = `一刻度约 ${
           if (i >= 0) {
             const t = Number(marked[i].dataset.tlParam);
             if (Number.isFinite(t)) cur = t;
-            activeEl = marked[i];
           }
         }
         paint();
@@ -2977,6 +3014,10 @@ const initialScaleText = `一刻度约 ${
           滚多大一截，刻度就走多大一截：deltaY 是像素，除 V 换成参数。
           往上滚（deltaY 为负）→ 参数变小 → 看到更早的事件，
           同时事件整体往下走，和平时滚页面一个方向感。
+
+          ⚠ 这里只改 `cur`，不去动"跟页面"那套状态：`syncFromPage()` 判的是
+          「轴停的位置和页面该停的位置对不对得上」（比 param），所以手动滚过之后
+          再滚页面照样会被接回来 —— 见那边 syncFromPage 的说明。
         */
         cur = Math.max(0, Math.min(1, cur + e.deltaY / V));
         paint();
