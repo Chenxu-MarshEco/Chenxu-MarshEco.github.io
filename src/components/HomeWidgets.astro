@@ -34,7 +34,6 @@
 import HomeAnnounce from './HomeAnnounce.astro';
 import HomeLiyutang from './HomeLiyutang.astro';
 import HomeCalendar from './HomeCalendar.astro';
-import HomePlaceholder from './HomePlaceholder.astro';
 import HomeIceberg from './HomeIceberg.astro';
 import HomeDailyEssence from './HomeDailyEssence.astro';
 import HomeCistern from './HomeCistern.astro';
@@ -51,29 +50,29 @@ const boardDx = (() => {
 
 <section
   class="extras"
-  aria-label="首页：曼沫砾总线 / 黎语堂 / 涣源溪水钟 / 冰室冰山 / 每日精华 / 涣愿终池 / 预留卡 / 花娅远位面"
+  aria-label="首页：曼沫砾总线 / 精华大殿 / 涣源溪水钟 / 黎语堂 / 涣愿终池 / 冰室冰山 / 花娅远位面"
 >
   <div class="extras__grid" style={boardDx}>
     {/*
-      第一行：公告栏（左，甬城晴雨那一列）+ 黎语堂（右，花娅陌域那一列）。
-      顺序就是 DOM 顺序 —— 栅格自动铺行，所以"在甬城晴雨下方、日历上方"这件事
-      是由这两行的先后决定的，不需要任何定位。
+      行序（2026-11-20 站长要求调整，卡片本身的宽高与对称关系一概没动）：
+        第一行：曼沫砾总线（左）+ 精华大殿（右）
+        第二行：涣源溪水钟（左）+ 黎语堂（右）
+        第三行：涣愿终池（左）+ 冰室冰山 / 花娅远位面（右）
+      原话：「改完以后 上下交换精华大殿和黎语堂的位置 让精华大殿在曼沫砾总线右边
+      黎语堂在涣源溪水钟右边」「把冰室冰山板块挪到下面花娅远位面板块左边的预备板块上」。
+      DOM 顺序就是栅格顺序，所以换位置只改这几行的先后，不碰任何尺寸。
     */}
     <HomeAnnounce />
-    <HomeLiyutang />
-    {/* 第二行：日历 + 冰室冰山/每日精华（和加这两块之前一模一样） */}
+    <HomeDailyEssence />
     <HomeCalendar />
-    <div class="extras__pair">
-      <HomeIceberg />
-      <HomeDailyEssence />
-    </div>
+    <HomeLiyutang />
     {/*
       第三行（2026-11-18）：涣愿终池占左边那张大卡（和日历同宽同高），
-      右边并排两张小卡：预留卡（原来涣愿终池那一格）+ 花娅远位面。
+      右边并排两张小卡：冰室冰山（挪到原来预留卡那一格）+ 花娅远位面。
     */}
     <HomeCistern />
     <div class="extras__pair extras__pair--under">
-      <HomePlaceholder />
+      <HomeIceberg />
       <HomeFarland />
     </div>
   </div>

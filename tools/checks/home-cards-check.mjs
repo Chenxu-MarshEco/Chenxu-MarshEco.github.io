@@ -168,7 +168,7 @@ const snap = async () => {
     const ice = box('.ice');
     const daily = box('.daily');
     const cistern = box('#home-cistern');
-    const placeholder = box('#home-placeholder');
+    const placeholder = box('#home-placeholder'); /* 2026-11-20 起这一格是冰室冰山，不再有预留卡 */
     const farland = box('#home-farland');
     /* 行与行之间的缝（底边 → 顶边），用来验"所有缝一样宽" */
     const gap = (a, b) => (a && b) ? Math.round((b.y - a.bottom) * 10) / 10 : null;
@@ -196,30 +196,33 @@ info(`1440：日历 ${JSON.stringify(g.cal)}`);
 info(`1440：涣愿终池 ${JSON.stringify(g.cistern)}`);
 info(`1440：预留卡 ${JSON.stringify(g.placeholder)} / 花娅远位面 ${JSON.stringify(g.farland)}`);
 
-check('★ 三张卡都在页面上（涣愿终池 / 预留卡 / 花娅远位面）',
-  !!g.placeholder && !!g.cistern && !!g.farland, JSON.stringify({ 终池: !!g.cistern, 预留: !!g.placeholder, 远位面: !!g.farland }));
+check('★ 三张卡都在页面上（涣愿终池 / 冰室冰山 / 花娅远位面）',
+  !!g.ice && !!g.cistern && !!g.farland, JSON.stringify({ 终池: !!g.cistern, 冰山: !!g.ice, 远位面: !!g.farland }));
 check('★ 涣愿终池在「涣源溪水钟」**正下方**（同一列、同一格，顶边在日历底边之下）',
   !!g.cistern && near(g.cistern.x, g.cal.x) && g.cistern.y >= g.cal.bottom - 1,
   JSON.stringify({ 终池: g.cistern, 日历底: g.cal?.bottom }));
-check('★ 预留卡 / 花娅远位面在「冰室冰山 / 每日精华」**正下方**',
-  !!g.placeholder && !!g.farland && g.placeholder.y >= g.ice.bottom - 1 && g.farland.y >= g.daily.bottom - 1,
-  JSON.stringify({ 预留顶: g.placeholder?.y, 冰山底: g.ice?.bottom, 远位面顶: g.farland?.y, 精华底: g.daily?.bottom }));
-check('预留卡在左、花娅远位面在右（和上面冰山 / 精华同一个左右关系）',
-  g.placeholder.x < g.farland.x && near(g.placeholder.x, g.ice.x) && near(g.farland.right, g.daily.right),
-  JSON.stringify({ 预留x: g.placeholder?.x, 冰山x: g.ice?.x, 远位面右: g.farland?.right, 精华右: g.daily?.right }));
+/*
+  第三行右边那一对：站长 2026-11-20 把冰室冰山从第二行挪到了原来预留卡那一格，
+  所以现在这一对是「冰室冰山 / 花娅远位面」，在**日历 / 黎语堂**那一行正下方。
+*/
+check('★ 冰室冰山 / 花娅远位面在「日历 / 黎语堂」**正下方**',
+  !!g.ice && !!g.farland && g.ice.y >= g.cal.bottom - 1 && g.farland.y >= g.lyt.bottom - 1,
+  JSON.stringify({ 冰山顶: g.ice?.y, 日历底: g.cal?.bottom, 远位面顶: g.farland?.y, 黎语堂底: g.lyt?.bottom }));
+check('冰室冰山在左、花娅远位面在右，左右边各自贴齐那一列',
+  g.ice.x < g.farland.x && near(g.ice.x, g.lyt.x) && near(g.farland.right, g.lyt.right),
+  JSON.stringify({ 冰山x: g.ice?.x, 黎语堂左: g.lyt?.x, 远位面右: g.farland?.right, 黎语堂右: g.lyt?.right }));
 
 /* ------------------------------------------------------------------ ② 尺寸对齐 */
 check('★ 涣愿终池和日历**同宽同高**（±2px）',
   near(g.cistern.w, g.cal.w) && near(g.cistern.h, g.cal.h),
   `${g.cistern.w}×${g.cistern.h} vs ${g.cal.w}×${g.cal.h}`);
-check('★ 预留卡 / 花娅远位面跟上面那两张小卡**一样宽一样高**（±2px）',
-  near(g.placeholder.w, g.ice.w) && near(g.placeholder.h, g.ice.h) &&
-    near(g.farland.w, g.daily.w) && near(g.farland.h, g.daily.h),
-  `预留 ${g.placeholder.w}×${g.placeholder.h} vs 冰山 ${g.ice.w}×${g.ice.h}；远位面 ${g.farland.w}×${g.farland.h} vs 精华 ${g.daily.w}×${g.daily.h}`);
+check('★ 冰室冰山 / 花娅远位面**一样宽一样高**（同一对里的两张，±2px）',
+  near(g.ice.w, g.farland.w) && near(g.ice.h, g.farland.h),
+  `冰山 ${g.ice.w}×${g.ice.h}；远位面 ${g.farland.w}×${g.farland.h}`);
 check('★ 第三行三张卡**底边对齐**（同一行高）',
-  near(g.cistern.bottom, g.placeholder.bottom) && near(g.placeholder.bottom, g.farland.bottom) &&
+  near(g.cistern.bottom, g.ice.bottom) && near(g.ice.bottom, g.farland.bottom) &&
     near(g.cistern.h, g.farland.h),
-  `${g.cistern.bottom} / ${g.placeholder.bottom} / ${g.farland.bottom}`);
+  `${g.cistern.bottom} / ${g.ice.bottom} / ${g.farland.bottom}`);
 check('加了这三张卡之后首页没有横向溢出', g.overflowX <= 1, `${g.overflowX}px`);
 
 /* ------------------------------------------------------------------ ②b 所有缝一样宽 */
@@ -229,21 +232,11 @@ check('★ 首页行与行之间的缝**一样宽**（大板块→第一行 / �
   gapVals.every((v) => typeof v === 'number') && Math.max(...gapVals) - Math.min(...gapVals) <= 2,
   JSON.stringify(g.gaps));
 
-/* ------------------------------------------------------------------ ③ 预留卡默认是空的 */
-const ph = await cdp.ev(`(() => {
-  const n = document.querySelector('#home-placeholder');
-  if (!n) return null;
-  return {
-    text: (n.innerText || '').trim(),
-    tag: n.tagName,
-    dashed: getComputedStyle(n).borderTopStyle,
-    hasImg: !!n.querySelector('img'),
-  };
-})()`);
-check('★ 预留卡默认**一个字都没有**（站规：不许自己写文案）',
-  !!ph && ph.text === '', JSON.stringify(ph?.text));
-check('预留卡空着时是虚线框（看得出"这里留了位置"）', ph?.dashed === 'dashed', ph?.dashed);
-check('预留卡空着时不是链接（点了不该装作能点）', ph?.tag !== 'A', ph?.tag);
+/*
+  ③ 原来这里断的是「预留卡默认是空的」——
+  2026-11-20 站长把冰室冰山挪进了那一格，页面上已经没有预留卡了，
+  所以这一段跟着删掉（空状态那条规矩本身还在 site-copy / 别处的验收里）。
+*/
 
 /* ------------------------------------------------------------------ ④ 涣愿终池卡 */
 const cist = await cdp.ev(`(() => {
@@ -372,13 +365,11 @@ for (const w of [1920, 1280, 1024, 900]) {
   const s = await snap();
   const ok =
     near(s.cistern.w, s.cal.w) && near(s.cistern.h, s.cal.h) &&
-    near(s.placeholder.w, s.ice.w) && near(s.placeholder.h, s.ice.h) &&
-    near(s.farland.w, s.daily.w) && near(s.farland.h, s.daily.h) &&
-    near(s.cistern.bottom, s.placeholder.bottom) && near(s.placeholder.bottom, s.farland.bottom);
-  check(`${w}：三张卡和上面那几张照样同宽同高、底边齐平`, ok,
+    near(s.ice.w, s.farland.w) && near(s.ice.h, s.farland.h) &&
+    near(s.cistern.bottom, s.ice.bottom) && near(s.ice.bottom, s.farland.bottom);
+  check(`${w}：三张卡照样同宽同高、底边齐平`, ok,
     `终池 ${s.cistern.w}×${s.cistern.h} / 日历 ${s.cal.w}×${s.cal.h}；` +
-      `预留 ${s.placeholder.w}×${s.placeholder.h} / 冰山 ${s.ice.w}×${s.ice.h}；` +
-      `远位面 ${s.farland.w}×${s.farland.h} / 精华 ${s.daily.w}×${s.daily.h}`);
+      `冰山 ${s.ice.w}×${s.ice.h} / 远位面 ${s.farland.w}×${s.farland.h}`);
   const gv = Object.values(s.gaps);
   check(`${w}：行与行之间的缝照样一样宽（±2px）`,
     gv.every((v) => typeof v === 'number') && Math.max(...gv) - Math.min(...gv) <= 2, JSON.stringify(s.gaps));
@@ -417,18 +408,19 @@ await cdp.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, 
 await cdp.goto('/');
 const m = await snap();
 check('手机端：三张卡都在、竖着堆（单列，不并排）',
-  !!m.placeholder && !!m.cistern && !!m.farland && m.cistern.y > m.cal.bottom - 1 && m.placeholder.y > m.cistern.bottom - 1 && m.farland.y > m.placeholder.bottom - 1,
-  JSON.stringify({ 日历底: m.cal?.bottom, 终池顶: m.cistern?.y, 预留顶: m.placeholder?.y, 远位面顶: m.farland?.y }));
+  !!m.ice && !!m.cistern && !!m.farland && m.cistern.y > m.cal.bottom - 1 && m.ice.y > m.cistern.bottom - 1 && m.farland.y > m.ice.bottom - 1,
+  JSON.stringify({ 日历底: m.cal?.bottom, 终池顶: m.cistern?.y, 冰山顶: m.ice?.y, 远位面顶: m.farland?.y }));
 check('手机端：不横向溢出', m.overflowX <= 1, `${m.overflowX}px`);
 /*
-  手机上是单列，桌面那套"和上面一样高"的脚本不写高度 —— 于是这三张卡的高度
+  手机上是单列，桌面那套"和上面一样高"的脚本不写高度 —— 于是这几张卡的高度
   全靠自己撑。2026-11-18 实测：涣愿终池只剩 49px（一块图 + 一行标题）、
-  预留卡只剩 2px（空着的时候里面什么都没有）、花娅远位面只剩 62px（清单区被压扁，
-  滚轮等于没有）。所以三张各给了一个下限，这条盯住它别再塌回去。
+  花娅远位面只剩 62px（清单区被压扁，滚轮等于没有）。所以各给了一个下限，
+  这条盯住它们别再塌回去。（原来还有一条「预留卡 ≥100」—— 那一格 2026-11-20
+  换成了冰室冰山，下限按冰山卡自己的高度给。）
 */
-check('手机端：三张卡都撑得起来（涣愿终池 ≥150 / 预留卡 ≥100 / 花娅远位面 ≥200）',
-  m.cistern.h >= 150 && m.placeholder.h >= 100 && m.farland.h >= 200,
-  JSON.stringify({ 终池: m.cistern.h, 预留: m.placeholder.h, 远位面: m.farland.h }));
+check('手机端：三张卡都撑得起来（涣愿终池 ≥150 / 冰室冰山 ≥130 / 花娅远位面 ≥200）',
+  m.cistern.h >= 150 && m.ice.h >= 130 && m.farland.h >= 200,
+  JSON.stringify({ 终池: m.cistern.h, 冰山: m.ice.h, 远位面: m.farland.h }));
 const mFar = await cdp.ev(`(() => {
   const s = document.querySelector('#home-farland .far__scroll');
   return s ? { sh: s.scrollHeight, ch: s.clientHeight } : null;

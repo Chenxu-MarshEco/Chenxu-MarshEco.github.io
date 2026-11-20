@@ -272,11 +272,19 @@ try {
   info(`两个大板块顺序：${geo.boardIds.join(' / ')}`);
   info(`新一屏的格子顺序：${geo.extraKids.join(' / ')}`);
   check('大板块那一行还是「甬城晴雨 / 花娅陌域」两块，顺序没变', geo.boardIds.join(',') === 'yongcheng,huaya');
+  /*
+    行序（站长 2026-11-20 换的）：
+      第一行 曼沫砾总线 + 精华大殿（dailyWrap）
+      第二行 日历 + 黎语堂
+      第三行 终池 + 冰山/远位面
+  */
   check(
-    '新一屏第一行是「曼沫砾总线 + 黎语堂」，第二行才是日历和冰山/每日精华',
+    '新一屏第一行是「曼沫砾总线 + 精华大殿」，第二行才是日历和黎语堂',
     geo.extraKids[0] === 'home-announce' &&
-      geo.extraKids[1] === 'home-liyutang' &&
-      geo.extraKids[2] === 'home-cal'
+      geo.extraKids[1] === 'dailyWrap' &&
+      geo.extraKids[2] === 'home-cal' &&
+      geo.extraKids[3] === 'home-liyutang',
+    geo.extraKids.join(' / ')
   );
   check(
     '曼沫砾总线在甬城晴雨**下面**、日历**上面**',
@@ -284,9 +292,9 @@ try {
     `甬城晴雨底 ${geo.yongcheng.bottom} ≤ 公告卡 ${geo.announce.top}..${geo.announce.bottom} ≤ 日历顶 ${geo.cal.top}`
   );
   check(
-    '黎语堂在花娅陌域**下面**、冰室冰山/每日精华**上面**',
-    geo.liyutang.top >= geo.huaya.bottom && geo.liyutang.bottom <= Math.min(geo.ice.top, geo.daily.top),
-    `花娅陌域底 ${geo.huaya.bottom} ≤ 黎语堂 ${geo.liyutang.top}..${geo.liyutang.bottom} ≤ 冰山顶 ${geo.ice.top}`
+    '黎语堂在花娅陌域**下面**、和日历**同一行**',
+    geo.liyutang.top >= geo.huaya.bottom && Math.abs(geo.liyutang.top - geo.cal.top) <= 2,
+    `花娅陌域底 ${geo.huaya.bottom} ≤ 黎语堂 ${geo.liyutang.top}..${geo.liyutang.bottom} / 日历顶 ${geo.cal.top}`
   );
   check(
     '公告卡和甬城晴雨**同一列**（左边缘对齐）',
@@ -299,15 +307,15 @@ try {
     `${geo.liyutang.left} vs ${geo.huaya.left}`
   );
   check(
-    '两张新卡一样高（同一行，底边齐平）',
-    Math.abs(geo.announce.bottom - geo.liyutang.bottom) <= 2,
-    `${geo.announce.bottom} vs ${geo.liyutang.bottom}`
+    '第一行两张卡一样高（曼沫砾总线 / 精华大殿，底边齐平）',
+    Math.abs(geo.announce.bottom - geo.daily.bottom) <= 2,
+    `${geo.announce.bottom} vs ${geo.daily.bottom}`
   );
   check('加了这两块之后首页没有横向溢出', geo.overflow <= 1, `${geo.overflow}px`);
   check(
-    '日历 / 冰山 / 每日精华三张还是挤在同一条横线上（没被新一行顶歪）',
-    Math.abs(geo.cal.top - geo.ice.top) <= 2 && Math.abs(geo.cal.top - geo.daily.top) <= 2,
-    `${geo.cal.top} / ${geo.ice.top} / ${geo.daily.top}`
+    '第二行「日历 / 黎语堂」顶边齐平',
+    Math.abs(geo.cal.top - geo.liyutang.top) <= 2,
+    `${geo.cal.top} / ${geo.liyutang.top}`
   );
 
   /* ---------------- 首页：公告卡的条数和去向 ---------------- */

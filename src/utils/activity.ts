@@ -126,7 +126,7 @@ const link = (href: string): string =>
  * 多出来的不往首页塞 —— 卡片高度是首页那一屏严格对齐的一部分，一条都不能撑。
  * 想往前翻就去编辑器「协作」面板（那里是 20 条）。
  */
-const LIMIT = 4;
+const LIMIT = 5;
 
 let cache: ActivityEntry[] | null = null;
 /** 整份（`/feed/` 那页用，不带明细）也缓存一份，别在两次调用里各算一遍 */

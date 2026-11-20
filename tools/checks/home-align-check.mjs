@@ -13,7 +13,7 @@
  *   ① 两块大板（甬城晴雨 / 花娅陌域）宽、高、顶边、底边**完全一样**
  *   ② 大板的左右边 == 上下那两列的左边 / 右边（列边界就是它们定的）
  *   ③ 左列的卡（公告 / 水钟 / 终池）左右边跟大板一致
- *   ④ 右列的卡（黎语堂 / 冰山+精华 / 预留+远位面）右边跟大板一致
+ *   ④ 右列的卡（精华大殿 / 黎语堂 整格，冰山+远位面 半格一对）右边跟大板一致
  *   ⑤ 行与行之间的缝一样宽（±1px）
  *   ⑥ 两列最后一张卡的底边齐平
  *   ⑦ 任何宽度下都不横向溢出
@@ -192,19 +192,20 @@ try {
       JSON.stringify({ 板: [L.x, L.r], 公告: g.announce && [g.announce.x, g.announce.r], 水钟: g.cal && [g.cal.x, g.cal.r], 终池: g.cistern && [g.cistern.x, g.cistern.r] }));
 
     /*
-      右列是三格宽：整格的（黎语堂 / 精华 / 远位面）右边贴大板右边，
-      半格的（冰山 / 预留）是那一对的左半边、左边贴大板左边。
+      右列 2026-11-20 起是两张整格 + 两张半格：
+        整格（精华大殿 / 黎语堂）右边贴大板右边；
+        半格那一对（冰室冰山 / 花娅远位面，在第三行）占满整格宽、左边贴大板左边。
+      （原来第三行是「预留卡 + 花娅远位面」，站长把冰室冰山挪到预留卡那一格了。）
     */
     check(`${w}：右列整格卡右边跟大板一致`,
-      [g.liyutang, g.daily, g.farland].every((c) => c && near(c.r, R.r)),
-      JSON.stringify({ 板右: R.r, 黎语堂: g.liyutang && g.liyutang.r, 精华: g.daily && g.daily.r, 远位面: g.farland && g.farland.r }));
-    check(`${w}：右列半格卡（冰山 / 预留）左边跟大板一致`,
-      [g.ice, g.placeholder].every((c) => c && near(c.x, R.x)),
-      JSON.stringify({ 板左: R.x, 冰山: g.ice && g.ice.x, 预留: g.placeholder && g.placeholder.x }));
-    check(`${w}：右列那一对里面的缝一样宽`,
-      g.ice && g.daily && g.placeholder && g.farland &&
-      near(g.daily.x - g.ice.r, g.farland.x - g.placeholder.r, 1),
-      JSON.stringify({ 冰山精华: g.ice && g.daily && (Math.round((g.daily.x - g.ice.r) * 10) / 10), 预留远位面: g.placeholder && g.farland && (Math.round((g.farland.x - g.placeholder.r) * 10) / 10) }));
+      [g.liyutang, g.daily].every((c) => c && near(c.r, R.r)),
+      JSON.stringify({ 板右: R.r, 黎语堂: g.liyutang && g.liyutang.r, 精华: g.daily && g.daily.r }));
+    check(`${w}：右列那一对（冰山 / 远位面）左边贴大板左边`,
+      g.ice && near(g.ice.x, R.x),
+      JSON.stringify({ 板左: R.x, 冰山: g.ice && g.ice.x }));
+    check(`${w}：右列那一对两张一样宽、合起来正好铺满一列`,
+      g.ice && g.farland && near(g.ice.w, g.farland.w, 1) && near(g.farland.r, R.r),
+      JSON.stringify({ 冰山: g.ice && g.ice.w, 远位面: g.farland && g.farland.w, 右: g.farland && g.farland.r, 板右: R.r }));
 
     const g1 = g.announce ? Math.round((g.announce.y - L.b) * 10) / 10 : null;
     const g2 = g.cal && g.announce ? Math.round((g.cal.y - g.announce.b) * 10) / 10 : null;
@@ -214,7 +215,7 @@ try {
       JSON.stringify({ 板到第一行: g1, 第一行到第二行: g2, 第二行到第三行: g3 }));
 
     const leftBottom = g.cistern?.b;
-    const rightBottom = Math.max(g.placeholder?.b ?? 0, g.farland?.b ?? 0);
+    const rightBottom = g.farland?.b;
     check(`${w}：两列的**最后一行底边齐平**（${leftBottom} / ${rightBottom}）`,
       near(leftBottom, rightBottom, 1), JSON.stringify({ 左: leftBottom, 右: rightBottom }));
   }
