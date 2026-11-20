@@ -31,6 +31,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import config from '../data/bellie.json';
 import { salonMembers, type SalonMember } from './salon';
+import { dayOf, paramOf, type Timeline } from './timelines';
 
 export interface BibleEntry {
   /** 稳定 id：`b` + 日期（去横线）+ 当天序号，例如 b20261120-3 */
@@ -174,15 +175,22 @@ export const bellieEntries: BibleEntry[] = (() => {
       });
     });
   }
-  /* 日期倒序；同一天里时间晚的在前（没有时间的排当天最后） */
-  return out.sort((a, b) => {
-    if (a.date !== b.date) return a.date < b.date ? 1 : -1;
-    const at = a.time || '99:99';
-    const bt = b.time || '99:99';
-    if (at !== bt) return at < bt ? 1 : -1;
-    /* 同一时刻（或都没有时间）就按投递里的先后 —— 老格式那五条是 1..5 的顺序 */
-    return a.id.localeCompare(b.id);
-  });
+  /*
+   * **从早到晚**（和 `salon.ts` 的精华一条规则：`${date} ${time}` 升序，同刻按 id）。
+   *
+   * 2026-11-21 改的：原来是倒序，结果圣经页和精华页长得不一样 ——
+   *   · 分块是从这个数组头尾切的（`chunk 0` = 数组最前 20 条），页面首屏预渲染的是
+   *     **最后一块**；倒序时最后一块是最老的那天，于是一进 /bellie/ 停在 10-03，
+   *     而 /salon/ 停在最新那天；
+   *   · `data-tl-default` 取的是数组第一条的 param，倒序时算成轴的最末端（1），
+   *     刻度高亮和点击跳转全对不上。
+   * 改成和精华一样升序：首页那条「每日圣经」按 `dailyIndex` 取，跟顺序无关。
+   */
+  return out.sort(
+    (a, b) =>
+      `${a.date} ${a.time || '00:00'}`.localeCompare(`${b.date} ${b.time || '00:00'}`) ||
+      a.id.localeCompare(b.id),
+  );
 })();
 
 export const bellieTitle: string = str((config as { title?: string }).title) || '铃忆的冰室圣经';
@@ -201,21 +209,18 @@ export const bellieMemberStats = (() => {
     .sort((a, b) => b.count - a.count);
 })();
 
-/** 某条在时间轴上的位置（按日期算，和精华那边同一套） */
-export function bellieParams(tl: { spans?: unknown; points?: { date?: string }[] }): Map<string, number> {
+/**
+ * 某条在时间轴上的位置（0~1），页面里写成 `data-tl-param`。
+ *
+ * ⚠ 必须走**和精华同一条路**：`paramOf(tl, dayOf(date))` 用的是这条轴自己的范围
+ *   （含分轴 / 弧长），页面脚本才认得出「滚到哪 = 轴上哪个位置」，点轴上刻度也才
+ *   比得出最近的那条。2026-11-21 之前这里是拿 points 的 min/max 自己线性的算的，
+ *   结果首页那条「每日圣经」进了圣经页之后默认参数算成 1（轴的最末端），
+ *   页面一打开就停在最老那一天，点刻度也不跳。
+ */
+export function bellieParams(tl: Timeline): Map<string, number> {
   const out = new Map<string, number>();
-  const points = (tl?.points ?? []).map((p) => Date.parse(String(p.date ?? ''))).filter((t) => Number.isFinite(t));
-  if (!points.length) {
-    for (const e of bellieEntries) out.set(e.id, 0);
-    return out;
-  }
-  const min = Math.min(...points);
-  const max = Math.max(...points);
-  const span = Math.max(1, max - min);
-  for (const e of bellieEntries) {
-    const t = Date.parse(e.date);
-    out.set(e.id, Number.isFinite(t) ? Math.min(1, Math.max(0, (t - min) / span)) : 0);
-  }
+  for (const e of bellieEntries) out.set(e.id, paramOf(tl, dayOf(e.date)));
   return out;
 }
 
