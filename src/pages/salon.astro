@@ -132,6 +132,26 @@ const members = salonMemberStats;
         <div class="salon__chunk" data-chunk={lastChunk} set:html={chunkHtml(lastChunk, params)} />
         <p class="salon__empty" id="salon-empty" hidden>没有匹配的精华，换个词试试。</p>
       </div>
+
+      {/*
+        上翻装载的那个转圈（站长 2026-11-21：「往上拖分块还没加载好 那就让网页暂时
+        往上拖受阻 出现一个中间有塔吊的加载旋转标志」）。
+        中间那颗塔吊就是站里「回到顶部」用的同一段图（BoardDrawer 的 .totop__crane），
+        不是另画的；外面一圈慢慢转。它 fixed 在视口中间，**不占文档高度** ——
+        出现和消失都不许挤动任何内容。
+      */}
+      <div class="salon__loader" data-salon-loader hidden aria-hidden="true">
+        <svg class="salon__loaderCrane" viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false">
+          <path d="M8.6 20.6V7.4M11.4 20.6V7.4" />
+          <path d="M8.6 12.4l2.8 3.6M11.4 12.4l-2.8 3.6M8.6 16h2.8" />
+          <path d="M7 20.6h6" />
+          <path d="M10 3.6v3.8M2 7.4h20" />
+          <path d="M10 3.6 2 7.4M10 3.6l12 3.8" />
+          <path d="M18 7.4v3.6" />
+          <rect x="2.1" y="7.5" width="2.4" height="2.6" rx="0.5" fill="currentColor" stroke="none" />
+          <rect x="17.1" y="11" width="1.8" height="1.8" rx="0.4" fill="currentColor" stroke="none" />
+        </svg>
+      </div>
     </main>
 
     {/*
@@ -348,25 +368,48 @@ const members = salonMemberStats;
     salon?.dispatchEvent(new CustomEvent('salon:chunks'));
   }
 
+  /**
+   * 装载更早的那一簇，**而且绝不让画面动一步**。
+   *
+   * 站长 2026-11-21 的硬规定：「保证硬性规定 绝对不乱动用户目前停留的位置」。
+   * 原来的做法是"内容长高了多少，就把滚动位置加多少"（按像素补）—— 这条路有两个坑，
+   * 合起来正是他看到的「上滑比加载快就被弹到这一块的最底下」：
+   *   ① 高度差是量出来的：字体分片、图片没写宽高、折叠判定，任何一样晚一步，这个数就不准；
+   *   ② 浏览器自己还有一套 scroll anchoring，也在补 —— 两边一起补就补了两遍，
+   *      画面直接被推到新插进来那一簇的**最底下**，用户刚才在看哪条全丢了。
+   * 所以改成**认元素不认像素**：插之前记下"视口最上面那条在哪"，插完把它按回原来的位置，
+   * 差多少补多少（再在下一帧补一次，等字体/图片定下来）。补两次也不会过量 —— 每次都重新量。
+   */
+  const anchorSnapshot = () => {
+    if (!listBox) return null;
+    const items = Array.from(listBox.querySelectorAll<HTMLElement>('.salon__item'));
+    /* 取"还露在视口里、最靠上"的那一条；一条都没有（视口在日期头上）就退到第一条 */
+    const hit = items.find((el) => el.getBoundingClientRect().bottom > 8) ?? items[0] ?? null;
+    return hit ? { el: hit, top: hit.getBoundingClientRect().top } : null;
+  };
+  function pinTo(snap: { el: HTMLElement; top: number } | null) {
+    if (!snap || !snap.el.isConnected) return;
+    const d = snap.el.getBoundingClientRect().top - snap.top;
+    if (Math.abs(d) < 0.5) return;
+    window.scrollTo({ top: Math.max(0, window.scrollY + d), left: 0, behavior: 'instant' as ScrollBehavior });
+  }
+
   async function loadPrev() {
     if (!listBox) return false;
     const lo = Number(listBox.dataset.chunkFirst);
     if (!Number.isFinite(lo) || lo <= 0) return false;
     const n = lo - 1;
     const html = await fetchChunk(n);
-    const h0 = root.scrollHeight;
+    const snap = anchorSnapshot();
     const box = placeChunk(n, html, false);
     listBox.dataset.chunkFirst = String(n);
-    /*
-      先给这一簇做折叠判定（长文字裁到 8 行）**再**量高度差：
-      折起来会把这一簇变矮，先量后折的话补偿量会多算一截，画面会往下坠一下
-      （实测 CLS 从 0.08 涨到 0.58 就是这一下）。
-    */
+    /* 先把这一簇的长文字折起来再钉位置：折叠会改变高度，顺序反了就会钉歪 */
     if (box) syncFolds(box);
-    /* 内容长在视口**上方**：把滚动位置加上新增的那截，画面才不会跳 */
-    const dh = root.scrollHeight - h0;
-    if (dh) window.scrollTo({ top: window.scrollY + dh, left: 0, behavior: 'instant' as ScrollBehavior });
+    pinTo(snap);
     applyFilters();
+    /* 字体/图片定下来以后行高还会动一点点，下一帧再钉一次（同一个基准，不会过量） */
+    await new Promise((r) => requestAnimationFrame(() => r(null)));
+    pinTo(snap);
     salon?.dispatchEvent(new CustomEvent('salon:chunks'));
     return true;
   }
@@ -406,28 +449,110 @@ const members = salonMemberStats;
     afterChunkInsert(null);
   }
 
-  /* 上翻到接近顶部就接着取更早的（够不到顶就一直补，但一次只补一簇） */  let loadingOlder = false;
+  /* 上翻到接近顶部就接着取更早的（够不到顶就一直补，但一次只补一簇） */
+  let loadingOlder = false;
+  /**
+   * 离顶上多近就开始取下一簇。以前是写死的 900px —— 在 900~1500px 这一段里
+   * 用户已经在往上翻了、却什么都不会取，一直拖到贴着顶才开始等（站长说的
+   * 「上滑速度超过加载速度」就是这一段撞出来的）。现在按视口算，宽屏手机会更早取。
+   */
+  const nearTopPx = () => Math.max(700, Math.round(window.innerHeight * 1.25));
+
+  /*
+    装东西时那颗转圈（中间是站里「回到顶部」那颗塔吊的图，见 .salon__loader）。
+    它只在这两种时候亮：正在取更早的那一簇；或者取失败了还在重试。
+    亮的期间上滑会被挡住（blockUp），所以"拖不动 + 转圈"是一件事的两种表现。
+  */
+  const loaderEl = document.querySelector<HTMLElement>('[data-salon-loader]');
+  /*
+    晚 160ms 再亮：正常网速下一簇几十毫秒就回来了，立刻亮只会闪一下（看着像抖）。
+    真的慢了 160ms 以上才需要告诉用户"在等"。
+  */
+  let loaderTimer = 0;
+  const showLoader = (on: boolean) => {
+    if (!loaderEl) return;
+    if (on) {
+      if (loaderEl.hidden && !loaderTimer) {
+        loaderTimer = window.setTimeout(() => {
+          loaderTimer = 0;
+          loaderEl.hidden = false;
+        }, 160);
+      }
+      return;
+    }
+    if (loaderTimer) {
+      window.clearTimeout(loaderTimer);
+      loaderTimer = 0;
+    }
+    loaderEl.hidden = true;
+  };
   /*
     进页面那一会儿先别补：落地是"直接跳到最后一条"，跳之前有几个 scroll 事件
     的 scrollY 还是 0，会误判成"用户翻到顶了"，一进来就把上一簇拉下来 ——
     那正好和"只加载最新一部分"对着干。落地做完才开闸。
   */
   let bootDone = false;
+  /** 落地（自动跳到最新那条）还在进行时，别去补更早的簇 */
+  let landing = false;
   const maybeLoadOlder = async () => {
-    if (!bootDone || loadingOlder || !listBox) return;
-    if (window.scrollY > 900) return;
+    if (!bootDone || loadingOlder || landing || !listBox) return;
+    if (window.scrollY > nearTopPx()) return;
     if (Number(listBox.dataset.chunkFirst) <= 0) return;
     loadingOlder = true;
+    showLoader(true);
     try {
       await loadPrev();
     } catch {
-      /* 取不到就先算了，滚一下还会再试 */
+      /*
+        取不到：**画面一点都不动**（上面那句 pinTo 根本不会跑到），转圈继续亮着，
+        过一会儿再试 —— 用户看到的只是"还在转"，不是"被弹到别处"。
+      */
+      await new Promise((r) => setTimeout(r, 1200));
     } finally {
       loadingOlder = false;
-      /* 还在顶部附近（这一屏没被填满）就继续补 */
-      if (window.scrollY <= 900 && Number(listBox.dataset.chunkFirst) > 0) window.setTimeout(maybeLoadOlder, 180);
+      const more = window.scrollY <= nearTopPx() && Number(listBox.dataset.chunkFirst) > 0;
+      /* 还在顶部附近（这一屏没被填满）就接着补，转圈别灭 —— 灭了又亮就是闪 */
+      if (more) window.setTimeout(maybeLoadOlder, 120);
+      else showLoader(false);
     }
   };
+  /*
+    「往上拖受阻」（站长 2026-11-21）：
+    还没取回来的时候，用户已经在已加载内容的最上面了，再往上拖本来就没东西 ——
+    这里把那一小段橡皮筋也掐掉，让"拖不动"是明确的（同时转圈亮着）。
+    ⚠ 必须 passive:false 才拦得住；带 ctrl 的是缩放，不碰。
+  */
+  const blockUp = (ev: WheelEvent) => {
+    if (!loadingOlder || ev.ctrlKey) return;
+    if (window.scrollY > 4) return;
+    if (ev.deltaY < 0) {
+      ev.preventDefault();
+      showLoader(true);
+    }
+  };
+  window.addEventListener('wheel', blockUp, { passive: false });
+  let touchY = 0;
+  window.addEventListener(
+    'touchstart',
+    (ev) => {
+      touchY = ev.touches[0]?.clientY ?? 0;
+    },
+    { passive: true }
+  );
+  window.addEventListener(
+    'touchmove',
+    (ev) => {
+      if (!loadingOlder || window.scrollY > 4) return;
+      const y = ev.touches[0]?.clientY ?? 0;
+      /* 手指往下拖 = 想把内容往上拉 = 想往上翻 */
+      if (y > touchY) {
+        ev.preventDefault();
+        showLoader(true);
+      }
+      touchY = y;
+    },
+    { passive: false }
+  );
   window.addEventListener('scroll', () => void maybeLoadOlder(), { passive: true });
 
   /**
@@ -476,25 +601,39 @@ const members = salonMemberStats;
   };
   const land = (el: HTMLElement) =>
     el.scrollIntoView({ behavior: 'instant' as ScrollBehavior, block: 'start' });
+  /**
+   * 上一次"落地"把画面放在哪儿。落地会因为 `load` / 字体就绪被**再跑一遍**，
+   * 而那时候用户很可能已经自己往上翻了 —— 再落一次就等于把人从翻到的地方
+   * 一把拽回最新那条（站长 2026-11-21：「别把用户炸到这一块的最底下」）。
+   * 所以：位置已经和上次落地点差出 80px 就说明是用户自己在滚，不再插手。
+   */
+  let lastLandY = 0;
 
   const landOnEntry = async () => {
-    if (userTookOver || cameBack()) return;
-    const raw = location.hash.replace(/^#/, '');
-    if (raw) {
-      let id = raw;
-      try {
-        id = decodeURIComponent(raw);
-      } catch {
-        /* 百分号写坏了就用原文 */
+    if (userTookOver || cameBack() || landing || loadingOlder) return;
+    if (lastLandY && Math.abs(window.scrollY - lastLandY) > 80) return;
+    landing = true;
+    try {
+      const raw = location.hash.replace(/^#/, '');
+      if (raw) {
+        let id = raw;
+        try {
+          id = decodeURIComponent(raw);
+        } catch {
+          /* 百分号写坏了就用原文 */
+        }
+        const n = chunkOfId(id);
+        if (n !== null) await ensureChunk(n);
+        const el = document.getElementById(id);
+        if (el && el.classList.contains('salon__item')) land(el);
+      } else {
+        const last = latestItem();
+        if (last) land(last);
       }
-      const n = chunkOfId(id);
-      if (n !== null) await ensureChunk(n);
-      const el = document.getElementById(id);
-      if (el && el.classList.contains('salon__item')) land(el);
-      return;
+      lastLandY = Math.round(window.scrollY);
+    } finally {
+      landing = false;
     }
-    const last = latestItem();
-    if (last) land(last);
   };
   window.addEventListener('load', () => {
     void landOnEntry().finally(() => {
@@ -1025,6 +1164,70 @@ const members = salonMemberStats;
     background-color: #1e0730;
     /* 这一页容器的上限（下面两处选择器都用它） */
     --salon-max: 1760px;
+    /*
+      关掉浏览器的 scroll anchoring（2026-11-21）。
+      分块装载往视口**上方**插内容时，浏览器自己也会补一次滚动位置 ——
+      而这里已经按"认元素"补过了（见脚本的 pinTo）。两边一起补 = 补两遍，
+      画面直接被推到新插进来那一簇的最底下，用户就找不到刚才在看哪条了。
+    */
+    overflow-anchor: none;
+  }
+  /* 分块盒子这一层再关一次（anchoring 是按"最近的滚动祖先"算的，双保险） */
+  .salon__list {
+    overflow-anchor: none;
+  }
+  /*
+    上翻装载时那颗转圈（中间是塔吊，图和「回到顶部」那颗一模一样）。
+    fixed 在视口中间偏上：不占文档高度，出现/消失都不挤动内容；
+    外边一圈转，里面的塔吊不转（转的东西里再套一个转的会晕）。
+  */
+  .salon__loader {
+    position: fixed;
+    left: 50%;
+    top: 44%;
+    z-index: 60;
+    display: grid;
+    place-items: center;
+    width: 70px;
+    height: 70px;
+    margin: -35px 0 0 -35px;
+    border-radius: 50%;
+    /* 底下垫一层深紫：压在正文上也看得清，又不至于像一块白板 */
+    background: radial-gradient(circle at 50% 50%, rgba(30, 7, 48, 0.86) 0%, rgba(30, 7, 48, 0.62) 62%, rgba(30, 7, 48, 0) 100%);
+    pointer-events: none;
+  }
+  .salon__loader[hidden] {
+    display: none;
+  }
+  .salon__loader::before {
+    content: '';
+    position: absolute;
+    inset: 13px;
+    border-radius: 50%;
+    border: 2px solid rgba(255, 120, 190, 0.22);
+    border-top-color: rgba(255, 150, 205, 0.95);
+    border-right-color: rgba(255, 120, 190, 0.6);
+    animation: salonLoaderSpin 900ms linear infinite;
+  }
+  .salon__loaderCrane {
+    width: 30px;
+    height: 30px;
+    stroke: rgba(255, 226, 244, 0.95);
+    stroke-width: 1.5;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    color: rgba(255, 226, 244, 0.95);
+    filter: drop-shadow(0 0 6px rgba(255, 79, 163, 0.75));
+  }
+  @keyframes salonLoaderSpin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .salon__loader::before {
+      animation-duration: 2600ms;
+    }
   }
   /*
     这一页要比站里其他页**宽**（站长 2026-11-20：「让电脑精华页的精华正文内容放到正中间

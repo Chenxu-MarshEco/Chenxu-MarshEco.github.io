@@ -99,6 +99,9 @@ export function essenceHtml(e: SalonEssence, params: Map<string, number>): strin
   out.push(
     `<article class="salon__item" id="${esc(e.id)}"` +
       (param === undefined ? '' : ` data-tl-param="${esc(param)}"`) +
+      /* 日期也写一份：时间轴在浏览器里按"访问者今天"重排时，要用它把 param 重算一遍
+         （构建机上算的那一份和访问者可能差一天，见 Timeline.astro 的 relayoutLive） */
+      ` data-tl-date="${esc(e.date)}"` +
       ` data-members="${esc(ids.join(' '))}" data-kind="${esc(e.kind || 'text')}">`
   );
 

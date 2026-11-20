@@ -105,7 +105,11 @@ const SNAP = `(() => {
   const root = document.querySelector('[data-tl]');
   const ruler = document.querySelector('[data-tl-ruler]');
   const items = [...document.querySelectorAll('.salon__list .salon__item')].filter((el) => !el.hidden);
-  const mid = items.find((el) => { const r = el.getBoundingClientRect(); return r.top < innerHeight * 0.62 && r.bottom > innerHeight * 0.38; });
+  /* 和组件同一个判据：**中线离视口中线最近**的那一条（不是"第一个挨着中线带子的"，
+     卡片比那条带子高得多，随便挑第一个会差一天） */
+  const mid = items
+    .map((el) => { const r = el.getBoundingClientRect(); return { el, d: Math.abs(r.top + r.height / 2 - innerHeight / 2) }; })
+    .sort((a, b) => a.d - b.d)[0]?.el;
   const boxes = [...document.querySelectorAll('.salon__chunk')];
   const last = boxes.length ? String(boxes[boxes.length - 1].dataset.chunk) : '';
   return {
@@ -157,6 +161,8 @@ try {
     const uniq = [...new Set(dates)];
     const end = trace[trace.length - 1];
     const curs = [...new Set(trace.map((t) => t.cur))];
+    /* 每一屏都对一遍：轴上的日期不许和视口中心那条差天（构建机与访问者差一天时就会差） */
+    const offBy = trace.filter((t) => t.mid && ymd(t.now) && ymd(t.now) !== ymd(t.mid));
 
     console.log(
       `\n--- ${page}\n` +
@@ -166,6 +172,11 @@ try {
     check(`[${label}] 往上翻时轴上的日期一直在变（不是冻在落地那一刻）`, uniq.length >= 4, `变过 ${uniq.length} 个日期：${uniq.join(' → ')}`);
     check(`[${label}] 上翻到最后，轴的日期跟着退到了更早那天`, ymd(end.now) && ymd(end.now) < ymd(start.now), `落地 ${start.now} → 上翻到底 ${end.now}`);
     check(`[${label}] 轴的日期和视口中心那条对得上`, ymd(end.now) === ymd(end.mid), `轴 ${end.now} / 列表 ${end.mid}`);
+    check(
+      `[${label}] 每一屏都对得上（轴上读出的日期一天都不差）`,
+      offBy.length === 0,
+      offBy.length ? offBy.map((t) => `y=${t.y} 轴${ymd(t.now)}≠列表${ymd(t.mid)}`).join('、') : '全部一致'
+    );
     check(`[${label}] 弧顶那个位置参数一直在变（轴真的在挪，不是只换了行字）`, curs.length >= 4, `变过 ${curs.length} 个位置：${curs.slice(0, 6).join(' → ')}${curs.length > 6 ? ' …' : ''}`);
     check(`[${label}] 轴上的刻度尺跟着重画了`, end.ruler > 0 && trace.some((t) => t.ruler !== start.ruler), `${start.ruler} → ${end.ruler} 字节的 path`);
     check(`[${label}] 这一趟真的翻过了首屏那一簇`, end.chunks !== start.chunks || end.n > start.n, `条数 ${start.n} → ${end.n}，簇 [${start.chunks}] → [${end.chunks}]`);

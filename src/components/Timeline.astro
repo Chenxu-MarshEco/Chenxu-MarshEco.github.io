@@ -2150,6 +2150,11 @@ const initialScaleText = `一刻度约 ${
       const p = (n: number) => String(n).padStart(2, '0');
       return `${dt.getUTCFullYear()}-${p(dt.getUTCMonth() + 1)}-${p(dt.getUTCDate())}`;
     };
+    /** `yyyy-mm-dd` → 天序号（和 Today() / dayOf 一个坐标系）；认不出来给 NaN */
+    const dayOfIso = (s: string): number => {
+      const m = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(String(s ?? '').trim());
+      return m ? Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])) / 86400000 : NaN;
+    };
 
     let lastLiveDay = NaN;
 
@@ -2211,6 +2216,23 @@ const initialScaleText = `一刻度约 ${
           const em = el.querySelector<HTMLElement>('.tl__tip em');
           if (em) em.textContent = `${iso}（实时）`;
         }
+      }
+
+      /*
+        页面上"按日期认领"的成分（冰室精华 / 冰室圣经的每一条，`data-tl-date`）
+        也要按**访问者今天**重排一遍。
+
+        为什么非做不可：这些成分的 `data-tl-param` 是构建期按**构建那天的"今天"**算的，
+        而这里的 lo/hi 刚刚换成了访问者今天（还带着今天的实时点）。两边只差一天时，
+        轴顶读出来的日期就会和列表差一天 —— 站长 2026-11-21 看到的正是这个：
+        「刻度显示 2026-11-19 时，往上滚群圣经滚到 10 月……」（列表那天写的是 11-18）。
+        真正的放大器是构建机与访问者的时区/日期不同：构建产物在 UTC 机器上生成，
+        浏览器在 +08:00，`today` 就差了整整一天。
+      */
+      for (const el of document.querySelectorAll<HTMLElement>('[data-tl-date]')) {
+        const day = dayOfIso(el.dataset.tlDate ?? '');
+        if (!Number.isFinite(day)) continue;
+        el.dataset.tlParam = String(paramOf(day));
       }
 
       /*
