@@ -117,11 +117,15 @@ function resolveMember(raw: string): SalonMember | undefined {
  * 正文 / 评语里出现的 QQ 号 → 成员名。
  * 站长 2026-11-20：「评语里面是有QQ号的 进入网站时自动把QQ号转化为群成员」——
  * 评语是铃忆写的原文，站点只负责把号换成名字（号本身留着，万一认不出来还是号）。
+ *
+ * 2026-11-21 补：铃忆点人的写法是**方括号包着号**（`承接 [2603693195] 的性器官蛋糕话题`），
+ * 换完要是留着方括号就成了「承接 [盾返] 的…」—— 那对方括号本来只是"这是一个号"的记号，
+ * 号一变成名字就多余了，所以连括号一起去掉。认不出来的号**原样不动**（括号也留着）。
  */
 export function qqToNames(s: string): string {
-  return String(s ?? '').replace(/\d{5,12}/g, (num) => {
-    const name = QQ_NAME[num];
-    return name || num;
+  return String(s ?? '').replace(/\[(\d{5,12})\]|(\d{5,12})/g, (all, bracketed: string, bare: string) => {
+    const name = QQ_NAME[bracketed || bare];
+    return name || all;
   });
 }
 

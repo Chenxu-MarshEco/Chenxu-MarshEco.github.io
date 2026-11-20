@@ -2546,6 +2546,12 @@ const initialScaleText = `一刻度约 ${
 
     function paint() {
       if (!H) return;
+      /*
+        把"弧顶这一刻在轴上的位置"写回根元素（0~1）。
+        页面脚本不用它，是给**验收脚本**读的：滚页面时轴跟没跟、跟到了哪儿，
+        量这个属性就够了（弧线的 path 只能看出变没变，看不出停在哪个日期）。
+      */
+      root.dataset.tlCur = cur.toFixed(6);
 
       // 主弧线：盖住整屏还多一截，滚到两头也不会露出断口
       const over = (H * 0.6) / V;
@@ -2722,7 +2728,25 @@ const initialScaleText = `一刻度约 ${
         · 滚动时只在这条数组上二分（纯算术，一次布局都不碰）。
       代价从「每次滚动 784 次 rect」变成「每次滚动 0 次」。
     */
-    const marked = Array.from(document.querySelectorAll<HTMLElement>('[data-tl-param]'));
+    /*
+      ⚠ 「哪些成分」**必须每次重排时重新认一遍**，不能只在脚本开头认一次。
+
+      2026-11-21 站长报的：「往上滚群圣经滚到 10 月，轴上那个日期也依然停在
+      2026-11-19，完全不会跟着运动」。
+
+      原因就是这个数组原来是 `const`、只取一次：分块装载的页面（/salon/、/bellie/）
+      一进页面文档里只有**最新那一簇**（二十条上下），之后上翻进来的几十簇全不在
+      名单里 —— 滚过第一簇之后 `nearestIndex` 只能在那一小撮里挑，挑到最边上就
+      再也动不了，轴看起来就是"冻住了"。冰室圣经一屏就翻完了那十几条，所以
+      一进去就冻住；精华那一页条目跨度大，冻住的地方离落地位置远，才显得"一直正常"。
+    */
+    let marked: HTMLElement[] = [];
+    /** 重新认一遍页面上认领了时间点的成分（文档顺序，二分要靠它递增） */
+    function collectMarked(): HTMLElement[] {
+      marked = Array.from(document.querySelectorAll<HTMLElement>('[data-tl-param]'));
+      return marked;
+    }
+    collectMarked();
     let activeEl: HTMLElement | null = null;
     /** 每条成分中线的文档 y（随文档顺序递增），null = 还没量过 */
     let idxMid: number[] | null = null;
@@ -2733,6 +2757,14 @@ const initialScaleText = `一刻度约 ${
 
     function ensureIndex() {
       if (!idxDirty && idxMid && idxMid.length === marked.length) return;
+      /*
+        走到这儿就说明"布局真的变了"，而布局变往往意味着成分也多了/少了
+        （分块装载插进来新的、搜索筛选藏掉一批、置顶重画整簇），所以先重认一遍。
+        纯算术，不碰布局；和下面那次 rect 读取放在一起，不多一次强制同步布局。
+      */
+      collectMarked();
+      /* 被重画掉的那个（innerHTML 换过）已经不在文档里了，别让它继续挡着更新 */
+      if (activeEl && !activeEl.isConnected) activeEl = null;
       const sy = window.scrollY;
       idxMid = marked.map((el) => {
         const r = el.getBoundingClientRect();
@@ -2785,6 +2817,11 @@ const initialScaleText = `一刻度约 ${
     let syncQueued = false;
     function queueSync() {
       if (syncQueued) return;
+      /*
+        文档里这会儿一个认领了时间点的成分都没有，也没人喊 reindex —— 什么都不用做。
+        （别的页面的轴本来就没有可选的内容，不该为了它们每滚一下排一帧。）
+      */
+      if (!marked.length && !idxDirty) return;
       syncQueued = true;
       requestAnimationFrame(() => {
         syncQueued = false;
@@ -2792,44 +2829,59 @@ const initialScaleText = `一刻度约 ${
       });
     }
 
-    if (marked.length) {
-      window.addEventListener('scroll', queueSync, { passive: true });
-      window.addEventListener('resize', () => {
+    /*
+      ⚠ 这一整段原来包在 `if (marked.length)` 里 —— 那样一个页面只要首屏没有成分，
+      连滚动监听都装不上，之后再怎么插内容也不会联动。现在一律装上，
+      "没内容"这件事由上面 queueSync 里那一行兜住。
+    */
+    window.addEventListener('scroll', queueSync, { passive: true });
+    window.addEventListener('resize', () => {
+      markDirty();
+      queueSync();
+    });
+    document.fonts?.ready?.then(() => {
+      markDirty();
+      queueSync();
+    });
+    /*
+      分量最大的一条保险：**盯住这些成分所在容器的实际高度**。
+      位置缓存怕的就是"布局悄悄变了"，而布局一变，这个容器的高度就一定变。它一次兜住三件事：
+        · 本站那种按需分片的 CJK 字体：往下滚时新字形才下下来，度量一变每行高度就变一点，
+          几百行攒起来能差一整天（实测轴上的日期比列表里那条早 1 天）；
+        · 图片到位（写了 width/height 的图浏览器早就留好位置，不会触发；没写的会触发，正好该重量）；
+        · 页面自己改布局（搜索筛选之类，另外还有 `tl:reindex` 那条明路）。
+      ResizeObserver 只在**真的变大变小**时回调（滚动本身不触发），所以这条保险几乎不要钱。
+      ⚠ 别再给每张图挂 `load` 去作废缓存：冰室精华页 784 条里上百个成员头像都是
+      「CSS 定死 28×28、没写 width/height」的图，一加载就当布局变了、白重量 784 次 rect ——
+      实测滚动里因此多出 14896 次 rect（19 遍）。有了下面这条 ResizeObserver 就够了。
+    */
+    if (typeof ResizeObserver !== 'undefined') {
+      const watchBox = marked[0]?.parentElement ?? document.body;
+      new ResizeObserver(() => {
         markDirty();
         queueSync();
-      });
-      document.fonts?.ready?.then(() => {
-        markDirty();
-        queueSync();
-      });
-      /*
-        分量最大的一条保险：**盯住这些成分所在容器的实际高度**。
-        位置缓存怕的就是"布局悄悄变了"，而布局一变，这个容器的高度就一定变。它一次兜住三件事：
-          · 本站那种按需分片的 CJK 字体：往下滚时新字形才下下来，度量一变每行高度就变一点，
-            几百行攒起来能差一整天（实测轴上的日期比列表里那条早 1 天）；
-          · 图片到位（写了 width/height 的图浏览器早就留好位置，不会触发；没写的会触发，正好该重量）；
-          · 页面自己改布局（搜索筛选之类，另外还有 `tl:reindex` 那条明路）。
-        ResizeObserver 只在**真的变大变小**时回调（滚动本身不触发），所以这条保险几乎不要钱。
-        ⚠ 别再给每张图挂 `load` 去作废缓存：冰室精华页 784 条里上百个成员头像都是
-        「CSS 定死 28×28、没写 width/height」的图，一加载就当布局变了、白重量 784 次 rect ——
-        实测滚动里因此多出 14896 次 rect（19 遍）。有了下面这条 ResizeObserver 就够了。
-      */
-      if (typeof ResizeObserver !== 'undefined') {
-        const watchBox = marked[0].parentElement ?? document.body;
-        new ResizeObserver(() => {
-          markDirty();
-          queueSync();
-        }).observe(watchBox);
-      }
-      /*
-        页面自己改了布局（冰室精华页搜索筛选会藏掉几百条）就在时间轴上发一个
-        `tl:reindex`：位置缓存作废、重新量一遍。
-      */
-      document.addEventListener('tl:reindex', () => {
-        markDirty();
-        queueSync();
-      });
+      }).observe(watchBox);
     }
+    /*
+      页面自己改了布局（分块装载插进来新的一簇、搜索筛选藏掉几百条）就在时间轴上发一个
+      `tl:reindex`：位置缓存作废、成分重认一遍、重新量。
+
+      ⚠ 监听必须用**捕获阶段**（第三个参数 true）。页面那边发的是
+      `tlBox.dispatchEvent(new CustomEvent('tl:reindex'))` —— CustomEvent 默认
+      `bubbles: false`，冒泡阶段根本到不了 document，这个监听就永远不触发。
+      后果（2026-11-21 站长报的"轴完全不跟着滚"）：上翻时更早的一簇被插到**上面**，
+      下面那些成分的文档坐标整体往下挪了一截，可位置缓存还是旧的 —— 缓存里的数比真位置
+      小，二分就一路偏到**最新那几条**上，于是轴永远停在最新那一天。
+      捕获阶段对不冒泡的事件照样触发，所以这一改对页面那边零要求。
+    */
+    document.addEventListener(
+      'tl:reindex',
+      () => {
+        markDirty();
+        queueSync();
+      },
+      true
+    );
 
     /* ---------------- 开合 ---------------- */
 
@@ -2871,7 +2923,8 @@ const initialScaleText = `一刻度约 ${
           const picked = Number.isFinite(liveParam) ? liveParam : rest.length ? Math.max(...rest) : NaN;
           cur = Number.isFinite(picked) ? picked : 0.5;
         } else if (!Number.isFinite(cur)) cur = 0.5;
-        if (marked.length) {
+        /* 打开这一刻重新认一遍成分（分块装载之前可能还没把条目插进来） */
+        if (collectMarked().length) {
           markDirty();
           const i = nearestIndex();
           if (i >= 0) {

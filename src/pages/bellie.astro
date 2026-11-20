@@ -682,8 +682,13 @@ const members = salonMemberStats;
     }
     /* 关键词一个都没命中才亮那句；命中数为 0 时下面本来也没有可见条目 */
     if (emptyEl) emptyEl.hidden = !(keyword && matchedIds && matchedIds.size === 0);
-    /* 布局变了：时间轴缓存的位置作废，重排一次（它自己那条明路） */
-    tlBox?.dispatchEvent(new CustomEvent('tl:reindex'));
+    /*
+      布局变了：时间轴缓存的位置作废，重排一次（它自己那条明路）。
+      ⚠ `bubbles: true` 不能省：CustomEvent 默认不冒泡，而不冒泡的事件到不了
+      document 上那个监听（组件那边现在用捕获阶段兜着，但发的时候就该说清楚
+      "这是给全局的"）。少了它，上翻装载完轴就停在旧位置上（2026-11-21）。
+    */
+    tlBox?.dispatchEvent(new CustomEvent('tl:reindex', { bubbles: true }));
   }
 
   /**
@@ -730,19 +735,28 @@ const members = salonMemberStats;
     if (searchIndex || searchPending) return;
     searchPending = true;
     try {
-      const res = await fetch(`${BASE.replace(/\/$/, '')}/salon.json`);
+      /*
+        ⚠ 2026-11-21 改：这一行原来是从 salon.astro 拷过来的 `/salon.json` ——
+        那是**精华**的索引（833 条 e0xxx），圣经页拿它去筛自己的 b2026… 条目，
+        一个 id 都对不上：一搜就把整页搜空，点亮两个成员也永远置顶不出东西。
+        圣经自己的索引在 `/bellie.json`（`entries` 那一栏，比精华多条 `comment`）。
+      */
+      const res = await fetch(`${BASE.replace(/\/$/, '')}/bellie.json`);
       if (!res.ok) return;
       const json = (await res.json()) as {
-        essences?: {
-          id: string; member?: string; date?: string; time?: string; text?: string;
+        entries?: {
+          id: string; member?: string; date?: string; time?: string; text?: string; comment?: string;
           members?: { name?: string }[];
         }[];
       };
       const map = new Map<string, string>();
       const names = new Map<string, string[]>();
-      for (const e of json.essences ?? []) {
+      for (const e of json.entries ?? []) {
         if (!e?.id) continue;
-        map.set(e.id, [e.member ?? '', e.date ?? '', e.time ?? '', e.text ?? ''].join(' ').toLowerCase());
+        map.set(
+          e.id,
+          [e.member ?? '', e.date ?? '', e.time ?? '', e.text ?? '', e.comment ?? ''].join(' ').toLowerCase()
+        );
         names.set(e.id, (e.members ?? []).map((m) => String(m?.name ?? '')).filter(Boolean));
       }
       searchIndex = map;

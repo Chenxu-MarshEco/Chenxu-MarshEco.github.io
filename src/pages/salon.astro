@@ -692,8 +692,13 @@ const members = salonMemberStats;
     }
     /* 关键词一个都没命中才亮那句；命中数为 0 时下面本来也没有可见条目 */
     if (emptyEl) emptyEl.hidden = !(keyword && matchedIds && matchedIds.size === 0);
-    /* 布局变了：时间轴缓存的位置作废，重排一次（它自己那条明路） */
-    tlBox?.dispatchEvent(new CustomEvent('tl:reindex'));
+    /*
+      布局变了：时间轴缓存的位置作废，重排一次（它自己那条明路）。
+      ⚠ `bubbles: true` 不能省：CustomEvent 默认不冒泡，而不冒泡的事件到不了
+      document 上那个监听（组件那边现在用捕获阶段兜着，但发的时候就该说清楚
+      "这是给全局的"）。少了它，上翻装载完轴就停在旧位置上（2026-11-21）。
+    */
+    tlBox?.dispatchEvent(new CustomEvent('tl:reindex', { bubbles: true }));
   }
 
   /**

@@ -387,6 +387,35 @@ function normalizeMembers(data) {
 const linkifyCache = new Map();
 
 /**
+ * 构建产物里所有「分块接口」的 JSON（`…/chunk/<n>.json`）。
+ *
+ * 为什么按目录名找而不是写死 /salon/、/bellie/：以后再有别的页面用分块装载
+ * （`pages/<名>/chunk/[n].json.ts` 那一套），这里自动跟着链上，不用再改一遍。
+ */
+function listChunkJson(outDir) {
+  const out = [];
+  const walk = (dir) => {
+    let entries;
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const e of entries) {
+      const p = path.join(dir, e.name);
+      if (e.isDirectory()) {
+        if (e.name === '_astro' || e.name.startsWith('.')) continue; /* 构建产物内部的东西不看 */
+        walk(p);
+      } else if (e.name.endsWith('.json') && path.basename(dir) === 'chunk') {
+        out.push(p);
+      }
+    }
+  };
+  walk(outDir);
+  return out;
+}
+
+/**
  * 把一个**纯文本**片段里的成员名链上 —— 给「文字不在 HTML 里、而在属性里」的地方用
  * （2026-10-13 加：冰山图条目那张悬停详情卡，描述存在 `data-desc` 属性上，
  * 构建期逐页重写 HTML 那一步**看不见属性里的字**，所以那一页一直整页跳过、名字也就没链）。
@@ -497,9 +526,40 @@ export default function memlink(opts = {}) {
           total += r.count;
           for (const [name, n] of r.perMember) tally.set(name, (tally.get(name) || 0) + n);
         }
+        /*
+          ── 分块接口的那份 JSON 也要链 ────────────────────────────────────
+          为什么（站长 2026-11-21 报的：「有些点评里的成员人名移上去根本没有成员卡」）：
+          /salon/ 和 /bellie/ 的条目是**分块装载**的 —— 首屏那二十条在页面 HTML 里，
+          其余几十簇是 `chunk/<n>.json` 现取的。上面那一圈只重写 HTML 页面，
+          而 JSON 里的 `html` 字段它不是页面、一辈子走不到这儿来。
+          结果就是"最新那几条名字有名片，往上翻出来的那些一个都没有"。
+          这里按同一个匹配器把那几十个文件里的 `html` 字段重写一遍（跳过的前缀照旧跳过）。
+        */
+        let jsonDone = 0;
+        let jsonTotal = 0;
+        for (const file of listChunkJson(outDir)) {
+          const rel = '/' + path.relative(outDir, file).replace(/\\/g, '/');
+          if (skipPrefixes.some((p) => rel.startsWith(p))) continue;
+          let data;
+          try {
+            data = JSON.parse(fs.readFileSync(file, 'utf8'));
+          } catch {
+            continue; /* 不是 JSON 就别碰 */
+          }
+          if (typeof data?.html !== 'string' || !data.html) continue;
+          const r = rewriteHtml(data.html, ctx.match, ctx.render);
+          if (!r.count) continue;
+          data.html = r.html;
+          fs.writeFileSync(file, JSON.stringify(data));
+          jsonDone++;
+          jsonTotal += r.count;
+          for (const [name, n] of r.perMember) tally.set(name, (tally.get(name) || 0) + n);
+        }
         const top = [...tally.entries()].sort((a, b) => b[1] - a[1]).map(([n, c]) => `${n}×${c}`).join(' ');
         logger?.info?.(
-          `成员名自动链接：${done} 个页面、共 ${total} 处（跳过 ${skipPrefixes.join(' ')}）${top ? `\n    ${top}` : ''}`
+          `成员名自动链接：${done} 个页面、共 ${total} 处（跳过 ${skipPrefixes.join(' ')}）` +
+            (jsonDone ? `；分块接口 ${jsonDone} 个文件、共 ${jsonTotal} 处` : '') +
+            (top ? `\n    ${top}` : '')
         );
       },
 
@@ -531,7 +591,13 @@ export default function memlink(opts = {}) {
             !url.startsWith('/_') &&
             !url.startsWith('/node_modules') &&
             !/\.[a-z0-9]+$/i.test(url);
-          if (!isDoc || skipPrefixes.some((p) => url.startsWith(p))) return next();
+          /*
+            分块接口（`…/chunk/<n>.json`）：条目不是页面，是取回来再 innerHTML 进去的一坨
+            `html` 字段。它们在 dev 下也得链，否则用户在本地"看效果"时上翻出来的条目
+            一个名片都没有（构建产物那边是 astro:build:done 里补的，见上）。
+          */
+          const isChunkJson = req.method === 'GET' && /\/chunk\/[^/]+\.json$/.test(url);
+          if ((!isDoc && !isChunkJson) || skipPrefixes.some((p) => url.startsWith(p))) return next();
 
           /* 成员表改了就重读（dev 常驻，改完名字不用重启） */
           const now = stampOf(root);
@@ -576,6 +642,20 @@ export default function memlink(opts = {}) {
             ended = true;
             const body = Buffer.concat(chunks).toString('utf8');
             const type = String(res.getHeader('content-type') || '');
+            /* 分块接口：只重写它那个 `html` 字段，其余字段原样带回去 */
+            if (isChunkJson && type.includes('application/json')) {
+              let data;
+              try {
+                data = JSON.parse(body);
+              } catch {
+                return origEnd(body);
+              }
+              if (typeof data?.html !== 'string' || !data.html) return origEnd(body);
+              const rj = rewriteHtml(data.html, ctx.match, ctx.render);
+              if (!rj.count) return origEnd(body);
+              data.html = rj.html;
+              return origEnd(JSON.stringify(data));
+            }
             if (!type.includes('text/html')) return origEnd(body);
             const r = rewriteHtml(body, ctx.match, ctx.render);
             if (!r.count) return origEnd(body);
