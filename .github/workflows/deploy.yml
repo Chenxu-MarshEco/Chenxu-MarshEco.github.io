@@ -107,6 +107,11 @@ jobs:
         run: pnpm install --frozen-lockfile --prefer-offline
 
       - name: 构建站点
+        # ⚠ GITHUB_TOKEN：构建期要问一次 GitHub 的 commits 接口，把提交署名换成
+        #   用户名 / 头像（首页「曼沫砾总线」右栏和 /feed/ 那一页要画头像）。
+        #   匿名问也行，但 runner 的出网 IP 是共享的，容易被限流成 60 次/小时。
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: pnpm build
 
       # ---------------------------------------------------------------

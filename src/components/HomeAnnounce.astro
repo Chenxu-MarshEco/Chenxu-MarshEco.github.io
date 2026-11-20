@@ -35,6 +35,7 @@
  */
 import { announceBoard, announceExternal, announceHref, ANNOUNCE_KIND_LABEL, latestAnnounces } from '../utils/announce';
 import { recentActivity } from '../utils/activity';
+import ActivityList from './ActivityList.astro';
 import { withBase } from '../utils/url';
 /* 两句说明（「这条还没填跳转地址」悬停提示 / 「还没有公告」空状态）归「文案」面板 */
 import { copy, text } from '../utils/site-copy';
@@ -49,25 +50,8 @@ const emptyText = text(copy.announce?.empty);
 /** 日期在这一行上很短，只写 MM-DD（年份在公告栏那一页里看得到） */
 const shortDate = (d: string) => (d.length === 10 ? d.slice(5) : d);
 
-/* 右栏：推流动态（构建期读 git，见 utils/activity.ts） */
-const feed = recentActivity();
-
-/** 「刚刚 / 12 分钟前 / 昨天…」—— 和编辑器里那个 timeAgo 同一套说法 */
-const timeAgo = (iso: string): string => {
-  const t = Date.parse(String(iso || ''));
-  if (!t) return '';
-  const diff = Date.now() - t;
-  if (diff < 0) return '刚刚';
-  if (diff < 60e3) return '刚刚';
-  if (diff < 3600e3) return `${Math.max(1, Math.floor(diff / 60e3))} 分钟前`;
-  if (diff < 12 * 3600e3) return `${Math.floor(diff / 3600e3)} 小时前`;
-  const d = new Date(t);
-  const p = (n: number) => String(n).padStart(2, '0');
-  const sameYear = d.getFullYear() === new Date().getFullYear();
-  return `${sameYear ? '' : `${d.getFullYear()}-`}${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
-};
-/** 明细那三档的标记（新增 / 改动 / 删除） */
-const CHANGE_MARK: Record<string, string> = { add: '+', edit: '~', del: '−' };
+/* 右栏：推流动态（构建期读 git，见 utils/activity.ts；头像是问一次 GitHub 拿的） */
+const feed = await recentActivity();
 ---
 
 <section class="ann" id="home-announce" data-announce aria-labelledby="ann-title">
@@ -75,7 +59,6 @@ const CHANGE_MARK: Record<string, string> = { add: '+', edit: '~', del: '−' };
     <h3 class="ann__titleWrap">
       <a class="ann__title" id="ann-title" href={boardHref}>{board.title}</a>
     </h3>
-    <a class="ann__more" href={boardHref}>全部公告 ›</a>
   </header>
 
   <div class="ann__cols">
@@ -124,71 +107,19 @@ const CHANGE_MARK: Record<string, string> = { add: '+', edit: '~', del: '−' };
           emptyText && <p class="ann__empty" data-copy="announce.empty">{emptyText}</p>
         )
       }
+      <div class="ann__foot">
+        <a class="ann__more" href={boardHref}>全部公告 ›</a>
+      </div>
     </div>
 
     {/* ---------- 右：近期更新（= 编辑器的推流动态） ---------- */}
     <div class="ann__col ann__col--feed">
-      <ul class="ann__feed" data-announce-feed>
-        {feed.map((c) => (
-          <li class:list={['ann__feedItem', c.mine && 'is-mine']} data-sha={c.short}>
-            {/*
-              头像位：构建期拿不到 GitHub 头像（那要联网），所以画名字首字 ——
-              和编辑器里"拿不到头像就用名字首字画一个圆"是同一个兜底。
-            */}
-            <span class="ann__face" aria-hidden="true">{c.who.slice(0, 1).toUpperCase()}</span>
-            <div class="ann__feedMain">
-              <div class="ann__feedLine">
-                <b class="ann__who">{c.who}</b>
-                <span class="ann__when">{timeAgo(c.iso)}</span>
-              </div>
-              {/*
-                「改了哪几块」：鼠标移上去弹明细卡片（脚本在下面，
-                浮层机制和成员名片 MemberCard.astro 是同一套）。
-              */}
-              <div class="ann__what" tabindex="0" data-feed-detail={c.short}>
-                {c.panels.length ? c.panels.join('、') : '（没列改了什么）'}
-              </div>
-            </div>
-
-            {/*
-              明细卡片：平时 display:none（不占位、不撑框）。
-              鼠标移到上面那行时由脚本把它**搬进 .annlayer 浮层**里显示 ——
-              照搬 MemberCard.astro 的做法：卡片在列表里会被 `overflow:auto` 裁掉一半，
-              搬进 position:fixed 的浮层才不受任何祖先影响。
-            */}
-            <div class="ann__detail" data-feed-card={c.short}>
-              {c.detail.length ? (
-                c.detail.map((p) => (
-                  <div class="ann__detailGroup">
-                    <div class="ann__detailPanel">{p.panel}</div>
-                    <ul class="ann__detailList">
-                      {p.items.map((it) => (
-                        <li class:list={['ann__detailRow', `is-${it.change}`]}>
-                          {it.href ? (
-                            <a class="ann__detailLink" href={it.href}>
-                              <span class="ann__detailMark" aria-hidden="true">{CHANGE_MARK[it.change]}</span>
-                              <span class="ann__detailText">{it.label}</span>
-                            </a>
-                          ) : (
-                            <span class="ann__detailLink ann__detailLink--dead">
-                              <span class="ann__detailMark" aria-hidden="true">{CHANGE_MARK[it.change]}</span>
-                              <span class="ann__detailText">{it.label}</span>
-                            </span>
-                          )}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                ))
-              ) : (
-                <div class="ann__detailGroup">
-                  <div class="ann__detailPanel">{c.panels.join('、') || '（没列改了什么）'}</div>
-                </div>
-              )}
-            </div>
-          </li>
-        ))}
-      </ul>
+      <div class="ann__scroll">
+        <ActivityList items={feed} dense details />
+      </div>
+      <div class="ann__foot">
+        <a class="ann__more" href={withBase('/feed/')}>推流动态 ›</a>
+      </div>
     </div>
   </div>
 </section>
@@ -211,7 +142,7 @@ const CHANGE_MARK: Record<string, string> = { add: '+', edit: '~', del: '−' };
     min-height: clamp(190px, 24vh, 286px);
     max-height: clamp(190px, 24vh, 286px);
     overflow: hidden;
-    padding: 0.55rem 0.7rem 0.6rem;
+    padding: 0.42rem 0.62rem 0.44rem;
     border: 1px solid rgba(255, 120, 190, 0.4);
     border-radius: 16px;
     background: linear-gradient(180deg, rgba(38, 6, 54, 0.86), rgba(20, 3, 32, 0.9));
@@ -225,7 +156,7 @@ const CHANGE_MARK: Record<string, string> = { add: '+', edit: '~', del: '−' };
     align-items: baseline;
     justify-content: space-between;
     gap: 0.5rem;
-    margin-bottom: 0.35rem;
+    margin-bottom: 0.2rem;
     flex: none;
   }
   .ann__titleWrap {
@@ -293,7 +224,7 @@ const CHANGE_MARK: Record<string, string> = { add: '+', edit: '~', del: '−' };
     list-style: none;
     display: flex;
     flex-direction: column;
-    gap: 0.22rem;
+    gap: 0.08rem;
     scrollbar-width: thin;
     /*
       底下淡出：列表在卡片里滚，最后一条常常只露出半行 ——
@@ -380,155 +311,26 @@ const CHANGE_MARK: Record<string, string> = { add: '+', edit: '~', del: '−' };
     line-height: 1.7;
   }
 
-  /* ============================================================================
-   *  右栏：近期更新（= 编辑器「协作」面板那份推流动态，长得和它一样）
-   * ========================================================================= */
-  .ann__feed {
+  /*
+    右栏：近期更新的那一串在 ActivityList.astro 里（首页那 4 条和 /feed/ 整页共用一个组件），
+    这里只给它一个会滚的框。
+  */
+  .ann__scroll {
     flex: 1 1 auto;
     min-height: 0;
     overflow-y: auto;
     overscroll-behavior: contain;
-    margin: 0;
-    padding: 0;
-    list-style: none;
     scrollbar-width: thin;
-    /* 同 .ann__list：滚出卡片的那半行淡出，别看着像被切了 */
+    /* 滚出卡片的那半行淡出，别看着像被切了 */
     mask-image: linear-gradient(to bottom, #000 calc(100% - 14px), transparent);
   }
-  .ann__feedItem {
-    display: flex;
-    gap: 0.38rem;
-    align-items: flex-start;
-    padding: 0.03rem 0.05rem;
-    border-bottom: 1px solid rgba(255, 120, 190, 0.16);
-  }
-  .ann__feedItem:last-child {
-    border-bottom: none;
-  }
-  /* 自己的推流淡一点：重点是"别人刚推了什么"（和编辑器里同一个规矩） */
-  .ann__feedItem.is-mine {
-    opacity: 0.75;
-  }
-  .ann__face {
+  /* 每栏右下角那个「… ›」（站长 2026-11-20：全部公告挪到公告右下角、推流动态放推流右下角） */
+  .ann__foot {
     flex: none;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 20px;
-    height: 20px;
-    border-radius: 50%;
-    border: 1px solid rgba(255, 120, 190, 0.55);
-    background: rgba(22, 3, 36, 0.9);
-    color: #ffb3dd;
-    font-size: 0.64rem;
-    line-height: 1;
-  }
-  .ann__feedMain {
-    min-width: 0;
-    flex: 1 1 auto;
-  }
-  .ann__feedLine {
     display: flex;
-    align-items: baseline;
-    gap: 0.36rem;
-  }
-  .ann__who {
-    color: #ffe6f6;
-    font-size: 0.75rem;
-    font-weight: 500;
-    letter-spacing: 0.03em;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .ann__when {
-    flex: none;
-    color: rgba(255, 226, 244, 0.5);
-    font-size: 0.67rem;
-    font-variant-numeric: tabular-nums;
-  }
-  /*
-    「改了哪几块」那一行：鼠标移上去弹明细卡片。
-    能点的暗示交给光标 + 底下那条虚线（和成员名一个手感）。
-  */
-  .ann__what {
-    margin-top: 0.02rem;
-    color: rgba(255, 236, 248, 0.86);
-    font-size: 0.71rem;
-    line-height: 1.3;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    cursor: help;
-    border-bottom: 1px dashed rgba(255, 120, 190, 0.4);
-  }
-  .ann__what:hover,
-  .ann__what:focus-visible {
-    color: #fff;
-    border-bottom-color: #ff4fa3;
-    outline: none;
-  }
-
-  /* 明细卡片：**平时不画**（不占位、不参与任何容器的滚动区），显示时由脚本搬进浮层 */
-  .ann__detail {
-    display: none;
-  }
-  .ann__detailGroup + .ann__detailGroup {
-    margin-top: 0.4rem;
-  }
-  .ann__detailPanel {
-    margin-bottom: 0.16rem;
-    color: #ffb3dd;
-    font-size: 0.72rem;
-    letter-spacing: 0.06em;
-  }
-  .ann__detailList {
-    margin: 0;
-    padding: 0;
-    list-style: none;
-    display: flex;
-    flex-direction: column;
-    gap: 0.08rem;
-  }
-  .ann__detailLink {
-    display: flex;
-    align-items: baseline;
-    gap: 0.3rem;
-    padding: 0.08rem 0.3rem;
-    border-radius: 6px;
-    color: rgba(255, 236, 248, 0.9);
-    font-size: 0.76rem;
-    line-height: 1.45;
-    text-decoration: none;
-  }
-  a.ann__detailLink:hover,
-  a.ann__detailLink:focus-visible {
-    background: rgba(255, 120, 190, 0.18);
-    color: #fff;
-  }
-  a.ann__detailLink:focus-visible {
-    outline: 2px solid rgba(255, 120, 190, 0.75);
-    outline-offset: 1px;
-  }
-  .ann__detailLink--dead {
-    opacity: 0.6;
-    cursor: default;
-  }
-  .ann__detailMark {
-    flex: none;
-    width: 0.8em;
-    color: rgba(255, 226, 244, 0.6);
-    font-variant-numeric: tabular-nums;
-  }
-  .ann__detailRow.is-add .ann__detailMark {
-    color: #7ef0b0;
-  }
-  .ann__detailRow.is-del .ann__detailMark {
-    color: #ff8f8f;
-  }
-  .ann__detailText {
-    min-width: 0;
-    word-break: break-word;
+    justify-content: flex-end;
+    padding-top: 0.04rem;
+    line-height: 1.15;
   }
 
   /* 窄屏：两栏叠起来（公告在上、近期更新在下），各自滚 */
@@ -556,222 +358,15 @@ const CHANGE_MARK: Record<string, string> = { add: '+', edit: '~', del: '−' };
       font-size: 0.6rem;
       padding: 0.02rem 0.24rem;
     }
-    .ann__feedItem {
-      gap: 0.3rem;
-    }
-    .ann__face {
-      width: 17px;
-      height: 17px;
-      font-size: 0.58rem;
-    }
-    .ann__who {
-      font-size: 0.71rem;
-    }
-    .ann__when {
-      font-size: 0.64rem;
-    }
-    .ann__what {
-      font-size: 0.67rem;
-    }
-    /*
-      手机端那一格只有 60 多像素高，一行一条（名字 · 时间 · 改了哪几块）才排得下三条；
-      两行一条只能露一条半，最后那半条看着就是被切了。
-    */
-    .ann__feedMain {
-      display: flex;
-      align-items: baseline;
-      gap: 0.3rem;
-    }
-    .ann__feedLine {
-      flex: none;
-    }
-    .ann__what {
-      flex: 1 1 auto;
-      min-width: 0;
-      margin-top: 0;
-    }
     /* 手机上没有悬停的滚动条要留位置，别让它压着字 */
     .ann__list,
-    .ann__feed {
+    .ann__scroll {
       scrollbar-width: none;
     }
     .ann__list::-webkit-scrollbar,
-    .ann__feed::-webkit-scrollbar {
+    .ann__scroll::-webkit-scrollbar {
       width: 0;
       height: 0;
     }
   }
 </style>
-
-<script>
-  /*
-    明细卡片的浮层。
-    ----------------------------------------------------------------------------
-    站长 2026-11-20 的原话：
-      「为什么推流动态的卡片停留手感这么奇怪 旁边每日精华的卡片不是有现成的模板吗
-        为什么跟每日精华手感不一样 推流动态的卡片特别延迟」
-
-    每日精华那张卡（HomeDailyEssence.astro 的 .daily__pop）的手感来自两件事：
-      · 悬停**整张卡**就出来 —— 不是只有某个小字；
-      · 出来/收起是 0.15s 的 CSS 过渡，没有任何计时器。
-
-    这一版照着改（之前那版确实卡的三个原因，都记在这儿免得再犯）：
-      ① 触发点只挂在「改了哪几块」那一行小字上 —— 目标太小，得瞄准；
-      ② `pointermove` 里每次都调两遍 `getBoundingClientRect()` —— 每移动一像素强排一次版，
-         越动越卡（这是"特别延迟"的主因）；
-      ③ 收起是 220ms + 每 220ms 再重算一次的计时器 —— 移开以后还赖着不走。
-    现在：整行都能触发、几何只在打开/滚动时算一次、收起宽限 120ms。
-
-    ⚠ 为什么不能像每日精华那样纯 CSS `:hover`：这张卡在 `.ann__feed` 里，
-      那个列表是 `overflow-y: auto`，卡一超出列表就被裁掉 —— 必须搬进
-      position:fixed 的 `.annlayer`（和成员名片 MemberCard.astro 同一套做法）。
-  */
-  (() => {
-    /** 浮层：铺满视口、不吃指针，只有里面的卡片吃 */
-    let layer: HTMLElement | null = null;
-    /** 当前显示的卡，以及它原本挂在哪个 li 上 */
-    let card: HTMLElement | null = null;
-    let home: HTMLElement | null = null;
-    let hideTimer = 0;
-    /**
-     * 几何缓存：整行 + 卡片的外接矩形（打开和滚动时算一次）。
-     * ⚠ 绝对不要在 pointermove 里重算 —— 那就是上一版的卡顿来源。
-     */
-    let zone: { l: number; t: number; r: number; b: number } | null = null;
-
-    const ensureLayer = (): HTMLElement => {
-      if (layer && layer.isConnected) return layer;
-      layer = document.createElement('div');
-      layer.className = 'annlayer';
-      layer.setAttribute('aria-hidden', 'true');
-      document.body.append(layer);
-      return layer;
-    };
-
-    /** 把卡片摆到那一行上面（上面放不下才摆下面），左右夹在视口里 */
-    const place = (row: HTMLElement, el: HTMLElement) => {
-      const r = row.getBoundingClientRect();
-      /* 先挪到屏幕外量尺寸，避免"在 0,0 处闪一下" */
-      el.style.left = '-9999px';
-      el.style.top = '0px';
-      const cr = el.getBoundingClientRect();
-      const pad = 8;
-      const gap = 6;
-      let left = r.left;
-      left = Math.max(pad, Math.min(window.innerWidth - cr.width - pad, left));
-      let top = r.top - cr.height - gap;
-      if (top < pad) top = Math.min(window.innerHeight - cr.height - pad, r.bottom + gap);
-      el.style.left = `${Math.round(left)}px`;
-      el.style.top = `${Math.round(top)}px`;
-      return { row: r, box: { l: left, t: top, r: left + cr.width, b: top + cr.height } };
-    };
-
-    /** 整行 + 卡片的外接矩形（宽一点：斜着挪过去也算在里面） */
-    const measure = (row: HTMLElement, box: { l: number; t: number; r: number; b: number }) => {
-      const r = row.getBoundingClientRect();
-      zone = {
-        l: Math.min(r.left, box.l) - 8,
-        t: Math.min(r.top, box.t) - 8,
-        r: Math.max(r.right, box.r) + 8,
-        b: Math.max(r.bottom, box.b) + 8,
-      };
-    };
-
-    const inZone = (x: number, y: number) =>
-      !!zone && x >= zone.l && x <= zone.r && y >= zone.t && y <= zone.b;
-
-    const hide = () => {
-      window.clearTimeout(hideTimer);
-      hideTimer = 0;
-      const el = card;
-      const back = home;
-      card = null;
-      home = null;
-      zone = null;
-      if (!el) return;
-      el.removeAttribute('style');
-      el.classList.remove('is-open');
-      /* 搬回原来那个 li 里（标记保持"每条动态自己带一张卡"的形状） */
-      if (back && back.isConnected) back.append(el);
-      else el.remove();
-    };
-
-    const scheduleHide = () => {
-      if (hideTimer) return;
-      hideTimer = window.setTimeout(hide, 120);
-    };
-
-    const show = (li: HTMLElement) => {
-      const el = li.querySelector<HTMLElement>('[data-feed-card]');
-      if (!el) return;
-      window.clearTimeout(hideTimer);
-      hideTimer = 0;
-      if (card === el) return;
-      if (card) hide();
-      ensureLayer().append(el);
-      card = el;
-      home = li;
-      el.classList.add('is-open');
-      const at = place(li, el);
-      measure(li, at.box);
-    };
-
-    /*
-      指针动一下就够判断了：只比数字，不碰布局。
-      在"整行 ∪ 卡片"那块里就保持打开，出界 120ms 后收。
-    */
-    document.addEventListener(
-      'pointermove',
-      (event) => {
-        if (!card) return;
-        if (inZone(event.clientX, event.clientY)) {
-          if (hideTimer) {
-            window.clearTimeout(hideTimer);
-            hideTimer = 0;
-          }
-        } else {
-          scheduleHide();
-        }
-      },
-      { passive: true }
-    );
-
-    /* 整行都能触发（比只认那一行小字好瞄得多） */
-    document.addEventListener('pointerover', (event) => {
-      const t = event.target as Element | null;
-      if (!t || !t.closest) return;
-      const li = t.closest('.ann__feedItem') as HTMLElement | null;
-      if (li) {
-        show(li);
-        return;
-      }
-      if (card && !t.closest('.annlayer')) scheduleHide();
-    });
-
-    /* 键盘走到那行上也浮出来 */
-    document.addEventListener('focusin', (event) => {
-      const t = event.target as Element | null;
-      if (!t || !t.closest) return;
-      const li = t.closest('.ann__feedItem') as HTMLElement | null;
-      if (li) show(li);
-    });
-    document.addEventListener('focusout', () => {
-      if (card) scheduleHide();
-    });
-    document.addEventListener('keydown', (event) => {
-      if (event.key === 'Escape' && card) hide();
-    });
-
-    /*
-      滚页面 / 滚内部列表 / 改窗口大小：位置会错，重新摆一次并重算几何。
-      这是唯一会碰布局的时机（不是每个 pointermove）。
-    */
-    const reflow = () => {
-      if (!card || !home || !home.isConnected) return;
-      const at = place(home, card);
-      measure(home, at.box);
-    };
-    window.addEventListener('scroll', reflow, { passive: true, capture: true });
-    window.addEventListener('resize', reflow);
-  })();
-</script>

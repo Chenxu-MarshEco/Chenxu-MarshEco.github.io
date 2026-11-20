@@ -19,6 +19,7 @@
  */
 import { readCommits } from '../../tools/git/activity.mjs';
 import { detailForCommit } from '../../tools/git/activity-detail.mjs';
+import { ensureActors, resolveActor } from '../../tools/git/avatar-map.mjs';
 import site from '../site.config';
 import { flattenBoards, type BoardNode } from './boards';
 import { announceHref, announceList } from './announce';
@@ -128,48 +129,71 @@ const link = (href: string): string =>
 const LIMIT = 4;
 
 let cache: ActivityEntry[] | null = null;
+/** 整份（`/feed/` 那页用，不带明细）也缓存一份，别在两次调用里各算一遍 */
+let fullCache: ActivityEntry[] | null = null;
 
-/** 首页那块近期更新（构建期算一次，页面里直接用） */
-export function recentActivity(limit = LIMIT): ActivityEntry[] {
-  if (cache) return cache.slice(0, limit);
-  cache = [];
+/**
+ * 算一批动态。
+ * @param limit       读多少条提交（`Infinity` = 全部）
+ * @param withDetails 要不要算「具体改了哪几条」（首页那 4 条要，整页列表不要 ——
+ *                    317 条每条都去 diff 一遍要四十多秒，那一页也用不上）
+ */
+async function build(limit: number, withDetails: boolean): Promise<ActivityEntry[]> {
   let data: { commits?: Record<string, unknown>[] } | null = null;
   try {
-    /* 同步读：构建期没有 await 的地方可用（readCommits 本来就是同步的） */
-    data = readCommits({ limit: LIMIT });
+    data = readCommits({ limit: Number.isFinite(limit) ? limit : 100000 });
   } catch {
     data = null;
   }
+  /*
+    署名 → GitHub 用户名 / 头像（一次请求，失败就退化）。
+    问的是最近 30 条，但结果按**邮箱**存，所以同一个人很久以前的提交也一起认出来了。
+  */
+  let actors = { byEmail: {} } as Awaited<ReturnType<typeof ensureActors>>;
+  try {
+    const emails = (data?.commits ?? [])
+      .map((c) => String((c.author as { email?: string } | undefined)?.email ?? ''))
+      .filter(Boolean);
+    actors = await ensureActors({ emails, limit: 30, cwd: process.cwd() });
+  } catch {
+    /* 拿不到头像不影响列表本身 */
+  }
+
+  const out: ActivityEntry[] = [];
   for (const c of data?.commits ?? []) {
     const sha = String(c.sha ?? '');
     if (!sha) continue;
     const files = Array.isArray(c.files) ? (c.files as string[]) : [];
     const detail: ActivityPanel[] = [];
-    try {
-      /* ⚠ cwd 显式传：构建时这个模块被 Vite 打包，import.meta.url 算出来的根是错的 */
-      for (const p of detailForCommit({ sha, files, cwd: process.cwd() })) {
-        const items = p.items
-          .map((it, i) => ({
-            key: `${sha}-${p.panel}-${i}`,
-            change: it.change,
-            label: it.label,
-            href: link(hrefOf(p.panel, it.id)),
-          }))
-          /* 明细太多就截断：卡片里放不下，也没人看得完 */
-          .slice(0, 24);
-        if (items.length) detail.push({ panel: p.panel, items });
+    if (withDetails) {
+      try {
+        /* ⚠ cwd 显式传：构建时这个模块被 Vite 打包，import.meta.url 算出来的根是错的 */
+        for (const p of detailForCommit({ sha, files, cwd: process.cwd() })) {
+          const items = p.items
+            .map((it, i) => ({
+              key: `${sha}-${p.panel}-${i}`,
+              change: it.change,
+              label: it.label,
+              href: link(hrefOf(p.panel, it.id)),
+            }))
+            /* 明细太多就截断：卡片里放不下，也没人看得完 */
+            .slice(0, 24);
+          if (items.length) detail.push({ panel: p.panel, items });
+        }
+      } catch {
+        /* 明细算不出来不影响这一条动态本身 */
       }
-    } catch {
-      /* 明细算不出来不影响这一条动态本身 */
     }
-    const author = (c.author ?? {}) as { name?: string };
+    const author = (c.author ?? {}) as { name?: string; email?: string };
     const committer = (c.committer ?? {}) as { name?: string };
-    cache.push({
+    /* 头像 / 用户名：和编辑器里那一条一样，拿不到就用署名 + 首字圆圈 */
+    const actor = resolveActor(String(author.email ?? ''), actors);
+    out.push({
       sha,
       short: String(c.short ?? sha.slice(0, 7)),
-      who: String(author.name || committer.name || '（没署名）'),
-      avatar: '',
-      profile: '',
+      who: String(actor.login || author.name || committer.name || '（没署名）'),
+      avatar: actor.avatar,
+      profile: actor.profile,
       iso: String(c.iso ?? ''),
       time: Number(c.time ?? 0),
       mine: false,
@@ -178,5 +202,29 @@ export function recentActivity(limit = LIMIT): ActivityEntry[] {
       count: detail.reduce((a, p) => a + p.items.length, 0),
     });
   }
+  return out;
+}
+
+/**
+ * 首页那块近期更新（构建期算一次，页面里直接用）。
+ *
+ * `await`：头像要问一次 GitHub（见 tools/git/avatar-map.mjs）。
+ * 本地构建时编辑器已经问过的那些人直接从 `.tmp/collab-actors.json` 拿，
+ * 一个请求都不发；问不到就退回"名字首字画个圆"，不会让构建失败。
+ */
+export async function recentActivity(limit = LIMIT): Promise<ActivityEntry[]> {
+  if (!cache) cache = await build(LIMIT, true);
   return cache.slice(0, limit);
+}
+
+/**
+ * 全部推流动态（`/feed/` 那一页）。
+ *
+ * 站长 2026-11-20：「加个推流动态按钮可以跳转到一个页面可以查看所有推流动态
+ * 并且进去的都可以一直储存在那里 就像日志一样」——
+ * 所以这里**不封顶**：git 里有多少条提交就列多少条，一条都不会因为时间久了消失。
+ */
+export async function allActivity(): Promise<ActivityEntry[]> {
+  if (!fullCache) fullCache = await build(Number.POSITIVE_INFINITY, false);
+  return fullCache;
 }

@@ -1,0 +1,467 @@
+---
+/**
+ * 推流动态的一串行 —— 首页「曼沫砾总线」右栏、`/feed/` 那一页共用这一个组件。
+ *
+ * 站长 2026-11-20 的原话：
+ *   「更新动态格式直接参考编辑器里的推流动态 和编辑器里那个一模一样就好了」
+ *   「可以看到编辑器推流里的推流者都是能看到github头像的 网站里却没有 把头像也接上」
+ *   「加个推流动态按钮可以跳转到一个页面可以查看所有推流动态 并且进去的都可以一直储存在那里 就像日志一样」
+ *
+ * 一行就是编辑器里那一条：头像 · 谁 · 什么时候 · 改了哪几块。
+ *   · 首页那 4 条带**明细卡片**（鼠标移上去弹，每条能点着跳）；
+ *   · `/feed/` 那一页条数多，`details={false}` 关掉卡片，只留这一行。
+ */
+import type { ActivityEntry } from '../utils/activity';
+
+interface Props {
+  items: ActivityEntry[];
+  /** 紧凑一点（首页那一格高度是卡死的） */
+  dense?: boolean;
+  /** 要不要明细卡片（鼠标移上去弹的那张） */
+  details?: boolean;
+  /** 这一串的 id（`/feed/` 那页翻页脚本要按它找） */
+  id?: string;
+  /** 每条 li 打上翻页脚本认的标记（`/feed/` 那页要分页） */
+  pager?: boolean;
+}
+
+const { items, dense = false, details = false, id = undefined, pager = false } = Astro.props;
+
+/** 「刚刚 / 12 分钟前 / 昨天…」—— 和编辑器里那个 timeAgo 同一套说法 */
+const timeAgo = (iso: string): string => {
+  const t = Date.parse(String(iso || ''));
+  if (!t) return '';
+  const diff = Date.now() - t;
+  if (diff < 0) return '刚刚';
+  if (diff < 60e3) return '刚刚';
+  if (diff < 3600e3) return `${Math.max(1, Math.floor(diff / 60e3))} 分钟前`;
+  if (diff < 12 * 3600e3) return `${Math.floor(diff / 3600e3)} 小时前`;
+  const d = new Date(t);
+  const p = (n: number) => String(n).padStart(2, '0');
+  const sameYear = d.getFullYear() === new Date().getFullYear();
+  return `${sameYear ? '' : `${d.getFullYear()}-`}${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+};
+/** 明细那三档的标记（新增 / 改动 / 删除） */
+const CHANGE_MARK: Record<string, string> = { add: '+', edit: '~', del: '−' };
+---
+
+<ul class:list={['feed', dense && 'feed--dense']} id={id} data-activity-list>
+  {
+    items.map((c) => (
+      <li class:list={['feed__item', c.mine && 'is-mine']} data-sha={c.short} data-pager-item={pager ? '' : undefined}>
+        {/* 头像：拿得到 GitHub 头像就画图片，拿不到就画名字首字（和编辑器同一个兜底） */}
+        <span class="feed__face" aria-hidden="true">
+          {c.avatar ? (
+            <img
+              class="feed__faceImg"
+              src={c.avatar}
+              alt=""
+              width="20"
+              height="20"
+              loading="lazy"
+              decoding="async"
+              referrerpolicy="no-referrer"
+            />
+          ) : (
+            c.who.slice(0, 1).toUpperCase()
+          )}
+        </span>
+        <div class="feed__main">
+          <div class="feed__line">
+            <b class="feed__who">{c.who}</b>
+            <span class="feed__when">{timeAgo(c.iso)}</span>
+          </div>
+          <div class="feed__what" tabindex={details ? '0' : undefined} data-feed-detail={details ? c.short : undefined}>
+            {c.panels.length ? c.panels.join('、') : '（没列改了什么）'}
+          </div>
+        </div>
+
+        {
+          details && (
+            <div class="feed__detail" data-feed-card={c.short}>
+              {c.detail.length ? (
+                c.detail.map((p) => (
+                  <div class="feed__detailGroup">
+                    <div class="feed__detailPanel">{p.panel}</div>
+                    <ul class="feed__detailList">
+                      {p.items.map((it) => (
+                        <li class:list={['feed__detailRow', `is-${it.change}`]}>
+                          {it.href ? (
+                            <a class="feed__detailLink" href={it.href}>
+                              <span class="feed__detailMark" aria-hidden="true">{CHANGE_MARK[it.change]}</span>
+                              <span class="feed__detailText">{it.label}</span>
+                            </a>
+                          ) : (
+                            <span class="feed__detailLink feed__detailLink--dead">
+                              <span class="feed__detailMark" aria-hidden="true">{CHANGE_MARK[it.change]}</span>
+                              <span class="feed__detailText">{it.label}</span>
+                            </span>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ))
+              ) : (
+                <div class="feed__detailGroup">
+                  <div class="feed__detailPanel">{c.panels.join('、') || '（没列改了什么）'}</div>
+                </div>
+              )}
+            </div>
+          )
+        }
+      </li>
+    ))
+  }
+</ul>
+
+<style>
+  .feed {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    min-width: 0;
+  }
+  .feed__item {
+    display: flex;
+    gap: 0.38rem;
+    align-items: flex-start;
+    padding: 0.16rem 0.05rem;
+    border-bottom: 1px solid rgba(255, 120, 190, 0.16);
+  }
+  .feed__item:last-child {
+    border-bottom: none;
+  }
+  /* 自己的推流淡一点：重点是"别人刚推了什么"（和编辑器里同一个规矩） */
+  .feed__item.is-mine {
+    opacity: 0.75;
+  }
+  .feed__face {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    border: 1px solid rgba(255, 120, 190, 0.55);
+    background: rgba(22, 3, 36, 0.9);
+    color: #ffb3dd;
+    font-size: 0.64rem;
+    line-height: 1;
+    overflow: hidden;
+  }
+  /* GitHub 头像：撑满那个圆（宽高写死，图没到之前也不会把行撑开） */
+  .feed__faceImg {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+  .feed__main {
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+  .feed__line {
+    display: flex;
+    align-items: baseline;
+    gap: 0.36rem;
+  }
+  .feed__who {
+    color: #ffe6f6;
+    font-size: 0.75rem;
+    font-weight: 500;
+    letter-spacing: 0.03em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .feed__when {
+    flex: none;
+    color: rgba(255, 226, 244, 0.5);
+    font-size: 0.67rem;
+    font-variant-numeric: tabular-nums;
+  }
+  /*
+    「改了哪几块」：鼠标移上去弹明细卡片。
+    能点的暗示交给光标 + 底下那条虚线（和成员名一个手感）。
+  */
+  .feed__what {
+    margin-top: 0.02rem;
+    color: rgba(255, 236, 248, 0.86);
+    font-size: 0.71rem;
+    line-height: 1.35;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .feed__what[data-feed-detail] {
+    cursor: help;
+    border-bottom: 1px dashed rgba(255, 120, 190, 0.4);
+  }
+  .feed__what[data-feed-detail]:hover,
+  .feed__what[data-feed-detail]:focus-visible {
+    color: #fff;
+    border-bottom-color: #ff4fa3;
+    outline: none;
+  }
+
+  /* 明细卡片：**平时不画**（不占位、不参与任何容器的滚动区），显示时由脚本搬进浮层 */
+  .feed__detail {
+    display: none;
+  }
+  .feed__detailGroup + .feed__detailGroup {
+    margin-top: 0.4rem;
+  }
+  .feed__detailPanel {
+    margin-bottom: 0.16rem;
+    color: #ffb3dd;
+    font-size: 0.72rem;
+    letter-spacing: 0.06em;
+  }
+  .feed__detailList {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 0.08rem;
+  }
+  .feed__detailLink {
+    display: flex;
+    align-items: baseline;
+    gap: 0.3rem;
+    padding: 0.08rem 0.3rem;
+    border-radius: 6px;
+    color: rgba(255, 236, 248, 0.9);
+    font-size: 0.76rem;
+    line-height: 1.45;
+    text-decoration: none;
+  }
+  a.feed__detailLink:hover,
+  a.feed__detailLink:focus-visible {
+    background: rgba(255, 120, 190, 0.18);
+    color: #fff;
+  }
+  a.feed__detailLink:focus-visible {
+    outline: 2px solid rgba(255, 120, 190, 0.75);
+    outline-offset: 1px;
+  }
+  .feed__detailLink--dead {
+    opacity: 0.6;
+    cursor: default;
+  }
+  .feed__detailMark {
+    flex: none;
+    width: 0.8em;
+    color: rgba(255, 226, 244, 0.6);
+    font-variant-numeric: tabular-nums;
+  }
+  .feed__detailRow.is-add .feed__detailMark {
+    color: #7ef0b0;
+  }
+  .feed__detailRow.is-del .feed__detailMark {
+    color: #ff8f8f;
+  }
+  .feed__detailText {
+    min-width: 0;
+    word-break: break-word;
+  }
+
+  /* ---- 首页那一格：紧凑版（高度卡死，一行只能这么高） ---- */
+  .feed--dense .feed__item {
+    padding: 0 0.05rem;
+  }
+  .feed--dense .feed__line {
+    line-height: 1.12;
+  }
+  .feed--dense .feed__what {
+    line-height: 1.2;
+  }
+  .feed--dense .feed__who {
+    font-size: 0.73rem;
+  }
+  .feed--dense .feed__when {
+    font-size: 0.65rem;
+  }
+
+  /* ---- /feed/ 那一页：正常版（行高松一点，好读） ---- */
+  .feed:not(.feed--dense) .feed__item {
+    gap: 0.5rem;
+    padding: 0.42rem 0.1rem;
+  }
+  .feed:not(.feed--dense) .feed__face {
+    width: 26px;
+    height: 26px;
+    font-size: 0.78rem;
+  }
+  .feed:not(.feed--dense) .feed__who {
+    font-size: 0.92rem;
+  }
+  .feed:not(.feed--dense) .feed__when {
+    font-size: 0.8rem;
+  }
+  .feed:not(.feed--dense) .feed__what {
+    margin-top: 0.14rem;
+    font-size: 0.86rem;
+    line-height: 1.55;
+    white-space: normal;
+    word-break: break-word;
+  }
+</style>
+
+{
+  details && (
+    <script>
+      /*
+        明细卡片的浮层。
+        ----------------------------------------------------------------------------
+        站长 2026-11-20 的原话：
+          「为什么推流动态的卡片停留手感这么奇怪 旁边每日精华的卡片不是有现成的模板吗
+            为什么跟每日精华手感不一样 推流动态的卡片特别延迟」
+
+        每日精华那张卡（HomeDailyEssence 的 .daily__pop）的手感来自两件事：
+          · 悬停**整张卡**就出来 —— 不是只有某个小字；
+          · 出来/收起是 0.15s 的 CSS 过渡，没有任何计时器。
+        这一版照着改（之前那版卡的三个原因，记在这儿免得再犯）：
+          ① 触发点只挂在「改了哪几块」那一行小字上 —— 目标太小，得瞄准；
+          ② `pointermove` 里每次都调两遍 `getBoundingClientRect()` —— 每移动一像素强排一次版；
+          ③ 收起是 220ms + 每 220ms 再重算一次的计时器 —— 移开以后还赖着不走。
+        现在：整行都能触发、几何只在打开/滚动时算一次、收起宽限 120ms。
+
+        ⚠ 不能像每日精华那样纯 CSS `:hover`：这张卡在带 `overflow:auto` 的列表里，
+          一超出就被裁掉 —— 必须搬进 position:fixed 的 `.annlayer`
+          （和成员名片 MemberCard.astro 同一套做法）。
+      */
+      (() => {
+        if ((window as unknown as { __feedCard?: boolean }).__feedCard) return;
+        (window as unknown as { __feedCard?: boolean }).__feedCard = true;
+
+        let layer: HTMLElement | null = null;
+        let card: HTMLElement | null = null;
+        let home: HTMLElement | null = null;
+        let hideTimer = 0;
+        /** 整行 + 卡片的外接矩形（打开和滚动时算一次，**绝不在 pointermove 里重算**） */
+        let zone: { l: number; t: number; r: number; b: number } | null = null;
+
+        const ensureLayer = (): HTMLElement => {
+          if (layer && layer.isConnected) return layer;
+          layer = document.createElement('div');
+          layer.className = 'annlayer';
+          layer.setAttribute('aria-hidden', 'true');
+          document.body.append(layer);
+          return layer;
+        };
+
+        const place = (row: HTMLElement, el: HTMLElement) => {
+          const r = row.getBoundingClientRect();
+          el.style.left = '-9999px';
+          el.style.top = '0px';
+          const cr = el.getBoundingClientRect();
+          const pad = 8;
+          const gap = 6;
+          let left = r.left;
+          left = Math.max(pad, Math.min(window.innerWidth - cr.width - pad, left));
+          let top = r.top - cr.height - gap;
+          if (top < pad) top = Math.min(window.innerHeight - cr.height - pad, r.bottom + gap);
+          el.style.left = `${Math.round(left)}px`;
+          el.style.top = `${Math.round(top)}px`;
+          return { l: left, t: top, r: left + cr.width, b: top + cr.height };
+        };
+
+        const measure = (row: HTMLElement, box: { l: number; t: number; r: number; b: number }) => {
+          const r = row.getBoundingClientRect();
+          zone = {
+            l: Math.min(r.left, box.l) - 8,
+            t: Math.min(r.top, box.t) - 8,
+            r: Math.max(r.right, box.r) + 8,
+            b: Math.max(r.bottom, box.b) + 8,
+          };
+        };
+
+        const inZone = (x: number, y: number) => !!zone && x >= zone.l && x <= zone.r && y >= zone.t && y <= zone.b;
+
+        const hide = () => {
+          window.clearTimeout(hideTimer);
+          hideTimer = 0;
+          const el = card;
+          const back = home;
+          card = null;
+          home = null;
+          zone = null;
+          if (!el) return;
+          el.removeAttribute('style');
+          el.classList.remove('is-open');
+          if (back && back.isConnected) back.append(el);
+          else el.remove();
+        };
+
+        const scheduleHide = () => {
+          if (hideTimer) return;
+          hideTimer = window.setTimeout(hide, 120);
+        };
+
+        const show = (li: HTMLElement) => {
+          const el = li.querySelector<HTMLElement>('[data-feed-card]');
+          if (!el) return;
+          window.clearTimeout(hideTimer);
+          hideTimer = 0;
+          if (card === el) return;
+          if (card) hide();
+          ensureLayer().append(el);
+          card = el;
+          home = li;
+          el.classList.add('is-open');
+          measure(li, place(li, el));
+        };
+
+        document.addEventListener(
+          'pointermove',
+          (event) => {
+            if (!card) return;
+            if (inZone(event.clientX, event.clientY)) {
+              if (hideTimer) {
+                window.clearTimeout(hideTimer);
+                hideTimer = 0;
+              }
+            } else {
+              scheduleHide();
+            }
+          },
+          { passive: true }
+        );
+
+        document.addEventListener('pointerover', (event) => {
+          const t = event.target as Element | null;
+          if (!t || !t.closest) return;
+          const li = t.closest('.feed__item') as HTMLElement | null;
+          if (li && li.querySelector('[data-feed-card]')) {
+            show(li);
+            return;
+          }
+          if (card && !t.closest('.annlayer')) scheduleHide();
+        });
+
+        document.addEventListener('focusin', (event) => {
+          const t = event.target as Element | null;
+          if (!t || !t.closest) return;
+          const li = t.closest('.feed__item') as HTMLElement | null;
+          if (li && li.querySelector('[data-feed-card]')) show(li);
+        });
+        document.addEventListener('focusout', () => {
+          if (card) scheduleHide();
+        });
+        document.addEventListener('keydown', (event) => {
+          if (event.key === 'Escape' && card) hide();
+        });
+
+        const reflow = () => {
+          if (!card || !home || !home.isConnected) return;
+          measure(home, place(home, card));
+        };
+        window.addEventListener('scroll', reflow, { passive: true, capture: true });
+        window.addEventListener('resize', reflow);
+      })();
+    </script>
+  )
+}

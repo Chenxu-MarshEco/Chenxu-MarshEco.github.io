@@ -1,0 +1,51 @@
+---
+/**
+ * 推流动态的全部历史 —— `/feed/`
+ *
+ * 站长 2026-11-20 的原话：
+ *   「加个推流动态按钮可以跳转到一个页面可以查看所有推流动态
+ *    并且进去的都可以一直储存在那里 就像日志一样」
+ *
+ * 所以这一页就是**全部**提交，一条不落（不像首页那张卡只放铺满的 4 条）。
+ * 数据仍然只有一份：`tools/git/activity.mjs` 读 git 的提交记录 ——
+ * 提交在 git 里就是永久的，这一页每次构建都会把它们重新列出来，
+ * 和眠鱼志「一天一栏、永远都在」是同一个性质。
+ *
+ * 一页 37 条（和文章 / 手记 / 日志列表同一个数，见 utils/pager.ts）。
+ * 翻页是客户端的（Pager.astro）：整份列表在 HTML 里，只把不在本页的藏起来。
+ *
+ * 版式借用版块页那套皮（BoardLayout：深紫底 + 页头页脚 + hero 大标题）——
+ * 和公告栏那一页一个理由：从首页那张深色卡点进来，不该突然变成另一个世界。
+ */
+import BoardLayout from '../layouts/BoardLayout.astro';
+import ActivityList from '../components/ActivityList.astro';
+import Pager from '../components/Pager.astro';
+import { allActivity } from '../utils/activity';
+import { PAGE_SIZE } from '../utils/pager';
+
+const entries = await allActivity();
+---
+
+<BoardLayout title="推流动态" backLabel="返回首页">
+  <div class="pulse" data-activity-board>
+    <div class="feedList" id="feed-list" data-activity-feed>
+      <ActivityList items={entries} pager />
+    </div>
+  </div>
+  <Pager target="#feed-list" total={entries.length} pageSize={PAGE_SIZE} label="推流动态翻页" />
+</BoardLayout>
+
+<style>
+  .pulse {
+    margin: 0.4rem 0 1.2rem;
+  }
+  /*
+    翻页脚本按「目标选择器选中的元素」来显示/隐藏（见 Pager.astro），
+    所以这里不用把每条再包一层 —— 上面那个 target 直接指到每一个 li。
+  */
+  .feedList {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+</style>

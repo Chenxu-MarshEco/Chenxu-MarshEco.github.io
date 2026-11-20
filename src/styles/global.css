@@ -1190,7 +1190,7 @@ body.is-iceberg .site-footer {
   z-index: 9980;
   pointer-events: none;
 }
-.annlayer .ann__detail[data-feed-card] {
+.annlayer .feed__detail[data-feed-card] {
   position: fixed;
   display: block;
   max-width: min(24rem, 86vw);
@@ -1219,7 +1219,7 @@ body.is-iceberg .site-footer {
     opacity 0.15s ease,
     transform 0.15s ease;
 }
-.annlayer .ann__detail.is-open {
+.annlayer .feed__detail.is-open {
   opacity: 1;
   transform: none;
 }
