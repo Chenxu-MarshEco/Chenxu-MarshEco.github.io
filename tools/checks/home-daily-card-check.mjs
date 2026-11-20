@@ -146,15 +146,13 @@ const HEIGHTS = `(() => {
   const h = (sel) => { const el = document.querySelector(sel); return el ? Math.round(el.getBoundingClientRect().height) : null; };
   return {
     grid: h('.extras__grid'),
-    pair: h('.extras__pair'),
     /*
-      ⚠ 日历按 **id** 找，不能用「.extras__grid 的第一个孩子」那种位置选择器
-      （2026-10-06 改）：那一屏上面新加了一行（曼沫砾总线 + 黎语堂），
-      第一个格子已经不是日历了 —— 位置一挪，"日历"量到的其实是公告卡，
-      "三张一样高"那条会假红。
+      ⚠ 2026-11-20 行序改过（精华大殿挪到曼沫砾总线右边），所以"和精华同一行"的
+      不再是日历，而是公告卡。比高度的时候就比这一行里的两张。
     */
+    announce: h('#home-announce'),
     calendar: h('#home-cal'),
-    iceberg: h('.extras__pair > *:first-child'),
+    iceberg: h('.extras__pair--under > *:first-child'),
     daily: h('.daily'),
     card: h('.daily__card'),
   };
@@ -241,13 +239,15 @@ await sleep(600);
 const after = await cdp.ev(HEIGHTS);
 info(`塞入 ${longLen} 字的正文后：${JSON.stringify(after)}`);
 const same = (a, b) => Math.abs((a ?? -1) - (b ?? -2)) <= 1;
-check('★★ 塞进超长精华后：**这一行、日历、冰山、精华帧**的高度全都没变',
-  same(before.grid, after.grid) && same(before.calendar, after.calendar)
+check('★★ 塞进超长精华后：**这一行、公告卡、日历、冰山、精华帧**的高度全都没变',
+  same(before.grid, after.grid) && same(before.announce, after.announce)
+  && same(before.calendar, after.calendar)
   && same(before.iceberg, after.iceberg) && same(before.daily, after.daily),
-  `行 ${before.grid}→${after.grid} / 日历 ${before.calendar}→${after.calendar} / 冰山 ${before.iceberg}→${after.iceberg}`);
-check('★ 三张卡还是**一样高**（日历 = 冰山 = 精华帧）',
-  same(after.calendar, after.iceberg) && same(after.iceberg, after.daily),
-  `${after.calendar} / ${after.iceberg} / ${after.daily}`);
+  `行 ${before.grid}→${after.grid} / 公告 ${before.announce}→${after.announce} / 日历 ${before.calendar}→${after.calendar} / 冰山 ${before.iceberg}→${after.iceberg}`);
+check('★ 同一行里两张还是**一样高**（曼沫砾总线 = 精华大殿）',
+  same(after.announce, after.daily), `公告 ${after.announce} / 精华 ${after.daily}`);
+check('★ 第三行照旧和上面那一行一样高（日历 = 冰山）',
+  same(after.calendar, after.iceberg), `${after.calendar} / ${after.iceberg}`);
 check('★ 卡片里那份是**裁过的**（塞进去 720 字，卡片里只显示得下几行）',
   (await cdp.ev(`(() => {
     const t = document.querySelector('.daily__card .daily__text');
@@ -268,9 +268,14 @@ await cdp.ev(`(() => { const s = document.createElement('style'); s.id = 'ab-sta
 await sleep(400);
 const ab = await cdp.ev(HEIGHTS);
 info(`A/B（内容参与布局时）：${JSON.stringify(ab)}`);
-check('★★ A/B 对照：内容一旦参与布局，同样的长文**真的把日历和冰山一起顶高**了（说明上面那条不是白测的）',
-  ab.grid > after.grid + 20 && ab.calendar > after.calendar + 20 && ab.iceberg > after.iceberg + 20,
-  `行 ${after.grid}→${ab.grid} / 日历 ${after.calendar}→${ab.calendar} / 冰山 ${after.iceberg}→${ab.iceberg}`);
+/*
+  ⚠ A/B 只要求「这一行」和「精华帧」被顶高：公告卡自己有一条
+  `max-height: clamp(190px, 24vh, 286px)`（站长要求它的高度不许变），
+  所以行被顶高时它**按设计**不长 —— 拿它当被顶高的证据会假红。
+*/
+check('★★ A/B 对照：内容一旦参与布局，同样的长文**真的把这一行和精华帧一起顶高**了（说明上面那条不是白测的）',
+  ab.grid > after.grid + 20 && ab.daily > after.daily + 20,
+  `行 ${after.grid}→${ab.grid} / 精华 ${after.daily}→${ab.daily} / 公告 ${after.announce}→${ab.announce}（有 max-height，不长）`);
 await cdp.ev(`document.getElementById('ab-static')?.remove()`);
 await sleep(300);
 
@@ -291,15 +296,31 @@ check('★ 卡片指向的那一条能在 /salon.json 里查到（验收的数�
 if (item) info(`这一条：${item.member} ${item.date} ${item.time}｜正文 ${(item.text || '').length} 字｜图片 ${(item.images || []).length} 张`);
 
 const docH0 = await cdp.ev('document.documentElement.scrollHeight');
-const box2 = await hoverWidget('.daily');
+/*
+  ⚠ 指针要落在**左边那一栏的卡片**上（2026-11-20 拆成左右两栏之后，
+  卡面正中间是两栏中间那条 8px 的缝，落在缝上两栏都不算进入）。
+*/
+const box2 = await hoverWidget('.daily__col--essence .daily__card');
 const pop = await cdp.ev(`(() => {
-  const p = document.querySelector('.daily__pop');
+  /*
+    ⚠ 「textContent」不能直接用：成员名被 memlink 包了一层悬停名片
+    （「.mem__card[aria-hidden]」里还有一个「.mem__label」写着同一个名字），
+    直接取会把名字算两遍（"浮层 21 字 vs 原始 18 字"就是这么来的）。
+    所以先把名片摘掉再取字。
+  */
+  const plain = (el) => {
+    if (!el) return '';
+    const c = el.cloneNode(true);
+    for (const n of c.querySelectorAll('.mem__card')) n.remove();
+    return c.textContent;
+  };
+  const p = document.querySelector('.daily__pop--essence');
   const cs = getComputedStyle(p);
   const r = p.getBoundingClientRect();
   return {
     visibility: cs.visibility, opacity: Number(cs.opacity), pointer: cs.pointerEvents,
-    text: (p.querySelector('.daily__popText')?.textContent || '').length,
-    cardText: (document.querySelector('.daily__card .daily__text')?.textContent || '').length,
+    text: plain(p.querySelector('.daily__popText')).length,
+    cardText: plain(document.querySelector('.daily__card .daily__text')).length,
     pics: p.querySelectorAll('.daily__popPic').length,
     link: !!p.querySelector('.daily__popLink'),
     below: p.classList.contains('is-below'),
@@ -368,9 +389,9 @@ console.log('\n================ ④ 窄屏 ================');
 await cdp.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: false });
 await cdp.open('/');
 const docW0 = await cdp.ev('document.documentElement.scrollWidth');
-const mob2 = await hoverWidget('.daily');
+const mob2 = await hoverWidget('.daily__col--essence .daily__card');
 const mobPop = await cdp.ev(`(() => {
-  const p = document.querySelector('.daily__pop');
+  const p = document.querySelector('.daily__pop--essence');
   const r = p.getBoundingClientRect();
   const cs = getComputedStyle(p);
   const at = document.elementFromPoint(${mob2.x}, ${mob2.y});
