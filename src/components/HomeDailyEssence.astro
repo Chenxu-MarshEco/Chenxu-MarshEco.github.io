@@ -1037,14 +1037,13 @@ const bibleLabel = biblePick ? `跳到铃忆圣经里的这一条：${bibleName}
     transform-origin: 100% 0;
   }
   /*
-    两栏各有一份浮层。**不能**再写成 `.dailyWrap:hover .daily__pop` ——
-    那样悬停任何一栏两份都会浮出来（右栏那张会盖住左栏）。
-    用 :has() 按栏判：指针在哪一栏，就只浮那一栏的。
+    两栏各有一份浮层，指针在哪一栏就只浮那一栏的。
+    **不用 :has()**：Astro 会给 scoped 选择器逐段加 `data-astro-cid`，
+    `:has(.daily__col--bible:hover)` 这种写法被改写后不一定命中（实测没浮出来），
+    所以改成脚本在这一层打一个 `data-pop` 标记（见文件末尾那段）。
   */
-  .dailyWrap:has(.daily__col--essence:hover) .daily__pop--essence,
-  .dailyWrap:has(.daily__col--essence:focus-within) .daily__pop--essence,
-  .dailyWrap:has(.daily__col--bible:hover) .daily__pop--bible,
-  .dailyWrap:has(.daily__col--bible:focus-within) .daily__pop--bible {
+  .dailyWrap[data-pop='essence'] .daily__pop--essence,
+  .dailyWrap[data-pop='bible'] .daily__pop--bible {
     opacity: 1;
     visibility: visible;
     pointer-events: auto;
@@ -1142,3 +1141,158 @@ const bibleLabel = biblePick ? `跳到铃忆圣经里的这一条：${bibleName}
       0 26px 70px -20px rgb(0 0 0 / 0.95);
   }
 </style>
+
+<script>
+  /*
+    首页右栏那条「每日圣经」 —— 和左边「每日精华」一个模子：
+      · 按**访问者当天**挑一条（构建期先渲一份，客户端拿 /bellie.json 再挑一次，
+        同一天固定、隔天自动换，不用重新构建）；
+      · ⟳ 随机圣经 / ← 回到每日圣经 两个按钮（拿不到清单就一直藏着，
+        宁可没有，也不给一个点了没反应的按钮）；
+      · 浮层和精华那份并列，指针在哪一栏就浮哪一栏（CSS 读 `data-pop` 标记）。
+
+    和精华唯一的差别：一条圣经分**正文 + 评语**两段，评语小字斜体压在下面
+    （站长 2026-11-20：「一张圣经卡片应分为正文和评语两个部分」）。
+
+    ⚠ 这里只有 <script>，没有 export：Astro 会把这段打进页面。
+  */
+  import { dailyIndex, localDateKey } from '../utils/daily';
+  import { withBase } from '../utils/url';
+
+  type Person = { name: string; avatar: string };
+  type Item = {
+    id: string;
+    member: string;
+    avatar: string;
+    members?: Person[];
+    date: string;
+    time: string;
+    text: string;
+    comment: string;
+  };
+
+  const root = document.querySelector<HTMLElement>('[data-daily]');
+  const card = root?.querySelector<HTMLElement>('[data-bible-card]');
+  const pop = root?.querySelector<HTMLElement>('[data-bible-pop]');
+  const acts = root?.querySelector<HTMLElement>('[data-bible-acts]');
+  const btnRandom = root?.querySelector<HTMLButtonElement>('[data-bible-random]');
+  const btnBack = root?.querySelector<HTMLButtonElement>('[data-bible-back]');
+  const built = root?.dataset.built || '';
+
+  if (root && card && acts && btnRandom && btnBack) {
+    const esc = (s: string) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const escAttr = (s: string) => esc(s).replace(/"/g, '&quot;');
+
+    const facesOf = (people: Person[]) =>
+      people.length
+        ? people
+            .map((p) =>
+              p.avatar
+                ? `<span class="daily__face" title="${escAttr(p.name)}"><img class="daily__avatar" src="${escAttr(p.avatar)}" alt="" loading="lazy" decoding="async"></span>`
+                : `<span class="daily__face" title="${escAttr(p.name)}"><span class="daily__avatar daily__avatar--none" aria-hidden="true">${esc(p.name.slice(0, 1))}</span></span>`
+            )
+            .join('')
+        : '<span class="daily__face"><span class="daily__avatar daily__avatar--none" aria-hidden="true">群</span></span>';
+
+    const peopleOf = (pick: Item): Person[] =>
+      pick.members?.length ? pick.members : [{ name: pick.member, avatar: pick.avatar || '' }];
+
+    const whenOf = (pick: Item) => `${esc(pick.date)}${pick.time ? ' ' + esc(pick.time) : ''}`;
+
+    const bodyOf = (pick: Item) =>
+      `<div class="daily__who"><span class="daily__faces">${facesOf(peopleOf(pick))}</span>` +
+      `<b class="daily__name">${esc(pick.member)}</b><time class="daily__time">${whenOf(pick)}</time></div>` +
+      `<blockquote class="daily__text">${esc(pick.text)}</blockquote>` +
+      (pick.comment ? `<p class="daily__comment">${esc(pick.comment)}</p>` : '');
+
+    const popOf = (pick: Item) =>
+      `<header class="daily__popHead"><span class="daily__faces">${facesOf(peopleOf(pick))}</span>` +
+      `<b class="daily__name">${esc(pick.member)}</b>` +
+      `<time class="daily__time">${whenOf(pick)}</time></header>` +
+      `<div class="daily__popText">${esc(pick.text)}</div>` +
+      (pick.comment ? `<div class="daily__popComment">${esc(pick.comment)}</div>` : '') +
+      `<a class="daily__popLink" href="${withBase('/bellie/')}#${escAttr(pick.id)}">去圣经页看这一条 ›</a>`;
+
+    let list: Item[] | null = null;
+    let dailyId = '';
+    let curId = card.getAttribute('href')?.split('#')[1] || '';
+    const dailyOf = (items: Item[]) => items[dailyIndex(localDateKey(), items.length)];
+
+    const paint = (pick: Item) => {
+      card.innerHTML = bodyOf(pick);
+      if (pop) pop.innerHTML = popOf(pick);
+      card.setAttribute('href', `${withBase('/bellie/')}#${pick.id}`);
+      card.setAttribute('aria-label', `跳到铃忆圣经里的这一条：${pick.member} ${pick.date}`);
+      const isDaily = !!pick.id && pick.id === dailyId;
+      root.dataset.bibleMode = isDaily ? 'daily' : 'random';
+      btnBack.hidden = isDaily;
+    };
+
+    const ensure = (): Promise<Item[]> => {
+      if (list) return Promise.resolve(list);
+      return fetch(withBase('/bellie.json'))
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data: { entries?: Item[] } | null) => {
+          list = data?.entries ?? [];
+          /* 拿到清单才放出按钮 */
+          if (list.length) {
+            dailyId = dailyOf(list)?.id || '';
+            acts.hidden = false;
+          }
+          return list;
+        })
+        .catch(() => []);
+    };
+
+    /* 访问者当天 ≠ 构建那天：按今天重挑一条 */
+    if (built && localDateKey() !== built) {
+      ensure().then((items) => {
+        const pick = items.length ? dailyOf(items) : null;
+        if (pick) paint(pick);
+      });
+    } else {
+      ensure();
+    }
+
+    btnRandom.addEventListener('click', () => {
+      ensure().then((items) => {
+        if (!items.length) return;
+        let idx = Math.floor(Math.random() * items.length);
+        if (items.length > 1 && items[idx].id === curId) idx = (idx + 1) % items.length;
+        const pick = items[idx];
+        curId = pick.id;
+        paint(pick);
+      });
+    });
+
+    btnBack.addEventListener('click', () => {
+      ensure().then((items) => {
+        const pick = items.length ? dailyOf(items) : null;
+        if (!pick) return;
+        curId = pick.id;
+        paint(pick);
+      });
+    });
+
+    /*
+      浮层开关：指针在哪一栏，就在这一层打哪个标记（CSS 读它决定浮哪一份）。
+      不用 :has() 的原因见样式里那段说明。
+    */
+    const essenceCol = root.querySelector<HTMLElement>('.daily__col--essence');
+    const bibleCol = root.querySelector<HTMLElement>('.daily__col--bible');
+    const setPop = (which: string) => {
+      root.dataset.pop = which;
+    };
+    const clearPop = () => {
+      delete root.dataset.pop;
+    };
+    essenceCol?.addEventListener('pointerenter', () => setPop('essence'));
+    bibleCol?.addEventListener('pointerenter', () => setPop('bible'));
+    essenceCol?.addEventListener('focusin', () => setPop('essence'));
+    bibleCol?.addEventListener('focusin', () => setPop('bible'));
+    root.addEventListener('pointerleave', clearPop);
+    root.addEventListener('focusout', (e) => {
+      if (!root.contains((e as FocusEvent).relatedTarget as Node | null)) clearPop();
+    });
+  }
+</script>
