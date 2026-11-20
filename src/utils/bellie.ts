@@ -37,10 +37,12 @@ export interface BibleEntry {
   id: string;
   /** YYYY-MM-DD */
   date: string;
-  /** HH:MM（可能为空串） */
+  /** HH:MM（可能为空串 —— 老格式的投递里没有具体时间） */
   time: string;
-  /** 发送者 QQ 号（原样保留） */
+  /** 发送者 QQ 号（可能为空串 —— 老格式里只写群名片） */
   qq: string;
+  /** 投递里写的发送者（群名片 / 马甲 / QQ 号，认不出来时原样当署名） */
+  sender: string;
   /** 认出来的成员 id 列表（认不出来就是空数组） */
   memberIds: string[];
   /** 正文：群友原句 */
@@ -69,6 +71,58 @@ const ALIASES = (() => {
 const QQ_NAME: Record<string, string> = (ALIASES?.qq ?? {}) as Record<string, string>;
 /** 名字 → 成员（名字必须和 salon.json 的 members[].name 一字不差） */
 const BY_NAME = new Map<string, SalonMember>(salonMembers.map((m) => [m.name, m]));
+/** 马甲 → 成员：aliases.json 的 nick 那一区 + 成员自己身上的 aliases */
+const BY_ALIAS = new Map<string, SalonMember>();
+for (const m of salonMembers) {
+  for (const a of m.aliases ?? []) if (a) BY_ALIAS.set(a, m);
+}
+for (const [nick, name] of Object.entries((ALIASES?.nick ?? {}) as Record<string, string>)) {
+  const m = BY_NAME.get(name);
+  if (m && nick) BY_ALIAS.set(nick, m);
+}
+
+/**
+ * 把群名片上的装饰洗掉：表情、变体选择符、不可见的填充字符（ᅠ⁧‭ 这些）
+ * 全去掉，只留中日韩文字、字母、数字。例如 `🏗隰辰煦🏗` → `隰辰煦`。
+ */
+const cleanName = (s: string): string =>
+  s.replace(/[^\p{Script=Han}\p{L}\p{N}]/gu, '');
+
+/**
+ * 认人：QQ 号 → 群名片 → 马甲 → 洗过的群名片 / 马甲 → 「已知名字是它的前缀」。
+ * 顺序有讲究：前三种是一字不差的匹配，最后两种才放宽，免得把 A 认成 B。
+ */
+function resolveMember(raw: string): SalonMember | undefined {
+  const s = str(raw);
+  if (!s) return undefined;
+  const byQq = QQ_NAME[s];
+  if (byQq && BY_NAME.get(byQq)) return BY_NAME.get(byQq);
+  if (BY_NAME.has(s)) return BY_NAME.get(s);
+  if (BY_ALIAS.has(s)) return BY_ALIAS.get(s);
+  const cleaned = cleanName(s);
+  if (cleaned) {
+    if (BY_NAME.has(cleaned)) return BY_NAME.get(cleaned);
+    if (BY_ALIAS.has(cleaned)) return BY_ALIAS.get(cleaned);
+    /* 群名片后面常跟一串洗不掉的怪字符 / 后缀（`亚卡莱特ᅠ⁧呃呜喵⁧‭`）：
+       已知名字是开头那一段就认它。要求至少 2 个字，免得单字撞上。 */
+    for (const [key, m] of [...BY_NAME, ...BY_ALIAS]) {
+      if (key.length >= 2 && cleaned.startsWith(key)) return m;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * 正文 / 评语里出现的 QQ 号 → 成员名。
+ * 站长 2026-11-20：「评语里面是有QQ号的 进入网站时自动把QQ号转化为群成员」——
+ * 评语是铃忆写的原文，站点只负责把号换成名字（号本身留着，万一认不出来还是号）。
+ */
+export function qqToNames(s: string): string {
+  return String(s ?? '').replace(/\d{5,12}/g, (num) => {
+    const name = QQ_NAME[num];
+    return name || num;
+  });
+}
 
 const str = (v: unknown): string => String(v ?? '').trim();
 
@@ -103,18 +157,20 @@ export const bellieEntries: BibleEntry[] = (() => {
     list.forEach((e, i) => {
       const text = str(e?.text);
       if (!text) return;
+      /* 发送者三种写法都收：qq（新格式）/ name（老格式的群名片）/ 两个都给 */
       const qq = str(e?.qq);
-      const name = QQ_NAME[qq] || str(e?.name);
-      const member = name ? BY_NAME.get(name) : undefined;
+      const senderRaw = str(e?.name) || str(e?.qq);
+      const member = resolveMember(qq) ?? resolveMember(senderRaw);
       out.push({
         id: `b${date.replace(/-/g, '')}-${i + 1}`,
         date,
         time: str(e?.time),
         qq,
+        sender: senderRaw,
         memberIds: member ? [member.id] : [],
         text,
         comment: str(e?.comment),
-        rawName: member ? member.name : name || qq,
+        rawName: member ? member.name : senderRaw,
       });
     });
   }
@@ -124,7 +180,8 @@ export const bellieEntries: BibleEntry[] = (() => {
     const at = a.time || '99:99';
     const bt = b.time || '99:99';
     if (at !== bt) return at < bt ? 1 : -1;
-    return b.id.localeCompare(a.id);
+    /* 同一时刻（或都没有时间）就按投递里的先后 —— 老格式那五条是 1..5 的顺序 */
+    return a.id.localeCompare(b.id);
   });
 })();
 

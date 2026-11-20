@@ -46,7 +46,8 @@ if (!file) {
       '  {',
       '    "date": "2026-11-20",',
       '    "entries": [',
-      '      { "time": "12:34", "qq": "2567645574", "text": "群友原句", "comment": "铃忆的评语" }',
+      '      { "time": "12:34", "qq": "2567645574", "text": "群友原句", "comment": "铃忆的评语" },',
+      '      { "name": "🏗隰辰煦🏗", "text": "老格式：只写群名片、没有时间也可以", "comment": "…" }',
       '    ]',
       '  }',
       '',
@@ -90,13 +91,23 @@ const entries = list.map((e, i) => {
   const at = `第 ${i + 1} 条`;
   const time = str(e?.time);
   const qq = str(e?.qq);
+  const name = str(e?.name);
   const text = str(e?.text);
   const comment = str(e?.comment);
 
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) && time && !/^\d{1,2}:\d{2}$/.test(time)) {
+  /* time 可以没有（老格式就没有），有就必须是 HH:MM */
+  if (time && !/^\d{1,2}:\d{2}$/.test(time)) {
     problems.push(`${at}：time 要是 "HH:MM"（现在是 ${JSON.stringify(time)}）`);
   }
-  if (!/^[1-9]\d{4,11}$/.test(qq)) problems.push(`${at}：qq 要是纯数字的 QQ 号（现在是 ${JSON.stringify(qq)}）`);
+  /*
+    发送者两种写法都收（站长 2026-11-20：「这五个群圣经是老格式的
+    没有具体时间 群成员也不用QQ号表示」）：
+      · qq   —— 新格式，纯数字
+      · name —— 老格式，群名片 / 马甲（站点按 aliases 表认人）
+    两个至少得有一个。
+  */
+  if (!qq && !name) problems.push(`${at}：发送者要给 qq（QQ 号）或 name（群名片），二选一`);
+  if (qq && !/^[1-9]\d{4,11}$/.test(qq)) problems.push(`${at}：qq 要是纯数字的 QQ 号（现在是 ${JSON.stringify(qq)}）`);
   if (!text) problems.push(`${at}：text（群友原句）不能为空`);
   if (!comment) problems.push(`${at}：comment（铃忆的评语）不能为空`);
   if (text.length > 500) problems.push(`${at}：text 太长了（${text.length} 字，上限 500）`);
@@ -107,12 +118,14 @@ const entries = list.map((e, i) => {
     problems.push(`${at}：text / comment 里不要写 HTML 标签`);
   }
 
-  return {
+  const out = {
     time: /^\d{1,2}:\d{2}$/.test(time) ? time.padStart(5, '0') : '',
-    qq,
     text,
     comment,
   };
+  if (qq) out.qq = qq;
+  if (name) out.name = name;
+  return out;
 });
 
 if (problems.length) {

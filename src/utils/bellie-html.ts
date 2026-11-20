@@ -14,7 +14,7 @@
  * 而 bellie.astro 就是 salon.astro 的拷贝（只换了数据模块和分块接口地址）。
  * ============================================================================
  */
-import { bellieEntries, type BibleEntry } from './bellie';
+import { bellieEntries, qqToNames, type BibleEntry } from './bellie';
 import { memberName, membersOf, type SalonEssence } from './salon';
 import { variantUrl } from './images';
 
@@ -58,7 +58,7 @@ function asEssence(e: BibleEntry): SalonEssence {
 export function entryHtml(e: BibleEntry, params: Map<string, number>): string {
   const as = asEssence(e);
   const people = membersOf(as);
-  const name = people.length ? memberName(as) : e.rawName || '（没署名）';
+  const name = people.length ? memberName(as) : e.rawName || e.sender || '（没署名）';
   const param = params.get(e.id);
   const out: string[] = [];
 
@@ -82,8 +82,8 @@ export function entryHtml(e: BibleEntry, params: Map<string, number>): string {
     }
   } else {
     out.push(
-      `<span class="salon__face" title="${esc(e.rawName || e.qq)}">` +
-        `<span class="salon__avatar salon__avatar--none" aria-hidden="true">${esc((e.rawName || e.qq || '群').slice(0, 1))}</span></span>`
+      `<span class="salon__face" title="${esc(e.rawName || e.sender || e.qq)}">` +
+        `<span class="salon__avatar salon__avatar--none" aria-hidden="true">${esc((e.rawName || e.sender || e.qq || '群').slice(0, 1))}</span></span>`
     );
   }
   out.push('</span>');
@@ -96,10 +96,10 @@ export function entryHtml(e: BibleEntry, params: Map<string, number>): string {
   out.push('</div>');
 
   /* ---- 正文：群友原句（正常字号，和精华的正文同一个类） ---- */
-  out.push(`<blockquote class="salon__text">${esc(e.text)}</blockquote>`);
+  out.push(`<blockquote class="salon__text">${esc(qqToNames(e.text))}</blockquote>`);
 
   /* ---- 评语：铃忆的吐槽（小字斜体，压在正文下面） ---- */
-  if (e.comment) out.push(`<p class="salon__comment">${esc(e.comment)}</p>`);
+  if (e.comment) out.push(`<p class="salon__comment">${esc(qqToNames(e.comment))}</p>`);
 
   out.push('</article>');
   return out.join('');
