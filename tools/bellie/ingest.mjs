@@ -20,8 +20,16 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const HERE = path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1'));
+/*
+ * ⚠ 别用 `new URL(import.meta.url).pathname` 取路径（2026-11-21 踩到）：
+ *   这台机器的仓库路径里有中文，`pathname` 里是**百分号转义**过的（`%E6%9B%BC…`），
+ *   于是 `fs.mkdirSync` 会在 D:\ 下造出一棵 `%E6%9B%BC…\Chenxu-MarshEco.github.io\…`
+ *   的假目录，文件全写进去，仓库里一份都没有。必须走 `fileURLToPath`。
+ *   （tools/liyutang-backend/deploy.mjs 里同一条坑。）
+ */
+const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, '..', '..');
 const DAYS = path.join(ROOT, 'src', 'data', 'bellie', 'days');
 
