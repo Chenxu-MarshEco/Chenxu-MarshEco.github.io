@@ -52,12 +52,24 @@ walk(ROOT);
 
 let checked = 0;
 const missing = new Map();
+/*
+  ⚠ 地址里带中文时，页面写的是**百分号编码**（`/data/group-summaries/2026-11-20-group_%E7%87%83…json`），
+  而产物里的文件名是原文（`…group_燃儿求开组….json`）。直接拿编码后的串去 existsSync
+  永远是"不存在" —— 2026-11-20 那份群总结就被误报过一次。所以比之前先解码（解不开就按原样比）。
+*/
+const decoded = (u) => {
+  try {
+    return decodeURIComponent(u.split('#')[0].split('?')[0]);
+  } catch {
+    return u;
+  }
+};
 for (const f of files) {
   const text = fs.readFileSync(f, 'utf8');
   for (const u of refsOf(text)) {
     checked++;
     // 目录形式（/posts/ 这种）当 index.html 处理不了就跳过（它不以扩展名结尾，上面已经滤掉了）
-    const target = path.join(ROOT, u);
+    const target = path.join(ROOT, decoded(u));
     if (!fs.existsSync(target)) {
       const rel = path.relative(ROOT, f).split(path.sep).join('/');
       if (!missing.has(u)) missing.set(u, []);
