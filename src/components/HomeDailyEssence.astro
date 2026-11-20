@@ -57,6 +57,8 @@
 import widgets from '../data/home-widgets.json';
 import { salonEssences, memberName, membersOf } from '../utils/salon';
 import { dailyIndex, localDateKey } from '../utils/daily';
+import { bellieEntries, qqToNames } from '../utils/bellie';
+import { salonMembers, memberName as anyMemberName, membersOf as anyMembersOf } from '../utils/salon';
 import { variantUrl } from '../utils/images';
 import { withBase } from '../utils/url';
 
@@ -74,6 +76,26 @@ const pickImages = (pick?.images ?? []).map((src) => variantUrl(src, 900));
 /** 这一条在精华页里的地址（点卡片跳过去就落在这儿） */
 const pickHref = pick ? `${href}#${pick.id}` : '';
 const pickLabel = pick ? `跳到冰室精华里的这一条：${pickName} ${pick.date}` : '';
+
+/* ---------------- 右栏：每日圣经（和左边那条每日精华一个模子） ---------------- */
+const biblePick = bellieEntries[dailyIndex(builtOn, bellieEntries.length)] ?? null;
+const bibleAs = biblePick
+  ? ({
+      id: biblePick.id,
+      memberIds: biblePick.memberIds,
+      kind: 'text',
+      date: biblePick.date,
+      time: biblePick.time,
+      text: biblePick.text,
+      images: [],
+      eraId: String(biblePick.date).slice(0, 4),
+    } as unknown as Parameters<typeof membersOf>[0])
+  : null;
+const biblePeople = bibleAs ? anyMembersOf(bibleAs) : [];
+const bibleName = bibleAs && biblePeople.length ? anyMemberName(bibleAs) : biblePick?.rawName || biblePick?.sender || '';
+const bibleHref = withBase('/bellie/');
+const bibleHrefOf = biblePick ? `${bibleHref}#${biblePick.id}` : '';
+const bibleLabel = biblePick ? `跳到铃忆圣经里的这一条：${bibleName} ${biblePick.date}` : '';
 ---
 
 {/*
@@ -183,11 +205,89 @@ const pickLabel = pick ? `跳到冰室精华里的这一条：${pickName} ${pick
             <a class="daily__more" href={href}>冰室精华 ›</a>
           </div>
           </div>
-        {/* 右边这一栏：每日圣经（站长说先空着，之后再做） */}
+        {/* 右边这一栏：每日圣经（和左边那条每日精华一个模子，只是多了评语那一段） */}
         <div class="daily__col daily__col--bible">
           <div class="daily__colLabel">每日圣经</div>
+
+          <div class="daily__acts" data-bible-acts hidden>
+            <button
+              type="button"
+              class="daily__act"
+              data-bible-random
+              aria-controls="bible-card"
+              aria-label="随机抽一条圣经"
+              title="从全部圣经里随便抽一条"
+            >
+              <svg class="daily__actIcon" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M20.5 12a8.5 8.5 0 1 1-2.6-6.1" />
+                <path d="M20.7 3.4v5.2h-5.2" />
+              </svg>
+              <span>随机圣经</span>
+            </button>
+            <button
+              type="button"
+              class="daily__act daily__act--back"
+              data-bible-back
+              aria-controls="bible-card"
+              aria-label="回到今天的每日圣经"
+              title="回到今天系统抽的那一条"
+              hidden
+            >
+              <svg class="daily__actIcon" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M19.5 12h-14" />
+                <path d="m11.5 18-6-6 6-6" />
+              </svg>
+              <span>回到每日圣经</span>
+            </button>
+          </div>
+
+          <a
+            class="daily__card"
+            id="bible-card"
+            data-bible-card
+            data-bible-link
+            href={biblePick ? bibleHrefOf : undefined}
+            aria-label={biblePick ? bibleLabel : undefined}
+          >
+            {
+              biblePick ? (
+                <>
+                  <div class="daily__who">
+                    <span class="daily__faces">
+                      {biblePeople.length ? (
+                        biblePeople.map((p) => (
+                          <span class="daily__face" title={p.name}>
+                            {p.avatar ? (
+                              <img class="daily__avatar" src={variantUrl(p.avatar, 400)} alt="" loading="lazy" decoding="async" />
+                            ) : (
+                              <span class="daily__avatar daily__avatar--none" aria-hidden="true">
+                                {p.name.slice(0, 1)}
+                              </span>
+                            )}
+                          </span>
+                        ))
+                      ) : (
+                        <span class="daily__face">
+                          <span class="daily__avatar daily__avatar--none" aria-hidden="true">
+                            {(bibleName || '群').slice(0, 1)}
+                          </span>
+                        </span>
+                      )}
+                    </span>
+                    <b class="daily__name">{bibleName}</b>
+                    <time class="daily__time">{biblePick.date}{biblePick.time && ` ${biblePick.time}`}</time>
+                  </div>
+                  <blockquote class="daily__text">{qqToNames(biblePick.text)}</blockquote>
+                  {biblePick.comment && <p class="daily__comment">{qqToNames(biblePick.comment)}</p>}
+                </>
+              ) : (
+                <p class="daily__text">还没有圣经：等铃忆把当天的投递写进来。</p>
+              )
+            }
+          </a>
+
           <div class="daily__foot">
-            <a class="daily__more" href={withBase('/bellie/')}>铃忆圣经 ›</a>
+            <a class="daily__more" href={bibleHref}>铃忆圣经 ›</a>
           </div>
         </div>
       </div>
@@ -198,7 +298,7 @@ const pickLabel = pick ? `跳到冰室精华里的这一条：${pickName} ${pick
     悬停浮层：全文（不截断）+ **全部**图片。鼠标移到这块卡片上（或键盘聚焦到卡片上）才显示。
     它和帧里的内容一样，客户端重挑时会被整段重写 —— 所以里面每个元素都用 :global()。
   */}
-  <div class="daily__pop" data-daily-pop>
+  <div class="daily__pop daily__pop--essence" data-daily-pop>
     {
       pick ? (
         <>
@@ -239,7 +339,36 @@ const pickLabel = pick ? `跳到冰室精华里的这一条：${pickName} ${pick
         </>
       ) : null
     }
+    {/* 圣经的浮层：全文 + 评语（和精华那份并列，靠 :has() 各管各的） */}
+  <div class="daily__pop daily__pop--bible" data-bible-pop>
+    {
+      biblePick ? (
+        <>
+          <header class="daily__popHead">
+            <span class="daily__faces">
+              {biblePeople.map((p) => (
+                <span class="daily__face" title={p.name}>
+                  {p.avatar ? (
+                    <img class="daily__avatar" src={variantUrl(p.avatar, 400)} alt="" loading="lazy" decoding="async" />
+                  ) : (
+                    <span class="daily__avatar daily__avatar--none" aria-hidden="true">
+                      {p.name.slice(0, 1)}
+                    </span>
+                  )}
+                </span>
+              ))}
+            </span>
+            <b class="daily__name">{bibleName}</b>
+            <time class="daily__time">{biblePick.date}{biblePick.time && ` ${biblePick.time}`}</time>
+          </header>
+          <div class="daily__popText">{qqToNames(biblePick.text)}</div>
+          {biblePick.comment && <div class="daily__popComment">{qqToNames(biblePick.comment)}</div>}
+          <a class="daily__popLink" href={bibleHrefOf}>去圣经页看这一条 ›</a>
+        </>
+      ) : null
+    }
   </div>
+</div>
 </div>
 
 <script>
@@ -762,6 +891,11 @@ const pickLabel = pick ? `跳到冰室精华里的这一条：${pickName} ${pick
   }
   :global(.daily__name) {
     color: #fff;
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   /*
     ⚠ 这张卡是**深色底**，文字不能再走浅色主题那套令牌：
@@ -769,22 +903,29 @@ const pickLabel = pick ? `跳到冰室精华里的这一条：${pickName} ${pick
     var(--c-text-faint) 2.34:1。这里逐个换成深色底上的颜色。
   */
   :global(.daily__time) {
+    flex: none;
     margin-left: auto;
     color: rgba(255, 226, 244, 0.6);
+    font-size: 0.68rem;
     font-variant-numeric: tabular-nums;
   }
   :global(.daily__text) {
     margin: 0;
+    /*
+      `flex: 1 1 auto` + `overflow: hidden`、**不写 min-height: 0**：
+      短句时它自己撑满剩下的高度（框里不留空），长句时按内容长、超出卡片的部分由卡片裁掉。
+      上一版写了 min-height: 0，正文会被压成 0 高、字溢到整个卡片外面（实测过）。
+    */
     flex: 1 1 auto;
-    min-height: 0;
+    overflow: hidden;
     color: rgba(255, 236, 248, 0.9);
-    font-size: 0.82rem;
-    line-height: 1.52;
+    font-size: 0.85rem;
+    line-height: 1.5;
     white-space: pre-wrap;
     word-break: break-word;
     /* 首页这一格高度是定死的：文字按行数裁，剩下的空间留给图片；全文看悬停浮层 */
     display: -webkit-box;
-    -webkit-line-clamp: 4;
+    -webkit-line-clamp: 3;
     -webkit-box-orient: vertical;
     overflow: hidden;
     flex: 0 1 auto;
@@ -793,6 +934,54 @@ const pickLabel = pick ? `跳到冰室精华里的这一条：${pickName} ${pick
     图片弹性吃掉剩下的高度（`flex: 1 1 60px` + `min-height: 0`）：
     卡片高就多显示一点，矮就少一点，但**永远不许把卡片撑高**。
   */
+  /*
+    评语（只圣经卡有）：铃忆每天写的吐槽评析。小字 + 斜体，压在正文下面 ——
+    站长原话：「评语是lingyibot的AI每天对其的吐槽评析 应用小的斜体写在下方部分」。
+  */
+  :global(.daily__comment) {
+    margin: 0;
+    flex: none;
+    color: rgba(255, 226, 244, 0.72);
+    font-size: 0.72rem;
+    font-style: italic;
+    line-height: 1.55;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  /*
+    圣经那一栏一张卡里要装两段（正文 + 评语），同高之下只能比精华那张收一号字：
+    正文两行 + 评语两行，正好填满这一格。
+  */
+  :global(.daily__col--bible .daily__who) {
+    font-size: 0.72rem;
+    gap: 0.3rem;
+  }
+  :global(.daily__col--bible .daily__avatar) {
+    width: 18px;
+    height: 18px;
+  }
+  :global(.daily__col--bible .daily__text) {
+    font-size: 0.74rem;
+    line-height: 1.42;
+    -webkit-line-clamp: 2;
+  }
+  :global(.daily__col--bible .daily__comment) {
+    font-size: 0.66rem;
+    line-height: 1.4;
+    -webkit-line-clamp: 2;
+  }
+  /* 浮层里那份评语：不截断，字体还是小一号的斜体 */
+  :global(.daily__popComment) {
+    margin: 0.5rem 0 0;
+    color: rgba(255, 226, 244, 0.75);
+    font-size: 0.8rem;
+    font-style: italic;
+    line-height: 1.7;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
   :global(.daily__pic) {
     display: block;
     width: 100%;
@@ -847,8 +1036,15 @@ const pickLabel = pick ? `跳到冰室精华里的这一条：${pickName} ${pick
     bottom: auto;
     transform-origin: 100% 0;
   }
-  .dailyWrap:hover .daily__pop,
-  .dailyWrap:focus-within .daily__pop {
+  /*
+    两栏各有一份浮层。**不能**再写成 `.dailyWrap:hover .daily__pop` ——
+    那样悬停任何一栏两份都会浮出来（右栏那张会盖住左栏）。
+    用 :has() 按栏判：指针在哪一栏，就只浮那一栏的。
+  */
+  .dailyWrap:has(.daily__col--essence:hover) .daily__pop--essence,
+  .dailyWrap:has(.daily__col--essence:focus-within) .daily__pop--essence,
+  .dailyWrap:has(.daily__col--bible:hover) .daily__pop--bible,
+  .dailyWrap:has(.daily__col--bible:focus-within) .daily__pop--bible {
     opacity: 1;
     visibility: visible;
     pointer-events: auto;

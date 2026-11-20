@@ -1434,8 +1434,9 @@ const members = salonMemberStats;
       人多的时候每行回到它自己的高度、多出来的部分由面板滚动 ——
       这样右栏不会出现"下面是空的一大截"。
     */
-    min-height: 100%;
-    grid-auto-rows: 1fr;
+    /* 人少时也从上往下密排（站长 2026-11-20）；人多时装不下由面板自己滚 */
+    align-content: start;
+    grid-auto-rows: min-content;
   }
   /*
     一张成员卡：左边小眼睛（开关），中间头像 + 名字，右边「N 条」。
