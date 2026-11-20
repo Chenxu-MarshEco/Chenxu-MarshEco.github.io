@@ -17,6 +17,9 @@
  * 4. 关着的时候只在右边沿露一个书签。开合状态记在 sessionStorage 里，
  *    按**时间轴的 id** 记：连着翻几个用同一条轴的页面，它一直开着；
  *    进了用别的轴（或没有轴）的页面，自然就是关着的。
+ * 5. 书签可以「让位」（2026-11-20，首页要的）：页面把一块内容交给 `tabGate`，
+ *    那一块还占着屏幕上半边就把书签收进画面外，滚过去了才滑出来 ——
+ *    首页那块右缘在第一屏归置顶塔吊，两边轮流用，见 Props 里 tabGate 的说明。
  */
 import type { Timeline as TimelineData } from '../utils/timelines';
 import { pointParam, spanEdges, spanParam, spanSides, pointKind, isLiveDate, dateOf, rangeOf, dayOf, assignSpanLanes, scaleParamOf, SCALE_MIN_DAYS, SCALE_MAX_DAYS } from '../utils/timelines';
@@ -29,6 +32,20 @@ interface Props {
    * 没有的话传 null，脚本会退回到「当前屏幕上那个成分」或者第一个时间点。
    */
   defaultParam?: number | null;
+  /**
+   * **打开时停在「实时」那一刻**（首页用，2026-11-20 站长）：
+   * 「首页的时间轴打开时默认停留在实时时刻的位置也就是那个每天更新的最新时刻
+   *   不要停留在一开始」。
+   *
+   * 为什么不从页面那边传一个数：实时点的日期是哨兵 `today`，**位置是按访问者当天
+   * 重排出来的**（见下面 relayoutLive）。构建期算好一个 0~1 写死在产物里，
+   * 隔半个月再打开就停在半个月前了。所以这件事只能在这儿、在打开的那一刻算。
+   *
+   * 和 `defaultParam` 的关系：页面自己认领了时间点（文章、带日期的手记）就听页面的；
+   * 没认领才停到实时点 —— 首页正是没有认领的那一类。
+   * 这条轴上没有实时点的话退到**最晚的那个点**，总之不停在开头。
+   */
+  defaultLive?: boolean;
   /**
    * **常驻模式**：不从右边滑出来，直接当普通块摆在页面里，没有书签、没有关闭按钮，
    * 一进页面就是开的（冰室精华页左边那条用它 —— 用户要求"常态显示、无法关闭"）。
@@ -58,9 +75,21 @@ interface Props {
    * 宽屏（>880px）时和没传一样 —— 栏够宽，名字照常显示。
    */
   rail?: boolean;
+  /**
+   * **让位**：给一个选择器，那个元素还占着屏幕上半边的时候，书签收在画面外
+   * 不伸出来（面板一起收起来）；它滚过去之后书签才滑出来。
+   *
+   * 首页要的就是这个（2026-11-20 站长）：「首页右侧边也需要出现可以打开时间轴的 UI
+   * 和别的页面一样 但是这个 UI 只有下翻到板块区域的时候才会伸出 上翻到标题区域
+   * 就会缩回让置顶塔吊伸出」。那片右缘在封面这一屏是**置顶塔吊**占着的（它也会
+   * 往下滚就缩进去），两个东西轮着用同一个位置，所以书签得等塔吊那一屏过去再出来。
+   *
+   * 不传 = 老样子：书签从头到尾都在（其他所有页面）。
+   */
+  tabGate?: string;
 }
 
-const { timeline: tl, defaultParam = null, pinned = false, fill = false, rail = false } = Astro.props;
+const { timeline: tl, defaultParam = null, defaultLive = false, pinned = false, fill = false, rail = false, tabGate = '' } = Astro.props;
 
 /** 站内链接补上 base；站外原样（外链开新窗口，见下面的标记） */
 const linkHref = (href: string) =>
@@ -202,7 +231,22 @@ const initialScaleText = `一刻度约 ${
 ---
 
 <div
-  class:list={['tl', 'is-off-left-moments', 'is-off-right-moments', pinned && 'is-pinned', fill && 'is-fill', rail && 'is-rail']}
+  class:list={[
+    'tl',
+    'is-off-left-moments',
+    'is-off-right-moments',
+    pinned && 'is-pinned',
+    fill && 'is-fill',
+    rail && 'is-rail',
+    /*
+      有让位（tabGate）的页面，**渲染出来就是收着的那一版**：
+      脚本第一帧才判的话，书签会先在第一屏右缘露一下就滑走（闪一下）——
+      首页那一屏的右缘是置顶塔吊的，书签一开始就不该在那儿。
+      判据本身没变，脚本跑到时按当时的位置重判一次（带 #home-boards 进来、
+      或者浏览器恢复了滚动位置时，它会立刻把书签放出来）。
+    */
+    tabGate && 'is-tabhidden',
+  ]}
   data-tl
   data-tl-id={tl.id}
   data-tl-pinned={pinned ? '1' : undefined}
@@ -211,7 +255,9 @@ const initialScaleText = `一刻度约 ${
   data-tl-max={spanMax}
   data-tl-grad={gradId}
   data-tl-default={defaultParam === null ? '' : String(defaultParam)}
+  data-tl-default-live={defaultLive ? '1' : undefined}
   data-tl-scale={String(initialScale)}
+  data-tl-gate={tabGate || undefined}
 >
   {/*
     关着的时候只在右边沿露出来的那个书签。
@@ -622,7 +668,13 @@ const initialScaleText = `一刻度约 ${
     writing-mode: vertical-rl;
     cursor: pointer;
     backdrop-filter: blur(4px);
-    transition: transform 0.2s ease, color 0.2s ease;
+    /*
+      visibility 那一条是给「让位」状态（见下面 .is-tabhidden）用的：
+      平时 0s 立刻可见；收进去的时候等滑完了再真正不可见（否则转场看不见），
+      visibility: hidden 同时也把它从 tab 键的落点和读屏里摘掉 ——
+      一个推到画面外的按钮还停在 tab 序列里，是假的"没有"。
+    */
+    transition: transform 0.2s ease, color 0.2s ease, visibility 0s;
   }
   .tl__tab:hover {
     color: #fff;
@@ -631,6 +683,29 @@ const initialScaleText = `一刻度约 ${
   .tl.is-open .tl__tab {
     transform: translateY(-50%) translateX(140%);
     pointer-events: none;
+  }
+  /*
+    ---------- 让位状态（首页）----------
+    站长 2026-11-20：「这个 UI 只有下翻到板块区域的时候才会伸出
+    上翻到标题区域就会缩回让置顶塔吊伸出」。
+
+    所以这个状态做的就是把书签**按下去**：和打开面板时一样往右滑出右缘，
+    滑完再把 visibility 收掉（它不该在被藏起来的时候还能被 tab 到）。
+    谁来按这一个开关写在 root 的 data-tl-gate 上，脚本见下面「开合 / 让位」。
+  */
+  .tl.is-tabhidden .tl__tab {
+    transform: translateY(-50%) translateX(140%);
+    visibility: hidden;
+    pointer-events: none;
+    transition: transform 0.26s cubic-bezier(0.4, 0, 0.2, 1), color 0.2s ease,
+      visibility 0s linear 0.26s;
+  }
+  /* 少动效的人那儿不要那 0.26s 的延迟（全局那条只压时长，压不了延迟） */
+  @media (prefers-reduced-motion: reduce) {
+    .tl__tab,
+    .tl.is-tabhidden .tl__tab {
+      transition: none;
+    }
   }
 
   .tl__head {
@@ -1779,6 +1854,8 @@ const initialScaleText = `一刻度约 ${
      * 两个都表示「没值」的输入会走到两条完全不同的分支上，写明白更稳。
      */
     const defAttr = root.dataset.tlDefault;
+    /** 页面说「打开时停在实时那一刻」（见 Props 的 defaultLive） */
+    const liveDefault = root.dataset.tlDefaultLive === '1';
     let cur = defAttr === undefined || defAttr === '' ? 0 : Number(defAttr);
     // 实在解析不出来（属性被写坏了）也得给个能用的值，
     // 免得打开之前那一次 paint 拿 NaN 去算坐标
@@ -2675,10 +2752,23 @@ const initialScaleText = `一刻度约 ${
       if (on) {
         // 面板刚显示出来才有尺寸，这时候才量得准
         measure();
-        // 页面指定了默认位置就听页面的；没指定就用上面算好的 cur
+        /*
+          打开时停在哪：
+            ① 页面认领了时间点/时间段（data-tl-default 有值）→ 听页面的；
+            ② 页面说「停在实时那一刻」（data-tl-default-live）→ 现在算；
+            ③ 都不是 → 用上面算好的 cur（一次都没动过就是 0，也就是开头）。
+          ②之所以必须在这儿算：实时点的位置是 relayoutLive 按**访问者当天**排出来的，
+          构建期写死的那个数隔几天就不等于「今天」了。
+        */
         const def = Number(defAttr);
         if (Number.isFinite(def) && defAttr !== '' && defAttr !== undefined) cur = def;
-        else if (!Number.isFinite(cur)) cur = 0.5;
+        else if (liveDefault) {
+          const liveParam = liveItems.length ? Number(liveItems[0].dataset.param) : NaN;
+          // 没有实时点就退到最晚的那个点（总之不停在开头）
+          const rest = items.map((el) => Number(el.dataset.param)).filter((n) => Number.isFinite(n));
+          const picked = Number.isFinite(liveParam) ? liveParam : rest.length ? Math.max(...rest) : NaN;
+          cur = Number.isFinite(picked) ? picked : 0.5;
+        } else if (!Number.isFinite(cur)) cur = 0.5;
         if (marked.length) {
           markDirty();
           const i = nearestIndex();
@@ -2933,6 +3023,64 @@ const initialScaleText = `一刻度约 ${
     measure();
     setOpen(recall, false);
     if (!recall && !liveItems.length) paint(); // 关着也先排一次，打开时不用等
+
+    /* ---------------- 让位（首页） ---------------- */
+
+    /*
+      站长 2026-11-20：「首页右侧边也需要出现可以打开时间轴的 UI 和别的页面一样
+      但是这个 UI 只有下翻到板块区域的时候才会伸出 上翻到标题区域就会缩回
+      让置顶塔吊伸出」。
+
+      实现就是**同一块右缘轮流用**：
+        · 页面还给的那一块（首页传的是封面 #home-cover）还压着屏幕上半边
+          → 加 is-tabhidden，书签滑出去藏好，顺手把面板一起收掉
+            （面板 z-index 比首页那台塔吊高，不收掉的话"让塔吊伸出"是假的 ——
+             塔吊会顶在面板底下）；
+        · 它滚过去了 → 撤掉，书签滑出来。
+
+      判据取「那一块的底边还高过屏幕中线吗」，不取 scrollY 的绝对值：
+      封面高度是按视口算的（100dvh − 顶边 + 一截），换屏、换字号、手机地址栏
+      收放之后同一个 scrollY 对应的位置都不一样，量元素才不会错。
+
+      首页那台置顶塔吊自己是「滚过 max(220, 45vh) 就缩进右侧」（见 index.astro
+      的塔吊脚本），和这里几乎是同一个点，所以两件事接着发生：
+      往下翻 = 塔吊先退、书签跟着出来；往上翻 = 书签先收、塔吊跟着回来。
+    */
+    const gateSel = (root.dataset.tlGate || '').trim();
+    if (gateSel && !pinned) {
+      const gate = document.querySelector<HTMLElement>(gateSel);
+      if (!gate) {
+        // 选择器没对上东西就别把书签锁死在里面（标记里默认是收着的）
+        root.classList.remove('is-tabhidden');
+      } else {
+        let hidden: boolean | null = null;
+        const judge = () => {
+          const r = gate.getBoundingClientRect();
+          // 底边还在中线以下 = 这一块还占着屏幕上边，书签让位
+          const next = r.bottom > window.innerHeight * 0.5;
+          if (next === hidden) return;
+          hidden = next;
+          root.classList.toggle('is-tabhidden', next);
+          if (next && open) setOpen(false, false);
+        };
+        /* 滚一下会来好几个 scroll 事件，一帧判一次就够 */
+        let queued = false;
+        const queue = () => {
+          if (queued) return;
+          queued = true;
+          requestAnimationFrame(() => {
+            queued = false;
+            judge();
+          });
+        };
+        judge();
+        window.addEventListener('scroll', queue, { passive: true });
+        window.addEventListener('resize', queue, { passive: true });
+        // 字体/图片到位会挪动封面高度，量完再判一次
+        document.fonts?.ready?.then(judge);
+      }
+    }
+
     // 页面开着跨过零点的话，也让它跟着走到新的一天（每 10 分钟看一眼）
     if (liveItems.length) {
       window.setInterval(() => {

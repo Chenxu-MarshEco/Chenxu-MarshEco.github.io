@@ -305,7 +305,24 @@ check('横臂明显比背景里最高那台塔吊宽（读得出"更近"）',
 check('货箱顶着「置顶」标签（公告 UI 本体，不是别的东西）',
   await cdp.ev(`(() => { const b = document.querySelector('.homepin__box');
     return !!b && /置顶/.test(b.textContent) && !!b.querySelector('.homepin__title'); })()`));
-check('货箱是指向那条公告的链接', /^\/huaya\/bingshi\/photo\/20261001/.test(g.href || ''), g.href || '(空)');
+/*
+ * 货箱点去哪：**从公告数据里算**，不写死某一条的地址 ——
+ * 站长随时会在编辑器里换掉置顶的那条（2026-11-20 换成了涣愿终池那条更新提醒，
+ * 这里原来写死的相册地址就此失效，白红了两个断言）。
+ * 规则照 src/utils/announce.ts：置顶的排最前，置顶之间按日期倒序（同日保持文件顺序）；
+ * 事项公告进 /zongxian/<id>/，更新提醒公告进它自己的 href。
+ */
+const pinnedData = JSON.parse(fs.readFileSync(path.resolve('src/data/announcements.json'), 'utf8'));
+const firstPinned = (pinnedData.items ?? [])
+  .filter((a) => a && a.pinned === true && a.id && a.title && /^\d{4}-\d{2}-\d{2}$/.test(String(a.date)))
+  .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0))[0];
+const expectHref = !firstPinned
+  ? ''
+  : firstPinned.kind === 'update'
+    ? String(firstPinned.href ?? '').trim()
+    : `/zongxian/${firstPinned.id}/`;
+info(`数据里置顶的那条：${firstPinned ? firstPinned.title : '(没有)'} → ${expectHref || '(空)'}`);
+check('货箱指向数据里置顶的那条公告', !!expectHref && (g.href || '') === expectHref, g.href || '(空)');
 
 /* ---- 斜拉线（2026-11-13 加）---- */
 const TRUSS_TOP = 50 / 71; /* 上主弦 y=6 在 viewBox(-44..27) 里的位置 */
@@ -558,7 +575,11 @@ check('货箱正中点得到（不是被别的层盖住的死区）', /homepin/.
 await cdp.click(target.x, target.y);
 await sleep(1200);
 const url = await cdp.ev('location.pathname + location.hash');
-check('点下去真的进了那条公告', /^\/huaya\/bingshi\/photo\/20261001/.test(url), url);
+/* 站外那种更新提醒公告（写的是 http 地址）拿整条 href 比，站内的比 path+hash */
+const landed = /^https?:/i.test(expectHref) ? await cdp.ev('location.href') : url;
+check('点下去真的进了那条公告',
+  /^https?:/i.test(expectHref) ? landed.startsWith(expectHref) : landed === expectHref,
+  `${landed} vs ${expectHref}`);
 
 /* ================================================================
  * F. 手机

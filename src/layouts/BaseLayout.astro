@@ -38,6 +38,14 @@ interface Props {
    */
   timeline?: TimelineData;
   timelineDefault?: number | null;
+  /** 打开时停在「实时」那一刻（首页用；见 components/Timeline.astro 的 defaultLive） */
+  timelineDefaultLive?: boolean;
+  /**
+   * 书签「让位」给页面上的哪一块（选择器）。首页用它：封面那一屏的右缘是
+   * 置顶塔吊的地盘，书签要等滚到板块区域才伸出、上翻回标题区域就缩回。
+   * 不传 = 老样子，书签一直在。见 components/Timeline.astro 的 tabGate。
+   */
+  timelineTabGate?: string;
   /**
    * 首屏最大的那张图（文章封面这类）。给了就在这里发一条 preload，
    * 让浏览器在解析 body 之前就开始拉它 —— 这是 LCP 最直接的一刀。
@@ -66,6 +74,8 @@ const {
   layoutPage,
   timeline,
   timelineDefault = null,
+  timelineDefaultLive = false,
+  timelineTabGate,
   preloadImage,
   preloadImageSizes = '100vw',
   preloadHref,
@@ -186,7 +196,7 @@ const currentPath = withoutBase.length > 1 ? withoutBase.replace(/\/+$/, '') : '
     {/* 右上角目录栏（三条杠）。全站都要有，所以挂在布局里 */}
     <BoardDrawer current={currentPath} />
     {/* 时间轴：只有指了时间轴的页面才有，挂在右边沿（关着时只露一个书签） */}
-    {timeline && <Timeline timeline={timeline} defaultParam={timelineDefault} />}
+    {timeline && <Timeline timeline={timeline} defaultParam={timelineDefault} defaultLive={timelineDefaultLive} tabGate={timelineTabGate} />}
 
     <main id="main" class="site-main">
       <div class:list={['container', narrow && 'container--narrow']}>

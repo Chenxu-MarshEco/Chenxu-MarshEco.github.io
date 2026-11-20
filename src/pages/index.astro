@@ -13,7 +13,24 @@ import { bgStyle, coverUrl, variantUrl } from '../utils/images';
 /* 首页两处小字（进入提示 / 回到封面）归「文案」面板：site-copy.json 的 home.* */
 import { copy, text } from '../utils/site-copy';
 import { announceExternal, announceHref, pinnedAnnounces } from '../utils/announce';
+import { defaultTimeline } from '../utils/timelines';
 const pinned = pinnedAnnounces();
+
+/*
+  首页也挂一条时间轴（2026-11-20 站长）：
+  「首页右侧边也需要出现可以打开时间轴的 UI 和别的页面一样 但是这个 UI
+    只有下翻到板块区域的时候才会伸出 上翻到标题区域就会缩回让置顶塔吊伸出」。
+
+  挂哪条：首页不在版块树里，没有自己的 `timeline` 字段可读，所以就和
+  「没填这个字段的页面」同一个规则 —— 默认那条（花娅年代记），
+  见 utils/timelines.ts 的 defaultTimeline。
+  什么时候露头：BaseLayout 的 timelineTabGate 交给 Timeline 组件判断（见那边的说明）。
+  打开时停在哪儿：**「实时」那一刻**（站长 2026-11-20：「首页的时间轴打开时默认停留在
+  实时时刻的位置也就是那个每天更新的最新时刻 不要停留在一开始」）。
+  那件事交给组件自己算 —— 实时点的位置是按**访问者当天**重排出来的，
+  这边构建期算一个 0~1 的写死值，隔几天再打开就停在几天前了。
+*/
+const homeTimeline = defaultTimeline();
 
 /*
   天际线走图片管线出的**无损 WebP**：颜色逐位不变（塔吊的 --ink #08020c
@@ -59,7 +76,7 @@ const enterText = text(copy.home?.enter);
 const backText = text(copy.home?.back);
 ---
 
-<BaseLayout description={site.description} bodyClass="is-home" layoutPage="home" preloadHref={skylineUrl}>
+<BaseLayout description={site.description} bodyClass="is-home" layoutPage="home" preloadHref={skylineUrl} timeline={homeTimeline} timelineDefaultLive timelineTabGate="#home-cover">
   {/*
     蒸汽波背景，分五层叠（而不是烘焙成一张图）。
 
