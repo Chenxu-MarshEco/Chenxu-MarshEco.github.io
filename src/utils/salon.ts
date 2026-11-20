@@ -157,6 +157,36 @@ export const memberName = (e: SalonEssence): string =>
 export const memberAvatar = (e: SalonEssence): string => membersOf(e)[0]?.avatar || '';
 
 /* ------------------------------------------------------------------
+   成员卡片（精华页顶上那条筛选栏 / 电脑端右边那一栏）
+   ------------------------------------------------------------------ */
+
+export interface SalonMemberStat {
+  member: SalonMember;
+  /** 这个成员发过的精华条数（多人共同参与的，每个参与人都算一条） */
+  count: number;
+}
+
+/**
+ * 每个成员发过多少条精华（2026-11-20 站长要的「卡片右侧是 xxx 条」）。
+ *
+ * 只列**真的有精华**的成员：数据里有、但一条都没发过的人不给卡片 ——
+ * 那种卡片的开关按下去什么都不会发生，纯属误导。
+ * 顺序：**条数从多到少**（站长 2026-11-20：「成员列表按照精华数从多到少排列实时更新」）。
+ * 一样多的按成员表自己的顺序（m01、m02…）排，所以同一天构建两次顺序不会乱跳。
+ * 全是构建期现算的 —— 站长新加一个成员、或者群里又多了几条精华，
+ * 重新构建之后这里是自动跟着变的，页面不用记任何名单。
+ */
+export const salonMemberStats: SalonMemberStat[] = (() => {
+  const n = new Map<string, number>();
+  for (const e of salonEssences) for (const id of essenceIds(e)) n.set(id, (n.get(id) ?? 0) + 1);
+  return salonMembers
+    .map((m, order) => ({ member: m, count: n.get(m.id) ?? 0, order }))
+    .filter((x) => x.count > 0)
+    .sort((a, b) => b.count - a.count || a.order - b.order)
+    .map(({ member, count }) => ({ member, count }));
+})();
+
+/* ------------------------------------------------------------------
    左边那条时间轴：**原样**用站点里已有的某一条
    ------------------------------------------------------------------ */
 

@@ -531,6 +531,12 @@ const initialScaleText = `一刻度约 ${
         时间轴比例：一根横着的刻度尺，上面的塔吊当滑块，左右拖就改比例尺。
         往左 = 放大（一刻度代表的天数变少，最左是一天一格），
         往右 = 缩小（最右是一年一格）。位置记在 sessionStorage 里，见脚本。
+
+        窄栏模式（`.tl.is-rail`，手机上的冰室精华页）里这根尺子是**竖着**的：
+        那一栏只有 70px 宽，横着拖的行程只剩 ~53px（2026-11-20 站长：
+        「手机端精华页时间轴比例尺非常难以调整 …直接把时间轴比例尺的调整轴竖排过来」）。
+        标记一个字符都没变，方向由样式里的 `--tl-scale-axis` 决定，脚本按它读
+        clientX 还是 clientY —— 所以电脑端那根仍然是横的。
       */}
       <div class="tl__scale">
         <span class="tl__scaleLabel" id={`tl-scale-label-${tl.id}`}>时间轴比例</span>
@@ -1600,15 +1606,35 @@ const initialScaleText = `一刻度约 ${
       letter-spacing: 0;
     }
     /*
-      底部：左右两个历名上下叠着放，比例尺那一行也改成竖排两行
-      （「时间轴比例」四个字 + 尺子 + 读数横着排需要 ~150px，栏里只有 80px）。
+      底部（2026-11-20 重排）：历名叠在顶上，下面**分成两栏** ——
+      左栏是「冰室成立至今已经 1411 天」，右栏是**竖着的**比例尺。
+
+      站长原话：「手机端精华页时间轴比例尺非常难以调整 因为手机端精华页很高却很窄
+      直接把时间轴比例尺的调整轴竖排过来 放在我发给你的图片的红圈位置
+      整理一下让它更好操作也更好看」—— 红圈就在天数那句右边那一长条空白上。
+
+      为什么非改不可：横着的那根在 70px 宽的栏里只有 ~53px 的行程，滑块一碰就跨掉
+      一大截比例；改成竖的之后行程 ≈ 150px，而且那片空白原本就空着、不多占高度。
+      顺带把天数那句从「一字一行」（12 行）改回三个字一行，页脚比改之前还矮一截，
+      省下来的高度还给轴本身。
     */
     .tl.is-rail .tl__foot {
-      gap: 0.28rem;
-      padding: 0.45rem 0.28rem 0.5rem;
+      display: grid;
+      /* 右边一栏只给竖尺：轨道 22px，滑块 26px 只朝两边的 padding 里探出 2px */
+      grid-template-columns: minmax(0, 1fr) 22px;
+      grid-template-areas:
+        'names names'
+        'total track'
+        'label track'
+        'value track';
+      align-items: start;
+      row-gap: 0.18rem;
+      column-gap: 0.16rem;
+      padding: 0.4rem 0.2rem 0.45rem;
       font-size: 0.6rem;
     }
     .tl.is-rail .tl__footNames {
+      grid-area: names;
       flex-direction: column;
       align-items: flex-start;
       gap: 0.1rem;
@@ -1616,18 +1642,94 @@ const initialScaleText = `一刻度约 ${
     .tl.is-rail .tl__side {
       letter-spacing: 0.02em;
     }
-    .tl.is-rail .tl__scale {
+    /* 天数：三个字一行，数字单独一行（一位一行更难看，也更容易被挤断） */
+    .tl.is-rail .tl__total {
+      grid-area: total;
       flex-direction: column;
-      align-items: stretch;
-      gap: 0.22rem;
+      align-items: flex-start;
+      gap: 0.08rem;
+      font-size: 0.6rem;
+      line-height: 1.35;
     }
-    .tl.is-rail .tl__scaleLabel,
-    .tl.is-rail .tl__scaleValue {
-      font-size: 0.58rem;
+    .tl.is-rail .tl__totalDays {
+      font-size: 0.78rem;
+      line-height: 1.15;
+    }
+    /*
+      `.tl__scale` 自己**不生成盒子**（display: contents）：它的三个孩子
+      （标题 / 轨道 / 读数）直接成为页脚网格里的三格 —— 标题和读数摆在竖条左边
+      那一栏（和天数同栏），轨道占右边一栏。这样"竖条到底多高"不用写死：
+      它从「天数」那一行一直吃到「读数」那一行。
+    */
+    .tl.is-rail .tl__scale {
+      display: contents;
+    }
+    .tl.is-rail .tl__scaleLabel {
+      grid-area: label;
+      font-size: 0.6rem;
+      line-height: 1.3;
     }
     .tl.is-rail .tl__scaleValue {
+      grid-area: value;
       min-width: 0;
       text-align: left;
+      font-size: 0.62rem;
+      line-height: 1.3;
+    }
+    /* 轨道：竖着长，宽度固定 22px（整栏就 55px，再宽天数就没地方了） */
+    .tl.is-rail .tl__scaleTrack {
+      grid-area: track;
+      align-self: stretch;
+      width: 22px;
+      height: auto;
+      /* 左栏那几行字都很矮时也得留出能拖的一段（实测约 150px，这里兜底 104px） */
+      min-height: 104px;
+    }
+    /*
+      竖尺本身：上下各让开半个滑块（26px → 13px），于是滑块拖到两头都不会跑出栏；
+      `--tl-scale-axis: y` 是给脚本看的 —— 它按这个决定"读 clientX 还是 clientY"、
+      以及键盘上下键往哪边加（见脚本里 fromPointer / keydown 那两处）。
+
+      盒子做成 20px 宽、**但只画中间那条 4px**（背景里 8~12px 那一段）：手指要按得着，
+      点、拖的落点全算在这 20px 上，视觉上还是原来那条细线 ——
+      4px 宽的可点区在手机上基本按不中（用户说的「非常难以调整」里也有一半是这个）。
+    */
+    .tl.is-rail .tl__scaleRail {
+      --tl-scale-axis: y;
+      left: 50%;
+      right: auto;
+      top: 13px;
+      bottom: 13px;
+      width: 20px;
+      height: auto;
+      margin: 0 0 0 -10px;
+      background: linear-gradient(
+        90deg,
+        transparent 0 8px,
+        rgba(255, 120, 190, 0.26) 8px 12px,
+        transparent 12px
+      );
+    }
+    /* 刻度线跟着转 90°：横排是左右铺开的细线，竖排就是上下铺开的 */
+    .tl.is-rail .tl__scaleRail::before {
+      left: 50%;
+      right: auto;
+      top: 0;
+      bottom: 0;
+      width: 12px;
+      height: auto;
+      transform: translateX(-50%);
+      background: repeating-linear-gradient(
+        180deg,
+        rgba(255, 120, 190, 0.5) 0 1px,
+        transparent 1px 9px
+      );
+    }
+    /* 滑块：位置改成沿竖轴走（--p 的含义不变：0 在上、1 在下） */
+    .tl.is-rail .tl__scaleKnob {
+      left: 50%;
+      top: calc(var(--p, 0.5) * 100%);
+      transform: translate(-50%, -50%);
     }
     /* 年代带子的「分层往外让」也收一档：电脑端一档 11px，细栏里两档就伸到栏外了 */
     .tl.is-rail .tl__band[data-side='left'] {
@@ -2871,7 +2973,13 @@ const initialScaleText = `一刻度约 ${
       const dy = py - cy;
       const len = Math.hypot(dx, dy);
       const y = len > 1 ? cy + (R * dy) / len : py;
-      return Math.max(0, Math.min(1, cur + (y - H / 2) / V));
+      /*
+        ⚠ 这里是 **减** 不是加（2026-11-20 修的）：参数越大 = 越晚，而越晚在屏幕上越**靠上**
+        （滚轮那段也是这个方向：往上滚 = 参数变小 = 去看更早的事，同时事件整体往下走）。
+        写成 `cur + (y - H/2)/V` 的话点的位置会被**镜像**：点弧顶上面本来该跳"更晚"，
+        结果跳去"更早"那一条 —— 冰室精华页上就是"点哪都跳到反方向"。
+      */
+      return Math.max(0, Math.min(1, cur - (y - H / 2) / V));
     }
 
     const pad = (n: number) => String(n).padStart(2, '0');
@@ -2946,17 +3054,38 @@ const initialScaleText = `一刻度约 ${
     );
 
     /*
-      比例尺：按在尺子上（或那颗塔吊上）横着拖。
+      比例尺：按在尺子上（或那颗塔吊上）拖。
       点哪儿就跳到哪儿，再接着拖 —— 和普通滑块一个手感。
       它不在 .tl__body 里，所以和上面那套「拖了滚刻度」不会打架。
+
+      方向读的是尺子自己的 `--tl-scale-axis`：默认横向（读 clientX / 宽度），
+      窄栏模式（`.tl.is-rail`）里是竖的（读 clientY / 高度）。
+      为什么不直接量"宽比高小就算竖"：那是个猜法，尺子在过渡尺寸上会一闪一闪地
+      换方向。样式里写死一个记号，脚本只是照着做，两边不会各说各的。
     */
     if (rail && knob) {
-      /** 手指/鼠标落在尺子宽度的百分之几上 */
+      /** 这根尺子现在是竖的吗（见样式里的 --tl-scale-axis） */
+      const vertical = () =>
+        getComputedStyle(rail).getPropertyValue('--tl-scale-axis').trim() === 'y';
+      /** 手指/鼠标落在尺子的百分之几上（横着看宽、竖着看高） */
       const fromPointer = (e: PointerEvent) => {
         const r = rail.getBoundingClientRect();
+        if (vertical()) {
+          if (!r.height) return;
+          setScale((e.clientY - r.top) / r.height, false);
+          return;
+        }
         if (!r.width) return;
         setScale((e.clientX - r.left) / r.width, false);
       };
+
+      /*
+        竖排时把这个滑块的朝向也告诉读屏（role=slider 不写就默认当横的）。
+        断点/横竖屏换了会变，跟着 resize 更新一次。
+      */
+      const syncAxis = () => knob.setAttribute('aria-orientation', vertical() ? 'vertical' : 'horizontal');
+      syncAxis();
+      window.addEventListener('resize', syncAxis, { passive: true });
 
       rail.addEventListener('pointerdown', (e) => {
         e.preventDefault();
@@ -2982,13 +3111,21 @@ const initialScaleText = `一刻度约 ${
       rail.addEventListener('pointerup', endScaleDrag);
       rail.addEventListener('pointercancel', endScaleDrag);
 
-      // 键盘也得能用（它是个 role=slider）；按住 Shift 步子大一点
+      /*
+        键盘也得能用（它是个 role=slider）；按住 Shift 步子大一点。
+
+        方向跟着轴走：横排是「左 / 下 = 变小，右 / 上 = 变大」（这是原来就有的，
+        一个字没改）；竖排换成「上 / 左 = 变小，下 / 右 = 变大」——
+        竖着的滑块上，按「下」键却把塔吊往上推，用起来就是反的。
+      */
       knob.addEventListener('keydown', (e: KeyboardEvent) => {
         const step = e.shiftKey ? 0.1 : 0.02;
-        if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') {
+        const down = vertical() ? ['ArrowDown', 'ArrowRight'] : ['ArrowRight', 'ArrowUp'];
+        const up = vertical() ? ['ArrowUp', 'ArrowLeft'] : ['ArrowLeft', 'ArrowDown'];
+        if (up.includes(e.key)) {
           e.preventDefault();
           setScale(scale - step);
-        } else if (e.key === 'ArrowRight' || e.key === 'ArrowUp') {
+        } else if (down.includes(e.key)) {
           e.preventDefault();
           setScale(scale + step);
         } else if (e.key === 'Home') {

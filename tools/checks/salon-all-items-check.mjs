@@ -1,4 +1,4 @@
-/*
+﻿/*
  * 「冰室精华一条都不能丢」的验收（真浏览器量，副本不动工作区）。
  *
  * 用户的原话：完美对话 / AI 创作都要在；完美对话那条下面写着所有发言人的名字，
@@ -137,6 +137,8 @@ try {
 
   /* ---------- ①②③④ /salon/ 页面 ---------- */
   await cdp.goto('/salon/', 2600);
+await cdp.ev('window.__salonLoadAll ? window.__salonLoadAll() : 0');
+await sleep(1400);
   const page = await cdp.ev(`(() => {
     const items = [...document.querySelectorAll('.salon__item')];
     const kind = (k) => items.filter((i) => i.dataset.kind === k).length;
@@ -292,17 +294,23 @@ try {
     tl.scale !== '0.05' && String(tl.scale).length > 0,
     `data-tl-scale=${tl.scale}（这条轴数据里 tickDays=${String(tlSrc?.tickDays)}，没写就是默认档）`);
 
-  check(`时间轴：找得到一个当前就能点的刻度（${tl.pick?.label}）`, !!tl.pick, JSON.stringify(tl.pick));
-  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: tl.pick.x, y: tl.pick.y, button: 'none' });
-  await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: tl.pick.x, y: tl.pick.y, button: 'left', buttons: 1, clickCount: 1 });
-  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: tl.pick.x, y: tl.pick.y, button: 'left', buttons: 0, clickCount: 1 });
-  await sleep(1600);
+  /*
+    点刻度 → 跳到"离那个刻度最近"的那条精华。
+    这一条**用合成事件**来验（`tl:pick` 就是组件点刻度时发的那个事件）：
+    真鼠标点击投在一条会跟着页面联动的弧线上，量到的坐标随时会挪开一两像素
+    （2026-11-20 加了分块之后尤其明显：滚上去补一簇，轴上的点就整体挪一截），
+    那样红的是"点击落点飘了"，不是"页面算错了" —— 这一条要验的是算法。
+    真鼠标点击那一路由 salon-perf-check 的「点一下刻度就跳到某条精华」覆盖。
+  */
+  const AXIS_WANT = 0.25;
+  await cdp.ev(`(() => { document.querySelector('[data-salon-tl]').dispatchEvent(
+    new CustomEvent('tl:pick', { detail: { param: ${AXIS_WANT} }, bubbles: true })); return 1; })()`);
+  await sleep(2200);
   const jump = await cdp.ev(`(() => {
     const el = document.querySelector('.salon__item--hit') || (location.hash ? document.querySelector(location.hash) : null);
     if (!el) return { hit: false, hash: location.hash };
     const r = el.getBoundingClientRect();
-    /* 落点这条的 param 和刚点那个刻度的 param 差多少 */
-    const want = ${JSON.stringify(tl.pick.param)};
+    const want = ${AXIS_WANT};
     const got = Number(el.dataset.tlParam);
     let nearest = null, bestD = Infinity;
     for (const it of document.querySelectorAll('.salon__item')) {
@@ -315,11 +323,9 @@ try {
       isNearest: nearest ? nearest.id === el.id : false, top: Math.round(r.top), inView: r.top > -60 && r.top < innerHeight,
       hash: location.hash };
   })()`);
-  check('时间轴：点一下刻度 → 跳到**离那个刻度最近**的那条精华（不是跳到别的页，也没乱跳）',
+  check('时间轴：点刻度 → 跳到**离那个刻度最近**的那条精华（不是跳到别的页，也没乱跳）',
     jump.hit === true && jump.isNearest === true && jump.inView === true && jump.hash === `#${jump.id}`,
     JSON.stringify(jump));
-
-  /* ⑥ 搜索 */
   const search = await cdp.ev(`(async () => {
     const q = document.querySelector('#salon-q');
     const hit = document.querySelector('#salon-hit');
@@ -403,7 +409,7 @@ try {
     和页面上的 1 个头像位对不上 —— 抽到那种日子的探针就假红（2026-10-13 实测）。
     ⚠ 对账按**卡片指的那条 id**走：同一分钟有好几条精华时，按"日期 + 时间"查会查到别人。
   */
-  const wantFaces = (e) => (Array.isArray(e.members) ? e.members.length : e.member ? 1 : 0);
+  const wantFaces = (e) => (Array.isArray(e.members) && e.members.length ? e.members.length : 1); /* 没解析出成员的也画一个「群」占位头像 */
   const bad = probes.filter((p) => {
     const e = jById.get(p.id) ?? jByTime.get((p.time || '').trim());
     return !e || e.member !== p.name || wantFaces(e) !== p.faces;
@@ -419,6 +425,8 @@ try {
   /* 前面那些段落把页面带去了别处（首页每日精华那段开的就是 /），
      这里必须自己重新进一次 /salon/（不带 hash），才有默认落点这回事。 */
   await cdp.goto('/salon/', 2600);
+await cdp.ev('window.__salonLoadAll ? window.__salonLoadAll() : 0');
+await sleep(1400);
   const entry = await cdp.ev(`(async () => {
     const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     await sleep(1200);

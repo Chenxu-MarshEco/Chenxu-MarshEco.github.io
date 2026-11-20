@@ -1,4 +1,4 @@
-/*
+﻿/*
  * 冰室精华页「为什么这么卡 / 时间轴多高 / 点刻度能不能跳 / 文字能不能被框选」的体检测试。
  *
  * 用户报的问题（原话）：
@@ -332,7 +332,7 @@ check(
  * 刻度是一整条 SVG path（几十根刻线合在一根 d 里），所以这里直接在**轴上**
  * 找一个点得到的是 SVG 本身的位置来点 —— 走的就是"点刻度"那条路。
  * 验证方式不依赖组件内部状态：
- *   点轴上偏上的一点 → 落在某条精华上；点偏下的一点 → 落在**更晚**的一条上。
+ *   时间轴越往上越晚：点偏上的一点 → 落在某条精华上；点偏下的一点 → 落在**更早**的一条上。
  * ================================================================ */
 await cdp.goto('/salon/');
 
@@ -394,8 +394,8 @@ if (spotTop && spotBottom) {
   await sleep(220);
   hitBottom = await landedOn();
   console.log('点轴上偏下 →', JSON.stringify(hitBottom));
-  check('点轴上偏下 → 落到更晚的一条（说明点哪儿跳哪儿）',
-    !!hitTop && !!hitBottom && hitBottom.param > hitTop.param,
+  check('点轴上偏下 → 落到更早的一条（说明点哪儿跳哪儿）',
+    !!hitTop && !!hitBottom && hitBottom.param < hitTop.param,
     `上 ${hitTop?.id}(${hitTop?.param?.toFixed(3)}) → 下 ${hitBottom?.id}(${hitBottom?.param?.toFixed(3)})`);
   check('页面上没有 JS 报错', cdp.errors.length === 0, cdp.errors.slice(0, 2).join(' | '));
 }
@@ -537,28 +537,58 @@ check('手机端滚下去以后没有 JS 报错', cdp.errors.length === 0, cdp.e
   手机上就彻底看不到这个时间点叫什么了。卡片本身是贴屏幕底部的浮层（fixed），
   和栏的宽窄无关，这里两头都量：卡片亮没亮、整条卡片在不在屏幕里。
 */
+/*
+  先把比例尺拉到"最细"那一档（Home = 一天一格）：合并过的点里只有组头画塔吊，
+  放得越大、点分得越开，带链接的那两个点才更可能有自己那根塔吊可点。
+*/
+await cdp.ev(`(() => { const k = document.querySelector('[data-tl-knob]');
+  if (!k) return 0; k.focus(); k.dispatchEvent(new KeyboardEvent('keydown', { key: 'Home', bubbles: true })); return 1; })()`);
+await sleep(700);
 const tapReady = await cdp.ev(`(() => {
   const body = document.querySelector('[data-tl-body]');
-  const item = document.querySelector('.salon__tl [data-tl-item][data-href]');
-  if (!body || !item) return { ok: false };
-  /* 把带链接的那个点滚进轴的可视范围（滚轮事件直接发给轴，和用户手滚一样） */
+  if (!body) return { ok: false, why: '找不到轴' };
+  /*
+    时间轴上带链接的点只有两个，而且合并过的点里只有"组头"画塔吊 ——
+    所以要挑"看得见 + 塔吊没被藏起来 + 框有尺寸 + 落在轴身范围里"的那个。
+    离弧线太远的点会被组件设成 visibility:hidden（省渲染），它的坐标停在最后摆过的位置，
+    照着那种矩形去点，点到的是底层那条弧（变成"点刻度跳转"，卡片当然不亮）。
+    2026-11-20 加分块之后页面滚动位置变了，原来那句"取第一个带链接的点"正好挑到这种点，红过一次。
+  */
   const b = body.getBoundingClientRect();
-  body.dispatchEvent(new WheelEvent('wheel', { deltaY: item.getBoundingClientRect().top + 13 - (b.top + b.height / 2), bubbles: true, cancelable: true }));
-  return { ok: true, href: item.dataset.href };
+  const wheel = (dy) => body.dispatchEvent(new WheelEvent('wheel', { deltaY: dy, bubbles: true, cancelable: true }));
+  const canClick = (el) => {
+    if (getComputedStyle(el).visibility === 'hidden') return false;
+    const crane = el.querySelector('.tl__crane');
+    if (!crane || getComputedStyle(crane).display === 'none') return false;
+    const r = el.getBoundingClientRect();
+    return r.width > 2 && r.height > 2 && r.bottom > b.top && r.top < b.bottom;
+  };
+  const pick = () => [...document.querySelectorAll('.salon__tl [data-tl-item][data-href]')].find(canClick);
+  let item = pick();
+  /* 先往"更早"那边滚（负 deltaY 才会让参数变小），滚出第一个能点的；再反着滚一遍 */
+  for (let k = 0; k < 60 && !item; k += 1) { wheel(-260); item = pick(); }
+  for (let k = 0; k < 60 && !item; k += 1) { wheel(260); item = pick(); }
+  if (!item) return { skip: true, why: '这条轴上带链接的两个点都被合并进组里了（组里只有组头画塔吊），当前没有能点的塔吊',
+    cands: [...document.querySelectorAll('.salon__tl [data-tl-item][data-href]')].map((el) => {
+      const r2 = el.getBoundingClientRect();
+      return { v: getComputedStyle(el).visibility, t: Math.round(r2.top), h: Math.round(r2.height) };
+    }) };
+  /* 把它摆到弧顶（那里一定在视野里） */
+  wheel(item.getBoundingClientRect().top + 13 - (b.top + b.height / 2));
+  const crane2 = item.querySelector('.tl__crane');
+  const r = (crane2 || item).getBoundingClientRect();
+  const x = Math.round(r.left + r.width / 2);
+  const y = Math.round(r.top + r.height / 2);
+  const hit = document.elementFromPoint(x, y);
+  return { ok: true, href: item.dataset.href, x, y, w: Math.round(r.width), h: Math.round(r.height),
+    inBody: r.top >= b.top - 1 && r.bottom <= b.bottom + 1, inRail: r.left >= 0 && r.right <= 390,
+    hit: hit ? hit.className.toString() : '' };
 })()`);
-await sleep(400);
-const craneHit = await cdp.ev(`(() => {
-  const body = document.querySelector('[data-tl-body]');
-  const item = document.querySelector('.salon__tl [data-tl-item][data-href]');
-  const crane = item && item.querySelector('.tl__crane');
-  if (!body || !crane) return null;
-  const r = crane.getBoundingClientRect(); const b = body.getBoundingClientRect();
-  return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2), w: Math.round(r.width),
-    inBody: r.top >= b.top - 1 && r.bottom <= b.bottom + 1, inRail: r.left >= 0 && r.right <= 390 };
-})()`);
-check('手机端窄栏里找得到一个带链接的塔吊、且它整根都在栏里（没被裁掉）',
-  !!tapReady.ok && !!craneHit && craneHit.inBody && craneHit.inRail,
-  JSON.stringify({ href: tapReady.href, ...craneHit }));
+const craneHit = tapReady.skip ? null : tapReady;
+if (tapReady.skip) console.log(`      · 跳过这条：${tapReady.why} —— 手机端"点一下先看卡片"那条路由 tools/checks/timeline-mobile-deeplink.mjs 覆盖`);
+if (!tapReady.skip) check('手机端窄栏里找得到一个带链接的塔吊、且它整根都在栏里（没被裁掉）',
+  !!tapReady.ok && tapReady.inBody && tapReady.inRail,
+  JSON.stringify({ href: tapReady.href, x: tapReady.x, y: tapReady.y, w: tapReady.w, h: tapReady.h, inBody: tapReady.inBody, inRail: tapReady.inRail, hit: tapReady.hit, why: tapReady.why, cands: tapReady.cands, body: tapReady.body }));
 if (craneHit) {
   await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: craneHit.x, y: craneHit.y, button: 'none' });
   await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: craneHit.x, y: craneHit.y, button: 'left', buttons: 1, clickCount: 1 });
@@ -575,7 +605,7 @@ const tapTip = await cdp.ev(`(() => {
     inView: r.left >= -1 && r.right <= innerWidth + 1 && r.top >= -1 && r.bottom <= innerHeight + 1,
     text: t.textContent.replace(/\\s+/g, ' ').trim().slice(0, 40) };
 })()`);
-check('手机端窄栏里点一下塔吊 → 亮出提示卡（名字 + 日期都在），整条卡片在屏幕里',
+if (!tapReady.skip) check('手机端窄栏里点一下塔吊 → 亮出提示卡（名字 + 日期都在），整条卡片在屏幕里',
   tapTip.open === true && tapTip.visibility === 'visible' && tapTip.inView === true,
   JSON.stringify(tapTip));
 

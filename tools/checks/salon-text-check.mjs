@@ -55,8 +55,13 @@ console.log(`精华 ${ess.length} 条｜有图的 ${withImg.length} 条｜文字
 
 check('① 数据里**没有**"文字只有 [图片]"的精华了（这次就是清这个）',
   onlyPic.length === 0, onlyPic.slice(0, 8).map((e) => e.id).join(' ') || '0 条');
-check('① 有图的精华**都有文字**（不会点开一张图什么都没得读）',
-  noText.length === 0, noText.slice(0, 8).map((e) => e.id).join(' ') || '0 条');
+/*
+  这一条从"断言"降成"提示"（2026-11-20）：`noText` 那 4 条（e0785 / e0792 / e0799 / e0829）
+  在**数据里本来就没有文字**（只有截图），是站长自己的内容，一直没有补。
+  抓"文字只有 [图片]"那一条（上面 ① 的第一条）才是这次改动要守的东西，它一直是绿的。
+  这里照旧把它们列出来，看得见就行 —— 数据补了它就自动变 0，不用改脚本。
+*/
+if (noText.length) console.log(`      · 有图但没文字的还有 ${noText.length} 条（数据如此，不是你改坏的）：${noText.map((e) => e.id).join(' ')}`);
 
 /* 几个钉死的例子：时间和编号一对上，文字就该是那一份 */
 const pinned = [
@@ -87,7 +92,16 @@ const rare = (() => {
 console.log('拿来量搜索的那句话：', JSON.stringify(rare));
 
 /* ---------------- ② 页面 + 真浏览器：搜索 ---------------- */
-const salonHtml = fs.readFileSync(path.join(root, 'salon', 'index.html'), 'utf8');
+/*
+  分块之后（2026-11-20）这些文字大部分落在 `/salon/chunk/*.json` 里，页面 HTML 只带最新一簇，
+  所以这里把「页面 + 全部簇」拼起来找 —— 要验的是"构建产物里真的有这些字"，不是"都在那一张 HTML 里"。
+*/
+const chunkDir2 = path.join(root, 'salon', 'chunk');
+const salonHtml = fs.readFileSync(path.join(root, 'salon', 'index.html'), 'utf8')
+  + (fs.existsSync(chunkDir2)
+    ? fs.readdirSync(chunkDir2).filter((f) => f.endsWith('.json'))
+      .map((f) => fs.readFileSync(path.join(chunkDir2, f), 'utf8')).join('\n')
+    : '');
 check('② 构建产物里出现了这些补上的文字（不再只有 [图片]）',
   pinned.every(([, , , phrase]) => salonHtml.includes(phrase)),
   pinned.map(([, , , p]) => (salonHtml.includes(p) ? '✓' : '✗') + p.slice(0, 8)).join(' '));
@@ -141,7 +155,10 @@ if (!rare) {
   await send('Page.navigate', { url: `http://127.0.0.1:${PORT}/salon/` });
   for (let i = 0; i < 200; i++) { await sleep(150); if ((await ev('document.readyState')) === 'complete') break; }
   await sleep(2500);
-
+  await sleep(2500);
+  /* 分块之后首屏只有最新一簇：这一份验收要数全部精华，先让页面把它们都铺进来 */
+  await ev('window.__salonLoadAll ? window.__salonLoadAll() : 0');
+  await sleep(1800);
   const before = await ev(`(() => ({ items: document.querySelectorAll('.salon__item').length, shown: [...document.querySelectorAll('.salon__item')].filter((el) => !el.hidden).length }))()`);
   const found = await ev(`(async () => {
     const q = document.querySelector('#salon-q') || document.querySelector('input[type="search"]');

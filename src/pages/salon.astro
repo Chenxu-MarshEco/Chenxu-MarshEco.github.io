@@ -4,82 +4,75 @@
  *
  * 数据全在 `src/data/salon.json`（由群精华导出文件整理而来，见 utils/salon.ts）。
  *
- * 三件事和用户的要求一一对应：
- *   1. **左边那条时间轴常驻**：用的是站点自己的时间轴组件，`pinned + fill` 模式 ——
- *      不走右边滑出的抽屉、没有书签、没有关闭按钮，一进页面就是开的；
- *      高度由这一页给（`--tl-panel-h`），电脑端撑到一屏几乎占满，
- *      手机端吸在屏幕上半部分。点轴上的刻度或塔吊都跳到最近的那条精华。
- *   2. **搜索保留**：按 / 聚焦，边打边筛，右上角显示命中数；两端都吸顶常驻。
- *   3. **每条精华 = 成员 + 时间 + 内容**：成员名和头像都从成员表现查
- *      （所以编辑器里给成员改名/换头像，这里和历史所有精华一起变）。
+ * 这一版（2026-11-20）按站长的要求改了四件事：
+ *   1. **成员筛选栏**：顶上一根常驻栏，点一下展开所有成员的卡片
+ *      （头像 + 名字 + 这个人发了多少条），卡片左侧的小眼睛就是开关 ——
+ *      和冰室冰山顶栏那排分类卡一个规矩：关掉的人，他的精华就不显示；
+ *      **一条精华有多个成员时，只有这些成员全被关掉才隐藏**（只要还有一个开着就显示）。
+ *      电脑端屏幕够宽，不折叠 —— 直接是右边一栏，和左边那条时间轴对称。
+ *   2. **电脑端正文居中加宽**：左时间轴 / 中正文 / 右成员，两栏等宽、正文自己居中。
+ *   3. **分块装载**：833 条一次全渲出来要 1.67MB、2 万个元素，进来要卡好几秒。
+ *      现在页面只渲**最新那一簇**（20 条），上翻 / 搜索 / 点轴跳转时才取对应的簇
+ *      （`/salon/chunk/<n>.json`，标记由 utils/salon-html.ts 生成，和首屏同一份）。
+ *   4. 手机端时间轴比例尺竖排 —— 那件事在 components/Timeline.astro 的窄栏模式里。
+ *
+ * 另外两件一直以来的要求没变：
+ *   · **左边那条时间轴常驻**：`pinned + fill` 模式，不走右边滑出的抽屉、没有书签，
+ *     点轴上的刻度或塔吊都跳到最近的那条精华；
+ *   · **搜索保留**：按 / 聚焦，边打边筛（现在筛的是全表，命中数按全部 833 条算）。
  *
  * 观感按用户要求走**页面风格**（和「隰辰煦家」那种大板块子页面一套）：
- * 深紫底 #1e0730 + 粉边 + 渐变玻璃块 + 粉字白标题，
- * 不再是文章那种「浅粉底 + 深琥珀字」的配色（那是 BaseLayout 默认那套）。
+ * 深紫底 #1e0730 + 粉边 + 渐变玻璃块 + 粉字白标题。
  */
 import BaseLayout from '../layouts/BaseLayout.astro';
 import Timeline from '../components/Timeline.astro';
 import {
   salonEssences,
-  salonEras,
   salonTitle,
   salonTimelineId,
   salonUpdated,
-  essenceIds,
   essenceParams,
-  memberName,
-  membersOf,
+  salonMemberStats,
 } from '../utils/salon';
+import { salonChunkCount, salonIndexJson, salonLastChunk, chunkHtml } from '../utils/salon-html';
 import { getTimeline } from '../utils/timelines';
-import { variantUrl, imageDims, viewUrls } from '../utils/images';
+import { variantUrl } from '../utils/images';
 import { copy, text } from '../utils/site-copy';
+
 /*
   左边那条时间轴：编辑器里选中的那一条，**原样**渲染。
-  以前这里是按精华日期自己生成几百个点（还写死比例尺），又卡又超出用户要求 ——
   现在的规则是「点、段、塔吊、比例尺全是那条轴自己的，一个都不加不删」。
 */
 const tl = salonTimelineId ? getTimeline(salonTimelineId) : undefined;
 /* 没选时间轴时左栏那句话（归「文案」面板：site-copy.json 的 salon.empty；留空 = 整块不显示） */
 const salonEmpty = text(copy.salon?.empty);
 const params = tl ? essenceParams(tl) : new Map<string, number>();
-const list = salonEssences;
-const eraName = new Map(salonEras.map((e) => [e.id, e.title]));
-/**
- * 每个年代一共多少天（用户 2026-09-22 要的：鼠标移到年代名字上显示「xx天」）。
- * 含头含尾（同一天 = 1 天）。最后那个年代数据里写的是 2099-12-31（表示"还在继续"），
- * 所以**超过今天的就按今天算** —— 并标上 data-live，让页面脚本每天自己涨。
- */
-const dayNo = (s: string) => {
-  const m = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(String(s ?? '').trim());
-  return m ? Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])) / 86400000 : NaN;
-};
-const todayNo = (() => {
-  const d = new Date();
-  return Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / 86400000;
-})();
-const eraDays = new Map(
-  salonEras.map((e) => {
-    const from = dayNo(e.from);
-    const to = dayNo(e.to);
-    if (!Number.isFinite(from) || !Number.isFinite(to)) return [e.id, { days: 0, live: false }];
-    const live = to > todayNo;
-    const end = live ? todayNo : to;
-    return [e.id, { days: Math.max(1, Math.round(end - from) + 1), live }];
-  })
-);
-/** 只在"换了一个年代"的那条精华前面插一个年代大标题 */
-const eraOf = (e: (typeof list)[number], prev: (typeof list)[number] | undefined) =>
-  !prev || prev.eraId !== e.eraId ? e : null;
+const total = salonEssences.length;
 /** 时间轴默认停在最早那一天（一进页面看到的就是开头） */
-const firstParam = list.length && tl ? (params.get(list[0].id) ?? 0) : 0;
+const firstParam = total && tl ? (params.get(salonEssences[0].id) ?? 0) : 0;
+
+/* 分块：首屏只渲最新那一簇，其余由脚本按需取 */
+const chunkTotal = salonChunkCount();
+const lastChunk = salonLastChunk();
+/** 嵌进页面的索引表：[id, 轴上的位置, 簇号]，见 utils/salon-html.ts 的 salonIndexJson */
+const indexJson = salonIndexJson(params);
+/** 成员卡片（有精华的那些人，顺序照成员表） */
+const members = salonMemberStats;
 ---
 
 <BaseLayout
   title={salonTitle}
-  description={`${salonTitle}：冰室群里的精华消息，${list.length} 条，${salonUpdated} 前更新。`}
+  description={`${salonTitle}：冰室群里的精华消息，${total} 条，${salonUpdated} 前更新。`}
   bodyClass="is-board is-salon"
 >
-  <div class="salon">
+  <div
+    class="salon"
+    data-salon
+    data-base={import.meta.env.BASE_URL}
+    data-total={total}
+    data-chunk-total={chunkTotal}
+    data-chunk-last={lastChunk}
+  >
     <aside class="salon__side">
       {tl ? (
         <div class="salon__tl" data-salon-tl data-tl-id={tl.id}>
@@ -90,12 +83,6 @@ const firstParam = list.length && tl ? (params.get(list[0].id) ?? 0) : 0;
         /* 没选时间轴时那句话归「文案」面板（site-copy.json 的 salon.empty；留空 = 整块不显示） */
         salonEmpty && <p class="salon__tlNone" data-copy="salon.empty">{salonEmpty}</p>
       )}
-      {/*
-        轴下面原来还有一行小字（「点刻度或塔吊 → 跳到最近的一条精华」，
-        鼠标悬停还带一个「成员 18 人 · 精华 784 条」的提示）——
-        用户说「左栏小字去掉」，连提示一起删了。轴底下现在是空的，
-        腾出来的那一点高度让给轴本身（见 .salon__tl 的 --tl-panel-h）。
-      */}
     </aside>
 
     <main class="salon__main">
@@ -103,8 +90,6 @@ const firstParam = list.length && tl ? (params.get(list[0].id) ?? 0) : 0;
         页头只有标题。原来标题下面还有一行
         「共 N 条 · 成员 N 人 · 截至 …　由群精华导出文件整理：…」
         —— 用户说不需要，删掉了（连带上面那些数字也一起删）。
-        数据里的 note / updated 两个字段**没删**：updated 还在 <meta name="description">
-        和「截至哪天」的语义里用，note 留在 salon.json 里（编辑器保存时照样原样带回去）。
       */}
       <header class="salon__head">
         <h1 class="salon__title">{salonTitle}</h1>
@@ -112,8 +97,8 @@ const firstParam = list.length && tl ? (params.get(list[0].id) ?? 0) : 0;
 
       {/*
         搜索栏从页头里挪出来单独一层：它要**无论怎么翻都留在屏幕里**
-        （电脑和手机都要），而 sticky 只能在自己父元素的范围内粘住 ——
-        留在 .salon__head 里的话，页头一滚过去它就跟着走了。
+        （电脑和手机都要），而 sticky 只能在自己父元素的范围内粘住。
+        手机端还要让开上面那根成员栏，让开多少由脚本量进 --salon-top-search。
       */}
       <div class="salon__searchBar">
         <div class="salon__searchBox">
@@ -128,127 +113,99 @@ const firstParam = list.length && tl ? (params.get(list[0].id) ?? 0) : 0;
         </div>
       </div>
 
-      <div class="salon__list" id="salon-list">
-        {
-          list.map((e, i) => {
-            const prev = list[i - 1];
-            const era = eraOf(e, prev);
-            const people = membersOf(e);
-            const name = memberName(e);
-            const ids = essenceIds(e);
-            return (
-              <>
-                {era && (
-                  <h2 class="salon__era">
-                    <span class="salon__eraName">{eraName.get(e.eraId)}</span>
-                    {/*
-                      这个年代一共多少天（含头含尾）。平时收着，鼠标移到这张卡上才展开
-                      （见样式里的 .salon__era:hover）—— 用户 2026-09-22：
-                      「鼠标指针移到写有年代名字的卡片上时 卡片会微微放大并在年代名字下面
-                        写出xx天 也就是这个年代总共有几天 鼠标移开后变回原样」。
-                      「还在继续」的那个年代要在打开页面时按当天重算（data-live）。
-                    */}
-                    <span
-                      class="salon__eraDays"
-                      data-era-from={e.from}
-                      data-era-to={e.to}
-                      data-live={eraDays.get(e.eraId)?.live ? '1' : undefined}
-                    >
-                      {eraDays.get(e.eraId)?.days ?? 0} 天
-                    </span>
-                  </h2>
-                )}
-                {(!prev || prev.date !== e.date) && <h3 class="salon__date">{e.date}</h3>}
-                <article
-                  class="salon__item"
-                  id={e.id}
-                  data-tl-param={params.get(e.id)}
-                  data-members={ids.join(' ')}
-                  data-kind={e.kind || 'text'}
-                >
-                  <div class="salon__who">
-                    {/*
-                      这条精华的成员**可能不止一个**（完美对话是多人一起说的）。
-                      头像每个成员一个、叠着排；没传头像的成员用首字占位圆。
-                      一个成员都没解析出来的（OCR 只认出游戏聊天/表格的那种）画一个"群"。
-                    */}
-                    <span class="salon__faces">
-                      {people.length ? (
-                        people.map((p) => (
-                          <span class="salon__face" title={p.name}>
-                            {p.avatar ? (
-                              <img class="salon__avatar" src={variantUrl(p.avatar, 400)} alt="" loading="lazy" decoding="async" />
-                            ) : (
-                              <span class="salon__avatar salon__avatar--none" aria-hidden="true">
-                                {p.name.slice(0, 1)}
-                              </span>
-                            )}
-                          </span>
-                        ))
-                      ) : (
-                        <span class="salon__face" title="这条没解析出成员（OCR 是游戏聊天/表格截图）">
-                          <span class="salon__avatar salon__avatar--none" aria-hidden="true">
-                            群
-                          </span>
-                        </span>
-                      )}
-                    </span>
-                    <b class="salon__name">{name}</b>
-                    {e.ocr && (
-                      <span class="salon__badge" title="这条的正文是截图 OCR 自动转录的，尚未人工校对">
-                        OCR 转录
-                      </span>
-                    )}
-                    <time class="salon__time" datetime={`${e.date}T${e.time || '00:00'}`}>
-                      {e.date}
-                      {e.time && ` ${e.time}`}
-                    </time>
-                  </div>
-
-                  {e.text && <blockquote class="salon__text">{e.text}</blockquote>}
-
-                  {e.images.map((src) => {
-                    /*
-                      宽高一定要写（`imageDims` 从图片管线的清单里取，连"原样发"的小图也有）：
-                      浏览器拿到宽高就会先把位置留出来，图到位的时候不会把
-                      下面的几百条一起顶下去 —— 页面一边滚一边跳版就是这么来的。
-                    */
-                    const dim = imageDims(src);
-                    /* 点开看大图那一档：封到 1600 + 同档 avif（见 utils/images.ts 的 viewUrls）。
-                       以前这里是最大那档的 webp，点开一张截图可能要多下几十上百 KB。 */
-                    const view = viewUrls(src);
-                    return (
-                      /* aria-label：图片本身 alt 是空的（截图内容说不清），
-                         链接又只有一张图，读屏会只念"链接"—— 补一句人能听懂的 */
-                      <a
-                        class="salon__pic"
-                        href={view.webp}
-                        target="_blank"
-                        rel="noopener"
-                        aria-label={`查看大图：${name} ${e.date}`}
-                      >
-                        <img
-                          src={variantUrl(src, 800)}
-                          width={dim?.w}
-                          height={dim?.h}
-                          alt=""
-                          loading="lazy"
-                          decoding="async"
-                          data-zoom="1"
-                          data-full-avif={view.avif ?? undefined}
-                        />
-                      </a>
-                    );
-                  })}
-                </article>
-              </>
-            );
-          })
-        }
+      <div
+        class="salon__list"
+        id="salon-list"
+        data-chunk-first={lastChunk}
+        data-chunk-last={lastChunk}
+      >
+        {/*
+          点亮两个以上成员时，**他们共同参与**的那些精华被搬到这儿置顶（见脚本 applyPins）。
+          平时是空的、不占地方；没有小标题（不许自己写文案），靠一条亮边和缩进区分。
+        */}
+        <div class="salon__pin" id="salon-pin" hidden></div>
+        {/*
+          首屏这一簇：标记由 utils/salon-html.ts 现生成（和接口取回来的那份同一套），
+          所以样式全都写成 .salon__list :global(...) —— set:html 进来的元素拿不到
+          Astro 的作用域属性，见下面样式区那一段说明。
+        */}
+        <div class="salon__chunk" data-chunk={lastChunk} set:html={chunkHtml(lastChunk, params)} />
         <p class="salon__empty" id="salon-empty" hidden>没有匹配的精华，换个词试试。</p>
       </div>
     </main>
+
+    {/*
+      成员栏（2026-11-20）。
+      电脑端 = 右边一栏（和左边时间轴对称、常驻、不折叠）；
+      手机端 = 顶部一根常驻栏，收起时只剩一枚没字的标签卡（`aria-label` 是它的名字），
+      点开是一整片成员卡片。两种形态共用这一份标记，见样式区。
+    */}
+    <aside class="salon__members" data-salon-members data-open="0" aria-label="成员">
+      <div class="salon__memBar">
+        <button
+          class="salon__memTab"
+          type="button"
+          data-mem-toggle
+          aria-expanded="false"
+          aria-controls="salon-memPanel"
+          aria-label="成员"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <circle cx="9" cy="8.2" r="3.1"></circle>
+            <path d="M3.2 19.4c0-3.1 2.6-5.2 5.8-5.2s5.8 2.1 5.8 5.2"></path>
+            <path d="M15.6 6.1a2.7 2.7 0 0 1 0 5.2"></path>
+            <path d="M17 14.6c2.3.5 3.8 2.3 3.8 4.8"></path>
+          </svg>
+        </button>
+      </div>
+
+      <div class="salon__memPanel" id="salon-memPanel">
+        <ul class="salon__memList">
+          {members.map(({ member, count }) => (
+            <li class="salon__memItem">
+              {/*
+                整张卡就是开关：点亮 = 只看这个人的精华（卡片四周泛霓虹光），
+                再点一下熄灭 = 回到"所有精华"。
+                左边那枚小眼睛和冰室冰山分类卡上那一枚是同一个图形。
+              */}
+              <button
+                class="salon__memCard"
+                type="button"
+                data-mem={member.id}
+                data-on="0"
+                aria-pressed="false"
+              >
+                <span class="salon__memEye" aria-hidden="true">
+                  <svg viewBox="0 0 24 24">
+                    <path d="M2 12s3.6-6 10-6 10 6 10 6-3.6 6-10 6-10-6-10-6Z" />
+                    <circle cx="12" cy="12" r="2.6" />
+                  </svg>
+                </span>
+                {member.avatar ? (
+                  <img
+                    class="salon__memFace"
+                    src={variantUrl(member.avatar, 400)}
+                    alt=""
+                    loading="lazy"
+                    decoding="async"
+                  />
+                ) : (
+                  <span class="salon__memFace salon__memFace--none" aria-hidden="true">
+                    {member.name.slice(0, 1)}
+                  </span>
+                )}
+                <b class="salon__memName">{member.name}</b>
+                <span class="salon__memCount">{count} 条</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </aside>
   </div>
+
+  {/* 全表索引：点时间轴刻度时要在 833 条里找"离得最近的那条"，它可能还没被渲出来 */}
+  <script type="application/json" id="salon-index" set:html={indexJson} />
 </BaseLayout>
 
 <script>
@@ -257,28 +214,42 @@ const firstParam = list.length && tl ? (params.get(list[0].id) ?? 0) : 0;
      ------------------------------------------------------------
      页头的高度会随字号、语言、窗口宽度变（窄到一定程度导航会换行），
      左边那条轴和搜索栏的吸顶位置都得以它为准。
-     量出来写进 CSS 变量：--salon-top（吸顶要让开多少）。
-     （原来还有一个 --salon-note：轴上面那行小字占多高、轴的高度要减掉它。
-       那行小字用户让删了，这个变量跟着一起没了。）
+     量出来写进 CSS 变量：--salon-top（吸顶要让开多少）、
+     --salon-top-search（手机端还要让开顶上那根成员栏）。
      ============================================================ */
   const root = document.documentElement;
+  const salon = document.querySelector<HTMLElement>('[data-salon]');
+  const listBox = document.getElementById('salon-list') as HTMLElement | null;
+  const emptyEl = document.getElementById('salon-empty') as HTMLElement | null;
+  const TOTAL = Number(salon?.dataset.total) || 0;
 
   const measureSticky = () => {
     const header = document.querySelector<HTMLElement>('.site-header');
     const bar = document.querySelector<HTMLElement>('.salon__searchBar');
+    const memBar = document.querySelector<HTMLElement>('.salon__memBar');
+    const footer = document.querySelector<HTMLElement>('.site-footer');
     const top = Math.round((header?.getBoundingClientRect().height ?? 0) + 10);
     const barH = Math.round(bar?.getBoundingClientRect().height ?? 0);
+    /* 手机端那根成员栏是普通流里的（展开的卡片是浮层，不占高度），所以量得到的是栏高 */
+    const memH = Math.round(memBar?.getBoundingClientRect().height ?? 0);
     root.style.setProperty('--salon-top', `${top}px`);
+    root.style.setProperty('--salon-mem-h', `${memH}px`);
+    root.style.setProperty('--salon-top-search', `${top + memH}px`);
     /*
-      「跳过去以后那一条要落在哪儿」= 它得从所有吸顶的东西下面露出来。
-      手机端和电脑端一样，吸顶的只有「页头 + 搜索栏」两样 ——
-      轴改成固定在屏幕**左边**那条细栏了，不再压在正文上方，
-      所以这里不能再把轴的高度算进去（算了那一条就会白让出一整条轴的空）。
+      页脚有多高：左边那条轴和右边那一栏都是 sticky 的，滚到页面最底时
+      它们的活动范围只剩「视口 − 页脚」这么高 —— 两栏的高度都得减掉这一截，
+      否则会被往上顶，顶上那条标题栏钻进吸顶页头底下（实测差 70px）。
     */
-    root.style.setProperty('--salon-jump-gap', `${Math.round(top + barH + 10)}px`);
+    const footH = Math.round(footer?.getBoundingClientRect().height ?? 0);
+    root.style.setProperty('--salon-foot', `${footH}px`);
+    /*
+      「跳过去以后那一条要落在哪儿」= 它得从所有吸顶的东西下面露出来：
+      页头 + 成员栏（手机）+ 搜索栏。轴是固定在屏幕左边那条细栏，不压在正文上方，
+      所以不算进去。
+    */
+    root.style.setProperty('--salon-jump-gap', `${Math.round(top + memH + barH + 10)}px`);
   };
   measureSticky();
-  /* 尺寸一变就重量（防抖到下一帧，免得拖窗口时连着量几十遍） */
   let measureQueued = false;
   const queueMeasure = () => {
     if (measureQueued) return;
@@ -292,20 +263,204 @@ const firstParam = list.length && tl ? (params.get(list[0].id) ?? 0) : 0;
   document.fonts?.ready?.then(queueMeasure);
 
   /* ============================================================
-     0.5 进页面时落在哪儿：带 hash 就落在那一条，没带就落在**最新的一条**
+     0.4 全表索引（点轴跳转用）
+     ------------------------------------------------------------
+     页面上只渲一簇，可"点刻度 → 跳到离那儿最近的一条精华"要在**全部**里找最近的。
+     索引表是构建期嵌进来的 `[[id, 位置, 簇号], …]`（833 行，约 20KB），
+     不用请求，也不依赖已经渲出来的那些。
+     ============================================================ */
+  type Row = [string, number, number];
+  const indexTable: Row[] = (() => {
+    const el = document.getElementById('salon-index');
+    if (!el) return [];
+    try {
+      return JSON.parse(el.textContent || '[]') as Row[];
+    } catch {
+      return [];
+    }
+  })();
+  /** id → 簇号：直接读嵌进来那张表（不在浏览器里再算一遍分块规则） */
+  const chunkById = new Map(indexTable.map((r) => [r[0], r[2]]));
+  const chunkOfId = (id: string) => chunkById.get(id) ?? null;
+  const TOTAL_CHUNKS = Number(salon?.dataset.chunkTotal) || 1;
+
+  /* ============================================================
+     0.6 分块装载
+     ------------------------------------------------------------
+     一簇 20 条（SALON_CHUNK）。文档里永远只有**一段连续的簇** [first, last]：
+       · 首屏只有最新那一簇；
+       · 往上翻到顶就取更早那一簇，**插在最前面**并把滚动位置补回来
+         （内容加在视口上方，不补的话画面会突然往上跳一截）；
+       · 搜索要用的簇如果不在这一段里，就单独插进来并标 data-extra ——
+         搜完（清空关键词）时把这些临时簇摘掉，窗口又回到连续的那一段。
+     每一簇包在一个 `.salon__chunk` 盒子里：这样"整簇插入 / 整簇摘掉"只是一个节点的事，
+     跨簇的那两个头（年代 / 日期）也不会被拆散。
+     ============================================================ */
+  const BASE = salon?.dataset.base ?? '/';
+  const chunkUrl = (n: number) => `${BASE.replace(/\/$/, '')}/salon/chunk/${n}.json`;
+  const chunkData = new Map<number, string>();
+
+  async function fetchChunk(n: number): Promise<string> {
+    const hit = chunkData.get(n);
+    if (hit !== undefined) return hit;
+    const res = await fetch(chunkUrl(n));
+    if (!res.ok) throw new Error(`chunk ${n}: ${res.status}`);
+    const json = (await res.json()) as { html?: string };
+    const html = String(json.html ?? '');
+    chunkData.set(n, html);
+    return html;
+  }
+
+  const chunkBoxes = () =>
+    listBox ? Array.from(listBox.querySelectorAll<HTMLElement>('.salon__chunk')) : [];
+  const chunkOfBox = (box: HTMLElement) => Number(box.dataset.chunk);
+  const hasChunk = (n: number) => chunkBoxes().some((b) => chunkOfBox(b) === n);
+
+  /** 按簇号排好位置插进去（不是简单地 append：搜索可能要求中间那些簇） */
+  function placeChunk(n: number, html: string, extra: boolean) {
+    if (!listBox) return null;
+    const box = document.createElement('div');
+    box.className = 'salon__chunk';
+    box.dataset.chunk = String(n);
+    if (extra) box.dataset.extra = '1';
+    box.innerHTML = html;
+    /*
+      置顶的那些已经搬到列表最上面了。新装进来的这一簇里要是又带了一份，
+      就地把这一份删掉 —— 不能让同一个 id 在文档里出现两次
+      （出现两次的话，点时间轴跳转会跳到藏起来的那一个）。
+    */
+    if (pinnedIds.size) {
+      for (const id of pinnedIds) {
+        const dup = box.querySelector<HTMLElement>(`#${id}`);
+        if (dup) dup.remove();
+      }
+    }
+    const next = chunkBoxes().find((b) => chunkOfBox(b) > n);
+    if (next) listBox.insertBefore(box, next);
+    else listBox.insertBefore(box, emptyEl ?? null);
+    return box;
+  }
+
+  /** 新进来的一簇也要过一遍：折叠判定、筛选、时间轴重算 */
+  function afterChunkInsert(box: HTMLElement | null) {
+    syncFolds(box ?? undefined);
+    applyFilters();
+    salon?.dispatchEvent(new CustomEvent('salon:chunks'));
+  }
+
+  async function loadPrev() {
+    if (!listBox) return false;
+    const lo = Number(listBox.dataset.chunkFirst);
+    if (!Number.isFinite(lo) || lo <= 0) return false;
+    const n = lo - 1;
+    const html = await fetchChunk(n);
+    const h0 = root.scrollHeight;
+    const box = placeChunk(n, html, false);
+    listBox.dataset.chunkFirst = String(n);
+    /*
+      先给这一簇做折叠判定（长文字裁到 8 行）**再**量高度差：
+      折起来会把这一簇变矮，先量后折的话补偿量会多算一截，画面会往下坠一下
+      （实测 CLS 从 0.08 涨到 0.58 就是这一下）。
+    */
+    if (box) syncFolds(box);
+    /* 内容长在视口**上方**：把滚动位置加上新增的那截，画面才不会跳 */
+    const dh = root.scrollHeight - h0;
+    if (dh) window.scrollTo({ top: window.scrollY + dh, left: 0, behavior: 'instant' as ScrollBehavior });
+    applyFilters();
+    salon?.dispatchEvent(new CustomEvent('salon:chunks'));
+    return true;
+  }
+
+  async function loadNext() {
+    if (!listBox) return false;
+    const hi = Number(listBox.dataset.chunkLast);
+    if (!Number.isFinite(hi) || hi >= TOTAL_CHUNKS - 1) return false;
+    const n = hi + 1;
+    const box = placeChunk(n, await fetchChunk(n), false);
+    listBox.dataset.chunkLast = String(n);
+    afterChunkInsert(box);
+    return true;
+  }
+
+  /**
+   * 把某一条所在的簇弄进文档里（点轴跳转 / 带 hash 进来时用）。
+   * 只差一簇就顺着加载；差得远就**重建窗口**成它前后各一簇 ——
+   * 一下子把中间几十簇全拉下来，等于又变回"一进来就加载全部"。
+   */
+  async function ensureChunk(n: number) {
+    if (!listBox || hasChunk(n)) return;
+    const lo = Number(listBox.dataset.chunkFirst);
+    const hi = Number(listBox.dataset.chunkLast);
+    if (Number.isFinite(lo) && Number.isFinite(hi) && n >= lo - 1 && n <= hi + 1) {
+      while (Number(listBox.dataset.chunkFirst) > n) if (!(await loadPrev())) break;
+      while (Number(listBox.dataset.chunkLast) < n) if (!(await loadNext())) break;
+      return;
+    }
+    /* 重建：清掉所有非临时的簇，换成 [n-1, n, n+1] */
+    for (const b of chunkBoxes()) if (!b.dataset.extra) b.remove();
+    const from = Math.max(0, n - 1);
+    const to = Math.min(TOTAL_CHUNKS - 1, n + 1);
+    listBox.dataset.chunkFirst = String(from);
+    listBox.dataset.chunkLast = String(to);
+    for (let i = from; i <= to; i += 1) placeChunk(i, await fetchChunk(i), false);
+    afterChunkInsert(null);
+  }
+
+  /* 上翻到接近顶部就接着取更早的（够不到顶就一直补，但一次只补一簇） */  let loadingOlder = false;
+  /*
+    进页面那一会儿先别补：落地是"直接跳到最后一条"，跳之前有几个 scroll 事件
+    的 scrollY 还是 0，会误判成"用户翻到顶了"，一进来就把上一簇拉下来 ——
+    那正好和"只加载最新一部分"对着干。落地做完才开闸。
+  */
+  let bootDone = false;
+  const maybeLoadOlder = async () => {
+    if (!bootDone || loadingOlder || !listBox) return;
+    if (window.scrollY > 900) return;
+    if (Number(listBox.dataset.chunkFirst) <= 0) return;
+    loadingOlder = true;
+    try {
+      await loadPrev();
+    } catch {
+      /* 取不到就先算了，滚一下还会再试 */
+    } finally {
+      loadingOlder = false;
+      /* 还在顶部附近（这一屏没被填满）就继续补 */
+      if (window.scrollY <= 900 && Number(listBox.dataset.chunkFirst) > 0) window.setTimeout(maybeLoadOlder, 180);
+    }
+  };
+  window.addEventListener('scroll', () => void maybeLoadOlder(), { passive: true });
+
+  /**
+   * 把**全部**簇装进文档里 —— 只给验收脚本和调试用（`/salon/?all=1` 也走它）。
+   *
+   * 平时不需要：上翻会自己一簇一簇补。但有些验收要数全部 833 条
+   * （条数、成员分布、折叠按钮个数…），那时候得一键铺满。
+   * 铺完还是一段连续的簇，和用户自己滚上去滚出来的状态一模一样。
+   */
+  const loadAll = async () => {
+    if (!listBox) return 0;
+    let guard = 0;
+    while (Number(listBox.dataset.chunkFirst) > 0 && guard < TOTAL_CHUNKS + 2) {
+      guard += 1;
+      if (!(await loadPrev())) break;
+    }
+    return document.querySelectorAll('.salon__item').length;
+  };
+  (window as unknown as { __salonLoadAll?: () => Promise<number> }).__salonLoadAll = loadAll;
+  if (/[?&]all=1\b/.test(location.search)) void loadAll();
+
+  /* ============================================================
+     1. 进页面时落在哪儿：带 hash 就落在那一条，没带就落在**最新的一条**
      ------------------------------------------------------------
      带 hash（首页「每日精华」点一下就是 `/salon/#e0158`）：
        全站 `html { scroll-behavior: smooth }` 对**片段跳转**也生效 ——
-       浏览器会从顶部开始"平滑"滚过去，可这一页有 30 万像素高，
-       实测滚了 3 秒还差 2870px 没到（等于没跳到）。
-       所以这里在页面加载完之后把落点**直接做掉**（instant）。
-     没带 hash（用户 2026-09-22 的要求）：
-       「如果进入精华页面时并没有指定到某条精华的位置 那么默认进入时不要停留在最早的精华处
-         而是直接跳转到最晚的一条精华 以后加了新的精华也是默认跳转到最新精华处」
-       —— 数据是按时间从早到晚排的，所以**最后一条 `.salon__item` 就是最新的那一条**，
-       以后加了新精华它自然又变成新的最后一条，这里一行都不用改。
-     两条都不该跟"用户自己"抢：从别的页返回（浏览器 restore 上次滚动位置）时不插手，
-     加载后那 600ms 里用户要是已经滚了 / 按了键，也不再把他拽回去。
+       浏览器会从顶部开始"平滑"滚过去，可这一页非常高，
+       实测滚了 3 秒还差 2870px 没到（等于没跳到）。所以这里在页面加载完之后
+       把落点**直接做掉**（instant）。要落的那条可能还没渲出来（分块之后），
+       所以先把它所在的那一簇弄进来。
+     没带 hash：默认跳到最后一条（= 最新的一条），以后加了新精华自然又变成新的最后一条。
+     两条都不该跟"用户自己"抢：从别的页返回时不插手，加载后那 600ms 里用户
+     要是已经滚了 / 按了键，也不再把他拽回去。
      ============================================================ */
   let userTookOver = false;
   for (const ev of ['wheel', 'touchstart', 'keydown', 'mousedown'] as const) {
@@ -315,70 +470,71 @@ const firstParam = list.length && tl ? (params.get(list[0].id) ?? 0) : 0;
     const nav = performance.getEntriesByType?.('navigation')?.[0] as PerformanceNavigationTiming | undefined;
     return nav?.type === 'back_forward';
   };
-  /** 页面上最后一条精华（= 最新的一条） */
   const latestItem = (): HTMLElement | null => {
     const items = [...document.querySelectorAll<HTMLElement>('.salon__item')].filter((el) => !el.hidden);
     return items.length ? items[items.length - 1] : null;
   };
-  const landOnEntry = () => {
+  const land = (el: HTMLElement) =>
+    el.scrollIntoView({ behavior: 'instant' as ScrollBehavior, block: 'start' });
+
+  const landOnEntry = async () => {
     if (userTookOver || cameBack()) return;
     const raw = location.hash.replace(/^#/, '');
-    /* block: 'start' 会照顾 scroll-margin-top（让开吸顶的页头和搜索栏） */
-    const land = (el: HTMLElement) => el.scrollIntoView({ behavior: 'instant' as ScrollBehavior, block: 'start' });
     if (raw) {
-      let el: HTMLElement | null = null;
+      let id = raw;
       try {
-        el = document.getElementById(decodeURIComponent(raw));
+        id = decodeURIComponent(raw);
       } catch {
-        el = document.getElementById(raw);
+        /* 百分号写坏了就用原文 */
       }
-      if (!el || !el.classList.contains('salon__item')) return;
-      land(el);
+      const n = chunkOfId(id);
+      if (n !== null) await ensureChunk(n);
+      const el = document.getElementById(id);
+      if (el && el.classList.contains('salon__item')) land(el);
       return;
     }
     const last = latestItem();
     if (last) land(last);
   };
   window.addEventListener('load', () => {
-    landOnEntry();
+    void landOnEntry().finally(() => {
+      bootDone = true;
+    });
     /* 字体分片 / 图片到位可能再挪一点位置，稍后再钉一次 */
-    window.setTimeout(landOnEntry, 600);
+    window.setTimeout(() => void landOnEntry(), 600);
   });
-  document.fonts?.ready?.then(landOnEntry);
+  document.fonts?.ready?.then(() => void landOnEntry());
+  /* 落地那一步不管成没成都得开闸（`load` 万一没来，1.5 秒后也放开） */
+  window.setTimeout(() => {
+    bootDone = true;
+  }, 1500);
 
   /* ============================================================
-     1. 左边那条时间轴：点刻度 / 点塔吊 → 跳到离那儿最近的一条精华
+     2. 左边那条时间轴：点刻度 / 点塔吊 → 跳到离那儿最近的一条精华
      ------------------------------------------------------------
      用户的要求：
        「点击时间轴上的刻度，就跳到离那个日期最近的精华消息；
          点刻度即可，或是点时间轴上原本就有的塔吊图标」
-
      两条路都接上：
        · **刻度**：刻度是轴上一整条 SVG path，没有"哪一个"可言，
          所以由时间轴组件按坐标反推出"点到了轴上的哪个位置"，
          发一个 `tl:pick`（detail.param ∈ 0~1）；这里接住它，找 param 最近的那条。
        · **塔吊 / 名字**：那是 `.tl__item`，本身带 data-param，直接用它自己的。
-     两边都靠「位置」比而不是比日期：轴上可能有没有日期的「难以考据」点，
-     比位置对它们也成立。
+     找最近用的是**全表索引**（不是已经渲出来的那些）—— 分块之后，
+     想看的那条多半还没进文档，找到它所在的簇再取回来。
      ============================================================ */
   const tlBox = document.querySelector<HTMLElement>('[data-salon-tl]');
-  const tlList = document.getElementById('salon-list');
 
-  if (tlBox && tlList) {
-    const rows = Array.from(tlList.querySelectorAll<HTMLElement>('.salon__item'));
-    const params = rows
-      .map((el) => ({ el, t: Number(el.dataset.tlParam) }))
-      .filter((r) => Number.isFinite(r.t));
-
-    /** 离某个位置最近的那条精华 */
+  if (tlBox && listBox && indexTable.length) {
+    /** 离某个位置最近的那条精华（在全表里找） */
     const nearest = (want: number) => {
-      let best: (typeof params)[number] | null = null;
+      let best: { id: string; t: number } | null = null;
       let bestD = Infinity;
-      for (const p of params) {
-        const d = Math.abs(p.t - want);
+      for (const [id, t] of indexTable) {
+        const d = Math.abs(t - want);
         if (d < bestD) {
           bestD = d;
-          best = p;
+          best = { id, t };
         }
       }
       return best;
@@ -386,20 +542,12 @@ const firstParam = list.length && tl ? (params.get(list[0].id) ?? 0) : 0;
 
     /**
      * 落到某条精华上：滚过去 + 闪一下 + 把地址栏的 hash 也换掉（好复制给别人）。
-     *
-     * 让开多少 = 吸顶的那些东西实际占了多高（`--salon-jump-gap`，量出来的）：
-     *   电脑端是页头 + 搜索栏；手机端还要加上面那条轴。
-     * 写死一个数字在手机上会正好把落点压在轴底下（等于"点了没反应"）。
+     * 让开多少 = 吸顶的那些东西实际占了多高（`--salon-jump-gap`，量出来的）。
      */
     const gapOf = () =>
       parseFloat(getComputedStyle(root).getPropertyValue('--salon-jump-gap')) || 88;
 
-    const jumpTo = (el: HTMLElement) => {
-      /*
-        自己算目标位置再 scrollTo，比 scrollIntoView 可控。
-        平滑滚动偶尔会被打断（这条轴自己也在跟着页面滚），所以 1.2 秒后检查一次 ——
-        还没到就把"到位"这件事直接做掉，绝不留下"点了但停在半路"。
-      */
+    const scrollToItem = (el: HTMLElement) => {
       const topOf = () => Math.max(0, el.getBoundingClientRect().top + window.scrollY - gapOf());
       window.scrollTo({ top: topOf(), behavior: 'smooth' });
       window.setTimeout(() => {
@@ -410,7 +558,6 @@ const firstParam = list.length && tl ? (params.get(list[0].id) ?? 0) : 0;
         }
       }, 1200);
       el.classList.remove('salon__item--hit');
-      // 重新触发一次动画：先把类摘掉、读一下布局、再加回去
       void el.offsetWidth;
       el.classList.add('salon__item--hit');
       window.setTimeout(() => el.classList.remove('salon__item--hit'), 2400);
@@ -419,6 +566,15 @@ const firstParam = list.length && tl ? (params.get(list[0].id) ?? 0) : 0;
       } catch {
         /* 极老的浏览器不给改就算了 */
       }
+    };
+
+    const jumpTo = async (want: number) => {
+      const near = nearest(want);
+      if (!near) return;
+      const n = chunkOfId(near.id);
+      if (n !== null) await ensureChunk(n);
+      const el = document.getElementById(near.id);
+      if (el) scrollToItem(el);
     };
 
     /**
@@ -433,15 +589,20 @@ const firstParam = list.length && tl ? (params.get(list[0].id) ?? 0) : 0;
       (ev) => {
         const t = ev.target as HTMLElement | null;
         const item = t?.closest?.<HTMLElement>('.tl__item');
-        if (!item || !params.length) return;
+        if (!item) return;
         const onCard = !!t?.closest?.('.tl__tipOpen');
         if (noHover() && !onCard) return; // 触屏第一下交给时间轴自己弹卡片
         const want = Number(item.dataset.param);
         if (!Number.isFinite(want)) return;
         // 抢在时间轴自己的锚点跳转之前接管（默认是跳到轴数据里那个 href）
         ev.preventDefault();
-        const best = nearest(want);
-        if (best) jumpTo(best.el);
+        /*
+          **并且别再往下传**：时间轴上「点刻度 → 跳到最近那条」那套也挂在这一层，
+          一次点击被两边都接住就会跳两次（第二次按点到的坐标算，落在别处），
+          鼠标底下那一条就白点了。这一次点击归"点塔吊"这条路。
+        */
+        ev.stopPropagation();
+        void jumpTo(want);
       },
       true
     );
@@ -449,121 +610,328 @@ const firstParam = list.length && tl ? (params.get(list[0].id) ?? 0) : 0;
     /* 刻度：时间轴把"点到了哪个位置"报上来，这里找最近的那条 */
     tlBox.addEventListener('tl:pick', (ev) => {
       const want = Number((ev as CustomEvent<{ param?: number }>).detail?.param);
-      if (!Number.isFinite(want) || !params.length) return;
-      const best = nearest(want);
-      if (best) jumpTo(best.el);
+      if (!Number.isFinite(want)) return;
+      void jumpTo(want);
     });
   }
 
   /* ============================================================
-     2. 搜索 + 按 / 聚焦
+     3. 搜索 + 按 / 聚焦 + 成员筛选
      ------------------------------------------------------------
-     纯前端筛：精华是一次性静态渲染出来的（搜索引擎也看得到），
-     这里只是给它加一层"边打边筛"。用 textContent 当检索文本 ——
-     成员名、日期、时刻、正文都在里面，不用另外维护一份索引。
+     筛的是**全表**：关键词命中与否由 `/salon.json`（构建期导出的那份）现算，
+     命中那条不在文档里就把它所在的簇取回来。所以"边打边筛 + 命中数"和
+     分块装载不打架 —— 只是不再像以前那样 833 条全在 DOM 里等着被藏。
+     成员筛选和搜索是**与**的关系：两边都允许才显示。
      ============================================================ */
   const q = document.getElementById('salon-q') as HTMLInputElement | null;
-  const list = document.getElementById('salon-list');
   const hit = document.getElementById('salon-hit');
-  const empty = document.getElementById('salon-empty');
+  const pinBox = document.getElementById('salon-pin');
 
-  if (q && list) {
-    const items = Array.from(list.querySelectorAll<HTMLElement>('.salon__item'));
-    const groups = Array.from(list.querySelectorAll<HTMLElement>('.salon__date'));
-    const eras = Array.from(list.querySelectorAll<HTMLElement>('.salon__era'));
-    // 每条精华预先算好检索文本，省得每敲一个字就把 textContent 取一遍
-    const hay = items.map((el) => (el.textContent || '').toLowerCase());
+  /**
+   * **点亮着的成员**（一个都没亮 = 所有精华都显示）。
+   * 站长 2026-11-20 定的规矩：
+   *   「默认状态下显示全部精华 而点了哪个成员头像就只显示那个成员的精华
+   *     且那个成员的卡片周围会泛出霓虹光 再点一下就关闭依旧显示所有精华
+   *     对于多人参与的 只要自己条目里任意一个成员的头像是亮着的状态就显示
+   *     而如果点亮多个成员 会将仅这些成员共同参与的精华置顶 下翻依旧是他们分别每个人参与的」
+   */
+  const lit = new Set<string>();
+  let keyword = '';
+  let matchedIds: Set<string> | null = null; // null = 没在搜
+  let searchIndex: Map<string, string> | null = null; // id → 检索文本
+  let searchPending = false;
+  /** id → 这条精华的成员名（置顶要用；和搜索共用 `/salon.json` 那一份） */
+  let namesById: Map<string, string[]> | null = null;
+  /** 置顶区里搬过去的条目（还原时按簇的缓存重画） */
+  let pinnedIds = new Set<string>();
 
-    /**
-     * 筛完告诉时间轴"布局变了"：它缓存了一份各条精华的位置用来联动弧顶，
-     * 藏掉几百条之后那份缓存就过期了。
-     */
-    const askReindex = () => {
-      tlBox?.dispatchEvent(new CustomEvent('tl:reindex'));
-    };
+  /**
+   * 一条精华现在该不该显示：
+   *   · 一个成员都没点亮 → 全都显示；
+   *   · 点亮了 → 这条的成员里**任意一个**亮着就显示（多人条目就是这个规矩）；
+   *   · 没解析出成员的（群聊截图那种）在点亮状态下不显示 —— 它不属于任何一个人。
+   */
+  const memberOk = (el: HTMLElement) => {
+    if (!lit.size) return true;
+    const ids = (el.dataset.members || '').split(' ').filter(Boolean);
+    return ids.some((id) => lit.has(id));
+  };
 
-    const apply = () => {
-      const kw = q.value.trim().toLowerCase();
-      let shown = 0;
-      items.forEach((el, i) => {
-        const ok = !kw || hay[i].includes(kw);
-        el.hidden = !ok;
-        if (ok) shown++;
-      });
-      // 只留下"还有内容"的日期小标题和年代大标题
-      groups.forEach((h) => {
-        let n = h.nextElementSibling;
+  /** 把"该不该显示"落到每一条上，顺带收掉空掉的年代 / 日期头 */
+  function applyFilters() {
+    if (!listBox) return;
+    let shown = 0;
+    for (const el of listBox.querySelectorAll<HTMLElement>('.salon__item')) {
+      const on = memberOk(el) && (!matchedIds || matchedIds.has(el.id));
+      el.hidden = !on;
+      if (on) shown += 1;
+    }
+    /* 头只在**自己那一簇里**找下面有没有可见的条目（跨簇的两个头由 chunkHtml 决定要不要出） */
+    for (const box of chunkBoxes()) {
+      const kids = Array.from(box.children) as HTMLElement[];
+      for (let i = 0; i < kids.length; i += 1) {
+        const head = kids[i];
+        if (!head.matches('.salon__era, .salon__date')) continue;
+        const isEra = head.classList.contains('salon__era');
         let any = false;
-        while (n && !n.classList.contains('salon__date') && !n.classList.contains('salon__era')) {
-          if (n.classList.contains('salon__item') && !n.hidden) any = true;
-          n = n.nextElementSibling;
+        for (let j = i + 1; j < kids.length; j += 1) {
+          const k = kids[j];
+          if (k.classList.contains('salon__era')) break;
+          if (!isEra && k.classList.contains('salon__date')) break;
+          if (k.classList.contains('salon__item') && !k.hidden) {
+            any = true;
+            break;
+          }
         }
-        h.hidden = !any;
-      });
-      eras.forEach((h) => {
-        let n = h.nextElementSibling;
-        let any = false;
-        while (n && !n.classList.contains('salon__era')) {
-          if (((n.classList.contains('salon__item') && !n.hidden) || (n.classList.contains('salon__date') && !n.hidden))) any = true;
-          n = n.nextElementSibling;
-        }
-        h.hidden = !any;
-      });
-      if (hit) hit.textContent = kw ? `命中 ${shown} / ${items.length} 条` : '';
-      if (empty) empty.hidden = !(kw && shown === 0);
-      askReindex();
-    };
+        head.hidden = !any;
+      }
+    }
+    if (hit) {
+      const n = matchedIds ? matchedIds.size : 0;
+      hit.textContent = keyword ? `命中 ${n} / ${TOTAL} 条` : '';
+    }
+    /* 关键词一个都没命中才亮那句；命中数为 0 时下面本来也没有可见条目 */
+    if (emptyEl) emptyEl.hidden = !(keyword && matchedIds && matchedIds.size === 0);
+    /* 布局变了：时间轴缓存的位置作废，重排一次（它自己那条明路） */
+    tlBox?.dispatchEvent(new CustomEvent('tl:reindex'));
+  }
 
-    q.addEventListener('input', apply);
-    q.addEventListener('search', apply);
-    document.addEventListener('keydown', (e) => {
-      // 按 / 聚焦搜索框（在输入框里打字时不抢）
-      const t = e.target as HTMLElement | null;
-      const typing = t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable);
-      if (e.key === '/' && !typing) {
-        e.preventDefault();
-        q.focus();
-        q.select();
+  /**
+   * 把关键词命中的那些条所在的簇取回来。
+   *
+   * 一次最多铺 **60 条**命中：关键词太常见时（比如搜「的」能命中几百条），
+   * 把它们的簇全取回来就等于又把整页拉了一遍 —— 那正是站长要避免的那件事。
+   * 取的是**最近的**那些（簇号大的），因为找东西时多半是在找近期的。
+   */
+  const MAX_MATCH_SHOWN = 60;
+  let loadingMatches = false;
+  const ensureMatches = async (ids: string[]) => {
+    if (loadingMatches || !listBox) return;
+    const want = ids
+      .map((id) => chunkOfId(id))
+      .filter((n): n is number => n !== null && !hasChunk(n))
+      .sort((a, b) => b - a)
+      .slice(0, MAX_MATCH_SHOWN);
+    if (!want.length) return;
+    const need = [...new Set(want)];
+    loadingMatches = true;
+    try {
+      for (const n of need) {
+        if (hasChunk(n)) continue;
+        placeChunk(n, await fetchChunk(n), true);
       }
-      if (e.key === 'Escape' && document.activeElement === q && q.value) {
-        q.value = '';
-        apply();
+      syncFolds();
+      applyFilters();
+      salon?.dispatchEvent(new CustomEvent('salon:chunks'));
+    } catch {
+      /* 取不到就先显示已有的那些 */
+    } finally {
+      loadingMatches = false;
+    }
+  };
+
+  /**
+   * 拿全表的检索文本 + 每条精华的成员名（第一次搜索 / 第一次点亮成员时才去取）。
+   * 两个用途共用这一份 `/salon.json`，所以只请求一次：
+   *   · 搜索：整段文本（成员名 + 日期 + 时刻 + 正文）里找关键词；
+   *   · 置顶：判断"这条精华的参与人是不是都在点亮的那几个里"。
+   */
+  const loadSearchIndex = async () => {
+    if (searchIndex || searchPending) return;
+    searchPending = true;
+    try {
+      const res = await fetch(`${BASE.replace(/\/$/, '')}/salon.json`);
+      if (!res.ok) return;
+      const json = (await res.json()) as {
+        essences?: {
+          id: string; member?: string; date?: string; time?: string; text?: string;
+          members?: { name?: string }[];
+        }[];
+      };
+      const map = new Map<string, string>();
+      const names = new Map<string, string[]>();
+      for (const e of json.essences ?? []) {
+        if (!e?.id) continue;
+        map.set(e.id, [e.member ?? '', e.date ?? '', e.time ?? '', e.text ?? ''].join(' ').toLowerCase());
+        names.set(e.id, (e.members ?? []).map((m) => String(m?.name ?? '')).filter(Boolean));
       }
+      searchIndex = map;
+      namesById = names;
+    } catch {
+      /* 网络不行就当没索引：只能筛已经渲出来的那些 */
+    } finally {
+      searchPending = false;
+    }
+  };
+
+  /** 清掉搜索时临时插进来的那些簇，窗口回到连续的那一段 */
+  const dropExtraChunks = () => {
+    for (const b of chunkBoxes()) if (b.dataset.extra) b.remove();
+  };
+
+  const runSearch = async () => {
+    keyword = q?.value.trim().toLowerCase() ?? '';
+    if (!keyword) {
+      matchedIds = null;
+      dropExtraChunks();
+      applyFilters();
+      return;
+    }
+    await loadSearchIndex();
+    const ids: string[] = [];
+    if (searchIndex) {
+      for (const [id, hay] of searchIndex) if (hay.includes(keyword)) ids.push(id);
+    } else {
+      /* 索引取不到：只能就地筛已经渲出来的（不至于一个字都搜不了） */
+      for (const el of listBox?.querySelectorAll<HTMLElement>('.salon__item') ?? []) {
+        if ((el.textContent || '').toLowerCase().includes(keyword)) ids.push(el.id);
+      }
+    }
+    matchedIds = new Set(ids);
+    applyFilters();
+    if (ids.length) await ensureMatches(ids);
+  };
+
+  if (q) {
+    q.addEventListener('input', () => void runSearch());
+    q.addEventListener('search', () => void runSearch());
+  }
+  document.addEventListener('keydown', (e) => {
+    // 按 / 聚焦搜索框（在输入框里打字时不抢）
+    const t = e.target as HTMLElement | null;
+    const typing = t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable);
+    if (e.key === '/' && !typing && q) {
+      e.preventDefault();
+      q.focus();
+      q.select();
+    }
+    if (e.key === 'Escape' && document.activeElement === q && q && q.value) {
+      q.value = '';
+      void runSearch();
+    }
+  });
+
+  /**
+   * 置顶区：点亮两个以上成员时，**他们共同参与**的那些精华搬到列表最上面。
+   *
+   * 站长的原话：「如果点亮多个成员 会将仅这些成员共同参与的精华置顶
+   *              下翻依旧是他们分别每个人参与的」。
+   * 所以判据是"这条精华的参与人里包含全部被点亮的成员"（共同参与），
+   * 置顶的那些从下面的时间流里搬走（不是复制：复制会出两个同 id 的节点，
+   * 点时间轴跳转会跳到藏起来的那一个）。
+   *
+   * 还原：被搬走的节点直接丢掉，然后把已经装进文档的每一簇**按缓存重画一遍** ——
+   * 位置、顺序、折叠状态全都回到原样，比记住"原来挂在谁后面"稳妥得多。
+   */
+  const restorePins = () => {
+    if (!pinBox) return;
+    /* 什么都没搬过就别动：重画簇会把已经渲好的图片再走一遍，没必要 */
+    if (!pinnedIds.size && !pinBox.childElementCount) return;
+    pinBox.replaceChildren();
+    pinBox.hidden = true;
+    for (const box of chunkBoxes()) {
+      const cached = chunkData.get(chunkOfBox(box));
+      if (cached !== undefined) box.innerHTML = cached;
+    }
+    pinnedIds = new Set();
+    folded.clear();
+    syncFolds();
+  };
+
+  /** 把"共同参与"的那些搬进置顶区（先保证它们所在的那几簇都在文档里） */
+  const applyPins = async () => {
+    if (!pinBox) return;
+    restorePins();
+    if (lit.size < 2 || !namesById) return;
+    const litNames = [...lit]
+      .map((id) => memBox?.querySelector<HTMLElement>(`[data-mem="${id}"] .salon__memName`)?.textContent?.trim() ?? '')
+      .filter(Boolean);
+    if (litNames.length < 2) return;
+    /* 共同参与 = 被点亮的每个人都在这条里 */
+    const ids: string[] = [];
+    for (const [id, names] of namesById) {
+      if (litNames.every((n) => names.includes(n))) ids.push(id);
+    }
+    if (!ids.length) return;
+    /* 时间顺序（索引表就是数据顺序，早的在前） */
+    const order = new Map(indexTable.map((r, i) => [r[0], i]));
+    ids.sort((a, b) => (order.get(a) ?? 0) - (order.get(b) ?? 0));
+    /* 它们分散在各簇里：把还没装进文档的簇按"临时簇"取回来（只取，不放进时间流的意义上） */
+    for (const n of new Set(ids.map((id) => chunkOfId(id)).filter((n): n is number => n !== null))) {
+      if (!hasChunk(n)) placeChunk(n, await fetchChunk(n), true);
+    }
+    pinnedIds = new Set(ids);
+    for (const id of ids) {
+      const el = document.getElementById(id);
+      if (el) pinBox.appendChild(el);
+    }
+    pinBox.hidden = pinBox.childElementCount === 0;
+    syncFolds(pinBox);
+  };
+
+  /* ---- 成员栏：展开 / 收起 + 点亮某个人 ---- */
+  const memBox = document.querySelector<HTMLElement>('[data-salon-members]');
+  const memTab = memBox?.querySelector<HTMLButtonElement>('[data-mem-toggle]');
+
+  const setMemOpen = (on: boolean) => {
+    if (!memBox) return;
+    memBox.dataset.open = on ? '1' : '0';
+    memTab?.setAttribute('aria-expanded', on ? 'true' : 'false');
+  };
+  memTab?.addEventListener('click', () => setMemOpen(memBox?.dataset.open !== '1'));
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && memBox?.dataset.open === '1') setMemOpen(false);
+  });
+  /* 点面板外面收起（只处理手机端那片浮层；电脑端一直是开着的） */
+  document.addEventListener('pointerdown', (e) => {
+    if (memBox?.dataset.open !== '1') return;
+    const t = e.target as Node | null;
+    if (t && memBox.contains(t)) return;
+    setMemOpen(false);
+  });
+
+  for (const card of memBox?.querySelectorAll<HTMLButtonElement>('[data-mem]') ?? []) {
+    card.addEventListener('click', () => {
+      const id = card.dataset.mem ?? '';
+      if (!id) return;
+      /* 点亮 / 熄灭：亮着 = 只看这个人（多人条目里任意一个亮着就显示） */
+      if (lit.has(id)) lit.delete(id);
+      else lit.add(id);
+      const on = lit.has(id);
+      card.dataset.on = on ? '1' : '0';
+      card.setAttribute('aria-pressed', on ? 'true' : 'false');
+      void (async () => {
+        if (lit.size >= 2) await loadSearchIndex();
+        await applyPins();
+        applyFilters();
+      })();
     });
-    apply();
   }
 
   /* ============================================================================
    * 长文字折起来
    * ---------------------------------------------------------------------------
    * 用户原话（2026-09-22，看到那 8 条几百上千字的 OCR 转录之后）：「要加折叠」。
-   *
    * 规矩：
-   *   · 只有**真的溢出**（裁到 8 行以后还剩内容）才给那顆「展开」——
-   *     短的那些一个按钮都不出现（不然 784 条里会多出几百个没用的按钮）；
+   *   · 只有**真的溢出**（裁到 8 行以后还剩内容）才给那颗「展开」——
+   *     短的那些一个按钮都不出现；
    *   · 裁剪的 CSS 挂在 `.is-clamped` 上，而这个类**只有脚本加**：
-   *     没跑 JS 的浏览器看到的是全文（不会有一段被无声切掉）；
-   *   · 窗口变宽变窄会重新判一次（行高换行都变了，原本不用折的可能就要折了）；
-   *     已经点开的那条不动它 —— 用户自己展开的，不该被一次 resize 收回去。
+   *     没跑 JS 的浏览器看到的是全文；
+   *   · 窗口变宽变窄会重新判一次；已经点开的那条不动它。
+   * 分块之后每插进来一簇就只判那一簇（`scope`），不用回头把前面几百条重量一遍。
    * ========================================================================= */
   const FOLD_LINES = 8;
   const folded = new Map<HTMLElement, { btn: HTMLButtonElement; open: boolean }>();
+  let syncFoldsQueued = false;
 
-  /*
-    ⚠ 这里必须**先一次性写完、再一次性读高度**。
-    一条一条「加上类 → 读 scrollHeight → 去掉类」会让浏览器每条都重排一次：
-    784 条实测把主线程占了 5.07s（salon-perf 那条「任务 < 3s」直接红了）。
-    现在是：全部穿上裁剪类（write）→ 一次读完所有高度（read，只重排一次）→ 再收尾。
-  */
-  const syncFolds = () => {
+  function syncFolds(scope?: HTMLElement) {
     const boxes: HTMLElement[] = [];
-    document.querySelectorAll<HTMLElement>('.salon__item').forEach((item) => {
-      /* 被搜索藏起来的这种量不出高度，跳过；下次 resize / 再搜时会补上 */
+    (scope ?? document).querySelectorAll<HTMLElement>('.salon__item').forEach((item) => {
+      /* 被搜索 / 成员筛选藏起来的这种量不出高度，跳过；下次会补上 */
       if (item.hidden) return;
       const box = item.querySelector<HTMLElement>('.salon__text');
       if (!box || !box.textContent?.trim()) return;
       box.style.setProperty('--fold-lines', String(FOLD_LINES));
-      /* 用户自己点开的那条不动它 —— 展开着不该被一次 resize 收回去 */
       if (folded.get(box)?.open) return;
       box.classList.add('is-clamped');
       boxes.push(box);
@@ -573,7 +941,7 @@ const firstParam = list.length && tl ? (params.get(list[0].id) ?? 0) : 0;
     boxes.forEach((box, i) => {
       const state = folded.get(box);
       if (over[i] > 4) {
-        if (state) return; /* 已经有按钮了 */
+        if (state) return;
         const btn = document.createElement('button');
         btn.type = 'button';
         btn.className = 'salon__fold';
@@ -597,15 +965,28 @@ const firstParam = list.length && tl ? (params.get(list[0].id) ?? 0) : 0;
         }
       }
     });
+  }
+
+  const queueFolds = () => {
+    if (syncFoldsQueued) return;
+    syncFoldsQueued = true;
+    requestAnimationFrame(() => {
+      syncFoldsQueued = false;
+      syncFolds();
+    });
   };
 
   syncFolds();
+  applyFilters();
   /* 图 / 字体到位后行数还会变，加载完再判一次 */
-  window.addEventListener('load', () => window.setTimeout(syncFolds, 60));
+  window.addEventListener('load', () => window.setTimeout(() => syncFolds(), 60));
+  window.addEventListener('resize', queueFolds);
+  /* 筛选变了以后有些条目重新露出来，也得判一次（藏在下面的量不出高度） */
+  window.addEventListener('salon:chunks', queueFolds);
 
   /*
     「还在继续」的那个年代（数据里 to 写的是 2099）按**访问者当天**重算天数 ——
-    构建期先按构建那天算好，打开页面时再对一次（和左边时间轴的实时点一个规矩）。
+    构建期先按构建那天算好，打开页面时再对一次（和时间轴的实时点一个规矩）。
   */
   const syncEraDays = () => {
     const iso = (d: number) => new Date(d * 86400000).toISOString().slice(0, 10);
@@ -625,15 +1006,7 @@ const firstParam = list.length && tl ? (params.get(list[0].id) ?? 0) : 0;
     });
   };
   syncEraDays();
-  let foldQueued = false;
-  window.addEventListener('resize', () => {
-    if (foldQueued) return;
-    foldQueued = true;
-    window.requestAnimationFrame(() => {
-      foldQueued = false;
-      syncFolds();
-    });
-  });
+  window.addEventListener('salon:chunks', syncEraDays);
 </script>
 
 <style>
@@ -642,60 +1015,85 @@ const firstParam = list.length && tl ? (params.get(list[0].id) ?? 0) : 0;
    *  ---------------------------------------------------------------------------
    *  用户原话：「精华页面的整体风格不对，不应该使用文章风格的配色，
    *            而应该用页面风格，例如纷湖下的页面隰辰煦家那样的网站整体风格」
-   *  所以这里不再用 BaseLayout 那套「浅粉底 #e8d0dd + 深琥珀字 #46280f」的文章配色，
-   *  换成和 /huaya/years/fenhu/xichenxuhome 一样的：底 #1e0730、
-   *  块 = linear-gradient(rgba(46,8,70,.78), rgba(20,3,34,.78)) + 1px 粉边 +
-   *  14px 圆角，正文 rgba(255,236,248,.9)，链接/日期 #ffb3dd，
-   *  标题纯白 + 粉色外发光（数值都是从那一页量出来的）。
-   *  另外给 body 一个兜底底色（和 BoardLayout 里那句同理：背景图之外的地方也得是深的）。
    * ========================================================================= */
   :global(body.is-salon) {
     background-color: #1e0730;
+    /* 这一页容器的上限（下面两处选择器都用它） */
+    --salon-max: 1760px;
+  }
+  /*
+    这一页要比站里其他页**宽**（站长 2026-11-20：「让电脑精华页的精华正文内容放到正中间
+    且更宽方便阅读」）。站点`.container` 的上限是 --w-page（68rem = 1088px），
+    左中右三栏塞进 1088 里正文只剩 600 多 —— 所以只在这一页把容器的上限放开。
+    ⚠ 整条选择器都得包在 :global() 里：`.site-main` / `.container` 是 BaseLayout 渲的，
+      身上没有这一页的作用域属性，只 global 掉 body 那一段的话它匹配不上（实测无效）。
+  */
+  :global(body.is-salon .site-main > .container) {
+    max-width: var(--salon-max);
+  }
+  /*
+    页脚也跟着往中间让：左右那两栏是 fixed 的、整屏高，页脚滚到底时会被它们压住一截
+    （页脚自己是个 68rem 的容器，正文贴到边上）。只在这一页把页脚的内容收进正文那一栏的宽度。
+  */
+  :global(body.is-salon) .site-footer__inner {
+    padding-inline: calc(var(--salon-rail-w, 260px) + var(--salon-gap, 1.6rem) * 2);
   }
 
   .salon {
+    /*
+      两边那两栏等宽 —— 站长要的是「正文摆在正中间、右边成员栏和左边时间轴对称」。
+      所以左右写成同一个变量，中间那栏自己 flex:1 吃掉剩下的，再自己居中。
+    */
+    --salon-rail-w: clamp(250px, 18vw, 290px);
+    --salon-gap: clamp(1rem, 1.8vw, 1.8rem);
     display: flex;
-    gap: clamp(1.2rem, 2.6vw, 2.6rem);
-    align-items: flex-start;
-    max-width: 1240px;
+    gap: var(--salon-gap);
     margin: 0 auto;
     /*
-      上边距刻意给 0：左边的轴要"一屏几乎占满"，它的起点就必须紧贴站点页头 ——
-      页头自己（sticky）已经占了一段高度，这里再加一截留白，
-      轴就会被推到屏幕外一截（底部的比例尺看不见）。留白改加在右栏上。
+      上边距刻意给 0：左边的轴要"一屏占满"，它的起点就必须紧贴站点页头。
+      左右两栏是 fixed（不占流），这里把它们的宽度让出来，正文才算得正中。
     */
-    padding: 0 clamp(0.9rem, 2.4vw, 1.6rem) 5rem;
+    padding: 0 calc(var(--salon-rail-w) + var(--salon-gap)) 5rem;
   }
 
-  /* 左边那条轴常驻：滚页面时它跟着停住，不用滚回去看 */
-  .salon__side {
-    flex: 0 0 clamp(260px, 27vw, 330px);
-    position: sticky;
+  /*
+    左边那条轴：**整屏高、钉在屏幕左边**（站长 2026-11-20：「两个框都飘在半空且不一样高
+    很奇怪 让左右两个框都能跨满上下屏」）。
+    · 用 fixed 不用 sticky：sticky 的活动范围是**它自己那个容器**（.salon）——
+      滚到页面最底下时会因为容器的下沿到了而被往上顶，顶上那截钻进吸顶页头里
+      （实测差 70px）。fixed 是相对视口，从上一直到底，跨屏这件事才成立。
+    · 高度由 top + bottom 定死（不写 height:100dvh，免得手机地址栏收放那一跳）。
+    · 水平位置：容器是 1760 居中 + 两侧 1.5rem 内边距，轴的左沿要落在它的内容左沿上，
+      所以这里把那段算出来（100% 在 fixed 里是视口宽，不含滚动条）。
+  */
+  .salon__side,
+  .salon__members {
+    position: fixed;
     top: var(--salon-top, 5.5rem);
-    align-self: flex-start;
+    bottom: 0;
+    width: var(--salon-rail-w);
+  }
+  .salon__side {
+    left: calc(max(0px, (100% - var(--salon-max)) / 2) + var(--sp-5, 1.5rem));
+  }
+  .salon__members {
+    right: calc(max(0px, (100% - var(--salon-max)) / 2) + var(--sp-5, 1.5rem));
   }
   /*
     放所选时间轴的框。
     高度**由这一页给死**：`.tl.is-pinned.is-fill` 读 `--tl-panel-h`，
-    轴的弧线几何是按 .tl__body 的实际高度算的（measure() 里 H = body.clientHeight），
-    不给高度会算成 0、整条轴塌成一个点。
-    一屏占满 = 视口高 - 让开的页头 - 上面那行说明 - 一点点余量；
-    两种写法：先 vh 兜底，认识 dvh 的浏览器（手机地址栏收放时更准）用 dvh。
+    轴的弧线几何是按 .tl__body 的实际高度算的，不给高度会算成 0、整条轴塌成一个点。
+    现在那一栏本身就是整屏高（top 到 0），所以这里跟着算：视口高 − 让开页头。
+    那个 1.4rem 原来是"轴下面那行小字"占的高度，字删了位置留着：
+    一进页面轴底那根比例尺不能被顶出屏幕外。
   */
   .salon__tl {
-    /*
-      高度：视口 − 让开页头那一段 − 1.4rem − 0.5rem。
-      那个 1.4rem 原来是"轴下面那行小字"占的高度 —— 2026-09-21 用户把那行字删了，
-      但这里**照样留着**：一进页面（还没滚的时候）轴底那根比例尺不能被顶出屏幕外，
-      轴再长这 22px 就正好把它挤下去（实测短窗口上 `salon-timeline-scale`
-      的滑块拖拽会因此点空 —— 这一点也是当年把那行小字放到轴**下面**的原因）。
-      删掉的是那行字，不是它占的位置。
-    */
-    --tl-panel-h: calc(100vh - var(--salon-top, 5.5rem) - 1.4rem - 0.5rem);
-    --tl-panel-h: calc(100dvh - var(--salon-top, 5.5rem) - 1.4rem - 0.5rem);
+    /* 和右边那一栏**严丝合缝地一样高**（都是 视口高 − 让开页头），这才是"跨满上下屏" */
+    --tl-panel-h: calc(100vh - var(--salon-top, 5.5rem));
+    --tl-panel-h: calc(100dvh - var(--salon-top, 5.5rem));
     width: 100%;
+    height: 100%;
   }
-  /* 还没选时间轴时的说明（编辑器里选完就换成轴） */
   .salon__tlNone {
     margin: 0;
     padding: 1rem 0.9rem;
@@ -707,13 +1105,18 @@ const firstParam = list.length && tl ? (params.get(list[0].id) ?? 0) : 0;
     color: rgba(255, 226, 244, 0.72);
     text-align: center;
   }
-  /* 已经不用了：这行小字（连同它的悬停提示）用户让删掉了，见上面标记里的说明。
-     样式留着只会让人以为还有这么个东西，所以整条删干净。 */
 
+  /*
+    中间那一栏（正文）：**居中 + 更宽**（站长 2026-11-20：「让电脑精华页的精华正文
+    内容放到正中间且更宽方便阅读」）。
+    两边那两栏都是 flex:0 0 同一个宽度，所以这一栏天然落在屏幕正中；
+    max-width 只是别让 4K 屏上一行字拉成一条横线，超出的那点由 auto 外边距左右平分。
+  */
   .salon__main {
     flex: 1 1 auto;
     min-width: 0;
-    /* 右栏的留白（左栏不留，理由见 .salon 的 padding） */
+    max-width: 1040px;
+    margin: 0 auto;
     padding-top: clamp(1rem, 2.4vh, 1.8rem);
   }
 
@@ -731,17 +1134,16 @@ const firstParam = list.length && tl ? (params.get(list[0].id) ?? 0) : 0;
       0 0 28px rgba(212, 0, 123, 0.7);
   }
 
-  /* ---------- 搜索栏：两端都吸顶，无论怎么翻都留在屏幕里 ---------- */
+  /* ---------- 搜索栏：吸顶常驻 ---------- */
   .salon__searchBar {
     position: sticky;
-    top: var(--salon-top, 5.5rem);
+    top: var(--salon-top-search, var(--salon-top, 5.5rem));
     z-index: 20;
     margin: 0 -0.2rem;
     padding: 0.5rem 0.2rem 0.6rem;
     /*
-      不透明（不用 backdrop-filter）：这一页有 17 万像素高、784 条，
-      每帧再让浏览器去模糊一遍背后的内容是纯浪费；用实色 + 一条渐变收边，
-      效果几乎一样，滚动时不用重算。
+      不透明（不用 backdrop-filter）：这一页很高，每帧再让浏览器去模糊一遍
+      背后的内容是纯浪费；用实色 + 一条渐变收边，效果几乎一样。
     */
     background: #1e0730;
   }
@@ -776,8 +1178,36 @@ const firstParam = list.length && tl ? (params.get(list[0].id) ?? 0) : 0;
     pointer-events: none;
   }
 
-  /* ---------- 年代 / 日期小标题 ---------- */
-  .salon__era {
+  /* ============================================================================
+   *  条目相关的样式 —— 为什么套 :global()
+   *  ---------------------------------------------------------------------------
+   *  条目（`.salon__item` / 年代日期头 / 账号行 / 正文 / 截图 / 展开按钮）现在
+   *  **不是 Astro 渲出来的**，而是 utils/salon-html.ts 生成的 HTML 字符串
+   *  （首屏 set:html 进来，后面的簇由脚本 insertAdjacentHTML 进来）。
+   *  这样的元素身上没有 `data-astro-cid-*`，Astro 的作用域选择器一个都匹配不上，
+   *  所以这一段的写法统一成 `.salon__list :global(.xxx)` —— 外层容器是 Astro 渲的、
+   *  带作用域属性，里面的类名放给全局。类名都带 `salon__` 前缀，不会误伤别处。
+   * ========================================================================= */
+  .salon__list {
+    /* 分块进来的每一簇都是同一个块级盒子，条目在里面的排布和以前一模一样 */
+    display: block;
+  }
+  /*
+    置顶区（点亮两个以上成员时，他们共同参与的那些精华搬到这里）。
+    平时空着不占地方；有内容时左边一条亮边把它和下面的时间流分开 ——
+    不加任何文字（本页不许自己写说明文案）。
+  */
+  .salon__pin {
+    margin: 0 0 0.6rem;
+    padding: 0 0 0 0.5rem;
+    border-left: 3px solid rgba(255, 79, 163, 0.85);
+    box-shadow: -10px 0 26px -14px rgba(255, 79, 163, 0.9);
+  }
+  .salon__pin:empty {
+    display: none;
+  }
+
+  .salon__list :global(.salon__era) {
     margin: 2.4rem 0 0.6rem;
     padding-bottom: 0.35rem;
     border-bottom: 1px solid rgba(255, 120, 190, 0.4);
@@ -786,47 +1216,39 @@ const firstParam = list.length && tl ? (params.get(list[0].id) ?? 0) : 0;
     letter-spacing: 0.1em;
     color: #fff;
     text-shadow: 0 0 12px rgba(255, 79, 163, 0.75);
-    /*
-      年代这张"卡"（用户 2026-09-22）：鼠标移上去**微微放大**，
-      名字下面多出「xx天」，移开变回原样。
-      只动 transform / opacity / max-height —— 不占布局，进出都不会把下面几百条顶来顶去。
-    */
+    /* 鼠标移上去**微微放大**、名字下面多出「xx天」，移开变回原样（用户 2026-09-22） */
     transform-origin: left center;
     transition: transform 0.16s ease;
   }
-  .salon__era:hover,
-  .salon__era:focus-within {
+  .salon__list :global(.salon__era:hover),
+  .salon__list :global(.salon__era:focus-within) {
     transform: scale(1.035);
   }
-  .salon__eraName {
-    display: inline;
-  }
-  .salon__eraDays {
+  .salon__list :global(.salon__eraDays) {
     display: block;
     max-height: 0;
     overflow: hidden;
     font-family: var(--font-body, inherit);
     font-size: 0.82rem;
     letter-spacing: 0.04em;
-    /* 粉色：和时间轴那句「N 天」、以及站点别处的粉光一套 */
     color: #ff9ad5;
     text-shadow: 0 0 10px rgba(255, 79, 163, 0.5);
     opacity: 0;
     transition: max-height 0.18s ease, opacity 0.18s ease;
   }
-  .salon__era:hover .salon__eraDays,
-  .salon__era:focus-within .salon__eraDays {
+  .salon__list :global(.salon__era:hover .salon__eraDays),
+  .salon__list :global(.salon__era:focus-within .salon__eraDays) {
     max-height: 2.2rem;
     opacity: 1;
   }
   /* 触屏没有 hover：一直显示，免得手机上根本看不到天数 */
   @media (hover: none) {
-    .salon__eraDays {
+    .salon__list :global(.salon__eraDays) {
       max-height: 2.2rem;
       opacity: 1;
     }
   }
-  .salon__date {
+  .salon__list :global(.salon__date) {
     margin: 1.6rem 0 0.5rem;
     font-size: 0.92rem;
     letter-spacing: 0.1em;
@@ -834,41 +1256,28 @@ const firstParam = list.length && tl ? (params.get(list[0].id) ?? 0) : 0;
   }
 
   /* ---------- 一条精华 ---------- */
-  .salon__item {
+  .salon__list :global(.salon__item) {
     margin: 0 0 0.9rem;
     padding: 0.7rem 0.9rem 0.8rem;
     border: 1px solid rgba(255, 120, 190, 0.42);
     border-left: 3px solid rgba(255, 120, 190, 0.6);
     border-radius: 14px;
     background: linear-gradient(180deg, rgba(46, 8, 70, 0.78), rgba(20, 3, 34, 0.78));
-    /*
-      带 hash 直接进来时（比如别人发你 /salon/#e0012）不让吸顶的页头/搜索栏压住它。
-      让开多少由脚本量出来（--salon-jump-gap）：电脑端是页头 + 搜索栏，
-      手机端还要加上面那条轴。
-    */
+    /* 带 hash / 点轴跳过来时，不被吸顶的页头、成员栏、搜索栏压住 */
     scroll-margin-top: var(--salon-jump-gap, 5.5rem);
     /*
       让浏览器把每一条**当成一个独立的盒子**（布局/绘制/样式都不外溢）：
       改一条的样式不用回头算别的，画的也只有看得见的那几条。
-      这和上面说的 content-visibility 不是一回事 —— 它**不改变元素的位置和大小**，
-      所以左边那条轴按位置联动照样准（content-visibility 会改，所以不能用）。
+      ⚠ 这里**不要**加 content-visibility: auto（试过）：屏幕外的条目只剩估算高度，
+      左边那条轴是按各条的**实际位置**算"当前滚到哪一段"的，实测会早 3 天。
     */
     contain: content;
-    /*
-      ⚠ 这里**不要**加 content-visibility: auto。
-      试过（735 条跳过屏幕外渲染，确实省），但屏幕外的条目只剩"估算高度"，
-      左边那条时间轴是按各条的**实际位置**算"当前滚到哪一段"的 ——
-      实测轴上的日期比列表里正在看的那条**早 3 天**（2026-07-11 vs 2026-07-14）。
-      轴的日期要跟眼睛看到的一致比省那点渲染重要，所以撤掉了。
-      （真到了非加不可那天，得给每条写接近真实高度的 contain-intrinsic-size 才行。）
-    */
   }
-  .salon__item:target {
+  .salon__list :global(.salon__item:target) {
     border-left-color: #ffd447;
     animation: salonHit 1.6s ease-out;
   }
-  /* 点时间轴刻度跳过来的那一条（脚本加的类；hash 那种是 :target，两条路都有反馈） */
-  .salon__item--hit {
+  .salon__list :global(.salon__item--hit) {
     border-left-color: #ffd447;
     animation: salonHit 2.2s ease-out;
   }
@@ -881,30 +1290,27 @@ const firstParam = list.length && tl ? (params.get(list[0].id) ?? 0) : 0;
     }
   }
 
-  .salon__who {
+  .salon__list :global(.salon__who) {
     display: flex;
     align-items: center;
     gap: 0.5rem;
     font-size: 0.86rem;
     flex-wrap: wrap;
   }
-  /*
-    多个成员：头像叠着排（左边那个盖住右边那个一点），一眼看出"这条是几个人一起的"。
-    叠的是外圈的描边色，所以看起来是一枚一枚压上去的，不会糊成一团。
-  */
-  .salon__faces {
+  /* 多个成员：头像叠着排（左边那个盖住右边那个一点），一眼看出"这条是几个人一起的" */
+  .salon__list :global(.salon__faces) {
     display: inline-flex;
     align-items: center;
     flex: none;
   }
-  .salon__face {
+  .salon__list :global(.salon__face) {
     display: inline-flex;
     flex: none;
   }
-  .salon__face + .salon__face {
+  .salon__list :global(.salon__face + .salon__face) {
     margin-left: -8px;
   }
-  .salon__avatar {
+  .salon__list :global(.salon__avatar) {
     width: 28px;
     height: 28px;
     flex: none;
@@ -913,21 +1319,20 @@ const firstParam = list.length && tl ? (params.get(list[0].id) ?? 0) : 0;
     border: 1px solid rgba(255, 120, 190, 0.6);
     background: rgba(22, 3, 36, 0.9);
   }
-  .salon__avatar--none {
+  .salon__list :global(.salon__avatar--none) {
     display: inline-flex;
     align-items: center;
     justify-content: center;
     color: #ffb3dd;
     font-size: 0.8rem;
   }
-  .salon__name {
+  .salon__list :global(.salon__name) {
     color: #ffe6f6;
     font-weight: 500;
     letter-spacing: 0.04em;
     text-shadow: 0 0 10px rgba(255, 79, 163, 0.5);
   }
-  /* 截图 OCR 转录的条目挂一个小标签，让人知道这段字不是手打的 */
-  .salon__badge {
+  .salon__list :global(.salon__badge) {
     flex: none;
     padding: 0.05rem 0.35rem;
     border: 1px solid rgba(255, 170, 90, 0.5);
@@ -936,13 +1341,12 @@ const firstParam = list.length && tl ? (params.get(list[0].id) ?? 0) : 0;
     font-size: 0.68rem;
     letter-spacing: 0.06em;
   }
-  .salon__time {
+  .salon__list :global(.salon__time) {
     margin-left: auto;
     color: rgba(255, 226, 244, 0.55);
     font-variant-numeric: tabular-nums;
   }
-
-  .salon__text {
+  .salon__list :global(.salon__text) {
     margin: 0.5rem 0 0;
     padding: 0.5rem 0.75rem;
     border-left: 3px solid rgba(255, 120, 190, 0.45);
@@ -955,38 +1359,25 @@ const firstParam = list.length && tl ? (params.get(list[0].id) ?? 0) : 0;
     white-space: pre-wrap;
     word-break: break-word;
   }
-
-  .salon__pic {
+  .salon__list :global(.salon__pic) {
     display: block;
     margin-top: 0.5rem;
   }
-  .salon__pic img {
+  .salon__list :global(.salon__pic img) {
     display: block;
-    /* 给了 width/height 就必须配 height:auto，否则属性里的原始高度会顶死人 */
     height: auto;
     max-width: min(100%, 520px);
     border: 1px solid rgba(255, 120, 190, 0.42);
     border-radius: 10px;
   }
-
-  .salon__empty {
-    margin: 1.5rem 0;
-    color: rgba(255, 226, 244, 0.72);
-  }
-
-  /*
-    长文字折起来（用户 2026-09-22：「要加折叠」）。
-    裁剪只挂在 `.is-clamped` 上，而这个类**只有脚本会加** ——
-    所以没跑 JS 的人看到的是全文，不会有一段莫名其妙被切掉。
-    行数走 --fold-lines（脚本里设成 8）。
-  */
-  .salon__text.is-clamped {
+  /* 长文字折起来：裁剪只挂在 `.is-clamped` 上，这个类**只有脚本加** */
+  .salon__list :global(.salon__text.is-clamped) {
     display: -webkit-box;
     -webkit-box-orient: vertical;
     -webkit-line-clamp: var(--fold-lines, 8);
     overflow: hidden;
   }
-  .salon__fold {
+  .salon__list :global(.salon__fold) {
     display: inline-block;
     margin: 0.3rem 0 0;
     padding: 0 0 1px;
@@ -999,44 +1390,175 @@ const firstParam = list.length && tl ? (params.get(list[0].id) ?? 0) : 0;
     border-bottom: 1px dotted rgba(255, 120, 190, 0.6);
     background: none;
   }
-  .salon__fold:hover,
-  .salon__fold:focus-visible {
+  .salon__list :global(.salon__fold:hover),
+  .salon__list :global(.salon__fold:focus-visible) {
     color: #fff;
     border-bottom-color: #fff;
   }
-  .salon__fold:focus-visible {
+  .salon__list :global(.salon__fold:focus-visible) {
     outline: 2px solid rgba(255, 120, 190, 0.75);
     outline-offset: 2px;
   }
+  .salon__empty {
+    margin: 1.5rem 0;
+    color: rgba(255, 226, 244, 0.72);
+  }
 
   /* ============================================================================
-   * 窄屏（手机）：轴固定在屏幕**左边**一条细栏里，正文在它右边
-   * ---------------------------------------------------------------------------
-   *  用户原话：「请调整手机端的冰室精华 UI。手机端最好像电脑端一样时间轴固定在
-   *            屏幕左侧，可以让时间轴更细一点以防止占用太多正文空间，
-   *            搜索栏就始终停留在时间轴 UI 顶部」
-   *
-   *  以前窄屏是「轴横在顶上占 46% 高 + 搜索栏吸在它下面」——正文只剩一半屏。
-   *  现在改成和电脑端同一套结构（左栏 + 右正文），只是这一栏细得多：
-   *    · 栏宽 clamp(64px, 18vw, 96px)：390px 的手机上量到 **70px**（屏宽 17.9%），
-   *      正文还剩 **265px（67.9%）**，比原来「轴横在顶上占掉 46% 的高度」省得多
-   *      （320px 小屏：栏 64px、正文 62.8%）。
-   *      栏宽写成一个变量 --salon-rail-w，正文的 padding-left 用它算，
-   *      两边不会各写一个数字而对不上。
-   *    · 用 position: fixed（不是 sticky）：用户要的是「固定在屏幕左侧」，
-   *      滚 784 条的过程中它一步都不动。
-   *    · 搜索栏和轴**顶边对齐**：两个都用 --salon-top 那一档，
-   *      所以搜索栏看上去就停在轴的上沿。轴是 fixed、搜索栏是 sticky，
-   *      各粘各的，但起点一样。
-   *  轴本身在这么窄的栏里怎么活下来：见 Timeline.astro 的 .tl.is-rail。
+   *  成员栏
+   *  ---------------------------------------------------------------------------
+   *  电脑端：右边一整栏，和左边那条时间轴对称（同一个宽度变量）、常驻、不折叠 ——
+   *          站长原话「电脑端的成员卡片可以改为和在时间轴对称的右边新建一个竖着的框
+   *          位置 竖着排列下来 不需要隐藏 因为电脑端屏幕空间足够」。
+   *  手机端：顶部一根常驻栏，收起时只剩一枚没字的标签卡（见下面的 @media），
+   *          点开是一整片卡片（浮层，不挤正文）。
+   * ========================================================================= */
+  /* 电脑端没有"收起"这回事：那枚标签卡不出现 */
+  .salon__memBar {
+    display: none;
+  }
+  /*
+    面板撑满那一栏：栏本身是 fixed 的整屏高（top 到 0），面板在里面铺满，
+    于是左右两个框**一样高**、都从页头底下一直到底（站长要的「跨满上下屏」）。
+    人多到装不下时这一栏自己滚（`overflow-y: auto`），不把页面撑高。
+  */
+  .salon__memPanel {
+    box-sizing: border-box;
+    height: 100%;
+    padding: 0.5rem 0.45rem;
+    border: 1px solid rgba(255, 120, 190, 0.42);
+    border-radius: 14px;
+    background: linear-gradient(180deg, rgba(46, 8, 70, 0.78), rgba(20, 3, 34, 0.78));
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  .salon__memList {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.28rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    /*
+      卡片把这一栏的高度分掉：人少的时候每张卡高一点、正好铺满，
+      人多的时候每行回到它自己的高度、多出来的部分由面板滚动 ——
+      这样右栏不会出现"下面是空的一大截"。
+    */
+    min-height: 100%;
+    grid-auto-rows: 1fr;
+  }
+  /*
+    一张成员卡：左边小眼睛（开关），中间头像 + 名字，右边「N 条」。
+    默认全都不亮 = 所有精华都显示；**点亮**某一张就只看这个人的精华，
+    亮着的那张卡四周泛一圈霓虹光（粉 + 青，和站点别处的光晕一套）。
+    规矩是站长 2026-11-20 定的：
+      「默认状态下显示全部精华 而点了哪个成员头像就只显示那个成员的精华
+        且那个成员的卡片周围会泛出霓虹光 再点一下就关闭依旧显示所有精华」。
+  */
+  .salon__memCard {
+    position: relative;
+    display: grid;
+    grid-template-columns: auto auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 0.36rem;
+    width: 100%;
+    box-sizing: border-box;
+    padding: 0.3rem 0.45rem;
+    border: 1px solid rgba(255, 120, 190, 0.45);
+    border-radius: 12px;
+    background: linear-gradient(180deg, rgba(62, 13, 94, 0.9), rgba(28, 5, 44, 0.9));
+    color: #ffe6f6;
+    font: inherit;
+    font-size: 0.8rem;
+    text-align: left;
+    cursor: pointer;
+    transition: filter 0.15s ease, border-color 0.15s ease, box-shadow 0.18s ease,
+      background 0.18s ease;
+  }
+  .salon__memCard:hover {
+    filter: brightness(1.08);
+  }
+  .salon__memCard:focus-visible {
+    outline: 2px solid rgba(255, 120, 190, 0.8);
+    outline-offset: 2px;
+  }
+  /* 点亮的那一张：霓虹光圈（外圈粉、内一层青，两层叠出"灯管"的味道） */
+  .salon__memCard[data-on='1'] {
+    border-color: rgba(255, 150, 215, 0.95);
+    background: linear-gradient(180deg, rgba(92, 20, 132, 0.95), rgba(40, 8, 62, 0.95));
+    box-shadow:
+      0 0 0 1px rgba(255, 120, 190, 0.85),
+      0 0 14px rgba(255, 79, 163, 0.75),
+      0 0 30px rgba(255, 79, 163, 0.45),
+      0 0 44px rgba(95, 240, 255, 0.22);
+  }
+  .salon__memCard[data-on='1'] .salon__memName {
+    color: #fff;
+    text-shadow: 0 0 10px rgba(255, 79, 163, 0.9), 0 0 22px rgba(255, 79, 163, 0.5);
+  }
+  .salon__memCard[data-on='1'] .salon__memEye {
+    color: #fff;
+  }
+  .salon__memCard[data-on='1'] .salon__memFace {
+    border-color: rgba(255, 190, 230, 0.95);
+    box-shadow: 0 0 10px rgba(255, 79, 163, 0.8);
+  }
+  .salon__memEye {
+    display: inline-flex;
+    width: 1.05em;
+    height: 1.05em;
+    color: #ffb3dd;
+  }
+  .salon__memEye svg {
+    width: 100%;
+    height: 100%;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.7;
+    stroke-linecap: round;
+  }
+  .salon__memFace {
+    width: 24px;
+    height: 24px;
+    flex: none;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 1px solid rgba(255, 120, 190, 0.55);
+    background: rgba(22, 3, 36, 0.9);
+  }
+  .salon__memFace--none {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: #ffb3dd;
+    font-size: 0.72rem;
+  }
+  .salon__memName {
+    min-width: 0;
+    overflow: hidden;
+    font-weight: 500;
+    letter-spacing: 0.03em;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  .salon__memCount {
+    flex: none;
+    color: rgba(255, 226, 244, 0.6);
+    font-size: 0.72rem;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ============================================================================
+   *  窄屏（手机）：轴固定在屏幕**左边**一条细栏里，正文在它右边，成员栏在顶上
+   *  ---------------------------------------------------------------------------
+   *  轴那条栏的来龙去脉见 Timeline.astro 的 .tl.is-rail。
    * ========================================================================= */
   @media (max-width: 880px) {
     .salon {
       flex-direction: column;
       /*
         左边这条轴栏占多宽。用户要「更细一点以免占用太多正文空间」，
-        所以给到 390px 手机上 ≈ 70px（屏宽的 18%）：正文还剩 ~265px（约 68%），
-        比原来「轴横在顶上占掉 46% 的高度」省得多。
+        所以给到 390px 手机上 ≈ 70px（屏宽的 18%）：正文还剩 ~265px（约 68%）。
       */
       --salon-rail-w: clamp(64px, 18vw, 96px);
       gap: 0;
@@ -1045,11 +1567,132 @@ const firstParam = list.length && tl ? (params.get(list[0].id) ?? 0) : 0;
       padding-right: 0.15rem;
     }
     /*
+      **成员栏**在手机上是「顶部那根常驻栏」：订在屏幕上方（和页头同一个让开量），
+      收起时只有一枚标签卡 —— 站长原话「隐藏状态下不要写字就留那种标签卡的样子」。
+      sticky 而不是 fixed：它占的那点高度正好把搜索栏顶下去，两样都不叠。
+    */
+    .salon__members {
+      order: 1;
+      flex: none;
+      width: 100%;
+      position: sticky;
+      /* 电脑端那套是 fixed + 整屏高，手机端这里全部退回来：只需要贴在顶上那一条 */
+      top: var(--salon-top, 3.6rem);
+      bottom: auto;
+      left: auto;
+      right: auto;
+      z-index: 26;
+      align-self: auto;
+      background: #1e0730;
+    }
+    .salon__memBar {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      height: var(--salon-mem-h, 2.2rem);
+      padding: 0 0.1rem;
+    }
+    /* 那枚「标签卡」：只有图形、没有一个字 */
+    .salon__memTab {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 2.5rem;
+      height: 1.75rem;
+      padding: 0;
+      border: 1px solid rgba(255, 120, 190, 0.5);
+      border-radius: 10px;
+      background: linear-gradient(180deg, rgba(62, 13, 94, 0.95), rgba(28, 5, 44, 0.95));
+      color: #ffb3dd;
+      cursor: pointer;
+    }
+    .salon__memTab svg {
+      width: 1.15rem;
+      height: 1.15rem;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 1.7;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+    .salon__memTab[aria-expanded='true'] {
+      border-color: rgba(255, 160, 210, 0.85);
+      color: #fff;
+    }
+    /*
+      展开的那片卡片：**浮层**（fixed），从成员栏底下一直铺到屏幕两边 ——
+      手机屏幕窄，挤在正文那一栏里只能一行两个，铺满一行能放五个。
+      它不占高度，所以展开 / 收起不会把下面的正文顶来顶去。
+    */
+    .salon__memPanel {
+      display: none;
+      position: fixed;
+      left: 0;
+      right: 0;
+      top: calc(var(--salon-top, 3.6rem) + var(--salon-mem-h, 2.2rem));
+      /* 电脑端那条 height:100% 是"撑满整屏高那一栏"，手机上这里要按内容走 */
+      height: auto;
+      z-index: 30;
+      max-height: 62dvh;
+      overflow-y: auto;
+      /*
+        浮层压在正文上面：底必须是**实色**的（上面那条共用规则是 78% 的渐变，
+        正文会从缝里透出来，一眼就看出"两串字叠在一起"）。
+      */
+      background-color: #1e0730;
+      border: 0;
+      border-bottom: 1px solid rgba(255, 120, 190, 0.45);
+      border-radius: 0 0 16px 16px;
+      box-shadow: 0 20px 44px -22px #000;
+      overscroll-behavior: contain;
+    }
+    .salon__members[data-open='1'] .salon__memPanel {
+      display: block;
+    }
+    /*
+      卡片排成网格：`auto-fill` + 等宽列 —— 最后一行不满时**靠左**排，
+      列和上一行严格对齐（站长原话：「第三排只有三个时 第三排要靠左对齐
+      不要居中导致第三排的卡片和第二排在竖直方向上不对齐」）。
+      390px 上量到一行 5 个。
+    */
+    .salon__memList {
+      grid-template-columns: repeat(auto-fill, minmax(4.4rem, 1fr));
+      gap: 0.34rem;
+      /* 电脑端那两行是"把一栏的高度分掉"，手机上不要（浮层按内容高就行） */
+      min-height: 0;
+      grid-auto-rows: auto;
+    }
+    /* 手机上卡片改成竖的（头像在上、名字和条数在下），一行才放得下五个 */
+    .salon__memCard {
+      grid-template-columns: minmax(0, 1fr);
+      justify-items: center;
+      gap: 0.16rem;
+      padding: 0.42rem 0.2rem 0.34rem;
+      font-size: 0.72rem;
+      text-align: center;
+    }
+    .salon__memEye {
+      position: absolute;
+      left: 0.28rem;
+      top: 0.28rem;
+      width: 0.95em;
+      height: 0.95em;
+    }
+    .salon__memFace {
+      width: 30px;
+      height: 30px;
+    }
+    .salon__memName {
+      width: 100%;
+      font-size: 0.72rem;
+    }
+    .salon__memCount {
+      font-size: 0.66rem;
+    }
+
+    /*
       轴那一栏：钉在屏幕左边、从页头底下一直到底。
       底用实色（不是透明）：正文要从它旁边滚过去，透了就成了两串字叠在一起。
-      右边沿留一条很淡的粉线，把「栏」和「正文」分开。
-      **上边不留 padding**：轴的上沿要和搜索栏的上沿齐平（用户要「搜索栏停在
-      时间轴 UI 顶部」），差几个像素都能看出来。
     */
     .salon__side {
       position: fixed;
@@ -1063,28 +1706,29 @@ const firstParam = list.length && tl ? (params.get(list[0].id) ?? 0) : 0;
       background: #1e0730;
       border-right: 1px solid rgba(255, 120, 190, 0.22);
     }
-    /*
-      轴的高度 = 这一栏剩下的全部（100dvh - 让开页头那一段 - 底下那点 padding）。
-      和上面 .salon__side 的 top/bottom 是同一笔账，所以轴正好贴着栏的上下沿。
-    */
     .salon__tl {
       --tl-panel-h: calc(100dvh - var(--salon-top, 3.6rem) - 0.25rem);
       /* 弧线几何要一个「窄栏」的事实：窄栏里没有横着写的名字，弧顶居中更好看 */
       --tl-apex: 0.5;
-      /* 凸出量跟着收：栏只有 60~90px 宽，凸 30px 塔吊就会被裁掉半边（见 Timeline 的 bulgeOf） */
+      /* 凸出量跟着收：栏只有 60~90px 宽，凸 30px 塔吊就会被裁掉半边 */
       --tl-bulge: 12px;
       /* 塔吊不转向：转了的塔吊是横着朝外伸的，一根就横向占 26px，细栏里放不下两根 */
       --tl-crane-rot: 0;
-      /* 栏有多宽告诉轴自己：手机上点塔吊弹出的提示卡要让开这一条栏（见 Timeline 的窄栏那一段） */
+      /* 栏有多宽告诉轴自己：手机上点塔吊弹出的提示卡要让开这一条栏 */
       --tl-rail-w: var(--salon-rail-w);
       height: 100%;
+    }
+    .salon__main {
+      order: 2;
+      max-width: none;
+      padding-top: 0;
     }
     .salon__head {
       margin-top: 0.7rem;
     }
-    /* 搜索栏：和轴**顶边对齐**，一直停在时间轴 UI 的顶部 */
+    /* 搜索栏：让开顶上那根成员栏，一直停在它下面 */
     .salon__searchBar {
-      top: var(--salon-top, 3.6rem);
+      top: var(--salon-top-search, var(--salon-top, 3.6rem));
     }
   }
 </style>
