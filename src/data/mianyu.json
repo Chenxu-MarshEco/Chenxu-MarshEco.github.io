@@ -165,7 +165,7 @@
     {
       "id": "log-20261121",
       "date": "2026.11.21",
-      "text": "**圣经 34 天入库**（10-03～11-18，170 条）：署名认不出的指认后补进 `aliases.json`；条目从早到晚。\n\n**轴不跟滚（两波）**：① `marked` 只取一次，分块进来的不在名单；② `tl:reindex` 是 `CustomEvent`、不冒泡到不了 document；③ param 按构建那天算、浏览器按访问者今天重排 → 差一天（加 `data-tl-date` 一起重算）；④ 手动滚过轴或点轴跳转后**再也不跟**：同步原来按\"是不是同一条 activeEl\"早退（手动滚过就永远早退），跳转还会整簇换掉、名单成了已摘下的旧元素。现在按\"两边停的位置对不对得上\"（比 param）判，`collectMarked` 认到另一批元素就作废缓存。\n\n**分块装载不许动位置**（硬规定）：插之前记视口最上面那条、插完按元素钉回去（`pinTo`）再下一帧钉一次；关掉 scroll anchoring；够不着顶时上滑受阻、中间塔吊转圈，取不到就一直转而位置不动。\n\n**评语 QQ 号 / 名片 / 搜索**：照服务器导出 JSON 补了 10 个号进 `aliases.json`（`qqToNames` 去掉 `[号]`）；`memlink` 现在也重写 `chunk/*.json` 的 `html`；圣经页搜索改 `/bellie.json`。\n\n验收：`bellie-timeline-sync.mjs` 32 项、`chunk-scroll-guard.mjs` 20 项全过（手动滚轴 / 跳转后每屏对得上；装载 / 取不到 / 放行位移 0px），各连跑 4～6 遍不抖；salon 那批 + home + smoke 全过；`member-link-check`、`timeline-mobile-deeplink` 几项 HEAD 一样红。"
+      "text": "**圣经 34 天入库**（10-03～11-18，170 条）：署名认不出的指认后补进 `aliases.json`；条目从早到晚。\n\n**轴不跟滚（两波）**：① `marked` 只取一次，分块进来的不在名单；② `tl:reindex` 是 `CustomEvent`、不冒泡到不了 document；③ param 按构建那天算、浏览器按访问者今天重排 → 差一天（改成按 `data-tl-date` 现算，**分块插进来之后也重算**）；④ 手动滚过轴或点轴跳转后**再也不跟**：同步原来按\"是不是同一条 activeEl\"早退（手动滚过就永远早退），跳转还会整簇换掉、名单成了已摘下的旧元素。现在按\"两边停的位置对不对得上\"（比 param）判，`collectMarked` 认到另一批元素就作废缓存。\n\n**分块装载不许动位置**（硬规定）：插之前记视口最上面那条、插完按元素钉回去（`pinTo`）再下一帧钉一次；关掉 scroll anchoring；够不着顶时上滑受阻、中间塔吊转圈，取不到就一直转而位置不动。\n\n**评语 QQ 号 / 名片 / 搜索**：照服务器导出 JSON 补了 10 个号进 `aliases.json`（`qqToNames` 去掉 `[号]`）；`memlink` 现在也重写 `chunk/*.json` 的 `html`；圣经页搜索改 `/bellie.json`。\n\n验收：`bellie-timeline-sync.mjs` 32 项、`chunk-scroll-guard.mjs` 20 项全过（手动滚轴 / 跳转后每屏对得上；装载 / 取不到 / 放行位移 0px），各连跑 4～6 遍不抖；salon 那批 + home + smoke 全过；`member-link-check`、`timeline-mobile-deeplink` 几项 HEAD 一样红。"
     }
   ]
 }

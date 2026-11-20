@@ -344,6 +344,35 @@ try {
         ``
     );
 
+    /*
+      跨时区：构建产物在别的日子/时区生成时，条目里那份 `data-tl-param` 和浏览器里
+      重排出来的轴范围会差一天（线上就是这样：构建机 UTC、访问者 +08:00）。
+      把浏览器时区拨到 UTC-12 复现，然后把"翻上来才装载的那些条目"一起量一遍。
+    */
+    await cdp.send('Emulation.setTimezoneOverride', { timezoneId: 'Etc/GMT+12' });
+    await cdp.send('Page.navigate', { url: `http://127.0.0.1:${PORT}${page}?tz=1` });
+    for (let i = 0; i < 120; i++) {
+      await sleep(150);
+      if ((await cdp.ev('document.readyState')) === 'complete') break;
+    }
+    await sleep(2200);
+    const tzTrace = [await cdp.ev(SNAP)];
+    for (let k = 0; k < 5; k += 1) {
+      await pageWheel(cdp, -520);
+      tzTrace.push(await cdp.ev(SNAP));
+    }
+    for (let k = 0; k < 3; k += 1) {
+      await pageWheel(cdp, +520);
+      tzTrace.push(await cdp.ev(SNAP));
+    }
+    const tzOff = tzTrace.filter((t) => t.mid && ymd(t.now) && ymd(t.now) !== ymd(t.mid));
+    check(
+      `[${label}] 构建机与访问者差一天（跨时区）时，轴上的日期也不许和列表差天`,
+      tzOff.length === 0,
+      tzOff.length ? tzOff.map((t) => `轴${ymd(t.now)}≠列表${ymd(t.mid)}`).join('、') : tzTrace.map((t) => t.now).join(' → ')
+    );
+    await cdp.send('Emulation.setTimezoneOverride', { timezoneId: '' });
+
     check(`[${label}] 这一趟没有 JS 报错`, cdp.errors.length === 0, cdp.errors.slice(0, 3).join(' | '));
   }
 } catch (err) {

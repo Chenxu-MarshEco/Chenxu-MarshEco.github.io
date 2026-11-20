@@ -2158,6 +2158,30 @@ const initialScaleText = `一刻度约 ${
 
     let lastLiveDay = NaN;
 
+    /** 现在这条轴的范围里，"某一天"落在哪个位置（0~1）。relayoutLive 会更新 dayMin/dayMax */
+    const paramOfDay = (day: number) => (day - dayMin) / Math.max(1e-6, dayMax - dayMin);
+
+    /**
+     * 把页面上"按日期认领"的成分（`data-tl-date`：冰室精华 / 冰室圣经的每一条）
+     * 按**现在这条轴的范围**重算一遍 param。
+     *
+     * 为什么非做不可：这些成分的 `data-tl-param` 是构建期按**构建那天的"今天"**算的，
+     * 而这条轴的 lo/hi 在浏览器里会按访问者今天重排（轴上有实时点）。两边差一天，
+     * 轴顶读出来的日期就和列表差一天 —— 站长 2026-11-21 看到的正是这个：
+     * 「刻度显示 2026-11-19 时，往上滚群圣经滚到 10 月……」（列表那天写的是 11-18）。
+     * 放大器是时区：构建产物在 UTC 机器上生成，浏览器在 +08:00，`today` 差整整一天。
+     *
+     * ⚠ 分块装载**之后**插进来的那些条目是"构建期算的 param"，所以它必须在
+     * `tl:reindex`（页面插完一簇就会喊）时也跑一遍，不能只在页面打开时跑一次。
+     */
+    function remapDated() {
+      for (const el of document.querySelectorAll<HTMLElement>('[data-tl-date]')) {
+        const day = dayOfIso(el.dataset.tlDate ?? '');
+        if (!Number.isFinite(day)) continue;
+        el.dataset.tlParam = String(paramOfDay(day));
+      }
+    }
+
     /**
      * 按「今天」把整条轴重排一遍。
      * 范围规则照抄 src/utils/timelines.ts 的 rangeOf：上下各留 6%，
@@ -2218,22 +2242,8 @@ const initialScaleText = `一刻度约 ${
         }
       }
 
-      /*
-        页面上"按日期认领"的成分（冰室精华 / 冰室圣经的每一条，`data-tl-date`）
-        也要按**访问者今天**重排一遍。
-
-        为什么非做不可：这些成分的 `data-tl-param` 是构建期按**构建那天的"今天"**算的，
-        而这里的 lo/hi 刚刚换成了访问者今天（还带着今天的实时点）。两边只差一天时，
-        轴顶读出来的日期就会和列表差一天 —— 站长 2026-11-21 看到的正是这个：
-        「刻度显示 2026-11-19 时，往上滚群圣经滚到 10 月……」（列表那天写的是 11-18）。
-        真正的放大器是构建机与访问者的时区/日期不同：构建产物在 UTC 机器上生成，
-        浏览器在 +08:00，`today` 就差了整整一天。
-      */
-      for (const el of document.querySelectorAll<HTMLElement>('[data-tl-date]')) {
-        const day = dayOfIso(el.dataset.tlDate ?? '');
-        if (!Number.isFinite(day)) continue;
-        el.dataset.tlParam = String(paramOf(day));
-      }
+      /* 范围刚换过（lo/hi = 访问者今天那套），把所有按日期认领的成分重算一遍 */
+      remapDated();
 
       /*
         时间段名字卡上的「xx天」也要跟着重算 —— live 那个端点刚刚被换成"今天"。
@@ -2937,6 +2947,11 @@ const initialScaleText = `一刻度约 ${
     document.addEventListener(
       'tl:reindex',
       () => {
+        /*
+          新插进来的那一簇带的是**构建期**算的 param，先按现在的范围重算一遍
+          （不重算的话，构建机与访问者差一天时，翻上来的那些条目会让轴上的日期整体偏一天）。
+        */
+        remapDated();
         markDirty();
         queueSync();
       },
