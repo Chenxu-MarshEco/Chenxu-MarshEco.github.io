@@ -27,6 +27,8 @@
 ---
 
 <script>
+  import { tapGate } from '../scripts/tap-gate';
+
   (() => {
     /** 浮层：铺满视口、不吃指针，只有里面的名片吃 */
     let layer: HTMLElement | null = null;
@@ -34,6 +36,15 @@
     let card: HTMLElement | null = null;
     let home: HTMLElement | null = null;
     let hideTimer = 0;
+    /**
+     * 触屏上"点住"的那一个成员名（2026-11-21）。
+     *
+     * 手机上点一下名字，浏览器会先发 `pointerover`（名片浮出来）、再发 `pointerout`
+     * （手指抬起）—— 而 `wantsOpen()` 看的是 `:hover`，真机上它会粘住、CDP 那种模拟里不会。
+     * 为了不赌浏览器脾气，这里单独记一笔：点住的人**名片就一直开着**，
+     * 直到点别处 / 再点一下 / 滚动页面（都由 scripts/tap-gate.ts 通知）。
+     */
+    let pinned: HTMLElement | null = null;
 
     const ensureLayer = (): HTMLElement => {
       if (layer && layer.isConnected) return layer;
@@ -65,6 +76,7 @@
     };
 
     const wantsOpen = () => {
+      if (pinned && home === pinned && pinned.isConnected) return true;
       if (home && home.isConnected && home.matches(':hover')) return true;
       if (card && card.matches(':hover')) return true;
       if (home && home.contains(document.activeElement)) return true;
@@ -77,6 +89,7 @@
       const back = home;
       card = null;
       home = null;
+      pinned = null;
       if (!el) return;
       el.removeAttribute('style');
       /* 搬回原来的 .mem 里（标记保持"每个名字自己带一张卡"的形状） */
@@ -86,6 +99,8 @@
 
     const scheduleHide = () => {
       window.clearTimeout(hideTimer);
+      /* 触屏上点住的那一个：不收（否则每 180ms 醒一次、永远收不掉，白烧 CPU） */
+      if (pinned) return;
       hideTimer = window.setTimeout(() => {
         if (wantsOpen()) scheduleHide();
         else hide();
@@ -150,5 +165,22 @@
     };
     window.addEventListener('scroll', reflow, { passive: true });
     window.addEventListener('resize', reflow);
+
+    /*
+      触屏上的规矩（站长 2026-11-21）：「手机端所有有浮卡的应规定点击一下先不跳转
+      出浮卡 再点一下才跳转」。
+      成员名目前全是 `span.mem--nolink`（没有介绍页可去），所以"跳不跳"这件事还没发生；
+      但名片本身在手机上必须**点一下就看得到、而且不自己缩回去** —— 见 pinned。
+      规则在 `scripts/tap-gate.ts`，这里只告诉它"怎么开 / 怎么关"。
+      选择器用 `.mem`（不是 `a.mem`）：以后谁配了介绍页，第一下也照样只出名片。
+    */
+    tapGate(
+      '.mem',
+      (el) => {
+        pinned = el as HTMLElement;
+        show(el as HTMLElement);
+      },
+      () => hide(),
+    );
   })();
 </script>

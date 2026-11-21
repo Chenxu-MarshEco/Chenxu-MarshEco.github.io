@@ -341,33 +341,48 @@ const feed = await recentActivity();
     line-height: 1.15;
   }
 
-  /* 窄屏：两栏叠起来（公告在上、近期更新在下），各自滚 */
+  /*
+    窄屏（站长 2026-11-21 改）：**仍然是左右两栏**，不叠成上下。
+    原话：「手机端的曼沫砾总线不是左右排布而是上下排布的 导致内容全部被压扁
+           应像电脑端一样左右排布」。
+    为什么叠起来就一定难看：这一格的高度是卡死的（上面那两行 clamp），
+    叠成上下之后每一栏只剩一半高，而两边都是"按剩余高度均分每一条"的排法 ——
+    行高被压到十几个像素，字全挤在一起。左右分栏之后每一栏都拿到完整高度，
+    宁可每栏窄一点、一条只显示半行字，也不要把行压扁。
+  */
   @media (max-width: 760px) {
+    .ann {
+      padding: 0.34rem 0.4rem 0.36rem;
+    }
+    /*
+      手机上一栏只有 130~190px 宽：1.5 : 1 会右边太窄（一条动态连头像都放不下），
+      改成 1.35 : 1 —— 左边公告仍宽一些，右边动态也还剩得下头像 + 名字。
+    */
     .ann__cols {
-      grid-template-columns: minmax(0, 1fr);
-      grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+      grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+      gap: 0.34rem;
     }
     .ann__col--feed {
-      padding-left: 0;
-      padding-top: 0.35rem;
-      border-left: 0;
-      border-top: 1px solid rgba(255, 120, 190, 0.22);
+      padding-left: 0.34rem;
+      border-left: 1px solid rgba(255, 120, 190, 0.22);
+      border-top: 0;
+      padding-top: 0;
     }
     /*
-      窄屏上两栏各只分到一半高度，行不收紧一点就只剩两行可看（站长要的是"填满"）。
-      收紧的是间距和字号，不是内容 —— 条目一条不少，多出来的照样在框里滚。
+      窄屏上把间距和字号收紧一点（不是把条目变少）：一栏就那么高，
+      收紧之后同样高度里能多留一条。
     */
     .ann__link {
-      padding: 0.14rem 0.3rem;
-      font-size: 0.76rem;
-      gap: 0.3rem;
+      padding: 0.1rem 0.24rem;
+      font-size: 0.74rem;
+      gap: 0.24rem;
     }
     .ann__kind {
-      font-size: 0.6rem;
-      padding: 0.02rem 0.24rem;
+      font-size: 0.58rem;
+      padding: 0.02rem 0.2rem;
     }
     /*
-      手机端两栏各分一半高度，肯定放不下 —— 那边才要"底下淡出"这道提示，
+      手机端两栏都很窄，条目多了一定放不下 —— 那边要"底下淡出"这道提示，
       桌面正好铺满，所以只在窄屏加。
     */
     .ann__list,

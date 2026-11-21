@@ -210,6 +210,25 @@ const STATE = `(() => {
     src: img ? (img.getAttribute('src') || '') : '',
     natural: img ? { w: img.naturalWidth, h: img.naturalHeight } : null,
     shown: img && r ? { w: Math.round(img.getBoundingClientRect().width), h: Math.round(img.getBoundingClientRect().height) } : null,
+    /* 图上那一块的实际位置：用来量"整张照片是不是真的都在屏幕里" */
+    rect: img && r ? (() => {
+      const q = img.getBoundingClientRect();
+      return { l: Math.round(q.left), t: Math.round(q.top), r: Math.round(q.right), b: Math.round(q.bottom) };
+    })() : null,
+    /* 放大 / 缩小那两颗（2026-11-21 加）以及它们的读数 */
+    zoom: box ? {
+      orient: box.dataset.orient || '',
+      level: box.dataset.izoomScale || '',
+      fit: box.dataset.izoomFit || '',
+      tools: (() => {
+        const t = box.querySelector('[data-izoom-tools]');
+        if (!t) return null;
+        const q = t.getBoundingClientRect();
+        return { l: Math.round(q.left), t: Math.round(q.top), w: Math.round(q.width), h: Math.round(q.height) };
+      })(),
+      outDisabled: !!box.querySelector('[data-izoom-out]')?.disabled,
+      inDisabled: !!box.querySelector('[data-izoom-in]')?.disabled,
+    } : null,
     boxZ: box ? getComputedStyle(box).zIndex : '',
     htmlLocked: document.documentElement.classList.contains('is-zoomed'),
     btn: b ? { x: Math.round(b.left + b.width / 2), y: Math.round(b.top + b.height / 2), w: Math.round(b.width), right: Math.round(b.right), top: Math.round(b.top) } : null,
@@ -423,20 +442,54 @@ if (notePage) {
     diaryOpen.open === true && new URL(diaryOpen.src, 'http://x').pathname === diaryPath && diaryOpen.natural?.w > 0,
     `灯箱 ${diaryOpen.src}｜页面 ${diary.src}`);
   /*
-    手记那些"群分析报告"是 1404×8680 的竖长截图 —— 灯箱里**不能再按高度缩**：
-    原来的 max-height:100% 会把它压成一百多像素宽，比版面上还小（点开看大图反而更看不清）。
-    现在的规矩是"宽度贴合视口、高度超出就滚"，所以这里量三件事：
-      · 灯箱里那张比版面上那张**宽**（没被缩小）；
-      · 它比视口高 → 滚动层真的能滚（scrollHeight > clientHeight）；
-      · 那颗 × 留在滚动层外面（滚图时不会跟着跑掉）。
+    手记那些"群分析报告"是 1404×8680 的竖长截图。
+    站长 2026-11-21 改了这一条规矩（原话：「高清图片点击查看后直接按照原比例显示导致占满屏幕
+    尤其是竖屏照片 无法在屏幕里完全显示 应当只让照片完全显示在屏幕里 然后在下方（横版照片）
+    或侧方（竖版照片）预留按钮让用户以放大缩小查看」）——
+    所以现在打开的第一眼是**整张都在屏幕里**，想看清字再用下面那两颗放大。
+    这里量四件事：
+      · 整张图的四边都在视口里（一个像素都不许溢出）；
+      · 竖版照片的按钮在**右边**（侧方），不是压在图下面；
+      · 按两下 + 之后图真的变得比版面上那张**宽**，而且这时才需要上下滚；
+      · 按 − 能把倍率收回去。
   */
-  check('③★ 竖长截图不会被压小：灯箱里比版面上那张宽（宽度贴合视口，不再按高度缩）',
-    !!diaryOpen.shown && diaryOpen.natural.w > diary.w && diaryOpen.shown.w >= Math.min(diary.w, diaryOpen.vw - 40),
-    `版面 ${diary.w}px → 灯箱 ${diaryOpen.shown?.w}px（原图 ${diaryOpen.natural?.w}×${diaryOpen.natural?.h}）`);
-  check('③★ 太高的图能上下滚（滚动层 scrollHeight > clientHeight），而不是被裁掉',
-    !!diaryOpen.scroll && diaryOpen.scroll.overflow === 'auto' && diaryOpen.scroll.canScroll === true,
-    JSON.stringify(diaryOpen.scroll));
+  const inView = (q) => !!q && q.l >= 0 && q.t >= 0 && q.r <= diaryOpen.vw + 1 && q.b <= diaryOpen.vh + 1;
+  check('③★ 打开第一眼：整张竖长截图都在屏幕里（不溢出、不被裁）',
+    inView(diaryOpen.rect) && diaryOpen.shown.h <= diaryOpen.vh,
+    `图 ${JSON.stringify(diaryOpen.shown)} 位置 ${JSON.stringify(diaryOpen.rect)} 视口 ${diaryOpen.vw}×${diaryOpen.vh}`);
+  check('③★ 竖版照片的放大 / 缩小按钮在右边（侧方），不是压在图下面',
+    diaryOpen.zoom?.orient === 'portrait' && !!diaryOpen.zoom.tools && diaryOpen.zoom.tools.l > diaryOpen.rect.r - 2,
+    JSON.stringify({ orient: diaryOpen.zoom?.orient, tools: diaryOpen.zoom?.tools, img: diaryOpen.rect }));
+  check('③ 刚打开是 1×（缩小那颗是灰的、放大那颗能按）',
+    diaryOpen.zoom?.level === '1' && diaryOpen.zoom.outDisabled === true && diaryOpen.zoom.inDisabled === false,
+    JSON.stringify(diaryOpen.zoom));
   check('③ 那颗 × 在滚动层外面（滚图时不会跑掉）', diaryOpen.closeOutsideScroll === true, String(diaryOpen.closeOutsideScroll));
+
+  /* 按两下 +：竖长截图放大到能看清字，这时候才该出现滚动 */
+  const plus = await cdp.ev(`(async () => {
+    const b = document.querySelector('[data-izoom-in]');
+    if (!b) return null;
+    b.click();
+    await new Promise((r) => setTimeout(r, 220));
+    b.click();
+    await new Promise((r) => setTimeout(r, 320));
+    const box = document.querySelector('[data-izoom]');
+    const img = box.querySelector('[data-izoom-img]');
+    const sc = box.querySelector('[data-izoom-scroll]');
+    const q = img.getBoundingClientRect();
+    return {
+      level: box.dataset.izoomScale,
+      w: Math.round(q.width),
+      h: Math.round(q.height),
+      canScroll: sc.scrollHeight > sc.clientHeight + 2,
+      max: Math.round(sc.scrollHeight - sc.clientHeight),
+    };
+  })()`);
+  check('③★ 按两下 +：图按档位放大（2× 就是 1× 时的两倍宽）',
+    !!plus && Number(plus.level) > 1 && plus.w >= Math.round(diaryOpen.shown.w * 1.9),
+    `1× ${diaryOpen.shown?.w}px → 放大后 ${plus?.w}px（${plus?.level}×）`);
+  check('③★ 放大之后才需要上下滚（滚动层 scrollHeight > clientHeight）',
+    !!plus && plus.canScroll === true, JSON.stringify(plus));
 
   /* 滚一下：内容真的跟着动（不是"看着像能滚"） */
   const scrolled = await cdp.ev(`(() => {
@@ -446,8 +499,22 @@ if (notePage) {
     sc.scrollTop = 600;
     return { before, after: Math.round(sc.scrollTop), max: Math.round(sc.scrollHeight - sc.clientHeight) };
   })()`);
-  check('③★ 滚一下确实滚得动（手记那种长图才看得全）',
+  check('③★ 滚一下确实滚得动（放大之后才看得全）',
     !!scrolled && scrolled.after > scrolled.before && scrolled.max > 0, JSON.stringify(scrolled));
+
+  /* − 收回去：读数回到 1×，图又变成"整张都在屏幕里" */
+  const minus = await cdp.ev(`(async () => {
+    const b = document.querySelector('[data-izoom-out]');
+    if (!b) return null;
+    for (let i = 0; i < 4 && !b.disabled; i += 1) { b.click(); await new Promise((r) => setTimeout(r, 120)); }
+    await new Promise((r) => setTimeout(r, 200));
+    const box = document.querySelector('[data-izoom]');
+    const img = box.querySelector('[data-izoom-img]');
+    const q = img.getBoundingClientRect();
+    return { level: box.dataset.izoomScale, out: b.disabled, rect: { l: Math.round(q.left), t: Math.round(q.top), r: Math.round(q.right), b: Math.round(q.bottom) } };
+  })()`);
+  check('③★ 按 − 能收回 1×（图又整张回到屏幕里）',
+    !!minus && minus.level === '1' && minus.out === true && inView(minus.rect), JSON.stringify(minus));
 
   await cdp.send('Input.dispatchKeyEvent', { type: 'rawKeyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27, nativeVirtualKeyCode: 27 });
   await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27, nativeVirtualKeyCode: 27 });

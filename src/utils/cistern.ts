@@ -8,8 +8,11 @@
  *    精华 / 时间轴时间时刻 / 冰山词条 / 当天的日记链接卡」
  *
  * 所以这里只有一件事：**按 `MM-DD` 建一张倒排表**。
- * 四份数据各自的"日子"来自：
+ * 五份数据各自的"日子"来自：
  *   · 精华   —— `salon.json` 每条的 `date`（站长导入时就带着真实日期）
+ *   · 圣经   —— `src/data/bellie/days/<日期>.json`（2026-11-21 加：站长说
+ *                「在涣愿终池的精华下加一条圣经 显示历史上的今天出现过的群圣经
+ *                 参考精华在涣愿终池里的引用方法」）
  *   · 时间轴 —— `timelines.json` 里那些点的 `date`；`today` 这种实时点跳过
  *   · 冰山   —— `iceberg.json` 里**填了归属时间**的词条（2026-11-17 新加的字段；空着不进）
  *   · 日记   —— `src/content/notes/*.md` 的 frontmatter `date`
@@ -21,7 +24,8 @@
 import { getNotes } from './content';
 import { toISODate } from './date';
 import { iceberg } from './iceberg';
-import { memberAvatar, memberName, salonEssences } from './salon';
+import { bellieEntries } from './bellie';
+import { memberAvatar, memberName, salonEssences, salonMembers } from './salon';
 import { pointKind, timelines, type TimelinePoint } from './timelines';
 import { dedupePoints, type CisternPoint, type CisternPointRow } from './cistern-dedupe';
 import { flattenBoards, type BoardNode } from './boards';
@@ -44,6 +48,28 @@ export interface CisternEssence {
   /** 头一张图的缩略图；没有就空串 */
   image: string;
   /** 点它去哪（精华页那一条的锚点） */
+  href: string;
+}
+
+/**
+ * 一条群圣经（2026-11-21 加）。
+ *
+ * 和精华那一条长得几乎一样（头像 + 名字 + 时间 + 正文），只多一段评语：
+ * 圣经页本来就是「正文 + 铃忆的评语」两截（见 utils/bellie.ts），
+ * 这里照同样的规矩搬过来，评语字段留给页面上那句话用小字斜体压着。
+ */
+export interface CisternBible {
+  id: string;
+  /** `YYYY-MM-DD` */
+  date: string;
+  time: string;
+  member: string;
+  avatar: string;
+  /** 正文（群友原句，保留换行） */
+  text: string;
+  /** 铃忆的评语（可以空） */
+  comment: string;
+  /** 点它去哪（圣经页那一条的锚点） */
   href: string;
 }
 
@@ -84,6 +110,7 @@ export interface CisternDay {
   /** `MM-DD` */
   key: string;
   essences: CisternEssence[];
+  bibles: CisternBible[];
   points: CisternPoint[];
   iceberg: CisternIce[];
   notes: CisternNote[];
@@ -94,8 +121,8 @@ export interface CisternIndex {
   days: Record<string, CisternDay>;
   /** 一共凑出了多少个日子（验收 / 调试用） */
   dayCount: number;
-  /** 四类各有多少条（查重之后的条数；验收 / 调试用） */
-  counts: { essences: number; points: number; iceberg: number; notes: number };
+  /** 五类各有多少条（查重之后的条数；验收 / 调试用） */
+  counts: { essences: number; bibles: number; points: number; iceberg: number; notes: number };
   /** 主轴（全站总轴）的 id；查重时"主轴里有的不带前缀"就靠它（验收 / 调试用） */
   mainAxis: string;
 }
@@ -188,12 +215,12 @@ export async function cisternIndex(): Promise<CisternIndex> {
   const days: Record<string, CisternDay> = {};
   /** 查重之前的时间轴点（一条轴上每个点各算一份，等全部收完再按规则合并） */
   const pointRows: Record<string, CisternPointRow[]> = {};
-  const counts = { essences: 0, points: 0, iceberg: 0, notes: 0 };
+  const counts = { essences: 0, bibles: 0, points: 0, iceberg: 0, notes: 0 };
 
   const bucket = (date: string): CisternDay | null => {
     const key = monthDay(date);
     if (!key) return null;
-    return (days[key] ??= { key, essences: [], points: [], iceberg: [], notes: [] });
+    return (days[key] ??= { key, essences: [], bibles: [], points: [], iceberg: [], notes: [] });
   };
 
   /* ---------- 1. 精华 ---------- */
@@ -215,7 +242,32 @@ export async function cisternIndex(): Promise<CisternIndex> {
     counts.essences += 1;
   }
 
-  /* ---------- 2. 时间轴的事件与时刻（所有轴，同一天里按规则查重） ---------- */
+  /* ---------- 2. 群圣经（2026-11-21 加；和精华一个取法，按日期落进同一天） ---------- */
+  /*
+    圣经的数据只有一份（机器人每天写的 `src/data/bellie/days/<日期>.json`，
+    见 utils/bellie.ts），这里**不另算一遍"谁是谁"**：认人用的是它算好的 `memberIds` /
+    `rawName`，头像回成员表里取 —— 两边认出来的人必须是同一个，否则名片和头像会对不上。
+  */
+  const memberById = new Map(salonMembers.map((m) => [m.id, m]));
+  for (const b of bellieEntries) {
+    const hit = bucket(b.date);
+    if (!hit) continue;
+    const who = b.memberIds.length ? memberById.get(b.memberIds[0]) : undefined;
+    hit.bibles.push({
+      id: b.id,
+      date: b.date,
+      time: b.time,
+      member: b.rawName || b.sender || '',
+      avatar: who?.avatar ? variantUrl(who.avatar, 400) : '',
+      /* 正文保留换行（群聊一行一句），只截长度 */
+      text: clip(b.text, 400),
+      comment: clip(b.comment, 400),
+      href: withBase(`/bellie/#${b.id}`),
+    });
+    counts.bibles += 1;
+  }
+
+  /* ---------- 3. 时间轴的事件与时刻（所有轴，同一天里按规则查重） ---------- */
   for (const tl of timelines) {
     for (const p of tl.points) {
       const day = pointDay(p);
@@ -239,7 +291,7 @@ export async function cisternIndex(): Promise<CisternIndex> {
     }
   }
 
-  /* ---------- 3. 可考据的冰山词条 ---------- */
+  /* ---------- 4. 可考据的冰山词条 ---------- */
   for (const layer of iceberg.layers) {
     for (const it of layer.items) {
       const b = bucket(it.date);
@@ -260,7 +312,7 @@ export async function cisternIndex(): Promise<CisternIndex> {
     }
   }
 
-  /* ---------- 4. 铃忆的冰室日记（只给跳转卡） ---------- */
+  /* ---------- 5. 铃忆的冰室日记（只给跳转卡） ---------- */
   for (const n of await getNotes()) {
     const b = bucket(toISODate(n.data.date));
     if (!b) continue;
@@ -293,6 +345,7 @@ export async function cisternIndex(): Promise<CisternIndex> {
   */
   for (const d of Object.values(days)) {
     d.essences.sort((a, b) => b.date.localeCompare(a.date) || b.time.localeCompare(a.time));
+    d.bibles.sort((a, b) => b.date.localeCompare(a.date) || b.time.localeCompare(a.time));
     d.points.sort((a, b) => b.date.localeCompare(a.date));
     d.iceberg.sort((a, b) => b.date.localeCompare(a.date));
     d.notes.sort((a, b) => b.date.localeCompare(a.date));
@@ -301,7 +354,7 @@ export async function cisternIndex(): Promise<CisternIndex> {
   return { days, dayCount: Object.keys(days).length, counts, mainAxis };
 }
 
-/** `MM-DD` 那天的内容；没有就返回四个空数组（页面上显示"这天还没有记录"） */
+/** `MM-DD` 那天的内容；没有就返回五个空数组（页面上显示"这天还没有记录"） */
 export function dayOf(index: CisternIndex, key: string): CisternDay {
-  return index.days[key] ?? { key, essences: [], points: [], iceberg: [], notes: [] };
+  return index.days[key] ?? { key, essences: [], bibles: [], points: [], iceberg: [], notes: [] };
 }

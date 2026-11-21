@@ -50,7 +50,13 @@ const CHANGE_MARK: Record<string, string> = { add: '+', edit: '~', del: '−' };
 <ul class:list={['feed', dense && 'feed--dense']} id={id} data-activity-list>
   {
     items.map((c) => (
-      <li class:list={['feed__item', c.mine && 'is-mine']} data-sha={c.short} data-pager-item={pager ? '' : undefined}>
+      <li
+        class:list={['feed__item', c.mine && 'is-mine']}
+        /* 短 sha 当 id：`/feed/#e5a1fa0` 这种深链接能直接落到这一条（和翻页脚本的锚点路同一条） */
+        id={c.short}
+        data-sha={c.short}
+        data-pager-item={pager ? '' : undefined}
+      >
         {/* 头像：拿得到 GitHub 头像就画图片，拿不到就画名字首字（和编辑器同一个兜底） */}
         <span class="feed__face" aria-hidden="true">
           {c.avatar ? (
@@ -443,16 +449,21 @@ const CHANGE_MARK: Record<string, string> = { add: '+', edit: '~', del: '−' };
         };
 
         /*
-          摆位（站长 2026-11-21 改）：**放在这一行的右侧**，不是上方。
-          原话：「现在这样会导致如果浏览中间的卡片时 想要再直接看上面的卡片
-                 需要先把鼠标移走关闭卡片才能点到被卡片遮住的上一条动态 非常麻烦
-                 建议对推流动态做特殊处理 让卡片出现在该条动态的右侧 这样就不会挡住正常区域」。
+          摆位（站长 2026-11-21 改）：**电脑放这一行的右侧，手机放上方**。
+          电脑那次的理由是「现在这样会导致如果浏览中间的卡片时 想要再直接看上面的卡片
+                  需要先把鼠标移走关闭卡片才能点到被卡片遮住的上一条动态 非常麻烦
+                  建议对推流动态做特殊处理 让卡片出现在该条动态的右侧 这样就不会挡住正常区域」。
+          手机那次是同一个道理的反面：「手机端的推流动态的浮动卡片应该正常出现在上方
+                  而不是电脑端的右方」—— 竖屏上没有"右侧"这块地方，硬塞到右边只会
+                  压住隔壁那一栏（这一格是左右两栏的），所以窄屏一律往上放。
           所以：
-            · 右侧放得下就贴右侧（和这一行顶边齐，竖向夹在视口里）；
-            · 右侧放不下（窄屏 / 贴右边缘）就放到这一行左边；
-            · 两边都放不下（手机）才退回"上方 / 下方"。
+            · 窄屏 / 触屏：这一行**上方**，上面放不下才翻到下方（左右夹在视口里）；
+            · 宽屏：右侧放得下就贴右侧（和这一行顶边齐，竖向夹在视口里）；
+              右侧放不下（贴右边缘）就放到这一行左边；两边都放不下才退回上下。
           这样卡片永远不会压住别的动态行，往上下挪鼠标也不经过它。
         */
+        const narrow = () => window.innerWidth <= 760 || window.matchMedia('(hover: none)').matches;
+
         const place = (row: HTMLElement, el: HTMLElement) => {
           const r = row.getBoundingClientRect();
           el.style.left = '-9999px';
@@ -462,6 +473,18 @@ const CHANGE_MARK: Record<string, string> = { add: '+', edit: '~', del: '−' };
           const gap = 6;
           const clampTop = (top: number) =>
             Math.max(pad, Math.min(window.innerHeight - cr.height - pad, top));
+
+          /** 上下放：先上方，放不下才下方；横向夹在视口里 */
+          const stack = () => {
+            const left = Math.max(pad, Math.min(window.innerWidth - cr.width - pad, r.left));
+            let top = r.top - cr.height - gap;
+            if (top < pad) top = Math.min(window.innerHeight - cr.height - pad, r.bottom + gap);
+            el.style.left = `${Math.round(left)}px`;
+            el.style.top = `${Math.round(top)}px`;
+            return { l: left, t: top, r: left + cr.width, b: top + cr.height };
+          };
+
+          if (narrow()) return stack();
 
           let left = r.right + gap;
           if (left + cr.width > window.innerWidth - pad) left = r.left - cr.width - gap;
@@ -473,13 +496,8 @@ const CHANGE_MARK: Record<string, string> = { add: '+', edit: '~', del: '−' };
             return { l: left, t: top, r: left + cr.width, b: top + cr.height };
           }
 
-          /* 两侧都放不下：退回上下（手机那种整幅宽的一行） */
-          left = Math.max(pad, Math.min(window.innerWidth - cr.width - pad, r.left));
-          let top = r.top - cr.height - gap;
-          if (top < pad) top = Math.min(window.innerHeight - cr.height - pad, r.bottom + gap);
-          el.style.left = `${Math.round(left)}px`;
-          el.style.top = `${Math.round(top)}px`;
-          return { l: left, t: top, r: left + cr.width, b: top + cr.height };
+          /* 两侧都放不下：退回上下 */
+          return stack();
         };
 
         const measure = (row: HTMLElement, box: { l: number; t: number; r: number; b: number }) => {

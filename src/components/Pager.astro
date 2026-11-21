@@ -167,7 +167,24 @@ const href = (n: number) => (n === 1 ? '?' : `?page=${n}`);
         const top = list.getBoundingClientRect().top + window.scrollY - 84;
         window.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
       }
+
+      /*
+        换了一页：在**列表容器**上喊一声（2026-11-21 加）。
+        /feed/ 的推流动态页要跟着换一批 `data-tl-param`（时间轴只认当前这一页），
+        它没有别的办法知道"刚才翻页了" —— 藏起来的那些条目是这里改的。
+        detail 里带上页号、每页几条、以及整份条目，省得那边再去猜。
+      */
+      list.dispatchEvent(
+        new CustomEvent('pager:change', { bubbles: true, detail: { page, pages, size, items } })
+      );
     };
+
+    /*
+      给页面用的一个明路：翻到第 N 页（不滚页面）。
+      /feed/ 点时间轴上的刻度时要"翻到那条所在的页"，再自己滚到那一条 ——
+      它没法点那个页码按钮（那会连页面一起滚走）。
+    */
+    (nav as unknown as { applyPage?: (n: number, scroll?: boolean) => void }).applyPage = apply;
 
     /* 数字和上/下页都是真链接（中键、复制链接、没有 JS 时都还是链接），
        点左键才拦下来换成不刷新的切换 */

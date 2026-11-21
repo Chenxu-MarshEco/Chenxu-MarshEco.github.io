@@ -19,7 +19,7 @@
  */
 import { readCommits } from '../../tools/git/activity.mjs';
 import { detailForCommit, detailsForCommits } from '../../tools/git/activity-detail.mjs';
-import { ensureActors, resolveActor } from '../../tools/git/avatar-map.mjs';
+import { ensureActors, ensureContributors, resolveActor } from '../../tools/git/avatar-map.mjs';
 import site from '../site.config';
 import { flattenBoards, type BoardNode } from './boards';
 import { announceHref, announceList } from './announce';
@@ -58,6 +58,14 @@ export interface ActivityEntry {
   profile: string;
   /** 提交时间（ISO） */
   iso: string;
+  /**
+   * 这一次推流是哪一天（`yyyy-mm-dd`，取提交自己的时区那一天）。
+   *
+   * 2026-11-21 加：`/feed/` 要挂时间轴（站长：「为推流动态的详情页面也加上精华 圣经
+   * 一样的时间轴 可根据时间轴查动态 跳转 时间轴跟着动态滚动」），
+   * 时间轴认的是"日期"，所以每条都得带一个能算位置的日子。
+   */
+  day: string;
   /** 毫秒时间戳，排序用 */
   time: number;
   /** 是不是站长自己推的（编辑器里"自己的推流淡一点"，这里也照做） */
@@ -175,13 +183,19 @@ async function build(limit: number, withDetails: boolean): Promise<ActivityEntry
   /*
     署名 → GitHub 用户名 / 头像（一次请求，失败就退化）。
     问的是最近 30 条，但结果按**邮箱**存，所以同一个人很久以前的提交也一起认出来了。
+
+    ⚠ 还有第二条路：contributors 名单（另一次请求，见 tools/git/avatar-map.mjs）。
+      提交邮箱没绑 GitHub 的那几位（Shema_Sunf / EtherARM / Memori_Monita）在 commits 接口里
+      `author` 是 null，只靠第一条路他们永远只有首字圆圈；名单里按署名一比就全认回来了。
   */
   let actors = { byEmail: {} } as Awaited<ReturnType<typeof ensureActors>>;
+  let contrib: Awaited<ReturnType<typeof ensureContributors>> | null = null;
   try {
     const emails = (data?.commits ?? [])
       .map((c) => String((c.author as { email?: string } | undefined)?.email ?? ''))
       .filter(Boolean);
     actors = await ensureActors({ emails, limit: 30, cwd: process.cwd() });
+    contrib = await ensureContributors({ cwd: process.cwd() });
   } catch {
     /* 拿不到头像不影响列表本身 */
   }
@@ -210,14 +224,17 @@ async function build(limit: number, withDetails: boolean): Promise<ActivityEntry
     const author = (c.author ?? {}) as { name?: string; email?: string };
     const committer = (c.committer ?? {}) as { name?: string };
     /* 头像 / 用户名：和编辑器里那一条一样，拿不到就用署名 + 首字圆圈 */
-    const actor = resolveActor(String(author.email ?? ''), actors);
+    const actor = resolveActor(String(author.email ?? ''), actors, String(author.name ?? ''), contrib);
+    const iso = String(c.iso ?? '');
     out.push({
       sha,
       short: String(c.short ?? sha.slice(0, 7)),
       who: String(actor.login || author.name || committer.name || '（没署名）'),
       avatar: actor.avatar,
       profile: actor.profile,
-      iso: String(c.iso ?? ''),
+      iso,
+      /* 提交自带的时区日期（`%aI` 就是带偏移的那种），切前 10 位就是它那一天 */
+      day: /^\d{4}-\d{2}-\d{2}/.test(iso) ? iso.slice(0, 10) : '',
       time: Number(c.time ?? 0),
       mine: false,
       panels: Array.isArray(c.panels) ? (c.panels as string[]) : [],

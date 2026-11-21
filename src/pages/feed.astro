@@ -16,36 +16,604 @@
  *
  * 版式借用版块页那套皮（BoardLayout：深紫底 + 页头页脚 + hero 大标题）——
  * 和公告栏那一页一个理由：从首页那张深色卡点进来，不该突然变成另一个世界。
+ *
+ * ---------------------------------------------------------------------------
+ * 2026-11-21 加了两样东西（站长原话）：
+ *   「为推流动态的详情页面也加上精华 圣经一样的时间轴 可根据时间轴查动态 跳转
+ *    时间轴跟着动态滚动 注意推流动态页用的是翻页模式 可能需要特殊适配」
+ *   「为推流也右边也加上和精华 冰山一样的用户推流数统计」
+ *
+ * 左边那条轴（`pinned + fill + rail`，和 /salon/ 一模一样）是**现造**的：
+ * 每一天一个点，范围就是这个仓库有提交的那几十天（见 utils/feed-timeline.ts）。
+ * 和翻页的适配只有一件事 —— **只有当前这一页的条目带 `data-tl-param`**：
+ *   · 轴靠"页面上最近的成分"决定停在哪，藏起来的条目量出来的位置全是 0，
+ *     混在名单里会把二分带偏（那就成了"轴乱跳"）；
+ *   · 所以每次换页都把标记挪到新的一页上，再喊一声 `tl:reindex` 让轴重新认一遍；
+ *   · 点轴上的刻度 / 塔吊：在全表里找最近的那一条 → 翻到它所在的页 → 滚过去。
+ *
+ * 右边那一栏是推流者（头像 + 名字 + 推流条数），和精华页的成员栏一个用法：
+ * 点亮谁就只看谁的那几条（再点一下熄掉 = 回到全部）。筛选时不用翻页 ——
+ * 找一个人就是想一口气看完他推了什么。
+ * ---------------------------------------------------------------------------
  */
 import BoardLayout from '../layouts/BoardLayout.astro';
+import Timeline from '../components/Timeline.astro';
 import ActivityList from '../components/ActivityList.astro';
 import Pager from '../components/Pager.astro';
 import { allActivity } from '../utils/activity';
+import { feedTimeline } from '../utils/feed-timeline';
 import { PAGE_SIZE } from '../utils/pager';
 
 const entries = await allActivity();
+const { timeline: tl, params } = feedTimeline(entries);
+
+/** 轴一进来停在哪：最新那一条（列表第一行） */
+const firstParam = params.length ? params[0] : 0.5;
+
+/** 推流者：谁 · 几条 · 他最新那一条是列表里的第几行 */
+const people = (() => {
+  const map = new Map<string, { who: string; avatar: string; count: number; newest: number }>();
+  entries.forEach((e, i) => {
+    const hit = map.get(e.who);
+    if (hit) hit.count += 1;
+    else map.set(e.who, { who: e.who, avatar: e.avatar, count: 1, newest: i });
+  });
+  return [...map.values()].sort((a, b) => b.count - a.count || a.who.localeCompare(b.who));
+})();
+
+/**
+ * 给页面脚本用的那张小表：每一条 = `[哪一天, 轴上的位置, 谁推的]`。
+ * 只放这三样（不重复一遍正文），几百条也就几十 KB。
+ */
+const metaJson = JSON.stringify(entries.map((e, i) => [e.day, params[i], e.who]));
 ---
 
 <BoardLayout title="推流动态" backLabel="返回首页">
-  <div class="pulse" data-activity-board>
-    <div class="feedList" id="feed-list" data-activity-feed>
-      <ActivityList items={entries} pager inline />
-    </div>
+  <div
+    class="feeds"
+    data-feed
+    data-size={String(PAGE_SIZE)}
+    data-total={String(entries.length)}
+  >
+    {/* ---------- 左：时间轴（和 /salon/ 同一种摆法：常驻、整屏高） ---------- */}
+    <aside class="feeds__side" aria-label="时间轴">
+      <div class="feeds__tl" data-feed-tl data-tl-id={tl.id}>
+        <Timeline timeline={tl} pinned={true} fill={true} rail={true} defaultParam={firstParam} />
+      </div>
+    </aside>
+
+    {/* ---------- 中：整份推流动态 + 翻页 ---------- */}
+    <main class="feeds__main">
+      <div class="feedList" id="feed-list" data-activity-feed>
+        <ActivityList items={entries} pager inline />
+      </div>
+      <Pager target="#feed-list" total={entries.length} pageSize={PAGE_SIZE} label="推流动态翻页" />
+    </main>
+
+    {/* ---------- 右：推流者（头像 · 名字 · 几条） ---------- */}
+    <aside class="feeds__people" data-feed-people aria-label="推流者">
+      <ul class="feeds__peopleList">
+        {people.map((p) => (
+          <li class="feeds__person">
+            <button
+              class="feeds__personCard"
+              type="button"
+              data-who={p.who}
+              data-newest={String(p.newest)}
+              data-on="0"
+              aria-pressed="false"
+            >
+              {p.avatar ? (
+                <img
+                  class="feeds__face"
+                  src={p.avatar}
+                  alt=""
+                  loading="lazy"
+                  decoding="async"
+                  referrerpolicy="no-referrer"
+                />
+              ) : (
+                <span class="feeds__face feeds__face--none" aria-hidden="true">
+                  {p.who.slice(0, 1).toUpperCase()}
+                </span>
+              )}
+              <b class="feeds__who">{p.who}</b>
+              <span class="feeds__count">{p.count} 条</span>
+            </button>
+          </li>
+        ))}
+      </ul>
+    </aside>
   </div>
-  <Pager target="#feed-list" total={entries.length} pageSize={PAGE_SIZE} label="推流动态翻页" />
+
+  {/* 每一条的日子 / 位置 / 谁推的：时间轴跳转靠它，见文件末尾的脚本 */}
+  <script type="application/json" id="feed-meta" set:html={metaJson} />
 </BoardLayout>
 
+<script>
+  /* ============================================================
+     1. 量「粘在哪儿」
+     ------------------------------------------------------------
+     左边那条轴和右边那一栏都是 sticky/fixed，让开多少得看页头实际多高
+     （字号、语言、窄屏换行都会改它）。量出来写进 --feeds-top，CSS 只读它。
+     ============================================================ */
+  const root = document.documentElement;
+  const page = document.querySelector<HTMLElement>('[data-feed]');
+  const list = document.getElementById('feed-list');
+  const tlBox = document.querySelector<HTMLElement>('[data-feed-tl]');
+  const pagerNav = document.querySelector<HTMLElement>('[data-pager]');
+  const peopleBox = document.querySelector<HTMLElement>('[data-feed-people]');
+  const metaEl = document.getElementById('feed-meta');
+
+  if (page && list && tlBox && metaEl) {
+    type Row = [string, number, string];
+    const rows: Row[] = (() => {
+      try {
+        return JSON.parse(metaEl.textContent || '[]') as Row[];
+      } catch {
+        return [];
+      }
+    })();
+
+    const SIZE = Math.max(1, Number(page.dataset.size) || 37);
+    const items = Array.from(list.querySelectorAll<HTMLElement>('[data-pager-item]'));
+    /** 现在这一页 / 现在筛出来的那些（-1 = 没筛） */
+    let page_ = 1;
+
+    const measure = () => {
+      const header = document.querySelector<HTMLElement>('.site-header');
+      const top = Math.round((header?.getBoundingClientRect().height ?? 0) + 10);
+      root.style.setProperty('--feeds-top', `${top}px`);
+    };
+    measure();
+    let mq = false;
+    const queueMeasure = () => {
+      if (mq) return;
+      mq = true;
+      requestAnimationFrame(() => {
+        mq = false;
+        measure();
+      });
+    };
+    window.addEventListener('resize', queueMeasure);
+    document.fonts?.ready?.then(queueMeasure);
+
+    /* ============================================================
+       2. 只有「看得见的那几条」才算时间轴上的成分
+       ------------------------------------------------------------
+       时间轴靠扫 `[data-tl-param]` 决定"页面滚到哪儿 = 轴上哪一点"。
+       翻页 / 筛选藏起来那些条目量出来的位置是 0 —— 留在名单里会把二分带偏，
+       所以每次换页都先按可见与否重新写一遍标记，再喊 `tl:reindex`。
+       （`data-tl-date` 一起写：轴自己会按它的范围再算一次 param，
+         构建机和访问者时区不同时也不会差一天。）
+       ============================================================ */
+    const reindex = () => {
+      items.forEach((el, i) => {
+        const row = rows[i];
+        const on = !el.hidden && row;
+        if (on) {
+          el.dataset.tlParam = String(row[1]);
+          el.dataset.tlDate = row[0];
+        } else {
+          delete el.dataset.tlParam;
+          delete el.dataset.tlDate;
+        }
+      });
+      tlBox.dispatchEvent(new CustomEvent('tl:reindex', { bubbles: true }));
+    };
+
+    /* ============================================================
+       3. 翻页：翻完重新标一遍
+       ============================================================ */
+    list.addEventListener('pager:change', (ev) => {
+      const d = (ev as CustomEvent<{ page?: number }>).detail;
+      page_ = Number(d?.page) || 1;
+      if (!lit.size) reindex();
+    });
+
+    /* ============================================================
+       4. 右边那一栏：点亮谁就只看谁
+       ------------------------------------------------------------
+       点一下 = 只看这个人的推流（卡片泛霓虹光），再点一下 = 回到全部。
+       多个人一起亮 = 他们的**合起来**（和精华页成员筛一个规矩）。
+       筛选时翻页条收起来：找一个人就是想一口气看完他推了什么。
+       ============================================================ */
+    const lit = new Set<string>();
+
+    const paintPeople = () => {
+      for (const btn of peopleBox?.querySelectorAll<HTMLElement>('[data-who]') ?? []) {
+        const on = lit.has(btn.dataset.who ?? '');
+        btn.dataset.on = on ? '1' : '0';
+        btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+      }
+    };
+
+    /** 按"点亮的人"把整份列表藏 / 显一遍；一个都没点亮就交回翻页脚本 */
+    const applyLit = () => {
+      if (!lit.size) {
+        if (pagerNav) pagerNav.hidden = false;
+        (pagerNav as unknown as { applyPage?: (n: number, s?: boolean) => void })?.applyPage?.(page_, false);
+        reindex();
+        return;
+      }
+      if (pagerNav) pagerNav.hidden = true;
+      items.forEach((el, i) => {
+        const who = rows[i]?.[2] ?? '';
+        el.hidden = !lit.has(who);
+      });
+      reindex();
+    };
+
+    peopleBox?.addEventListener('click', (ev) => {
+      const btn = (ev.target as HTMLElement | null)?.closest?.<HTMLElement>('[data-who]');
+      if (!btn) return;
+      const who = btn.dataset.who ?? '';
+      if (!who) return;
+      if (lit.has(who)) lit.delete(who);
+      else lit.add(who);
+      paintPeople();
+      applyLit();
+      /*
+        刚点亮一个人：把画面挪到他最新那一条（不然点完还停在原来的位置上，
+        而那个人的推流可能早就沉到几百条以前了）。
+      */
+      if (lit.size === 1 && lit.has(who)) {
+        const i = items.findIndex((el) => !el.hidden);
+        if (i >= 0) scrollTo(i, false);
+      }
+    });
+
+    /* ============================================================
+       5. 点轴上的刻度 / 塔吊：翻到那一条所在的页，再滚过去
+       ============================================================ */
+    /** 离某个位置最近的那一条（在**全表**里找，不只是这一页） */
+    const nearest = (want: number) => {
+      let best = -1;
+      let bestD = Infinity;
+      rows.forEach((r, i) => {
+        const d = Math.abs(Number(r[1]) - want);
+        if (d < bestD) {
+          bestD = d;
+          best = i;
+        }
+      });
+      return best;
+    };
+
+    /** 滚到第 i 条（翻页脚本先把它所在的页放出来）；`flash` 只给点轴用 */
+    const scrollTo = (i: number, flash = true) => {
+      const el = items[i];
+      if (!el) return;
+      if (el.hidden && pagerNav) {
+        (pagerNav as unknown as { applyPage?: (n: number, s?: boolean) => void })?.applyPage?.(
+          Math.floor(i / SIZE) + 1,
+          false
+        );
+        page_ = Math.floor(i / SIZE) + 1;
+        reindex();
+      }
+      requestAnimationFrame(() => {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        if (flash) {
+          el.classList.remove('is-hit');
+          void el.offsetWidth;
+          el.classList.add('is-hit');
+          window.setTimeout(() => el.classList.remove('is-hit'), 2400);
+        }
+        try {
+          history.replaceState(null, '', `#${el.id}`);
+        } catch {
+          /* 极老的浏览器不给改就算了 */
+        }
+      });
+    };
+
+    /** 点到轴上某个位置：先退出筛选（筛选时那一页多半没有要找的人），再跳 */
+    const jumpToParam = (want: number) => {
+      if (!Number.isFinite(want)) return;
+      const i = nearest(want);
+      if (i < 0) return;
+      if (lit.size) {
+        lit.clear();
+        paintPeople();
+        if (pagerNav) pagerNav.hidden = false;
+      }
+      scrollTo(i);
+    };
+
+    /* 塔吊 / 名字：手机第一下由时间轴自己弹提示卡（和精华页一个规矩） */
+    const noHover = () => window.matchMedia('(hover: none)').matches;
+    tlBox.addEventListener(
+      'click',
+      (ev) => {
+        const t = ev.target as HTMLElement | null;
+        const item = t?.closest?.<HTMLElement>('.tl__item');
+        if (!item) return;
+        const onCard = !!t?.closest?.('.tl__tipOpen');
+        if (noHover() && !onCard) return;
+        const want = Number(item.dataset.param);
+        if (!Number.isFinite(want)) return;
+        ev.preventDefault();
+        ev.stopPropagation();
+        jumpToParam(want);
+      },
+      true
+    );
+    /* 刻度：时间轴按坐标反推出"点到了哪个位置" */
+    tlBox.addEventListener('tl:pick', (ev) => {
+      const want = Number((ev as CustomEvent<{ param?: number }>).detail?.param);
+      jumpToParam(want);
+    });
+
+    /* 第一遍：翻页脚本也在这一轮跑（谁先谁后不一定），所以等它把第一页摆好再标 */
+    reindex();
+    requestAnimationFrame(() => reindex());
+    window.addEventListener('load', () => window.setTimeout(reindex, 60));
+  }
+</script>
+
 <style>
-  .pulse {
-    margin: 0.4rem 0 1.2rem;
+  /*
+    这一页要比站里其他页宽：`.container` 的上限是 --w-page（68rem = 1088px），
+    左中右三栏塞进去以后正文只剩五百来像素，推流明细一行挤成两三个字。
+    和精华页同一个办法：**只在这一页**把容器的上限放开（这段样式只打进 /feed/）。
+  */
+  :global(body.is-board .site-main > .container) {
+    max-width: 1560px;
+  }
+
+  /* ==========================================================================
+     版式：左时间轴 / 中列表 / 右推流者 —— 和 /salon/ 那三栏一个摆法
+     ========================================================================== */
+  .feeds {
+    --feeds-rail-w: clamp(250px, 18vw, 290px);
+    --feeds-people-w: clamp(200px, 15vw, 250px);
+    --feeds-gap: clamp(1rem, 1.8vw, 1.8rem);
+    display: grid;
+    grid-template-columns: var(--feeds-rail-w) minmax(0, 1fr) var(--feeds-people-w);
+    gap: var(--feeds-gap);
+    align-items: start;
+  }
+
+  /*
+    左边那条轴：**整屏高**（站长在精华页要的是「左右两个框都跨满上下屏」，
+    这一页照同一个规矩）。用 sticky 不用 fixed：这一页是居中的容器，
+    fixed 还得自己算左右偏移；sticky 贴着它那一列，横竖都对得上。
+  */
+  .feeds__side {
+    position: sticky;
+    top: var(--feeds-top, 5.5rem);
+    height: calc(100dvh - var(--feeds-top, 5.5rem));
+    min-height: 420px;
+  }
+  .feeds__tl {
+    --tl-panel-h: calc(100dvh - var(--feeds-top, 5.5rem));
+    width: 100%;
+    height: 100%;
+  }
+
+  /* 中间：整份列表 */
+  .feeds__main {
+    min-width: 0;
   }
   /*
-    翻页脚本按「目标选择器选中的元素」来显示/隐藏（见 Pager.astro），
-    所以这里不用把每条再包一层 —— 上面那个 target 直接指到每一个 li。
+    翻页条原来那套颜色是浅色主题的（琥珀色的字压在这个深紫底上几乎看不见，
+    站长 2026-11-21 报过这一条）。这一页是深色板，所以把它换成粉色那一套。
   */
   .feedList {
     margin: 0;
     padding: 0;
     list-style: none;
+  }
+  .feedList :global(.pager__status) {
+    color: rgba(255, 226, 244, 0.66);
+  }
+  .feedList :global(.pager__status b) {
+    color: #ffb3dd;
+  }
+  :global(.pager) {
+    color: rgba(255, 226, 244, 0.7);
+  }
+  :global(.pager__step),
+  :global(.pager__num),
+  :global(.pager__go) {
+    border-color: rgba(255, 120, 190, 0.42);
+    background: rgba(22, 3, 36, 0.7);
+    color: #ffe6f6;
+  }
+  :global(.pager__step:hover),
+  :global(.pager__num:hover),
+  :global(.pager__go:hover) {
+    border-color: rgba(255, 120, 190, 0.95);
+    color: #fff;
+  }
+  :global(.pager__num.is-current) {
+    border-color: #ff78be;
+    background: rgba(255, 120, 190, 0.18);
+    color: #fff;
+  }
+  :global(.pager__jumplabel),
+  :global(.pager__input) {
+    color: rgba(255, 226, 244, 0.7);
+  }
+  :global(.pager__input) {
+    border-color: rgba(255, 120, 190, 0.42);
+    background: rgba(22, 3, 36, 0.7);
+  }
+
+  /* 点轴跳过来的那一条闪一下（和精华页那条 .salon__item--hit 一个意思） */
+  .feedList :global(.feed__item.is-hit) {
+    background: rgba(255, 120, 190, 0.14);
+    border-radius: 10px;
+    box-shadow: 0 0 0 1px rgba(255, 120, 190, 0.45);
+  }
+
+  /* 右边：推流者 */
+  .feeds__people {
+    position: sticky;
+    top: var(--feeds-top, 5.5rem);
+    max-height: calc(100dvh - var(--feeds-top, 5.5rem) - 1rem);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 0.5rem;
+    border: 1px solid rgba(255, 120, 190, 0.38);
+    border-radius: 14px;
+    background: linear-gradient(180deg, rgba(38, 6, 54, 0.82), rgba(20, 3, 32, 0.88));
+    scrollbar-width: thin;
+  }
+  .feeds__peopleList {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 0.28rem;
+  }
+  .feeds__personCard {
+    position: relative;
+    display: grid;
+    grid-template-columns: 26px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 0.4rem;
+    width: 100%;
+    padding: 0.34rem 0.44rem;
+    border: 1px solid rgba(255, 120, 190, 0.24);
+    border-radius: 11px;
+    background: rgba(12, 2, 20, 0.42);
+    color: rgba(255, 236, 248, 0.92);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+    transition: border-color 0.14s ease, background 0.14s ease, box-shadow 0.14s ease;
+  }
+  .feeds__personCard:hover {
+    border-color: rgba(255, 120, 190, 0.7);
+    background: rgba(24, 3, 36, 0.72);
+  }
+  /* 点亮：四周泛霓虹光（和精华页成员卡同一套观感） */
+  .feeds__personCard[data-on='1'] {
+    border-color: rgba(255, 140, 205, 0.95);
+    background: rgba(72, 6, 52, 0.72);
+    box-shadow: 0 0 0 1px rgba(255, 140, 205, 0.55), 0 0 18px -4px rgba(255, 79, 163, 0.85);
+  }
+  .feeds__face {
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 1px solid rgba(255, 120, 190, 0.55);
+    background: rgba(22, 3, 36, 0.9);
+    flex: none;
+  }
+  .feeds__face--none {
+    display: inline-grid;
+    place-items: center;
+    font-size: 0.72rem;
+    color: #ffb3dd;
+  }
+  .feeds__who {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.82rem;
+    font-weight: 500;
+  }
+  .feeds__count {
+    flex: none;
+    font-size: 0.72rem;
+    font-variant-numeric: tabular-nums;
+    color: rgba(255, 226, 244, 0.62);
+  }
+
+  /* ==========================================================================
+     窄屏：轴退成左边一条细栏、推流者收成顶部一根横条（和精华页同一套思路）
+     ========================================================================== */
+  @media (max-width: 880px) {
+    .feeds {
+      --feeds-rail-w: clamp(64px, 18vw, 96px);
+      /*
+        ⚠ 手机上**不能**把轴做成 fixed（`left: 0` 那条）：这一页上面还有一层
+        hero（「推流动态」大标题），fixed 会直接压在它身上（实测把标题和「返回首页」切掉一半）。
+        所以还是两列栅格 + sticky —— 轴在自己的那一列里贴着页头停住，
+        往下翻的时候它才"跨满屏幕"，没翻的时候它老老实实待在 hero 下面。
+      */
+      grid-template-columns: var(--feeds-rail-w) minmax(0, 1fr);
+      grid-template-rows: auto 1fr;
+      gap: 0.3rem 0.4rem;
+      padding-left: 0;
+    }
+    .feeds__side {
+      position: sticky;
+      grid-column: 1;
+      grid-row: 1 / -1;
+      top: var(--feeds-top, 3.6rem);
+      width: auto;
+      height: calc(100dvh - var(--feeds-top, 3.6rem) - 0.4rem);
+      padding: 0 0.1rem 0 0;
+      background: transparent;
+      border-right: 0;
+      border-right: 1px solid rgba(255, 120, 190, 0.22);
+    }
+    .feeds__tl {
+      --tl-panel-h: calc(100dvh - var(--feeds-top, 3.6rem) - 0.4rem);
+      /* 窄栏里没有横着写的名字，弧顶居中更好看（和精华页那几个值一致） */
+      --tl-apex: 0.5;
+      --tl-bulge: 12px;
+      --tl-crane-rot: 0;
+      --tl-rail-w: var(--feeds-rail-w);
+      height: 100%;
+    }
+    .feeds__main {
+      grid-column: 2;
+      grid-row: 2;
+      min-width: 0;
+    }
+    /*
+      推流者：顶部一根**横着滚**的条子（竖屏上没有右侧那一栏可用），
+      收起状态也照样看得见头像和条数。
+    */
+    .feeds__people {
+      position: sticky;
+      grid-column: 2;
+      grid-row: 1;
+      top: var(--feeds-top, 3.6rem);
+      z-index: 26;
+      max-height: none;
+      margin: 0 0 0.4rem;
+      padding: 0.32rem 0.36rem;
+      overflow-x: auto;
+      overflow-y: hidden;
+      border-radius: 12px;
+      background: #1e0730;
+    }
+    .feeds__peopleList {
+      flex-direction: row;
+      gap: 0.32rem;
+    }
+    .feeds__personCard {
+      grid-template-columns: 22px auto auto;
+      /* 别被那一行挤扁：卡片保持自己的宽度，多了就让整条横着滚（名字不至于缩成 0 宽）。
+         ⚠ 两个都要写：`li` 是这一行里的 flex 项，只给按钮写 flex:none 的话它照样会被压。 */
+      flex: none;
+      width: auto;
+      padding: 0.24rem 0.44rem;
+      gap: 0.3rem;
+      white-space: nowrap;
+    }
+    .feeds__person {
+      flex: none;
+    }
+    .feeds__face {
+      width: 22px;
+      height: 22px;
+    }
+    .feeds__who {
+      max-width: 7.5em;
+      font-size: 0.76rem;
+    }
+    .feeds__count {
+      font-size: 0.68rem;
+    }
   }
 </style>

@@ -69,10 +69,10 @@ try {
   await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
 
   let total = 0;
-  for (const p of ['/', '/salon/', '/about-me/', '/iceberg/', '/huaya/']) {
+  for (const p of ['/', '/salon/', '/about-me/', '/iceberg/', '/huaya/', '/feed/', '/memoriterminalcistern/']) {
     await cdp.send('Page.navigate', { url: `http://127.0.0.1:${PORT}${p}` });
     for (let i = 0; i < 80; i++) { await sleep(120); if ((await cdp.ev('document.readyState')) === 'complete') break; }
-    await sleep(p === '/salon/' ? 1500 : 800);
+    await sleep(p === '/salon/' || p === '/feed/' ? 1800 : 800);
     const r = await cdp.ev(CHECK);
     total += r.bad.length;
     console.log(`${p}  可点元素 ${r.total} 个，没有可访问名的 ${r.bad.length} 个`);

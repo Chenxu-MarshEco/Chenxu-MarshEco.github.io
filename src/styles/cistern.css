@@ -621,6 +621,21 @@ a.cist__tick:focus-visible .cist__crane {
 .cist__bq--full {
   font-size: 0.84rem;
 }
+/*
+  群圣经那条的评语（2026-11-21 加）。
+  样式跟着 /bellie/ 那页的规矩走：正文正常字号、评语小字斜体压在下面，
+  不另加“评语”这种小标题（它自己就是那一段字）。
+*/
+.cist__comment {
+  margin: 0.42rem 0 0;
+  padding: 0 0.2rem;
+  font-size: 0.8rem;
+  font-style: italic;
+  line-height: 1.7;
+  color: rgba(6, 56, 76, 0.72);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
 .cist__meta {
   margin: 0.2rem 0 0;
   font-size: 0.7rem;

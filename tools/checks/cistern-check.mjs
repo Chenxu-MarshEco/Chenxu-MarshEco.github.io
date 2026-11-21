@@ -16,7 +16,7 @@
  *
  * 所以这里盯这些事：
  *   ① 首页那颗按钮：是链接、指上去弹提示卡、点它真的进那一页；
- *   ② 页面骨架：四个板块自上而下、标题就是那四个词，FA 布景在；
+ *   ② 页面骨架：五个板块自上而下、标题就是那几个词（精华 / 圣经 / 冰山 / 时刻 / 冰室日记），FA 布景在；
  *   ③ **换一天内容就换**（把浏览器的 Date 定死在不同日子，同一份 HTML 显示不同内容
  *      —— 这就是"每天更新、昨天那页不被存下来"的证明）；
  *   ④ 每个板块的呈现：精华原格式 / 冰山整段铺开 / 时刻用原塔吊且点了去刻度自己的链接 /
@@ -196,10 +196,15 @@ check('★ 鼠标移上去弹出提示卡「前往涣愿终池」', hovered.visi
 /* ⚠ 站规：不许自作主张加描述文案。提示卡里只准有那一个标题。 */
 check('提示卡里只有「前往涣愿终池」（没有 AI 补的说明句）', hovered.text === '前往涣愿终池', JSON.stringify(hovered.text));
 
-/* ------------------------------------------------------------------ ② 页面骨架：四个板块 */
+/* ------------------------------------------------------------------ ② 页面骨架：五个板块 */
 await cdp.goto(PAGE);
+/*
+  站长 2026-11-21 又加了一块：「在涣愿终池的精华下加一条圣经 显示历史上的今天
+  出现过的群圣经」——所以现在是五块，圣经紧跟在精华下面。
+*/
 const SECTIONS = [
   ['essences', '精华'],
+  ['bibles', '圣经'],
   ['iceberg', '冰山'],
   ['points', '时刻'],
   ['notes', '冰室日记'],
@@ -226,7 +231,7 @@ const shell = await cdp.ev(`(() => {
 })()`);
 check('★ 页面在，body 挂上了 is-cistern（整页换 FA 皮）',
   /is-cistern/.test(shell.body) && shell.scene === true && shell.ready === true, shell.body);
-check('★ 核心区从上往下就是四个板块：精华 / 冰山 / 时刻 / 冰室日记（顺序也一样）',
+check('★ 核心区从上往下就是五个板块：精华 / 圣经 / 冰山 / 时刻 / 冰室日记（顺序也一样）',
   JSON.stringify(shell.sections) === JSON.stringify(SECTIONS.map(([key, head]) => ({ key, head }))),
   JSON.stringify(shell.sections));
 check('顶上那一排跳转按钮没了（时刻改成自己铺开）、也没有原来那四个"面板"',
@@ -265,7 +270,7 @@ check('★ 右上角「三条杠」是这一页的墨蓝（不是粉白）',
   drawer.n === 3 && drawer.colors.every((c) => c === 'rgb(11, 74, 99)'), JSON.stringify(drawer));
 
 /* ------------------------------------------------------------------ 一个日子在页面上的样子 */
-/** 把页面按"某一天"重开一遍，把四个板块读到的东西全抓回来 */
+/** 把页面按"某一天"重开一遍，把五个板块读到的东西全抓回来 */
 const onDay = async (mmdd) => {
   await cdp.send('Page.navigate', { url: 'about:blank' });
   await sleep(200);
@@ -276,10 +281,12 @@ const onDay = async (mmdd) => {
     const items = (k) => [...inSec(k).querySelectorAll('.cist__item')];
     const first = items('essences')[0];
     const firstBq = first ? first.querySelector('.cist__bq') : null;
+    const firstBible = items('bibles')[0];
     const color = (n) => (n ? getComputedStyle(n).color : '');
     return {
       day: (document.querySelector('[data-cist-day]') || {}).textContent || '',
       essences: items('essences').length,
+      bibles: items('bibles').length,
       iceberg: items('iceberg').length,
       ticks: [...inSec('points').querySelectorAll('.cist__tick')].map((row) => ({
         name: (row.querySelector('.cist__tickName') || {}).textContent || '',
@@ -303,6 +310,20 @@ const onDay = async (mmdd) => {
             text: (firstBq || {}).textContent || '',
           }
         : null,
+      firstBible: firstBible
+        ? {
+            hasAvatar: !!firstBible.querySelector('.cist__avatar'),
+            name: (firstBible.querySelector('.cist__name') || {}).textContent || '',
+            time: (firstBible.querySelector('.cist__time') || {}).textContent || '',
+            text: (firstBible.querySelector('.cist__bq') || {}).textContent || '',
+            comment: (firstBible.querySelector('.cist__comment') || {}).textContent || '',
+            commentStyle: (() => {
+              const c = firstBible.querySelector('.cist__comment');
+              return c ? getComputedStyle(c).fontStyle : '';
+            })(),
+            href: firstBible.closest('a') ? firstBible.closest('a').getAttribute('href') : '',
+          }
+        : null,
     };
   })()`);
 };
@@ -313,17 +334,18 @@ const shown = (p) => (p.showAxis && p.timeline ? `${p.timeline}·${p.label}` : p
 /** 从 /cistern.json 里挑几类"有东西"的日子 */
 const pick = (pred) => Object.entries(idx.days).find(([, d]) => pred(d)) || null;
 const dayEss = pick((d) => d.essences.length >= 2);
+const dayBib = pick((d) => d.bibles.length >= 1);
 const dayIce = pick((d) => d.iceberg.length >= 1);
 const dayNote = pick((d) => d.notes.length >= 1);
 /* 时刻要挑"有链接的"和"时刻/事件两种颜色都出现"的日子，各验一件事 */
 const dayPtsLinked = pick((d) => d.points.some((p) => p.href) && d.points.some((p) => !p.href));
 const dayPtsBothKinds = pick((d) => d.points.some((p) => p.kind === 'moment') && d.points.some((p) => p.kind === 'event'));
 
-check('数据里能找到"有精华 / 有冰山 / 有时刻 / 有日记"的日子',
-  !!dayEss && !!dayIce && !!dayPtsLinked && !!dayNote,
-  JSON.stringify({ 精华: dayEss?.[0], 冰山: dayIce?.[0], 时刻: dayPtsLinked?.[0], 日记: dayNote?.[0] }));
+check('数据里能找到"有精华 / 有圣经 / 有冰山 / 有时刻 / 有日记"的日子',
+  !!dayEss && !!dayBib && !!dayIce && !!dayPtsLinked && !!dayNote,
+  JSON.stringify({ 精华: dayEss?.[0], 圣经: dayBib?.[0], 冰山: dayIce?.[0], 时刻: dayPtsLinked?.[0], 日记: dayNote?.[0] }));
 
-/* ------------------------------------------------------------------ ③ 空日子：四个板块各留一句占位 */
+/* ------------------------------------------------------------------ ③ 空日子：五个板块各留一句占位 */
 /*
   ⚠ 空日子**不能写死**某一天：数据会长（2026-11-17 那天后来就有了冰室日记），
   写死的话这条会在数据长出来之后凭空变红 —— 页面没坏，是这条断言过期了。
@@ -334,17 +356,17 @@ const emptyKey = (() => {
     for (let d = 1; d <= 28; d++) {
       const k = `${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
       const day = idx.days[k];
-      if (!day || (!day.essences.length && !day.iceberg.length && !day.points.length && !day.notes.length)) return k;
+      if (!day || (!day.essences.length && !day.bibles.length && !day.iceberg.length && !day.points.length && !day.notes.length)) return k;
     }
   }
   return '';
 })();
-check('数据里找得到一个四块全空的日子（下面那几条要用它）', !!emptyKey, emptyKey);
+check('数据里找得到一个五块全空的日子（下面那几条要用它）', !!emptyKey, emptyKey);
 const bare = await onDay(emptyKey);
-check(`★ ${emptyKey} 这天四块都是空的（数据里确实一条都没有）`,
-  bare.essences === 0 && bare.iceberg === 0 && bare.ticks.length === 0 && bare.jumps.length === 0,
-  JSON.stringify({ 精华: bare.essences, 冰山: bare.iceberg, 时刻: bare.ticks.length, 日记: bare.jumps.length }));
-check('★ 空着的四个板块各自写着占位「历史上的今天还没有精华 / 冰山 / 时刻 / 冰室日记」',
+check(`★ ${emptyKey} 这天五块都是空的（数据里确实一条都没有）`,
+  bare.essences === 0 && bare.bibles === 0 && bare.iceberg === 0 && bare.ticks.length === 0 && bare.jumps.length === 0,
+  JSON.stringify({ 精华: bare.essences, 圣经: bare.bibles, 冰山: bare.iceberg, 时刻: bare.ticks.length, 日记: bare.jumps.length }));
+check('★ 空着的五个板块各自写着占位「历史上的今天还没有精华 / 圣经 / 冰山 / 时刻 / 冰室日记」',
   JSON.stringify(bare.empties) === JSON.stringify(SECTIONS.map(([, name]) => `历史上的今天还没有${name}`)),
   JSON.stringify(bare.empties));
 
@@ -363,10 +385,25 @@ if (dayEss && dayIce && dayPtsLinked && dayNote) {
     JSON.stringify(a.firstEssence));
   check(`页头写的就是这一天（${kEss}）`, a.day.includes(`${Number(kEss.slice(0, 2))} 月`), a.day);
   /* 有内容的那几块不许挂占位，没内容的才挂 —— 数量按数据算，不写死 */
-  const filled = ['essences', 'iceberg', 'points', 'notes']
+  const filled = ['essences', 'bibles', 'iceberg', 'points', 'notes']
     .filter((k) => (dEss[k] || []).length > 0).length;
   check(`有东西的板块不会冒占位、空着的板块才占位（${kEss} 那天有 ${filled} 块有东西）`,
-    !a.empties.includes('历史上的今天还没有精华') && a.empties.length === 4 - filled, JSON.stringify(a.empties));
+    !a.empties.includes('历史上的今天还没有精华') && a.empties.length === 5 - filled, JSON.stringify(a.empties));
+
+  /* ---- 圣经那一块（2026-11-21 加）：和精华一样按日期落进来，多一段评语 ---- */
+  if (dayBib) {
+    const [kBib, dBib] = dayBib;
+    const s = await onDay(kBib);
+    check(`★ ${kBib}：圣经平铺出来的条数和 /cistern.json 一致`, s.bibles === dBib.bibles.length,
+      `${s.bibles} / ${dBib.bibles.length}`);
+    check('★ 圣经那条是「正文 + 铃忆的评语」两截（评语是小字斜体，和 /bellie/ 一个规矩）',
+      !!s.firstBible && s.firstBible.text.length > 0 && s.firstBible.comment.length > 0 && s.firstBible.commentStyle === 'italic',
+      JSON.stringify(s.firstBible));
+    check('★ 点圣经那条去的是 /bellie/ 里那一条（不是精华页）',
+      !!s.firstBible && /^\/bellie\/#b\d{8}-\d+$/.test(s.firstBible.href), s.firstBible?.href);
+    check('圣经那条也有头像和发送者名字（和精华同一种卡片）',
+      !!s.firstBible && s.firstBible.hasAvatar === true && s.firstBible.name.length > 0, JSON.stringify(s.firstBible));
+  }
 
   const b = await onDay(kIce);
   check(`★ 换到 ${kIce}：同一份 HTML，内容整个换了（冰山词条那天）`, b.iceberg === dIce.iceberg.length,
@@ -532,12 +569,12 @@ const prose = await cdp.ev(`(() => {
     hasCount: !!document.querySelector('[data-cist-count]'),
   };
 })()`);
-check('★ 除了那四句占位，没有别的自己编的小字（kicker / 页尾 / 统计句都没有）',
+check('★ 除了那五句占位，没有别的自己编的小字（kicker / 页尾 / 统计句都没有）',
   prose.hasKicker === false && prose.hasFoot === false && prose.hasCount === false, JSON.stringify(prose));
 check('★ 核心区里的字里没有一个句号（说明句都删干净了，只剩标题 / 日期 / 占位）',
   !/[。！？；]/.test(prose.text), prose.text.slice(0, 160));
 check('★ 占位句就是站长那句原话（一个字不多）',
-  (prose.text.match(/历史上的今天还没有/g) || []).length === 4, prose.text.slice(0, 160));
+  (prose.text.match(/历史上的今天还没有/g) || []).length === 5, prose.text.slice(0, 160));
 
 /* ------------------------------------------------------------------ ⑧ 真的点一下那个刻度 */
 /* 先收脚本报错（下面那一下会跳去别的页面，那页自己的日志不算这一页的） */

@@ -1460,10 +1460,16 @@ function cardsForBlock(b: PageBlock): { list: BlockItem[]; missing: string[] } {
     390 宽的屏上每格还剩 100px 上下，缩略图仍看得清；
     描述也跟着收小一号 —— 一行三张、每张底下压两行字的话，翻起来反而更慢。
     点开看原图和描述的路没变（灯箱读的是 figcaption）。
+
+    ⚠ 2026-11-21 改成**按容器自己算列数**（站长又说了一次「手机端相册依然一排只有一张图片」）：
+      原来写死 `repeat(3, …)` 只在"整页宽的那面墙"上成立；相册被放进两栏正文 /
+      侧栏那种窄容器里的时候，三列会挤成一条缝，看着就是"一排一张"。
+      现在用 auto-fill + 更小的一格（5.6rem ≈ 90px）：整页宽时仍是三列（390 上验过），
+      容器窄下来自动变成两列，宽一点的手机（>=500）能排到四列 —— 怎么都不会掉回一张。
   */
   @media (max-width: 46rem) {
     .palbum__grid {
-      grid-template-columns: repeat(3, minmax(0, 1fr));
+      grid-template-columns: repeat(auto-fill, minmax(min(5.6rem, 100%), 1fr));
       gap: 0.35rem;
     }
     .palbum__img {
@@ -2417,6 +2423,17 @@ function cardsForBlock(b: PageBlock): { list: BlockItem[]; missing: string[] } {
     visibility: visible;
     transform: translate(-50%, 0);
   }
+  /*
+    触屏上没有悬停：第一下用手指点的时候由 `scripts/tap-gate.ts` 给这一格挂上
+    `is-tapopen`（那一下不跳转，只把图亮出来），点第二下才跟着链接走。
+    和上面那条 `:hover` 的显示状态一模一样。
+  */
+  .ptext :global(.phover.is-tapopen .phover__pop),
+  .pcols__col :global(.phover.is-tapopen .phover__pop) {
+    opacity: 1;
+    visibility: visible;
+    transform: translate(-50%, 0);
+  }
 
   .ptext :global(.phover__img),
   .pcols__col :global(.phover__img) {
@@ -2651,6 +2668,20 @@ function cardsForBlock(b: PageBlock): { list: BlockItem[]; missing: string[] } {
     }
   }
 </style>
+
+<script>
+  /*
+    正文里那种「悬停图」（`[[文字|图片|链接]]`）：触屏上第一下只把图亮出来、不跳走，
+    第二下才跟着链接走（站长 2026-11-21：「手机端所有有浮卡的应规定点击一下先不跳转
+    出浮卡 再点一下才跳转」）。规则本身在 scripts/tap-gate.ts，这里只登记"这一种有卡"。
+  */
+  import { tapGate } from '../scripts/tap-gate';
+  tapGate(
+    'a.phover__label',
+    (el) => el.closest('.phover')?.classList.add('is-tapopen'),
+    (el) => el.closest('.phover')?.classList.remove('is-tapopen'),
+  );
+</script>
 
 <script>
   /* ============================================================

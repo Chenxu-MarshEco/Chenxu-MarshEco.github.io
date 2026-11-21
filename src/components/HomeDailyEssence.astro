@@ -1202,6 +1202,8 @@ const bibleLabel = biblePick ? `跳到铃忆圣经里的这一条：${bibleName}
   */
   import { dailyIndex, localDateKey } from '../utils/daily';
   import { withBase } from '../utils/url';
+  /* 触屏上的「第一下只开卡、第二下才跳」——规则写在 scripts/tap-gate.ts */
+  import { tapGate } from '../scripts/tap-gate';
 
   type Person = { name: string; avatar: string };
   type Item = {
@@ -1384,6 +1386,19 @@ const bibleLabel = biblePick ? `跳到铃忆圣经里的这一条：${bibleName}
     bibleCol?.addEventListener('pointerenter', () => setPop('bible'));
     essenceCol?.addEventListener('focusin', () => setPop('essence'));
     bibleCol?.addEventListener('focusin', () => setPop('bible'));
+    /*
+      触屏（站长 2026-11-21：「手机端想要点开精华和圣经详情时 点击一下虽然会弹出浮卡
+      但是同时也相当于单击了精华条目 导致浏览器直接开始加载跳转到精华页面了 …… 应规定
+      点击一下先不跳转出浮卡 再点一下才跳转」）。
+      这两张卡整张都是链接，所以手指一点：pointerover 把浮层亮起来、紧接着的 click 就跳走了。
+      规则本身在 `scripts/tap-gate.ts`：第一下只开浮层，第二下才跟着链接走。
+      电脑鼠标（有悬停能力）完全不受影响，还是一下就走。
+    */
+    tapGate(
+      'a.daily__card',
+      (el) => setPop(el.closest('.daily__col--bible') ? 'bible' : 'essence'),
+      clearPop,
+    );
     /*
       浮层什么时候收起：指针**既不在这一块里、也不在成员名片（含它上面放大的头像）上**时才收。
       为什么要放行 `.memlayer`（站长 2026-11-21）：

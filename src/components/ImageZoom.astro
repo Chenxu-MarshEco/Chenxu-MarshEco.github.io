@@ -10,6 +10,14 @@
  * 用户后来把范围放开了（2026-10-12）：
  *   「铃忆日记里的图片无法点开查看大图 应保证花涧堂网页内的所有图片都可以点开查看大图」
  *
+ * 站长 2026-11-21 又改了一次打开之后的样子：
+ *   「电脑端相册bug：高清图片点击查看后直接按照原比例显示导致占满屏幕 尤其是竖屏照片
+ *    无法在屏幕里完全显示 应当只让照片完全显示在屏幕里 然后在下方（横版照片）或侧方
+ *    （竖版照片）预留按钮让用户以放大缩小查看」。
+ * 所以现在打开的第一眼永远是**整张图都看得见**（等比缩到屏幕里，不裁不超出），
+ * 想细看再用那两颗按钮放大 / 缩小 —— 横版照片按钮在下方，竖版照片按钮在右边。
+ * （以前是"宽度贴合视口、太高的图上下滚"，那对 4000×3000 的高清照片等于一进来就被裁掉半张。）
+ *
  * 所以现在是**两条路一起用**：
  *   ① 显式标了 `data-zoom` 的（页面内容块「＋图片」、冰室精华的截图、首页那几块）——
  *      构建期就写在 HTML 上，没有 JS 时精华页那层 `<a href="原图">` 照旧能开原图；
@@ -35,14 +43,12 @@
  */
 ---
 
-<div class="izoom" data-izoom hidden role="dialog" aria-modal="true" aria-label="查看大图">
+<div class="izoom" data-izoom hidden role="dialog" aria-modal="true" aria-label="查看大图" data-orient="landscape" data-izoom-scale="1">
   <button type="button" class="izoom__close" data-izoom-close aria-label="关闭大图（Esc）">×</button>
   <!--
-    滚动的只有这一层（2026-10-12 加）：手记里那些竖长截图 1404×8680，
-    原来 img 上也写 max-height:100%，于是"点开看大图"反而被压成 100 多像素宽 ——
-    比版面上还小。现在改成**宽度贴合视口、高度超出就滚**：
-    小图照旧居中，竖长图按视口宽度铺满、上下滚着看。
-    × 和下面那行图注留在滚动层外面，滚图的时候它们不会跟着跑掉。
+    滚动的只有这一层。**默认不让它滚**：图是等比缩到这一层里的，整张都在屏幕上；
+    只有用下面那两颗按钮放大之后，它才会超出、能上下左右拖着看。
+    × 和那排按钮留在滚动层外面，滚图的时候它们不会跟着跑掉。
   -->
   <div class="izoom__scroll" data-izoom-scroll>
     <!--
@@ -55,6 +61,15 @@
     </picture>
   </div>
   <p class="izoom__cap" data-izoom-cap hidden></p>
+  <!--
+    放大 / 缩小。位置按照片朝向换（见样式）：横版在下方、竖版在右侧。
+    读数（1×…4×）是给不了读屏的一个事实，不是说明文字。
+  -->
+  <div class="izoom__tools" data-izoom-tools>
+    <button type="button" class="izoom__tool" data-izoom-out aria-label="缩小">−</button>
+    <span class="izoom__level" data-izoom-level aria-hidden="true">1×</span>
+    <button type="button" class="izoom__tool" data-izoom-in aria-label="放大">+</button>
+  </div>
 </div>
 
 <script>
@@ -63,8 +78,13 @@
   const src = box?.querySelector<HTMLSourceElement>('[data-izoom-src]');
   const cap = box?.querySelector<HTMLElement>('[data-izoom-cap]');
   const closeBtn = box?.querySelector<HTMLButtonElement>('[data-izoom-close]');
+  const scrollEl = box?.querySelector<HTMLElement>('[data-izoom-scroll]');
+  const toolsEl = box?.querySelector<HTMLElement>('[data-izoom-tools]');
+  const outBtn = box?.querySelector<HTMLButtonElement>('[data-izoom-out]');
+  const inBtn = box?.querySelector<HTMLButtonElement>('[data-izoom-in]');
+  const levelEl = box?.querySelector<HTMLElement>('[data-izoom-level]');
 
-  if (box && pic && closeBtn) {
+  if (box && pic && closeBtn && scrollEl && outBtn && inBtn) {
     /* 打开之前焦点在哪儿，关掉之后还回去（键盘用户不会"掉到页面顶上"） */
     let backTo: HTMLElement | null = null;
 
@@ -138,6 +158,74 @@
       new MutationObserver(schedule).observe(document.body, { childList: true, subtree: true });
     }
 
+    /* ---------------- 尺寸：整张图先缩进屏幕，再让用户自己放大 ---------------- */
+
+    /** 放大档位：1 就是"整张看得见"。不给连续缩放 —— 按钮上要能读出"现在是几倍"。 */
+    const STEPS = [1, 1.5, 2, 3, 4];
+    let step = 0;
+    /** 这次打开的那张图等比缩到屏幕里是多少（0~1），和档位相乘就是实际比例 */
+    let fit = 1;
+
+    const applyStep = (i: number, keepCenter = true) => {
+      step = Math.max(0, Math.min(STEPS.length - 1, i));
+      const z = STEPS[step];
+      box.dataset.izoomScale = String(z);
+      if (levelEl) levelEl.textContent = `${z}×`;
+      outBtn.disabled = step === 0;
+      inBtn.disabled = step === STEPS.length - 1;
+      const nw = pic!.naturalWidth;
+      const nh = pic!.naturalHeight;
+      if (!nw || !nh) return;
+      const scale = fit * z;
+      pic!.style.width = `${Math.round(nw * scale)}px`;
+      pic!.style.height = `${Math.round(nh * scale)}px`;
+      pic!.style.maxWidth = 'none';
+      pic!.style.maxHeight = 'none';
+      /* 放大之后把视口里那一块保持在中间（不然一放大就跳到左上角，人还得自己找） */
+      if (keepCenter && z > 1) {
+        scrollEl!.scrollLeft = Math.max(0, (scrollEl!.scrollWidth - scrollEl!.clientWidth) / 2);
+        scrollEl!.scrollTop = Math.max(0, (scrollEl!.scrollHeight - scrollEl!.clientHeight) / 2);
+      } else if (z === 1) {
+        scrollEl!.scrollLeft = 0;
+        scrollEl!.scrollTop = 0;
+      }
+    };
+
+    /** 量一次"这一块可用多大"，算出等比缩放比，并按当前档位摆好 */
+    const layout = () => {
+      const nw = pic!.naturalWidth;
+      const nh = pic!.naturalHeight;
+      if (!nw || !nh) return;
+      const portrait = nh > nw;
+      box.dataset.orient = portrait ? 'portrait' : 'landscape';
+      /*
+        ⚠ 这两条必须和样式里那两段 padding 一致：
+          横版下方要留出那排按钮 + 图注的位置，竖版右侧要留出按钮那一列。
+          用 getComputedStyle 读实际值，所以改样式里的数不用回来改这里。
+      */
+      const cs = getComputedStyle(scrollEl!);
+      const px = (v: string) => parseFloat(v) || 0;
+      const availW = Math.max(80, scrollEl!.clientWidth - px(cs.paddingLeft) - px(cs.paddingRight));
+      const availH = Math.max(80, scrollEl!.clientHeight - px(cs.paddingTop) - px(cs.paddingBottom));
+      /* 不放大（<=1）：小图就按原尺寸显示，别糊成一片 */
+      fit = Math.min(1, availW / nw, availH / nh);
+      box.dataset.izoomFit = fit.toFixed(4);
+      applyStep(step, false);
+    };
+
+    const resetZoom = () => {
+      step = 0;
+      fit = 1;
+      pic!.style.width = '';
+      pic!.style.height = '';
+      pic!.style.maxWidth = '';
+      pic!.style.maxHeight = '';
+      box.dataset.izoomScale = '1';
+      if (levelEl) levelEl.textContent = '1×';
+      outBtn.disabled = true;
+      inBtn.disabled = false;
+    };
+
     const open = (im: HTMLImageElement) => {
       const a = im.closest('a');
       const webp = im.dataset.full || a?.getAttribute('href') || im.currentSrc || im.src;
@@ -152,8 +240,9 @@
         if (avif) src.srcset = avif;
         else src.removeAttribute('srcset');
       }
-      pic.src = webp;
-      pic.alt = im.alt || '';
+      resetZoom();
+      pic!.src = webp;
+      pic!.alt = im.alt || '';
       /* 图注：正文里那层 <figcaption> 的字、或者图片自己的 alt */
       const fig = im.closest('figure');
       const text = (fig?.querySelector('figcaption')?.textContent || im.alt || '').trim();
@@ -165,12 +254,23 @@
       box.hidden = false;
       document.documentElement.classList.add('is-zoomed');
       closeBtn.focus();
+      /*
+        图从缓存里来的时候 `load` 不会再触发一次，所以两条路都要接：
+        已经 complete 就现在量，否则等 load（顺带防一手"图坏了"——error 也量一次，
+        至少不会停在上一张的尺寸上）。
+      */
+      if (pic!.complete && pic!.naturalWidth) layout();
+      else {
+        pic!.addEventListener('load', layout, { once: true });
+        pic!.addEventListener('error', layout, { once: true });
+      }
     };
 
     const close = () => {
       if (box.hidden) return;
       box.hidden = true;
       pic.removeAttribute('src');
+      resetZoom();
       document.documentElement.classList.remove('is-zoomed');
       backTo?.focus?.();
     };
@@ -198,15 +298,35 @@
       open(im);
     });
 
+    /* 那两颗按钮 */
+    outBtn.addEventListener('click', () => applyStep(step - 1));
+    inBtn.addEventListener('click', () => applyStep(step + 1));
+    toolsEl?.addEventListener('click', (ev) => ev.stopPropagation());
+    /* 键盘：+ / - 也能缩放（Esc 关） */
+    document.addEventListener('keydown', (ev) => {
+      if (box.hidden) return;
+      if (ev.key === '+' || ev.key === '=') {
+        ev.preventDefault();
+        applyStep(step + 1);
+      } else if (ev.key === '-' || ev.key === '_') {
+        ev.preventDefault();
+        applyStep(step - 1);
+      }
+    });
+
     /* 右上角那个小 × */
     closeBtn.addEventListener('click', close);
     /*
-      点图片**外面**的底色也关（点在图上不关，方便细看）。
+      点图片**外面**的底色也关（点在图上不关，方便细看；放大了拖动也不算"点了图上"）。
       ⚠ 现在图外面那圈是**滚动层**（.izoom__scroll），点它也要算"点到了底色" ——
       只认 `box` 的话，那圈会因为多包了一层而变成点不动（2026-10-12 改结构时想过这一点）。
     */
     box.addEventListener('click', (ev) => {
       const t = ev.target as HTMLElement | null;
+      if (dragged) {
+        dragged = false;
+        return;
+      }
       if (t === box || t?.classList?.contains('izoom__scroll') || t?.classList?.contains('izoom__pic')) close();
     });
     document.addEventListener('keydown', (ev) => {
@@ -225,6 +345,54 @@
         open(im);
       }
     });
+
+    /* ---------------- 放大之后拖着看 ---------------- */
+
+    /*
+      图比滚动层大的时候，用鼠标拖着看比去抓那根滚动条自然（触屏本来就能滑）。
+      拖动结束时浏览器还会补一个 click —— 那一下要是当成"点了底色"就把框关了，
+      所以拖过一段距离就记一笔，上面那个 click 处理里把它吃掉。
+    */
+    let dragged = false;
+    let pan: { id: number; x: number; y: number; l: number; t: number } | null = null;
+    scrollEl.addEventListener('pointerdown', (ev) => {
+      if (ev.button !== 0) return;
+      const big = scrollEl.scrollWidth > scrollEl.clientWidth + 2 || scrollEl.scrollHeight > scrollEl.clientHeight + 2;
+      if (!big) return;
+      pan = { id: ev.pointerId, x: ev.clientX, y: ev.clientY, l: scrollEl.scrollLeft, t: scrollEl.scrollTop };
+      scrollEl.setPointerCapture(ev.pointerId);
+      scrollEl.classList.add('is-panning');
+    });
+    scrollEl.addEventListener('pointermove', (ev) => {
+      if (!pan || ev.pointerId !== pan.id) return;
+      const dx = ev.clientX - pan.x;
+      const dy = ev.clientY - pan.y;
+      if (Math.abs(dx) + Math.abs(dy) > 6) dragged = true;
+      scrollEl.scrollLeft = pan.l - dx;
+      scrollEl.scrollTop = pan.t - dy;
+    });
+    const endPan = (ev: PointerEvent) => {
+      if (!pan || ev.pointerId !== pan.id) return;
+      pan = null;
+      scrollEl.classList.remove('is-panning');
+      try {
+        scrollEl.releasePointerCapture(ev.pointerId);
+      } catch {
+        /* 指针没了，忽略 */
+      }
+      /* click 紧跟在这后面：让上面那个处理吃掉它 */
+      window.setTimeout(() => {
+        dragged = false;
+      }, 60);
+    };
+    scrollEl.addEventListener('pointerup', endPan);
+    scrollEl.addEventListener('pointercancel', endPan);
+
+    /* 换屏 / 转屏：重新量一次可用大小（放大档位保持） */
+    window.addEventListener('resize', () => {
+      if (!box.hidden) layout();
+    });
+
     /* 光标：只有真的能点的图才给放大镜（省得整站每个 img 都变成手型） */
     document.documentElement.classList.add('has-izoom');
   }
@@ -253,8 +421,9 @@
     display: none;
   }
   /*
-    滚动层：只滚它。宽度贴合视口、高度超出就上下滚（手记那种 1404×8680 的竖长截图）。
-    `align-items: safe center` —— 比视口高的图从**顶部**开始排；
+    滚动层：默认**不滚**（图是缩进这块里面的，整张都看得见）；
+    放大之后才会超出，那时候才能拖 / 滚。
+    `align-items: safe center`：放大后比这块高的图从**顶部**开始排，
     普通 center 在溢出时会把上半截顶到滚不到的地方（flexbox 的老毛病）。
   */
   .izoom__scroll {
@@ -265,18 +434,43 @@
     justify-content: center;
     overflow: auto;
     overscroll-behavior: contain;
-    padding: clamp(0.8rem, 3vw, 2.4rem);
-    padding-top: clamp(3rem, 6vh, 4rem);
+  }
+  /*
+    留白就是"给按钮留的地方"：
+      · 横版：下面那一截是那排按钮 + 图注，上面那一截是右上角那颗 ×；
+      · 竖版：右边那一列是按钮。
+    这两组数和脚本里量可用大小时读的是同一个 padding（脚本读实际值，不用手抄）。
+  */
+  .izoom[data-orient='landscape'] .izoom__scroll {
+    padding: clamp(2.6rem, 5vh, 3.4rem) clamp(0.8rem, 2vw, 1.6rem) 4.6rem;
+  }
+  .izoom[data-orient='portrait'] .izoom__scroll {
+    padding: clamp(2.6rem, 5vh, 3.4rem) 4.2rem 1.6rem clamp(0.8rem, 2vw, 1.6rem);
+  }
+  /* 放大之后可以拖着看：抓起手 */
+  .izoom__scroll.is-panning {
+    cursor: grabbing;
+  }
+  .izoom__pic {
+    display: block;
+    margin: auto;
+    line-height: 0;
   }
   .izoom__img {
     display: block;
+    /* 脚本会把实际宽高写上来；这两条是"图还没量出来"那一刻的兜底 */
     max-width: 100%;
+    max-height: 100%;
     width: auto;
     height: auto;
     object-fit: contain;
     border-radius: 10px;
     background: #fff;
     box-shadow: 0 24px 70px rgb(0 0 0 / 0.65);
+    cursor: grab;
+  }
+  .izoom__scroll.is-panning .izoom__img {
+    cursor: grabbing;
   }
   /* 右上角那个小 ×（在滚动层外面，滚图时不会跟着跑） */
   .izoom__close {
@@ -313,7 +507,8 @@
     position: absolute;
     z-index: 2;
     left: 50%;
-    bottom: 0.7rem;
+    /* 横版时那排按钮在正下方，图注压在它上面一层；竖版按钮在右边，图注可以贴底 */
+    bottom: 3.4rem;
     max-width: min(52rem, 90vw);
     margin: 0;
     padding: 0.3rem 0.7rem;
@@ -325,7 +520,91 @@
     border-radius: 999px;
     transform: translateX(-50%);
   }
+  .izoom[data-orient='portrait'] .izoom__cap {
+    bottom: 0.7rem;
+    max-width: min(52rem, calc(100vw - 5.4rem));
+  }
   .izoom__cap[hidden] {
     display: none;
+  }
+
+  /* ---------------- 放大 / 缩小 ----------------
+     「下方（横版照片）或侧方（竖版照片）预留按钮」—— 位置跟着照片朝向换。 */
+  .izoom__tools {
+    position: absolute;
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.3rem 0.4rem;
+    border: 1px solid rgba(255, 120, 190, 0.42);
+    border-radius: 999px;
+    background: rgb(24 3 36 / 0.88);
+  }
+  .izoom[data-orient='landscape'] .izoom__tools {
+    left: 50%;
+    bottom: 0.7rem;
+    transform: translateX(-50%);
+  }
+  .izoom[data-orient='portrait'] .izoom__tools {
+    right: 0.7rem;
+    top: 50%;
+    flex-direction: column;
+    transform: translateY(-50%);
+  }
+  .izoom__tool {
+    display: grid;
+    place-items: center;
+    width: 34px;
+    height: 34px;
+    padding: 0;
+    font: inherit;
+    font-size: 20px;
+    line-height: 1;
+    color: #ffd9ef;
+    cursor: pointer;
+    border: 1px solid rgba(255, 120, 190, 0.5);
+    border-radius: 50%;
+    background: rgb(46 8 70 / 0.9);
+    transition: color 0.14s ease, border-color 0.14s ease, opacity 0.14s ease;
+  }
+  .izoom__tool:hover,
+  .izoom__tool:focus-visible {
+    color: #fff;
+    border-color: rgba(255, 120, 190, 0.95);
+  }
+  .izoom__tool:focus-visible {
+    outline: 2px solid rgba(255, 120, 190, 0.8);
+    outline-offset: 2px;
+  }
+  .izoom__tool:disabled {
+    opacity: 0.35;
+    cursor: default;
+  }
+  .izoom__level {
+    min-width: 2.2em;
+    font-size: 0.76rem;
+    font-variant-numeric: tabular-nums;
+    text-align: center;
+    color: rgba(255, 226, 244, 0.8);
+  }
+  /* 手机上没地方放"侧方"那一列（竖版照片一放，宽只剩一半）：一律放下面 */
+  @media (max-width: 760px) {
+    .izoom[data-orient='landscape'] .izoom__scroll,
+    .izoom[data-orient='portrait'] .izoom__scroll {
+      padding: 2.8rem 0.6rem 4.4rem;
+    }
+    .izoom[data-orient='portrait'] .izoom__tools {
+      right: auto;
+      left: 50%;
+      top: auto;
+      bottom: 0.7rem;
+      flex-direction: row;
+      transform: translateX(-50%);
+    }
+    .izoom[data-orient='portrait'] .izoom__cap {
+      bottom: 3.4rem;
+      max-width: min(52rem, 92vw);
+    }
   }
 </style>

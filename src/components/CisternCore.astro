@@ -11,8 +11,11 @@
  *    点了不要跳转到原时间轴 而是看这个刻度在原时间轴里有没有写对应的跳转链接
  *    没有就不用管有就一样跳转到那个链接」
  *
- * 所以从上往下一共四个板块，每个板块一个标题（精华 / 冰山 / 时刻 / 冰室日记）：
+ * 所以从上往下一共五个板块，每个板块一个标题（精华 / 圣经 / 冰山 / 时刻 / 冰室日记）：
  *   · 精华 —— 照 /salon/ 那一条的格式平铺；
+ *   · 圣经 —— 2026-11-21 加的，照精华那条的取法（站长：「在涣愿终池的精华下加一条圣经
+ *     显示历史上的今天出现过的群圣经 参考精华在涣愿终池里的引用方法」）；
+ *     比精华多一段评语（小字斜体，和 /bellie/ 那页一个规矩）；
  *   · 冰山 —— 有完备描述就整段铺开；
  *   · 时刻 —— 时间轴上的点，用原来那颗塔吊（时刻黄、事件粉），点了去那个刻度自己填的链接；
  *   · 冰室日记 —— 跳转卡片。
@@ -41,11 +44,13 @@ const title = String(text ?? '').trim();
 const asSrc = (raw: string) => (/^https?:\/\//i.test(raw) ? raw : withBase(raw));
 
 /**
- * 四个板块。`name` 就是站长给的那四个词（标题 + 占位句都用它，
- * 占位句是站长原话「历史上的今天还没有XX」——除了这四个字，一个字都不加）。
+ * 五个板块。`name` 就是站长给的那几个词（标题 + 占位句都用它，
+ * 占位句是站长原话「历史上的今天还没有XX」——除了这几个字，一个字都不加）。
+ * 圣经排第二：站长 2026-11-21 的原话是「在涣愿终池的精华下加一条圣经」。
  */
 const SECTIONS = [
   { key: 'essences', name: '精华' },
+  { key: 'bibles', name: '圣经' },
   { key: 'iceberg', name: '冰山' },
   { key: 'points', name: '时刻' },
   { key: 'notes', name: '冰室日记' },
@@ -126,6 +131,17 @@ const SECTIONS = [
     href: string;
     showAxis: boolean;
   };
+  /** 群圣经（2026-11-21 加）：和精华一条相比只多一段评语 */
+  type Bible = {
+    id: string;
+    date: string;
+    time: string;
+    member: string;
+    avatar: string;
+    text: string;
+    comment: string;
+    href: string;
+  };
   type Ice = {
     id: string;
     date: string;
@@ -137,7 +153,7 @@ const SECTIONS = [
     href: string;
   };
   type Note = { id: string; date: string; title: string; href: string };
-  type Day = { key: string; essences: Essence[]; points: Point[]; iceberg: Ice[]; notes: Note[] };
+  type Day = { key: string; essences: Essence[]; bibles: Bible[]; points: Point[]; iceberg: Ice[]; notes: Note[] };
   type Index = { days: Record<string, Day>; dayCount: number };
 
   const root = document.querySelector<HTMLElement>('[data-cist]');
@@ -232,6 +248,38 @@ const SECTIONS = [
       }
     }
 
+    /* ---------- 群圣经（2026-11-21 加：照精华那一条的格式，多一段评语） ---------- */
+    /*
+      站长：「在涣愿终池的精华下加一条圣经 显示历史上的今天出现过的群圣经
+             参考精华在涣愿终池里的引用方法」。
+      所以取法、落点（`/bellie/#<id>`）、卡片骨架都照上面精华那份；
+      唯一多出来的是评语 —— /bellie/ 那页的规矩也是"正文正常字号、评语小字斜体压下面"。
+    */
+    function paintBibles(host: HTMLElement, items: Bible[]) {
+      for (const b of items) {
+        const card = el('article', 'cist__item cist__item--bible');
+        const face = b.avatar
+          ? `<img class="cist__avatar" src="${esc(b.avatar)}" alt="" loading="lazy" decoding="async">`
+          : `<span class="cist__avatar cist__avatar--none"></span>`;
+        const text = b.text ? `<p class="cist__bq">${esc(b.text).replace(/\n/g, '<br>')}</p>` : '';
+        const comment = b.comment ? `<p class="cist__comment">${esc(b.comment).replace(/\n/g, '<br>')}</p>` : '';
+        card.innerHTML =
+          `<div class="cist__who"><span class="cist__face">${face}</span>` +
+          `<b class="cist__name">${esc(b.member)}</b>` +
+          `<time class="cist__time">${esc(when(b.date))}${b.time ? ` ${esc(b.time)}` : ''}</time></div>` +
+          text +
+          comment;
+        if (b.href) {
+          const a = anchor(b.href, 'cist__hit');
+          a.setAttribute('aria-label', `${b.member} ${b.date}`);
+          a.append(card);
+          host.append(a);
+        } else {
+          host.append(card);
+        }
+      }
+    }
+
     /* ---------- 冰山词条（有完备描述就整段铺开） ---------- */
     function paintIceberg(host: HTMLElement, items: Ice[]) {
       for (const it of items) {
@@ -284,15 +332,16 @@ const SECTIONS = [
       }
     }
 
-    /* ---------- 把这一天的四个板块全画一遍 ---------- */
+    /* ---------- 把这一天的五个板块全画一遍 ---------- */
     function paint(key: string) {
-      const day: Day = index?.days?.[key] ?? { key, essences: [], points: [], iceberg: [], notes: [] };
+      const day: Day = index?.days?.[key] ?? { key, essences: [], bibles: [], points: [], iceberg: [], notes: [] };
       const now = new Date();
       const dayEl = root!.querySelector<HTMLElement>('[data-cist-day]');
       if (dayEl) dayEl.textContent = `${now.getMonth() + 1} 月 ${now.getDate()} 日 · ${WEEK[now.getDay()]}`;
 
       const paints = [
         ['essences', day.essences, paintEssences],
+        ['bibles', day.bibles, paintBibles],
         ['iceberg', day.iceberg, paintIceberg],
         ['points', day.points, paintPoints],
         ['notes', day.notes, paintNotes],
