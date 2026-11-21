@@ -23,13 +23,15 @@
  *    时间轴跟着动态滚动 注意推流动态页用的是翻页模式 可能需要特殊适配」
  *   「为推流也右边也加上和精华 冰山一样的用户推流数统计」
  *
- * 左边那条轴（`pinned + fill + rail`，和 /salon/ 一模一样）是**现造**的：
- * 每一天一个点，范围就是这个仓库有提交的那几十天（见 utils/feed-timeline.ts）。
+ * 左边那条轴（`pinned + fill + rail`，和 /salon/、/bellie/ 一模一样）用的是**站点那条总轴**
+ * 「花娅年代记」（站长 2026-11-21：「推流动态也用花娅年代记 不要用自己做的时间轴」）——
+ * 所以轴上的刻度、塔吊、年代带、比例尺全是那条轴自己的，这里一个字都不改，
+ * 推流只负责在轴上"认领自己那一天的位置"。
  * 和翻页的适配只有一件事 —— **只有当前这一页的条目带 `data-tl-param`**：
  *   · 轴靠"页面上最近的成分"决定停在哪，藏起来的条目量出来的位置全是 0，
  *     混在名单里会把二分带偏（那就成了"轴乱跳"）；
  *   · 所以每次换页都把标记挪到新的一页上，再喊一声 `tl:reindex` 让轴重新认一遍；
- *   · 点轴上的刻度 / 塔吊：在全表里找最近的那一条 → 翻到它所在的页 → 滚过去。
+ *   · 点轴上的刻度 / 塔吊：在全表里找**离那个位置最近**的那一条 → 翻到它所在的页 → 滚过去。
  *
  * 右边那一栏是推流者（头像 + 名字 + 推流条数），和精华页的成员栏一个用法：
  * 点亮谁就只看谁的那几条（再点一下熄掉 = 回到全部）。筛选时不用翻页 ——
@@ -41,11 +43,18 @@ import Timeline from '../components/Timeline.astro';
 import ActivityList from '../components/ActivityList.astro';
 import Pager from '../components/Pager.astro';
 import { allActivity } from '../utils/activity';
-import { feedTimeline } from '../utils/feed-timeline';
+import { defaultTimeline, dayOf, paramOf } from '../utils/timelines';
 import { PAGE_SIZE } from '../utils/pager';
 
 const entries = await allActivity();
-const { timeline: tl, params } = feedTimeline(entries);
+
+/*
+  用**站点那条总轴**（「花娅年代记」）：和 /salon/、/bellie/ 同一条，不为推流另造。
+  `defaultTimeline()` 是按标题找的（站长在编辑器里改过名字也认得出），找不到才退回第一条。
+*/
+const tl = defaultTimeline();
+/** 每一条在这条轴上的位置（0~1）：按它自己那一天算，页面里的 `data-tl-param` 就是这个 */
+const params = entries.map((e) => (tl ? paramOf(tl, dayOf(e.day)) : 0.5));
 
 /** 轴一进来停在哪：最新那一条（列表第一行） */
 const firstParam = params.length ? params[0] : 0.5;
@@ -75,11 +84,13 @@ const metaJson = JSON.stringify(entries.map((e, i) => [e.day, params[i], e.who])
     data-size={String(PAGE_SIZE)}
     data-total={String(entries.length)}
   >
-    {/* ---------- 左：时间轴（和 /salon/ 同一种摆法：常驻、整屏高） ---------- */}
+    {/* ---------- 左：时间轴（和 /salon/ 同一种摆法：常驻、整屏高；用的是花娅年代记） ---------- */}
     <aside class="feeds__side" aria-label="时间轴">
-      <div class="feeds__tl" data-feed-tl data-tl-id={tl.id}>
-        <Timeline timeline={tl} pinned={true} fill={true} rail={true} defaultParam={firstParam} />
-      </div>
+      {tl && (
+        <div class="feeds__tl" data-feed-tl data-tl-id={tl.id}>
+          <Timeline timeline={tl} pinned={true} fill={true} rail={true} defaultParam={firstParam} />
+        </div>
+      )}
     </aside>
 
     {/* ---------- 中：整份推流动态 + 翻页 ---------- */}
@@ -366,7 +377,12 @@ const metaJson = JSON.stringify(entries.map((e, i) => [e.day, params[i], e.who])
      版式：左时间轴 / 中列表 / 右推流者 —— 和 /salon/ 那三栏一个摆法
      ========================================================================== */
   .feeds {
-    --feeds-rail-w: clamp(250px, 18vw, 290px);
+    /*
+      左栏宽度：和精华页那一条基本对齐（`clamp(250px, 18vw, 290px)`），
+      往宽里放一点（280~320）—— 花娅年代记两侧的年代名比推流自己的点长得多，
+      宽一点能多露出几个字；再宽就是白占推流那一栏的地方了（面板自己会裁掉超出的字）。
+    */
+    --feeds-rail-w: clamp(280px, 21vw, 320px);
     --feeds-people-w: clamp(200px, 15vw, 250px);
     --feeds-gap: clamp(1rem, 1.8vw, 1.8rem);
     display: grid;

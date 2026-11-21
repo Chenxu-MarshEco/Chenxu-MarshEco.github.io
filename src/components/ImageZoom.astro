@@ -14,9 +14,11 @@
  *   「电脑端相册bug：高清图片点击查看后直接按照原比例显示导致占满屏幕 尤其是竖屏照片
  *    无法在屏幕里完全显示 应当只让照片完全显示在屏幕里 然后在下方（横版照片）或侧方
  *    （竖版照片）预留按钮让用户以放大缩小查看」。
+ *   「另外将查看大图的按钮统一放到侧面吧 并且图片的描述简介也要调整位置到侧面
+ *    目前放在下面的图片描述会把占据一点图片画面 要保证UI和画面无重叠」
  * 所以现在打开的第一眼永远是**整张图都看得见**（等比缩到屏幕里，不裁不超出），
- * 想细看再用那两颗按钮放大 / 缩小 —— 横版照片按钮在下方，竖版照片按钮在右边。
- * （以前是"宽度贴合视口、太高的图上下滚"，那对 4000×3000 的高清照片等于一进来就被裁掉半张。）
+ * 想细看再用那两颗按钮放大 / 缩小。**关掉、图注、放大缩小统一放在右边那一栏**：
+ * 照片占左边整块、按钮和字占右边一条，两栏并排 —— 界面上没有任何东西压着画面。
  *
  * 所以现在是**两条路一起用**：
  *   ① 显式标了 `data-zoom` 的（页面内容块「＋图片」、冰室精华的截图、首页那几块）——
@@ -44,11 +46,13 @@
 ---
 
 <div class="izoom" data-izoom hidden role="dialog" aria-modal="true" aria-label="查看大图" data-orient="landscape" data-izoom-scale="1">
-  <button type="button" class="izoom__close" data-izoom-close aria-label="关闭大图（Esc）">×</button>
   <!--
-    滚动的只有这一层。**默认不让它滚**：图是等比缩到这一层里的，整张都在屏幕上；
-    只有用下面那两颗按钮放大之后，它才会超出、能上下左右拖着看。
-    × 和那排按钮留在滚动层外面，滚图的时候它们不会跟着跑掉。
+    右（手机上是右/下见样式）那一栏是**侧面**：关掉、放大缩小、图注全在那儿。
+    以前图注压在图的下沿、按钮浮在图上面 —— 那会挡住画面（站长 2026-11-21：
+    「将查看大图的按钮统一放到侧面吧 并且图片的描述简介也要调整位置到侧面
+      目前放在下面的图片描述会把占据一点图片画面 要保证UI和画面无重叠」）。
+    现在这一页只有两栏：左边整块都交给照片（唯一会滚的地方），右边一块只放字和按钮，
+    两栏并排、谁也压不到谁。
   -->
   <div class="izoom__scroll" data-izoom-scroll>
     <!--
@@ -60,16 +64,19 @@
       <img class="izoom__img" data-izoom-img alt="" decoding="async" />
     </picture>
   </div>
-  <p class="izoom__cap" data-izoom-cap hidden></p>
-  <!--
-    放大 / 缩小。位置按照片朝向换（见样式）：横版在下方、竖版在右侧。
-    读数（1×…4×）是给不了读屏的一个事实，不是说明文字。
-  -->
-  <div class="izoom__tools" data-izoom-tools>
-    <button type="button" class="izoom__tool" data-izoom-out aria-label="缩小">−</button>
-    <span class="izoom__level" data-izoom-level aria-hidden="true">1×</span>
-    <button type="button" class="izoom__tool" data-izoom-in aria-label="放大">+</button>
-  </div>
+
+  <aside class="izoom__side" data-izoom-side>
+    <button type="button" class="izoom__close" data-izoom-close aria-label="关闭大图（Esc）">×</button>
+    <p class="izoom__cap" data-izoom-cap hidden></p>
+    <!--
+      放大 / 缩小。读数（1×…4×）是给不了读屏的一个事实，不是说明文字。
+    -->
+    <div class="izoom__tools" data-izoom-tools>
+      <button type="button" class="izoom__tool" data-izoom-out aria-label="缩小">−</button>
+      <span class="izoom__level" data-izoom-level aria-hidden="true">1×</span>
+      <button type="button" class="izoom__tool" data-izoom-in aria-label="放大">+</button>
+    </div>
+  </aside>
 </div>
 
 <script>
@@ -196,12 +203,12 @@
       const nw = pic!.naturalWidth;
       const nh = pic!.naturalHeight;
       if (!nw || !nh) return;
-      const portrait = nh > nw;
-      box.dataset.orient = portrait ? 'portrait' : 'landscape';
+      /* 朝向只是给样式 / 验收看的一个事实（现在按钮和图注统一在右边那一栏，不再按朝向换位置） */
+      box.dataset.orient = nh > nw ? 'portrait' : 'landscape';
       /*
-        ⚠ 这两条必须和样式里那两段 padding 一致：
-          横版下方要留出那排按钮 + 图注的位置，竖版右侧要留出按钮那一列。
-          用 getComputedStyle 读实际值，所以改样式里的数不用回来改这里。
+        可用大小 = 照片那一栏的客户区减掉它自己的 padding。
+        ⚠ 读的是 `getComputedStyle` 的实际值，所以改样式里的留白不用回来改这里。
+        （右边那一栏不在这块里：flex 已经把宽度让出去了，图片不会压到按钮 / 图注。）
       */
       const cs = getComputedStyle(scrollEl!);
       const px = (v: string) => parseFloat(v) || 0;
@@ -416,36 +423,36 @@
     z-index: 90;
     background: rgb(10 2 16 / 0.86);
     backdrop-filter: blur(3px);
+    /*
+      两栏：左边整块给照片、右边那一栏只放字和按钮。
+      用 flex 而不是绝对定位，是因为"谁也不许压到谁"这件事最好由布局保证 ——
+      照片那一块永远只会占它自己那一栏的大小（站长 2026-11-21）。
+    */
+    display: flex;
+    align-items: stretch;
+    gap: clamp(0.6rem, 1.4vw, 1.2rem);
+    padding: clamp(0.6rem, 1.4vw, 1.2rem);
   }
   .izoom[hidden] {
     display: none;
   }
   /*
-    滚动层：默认**不滚**（图是缩进这块里面的，整张都看得见）；
+    照片那一栏：唯一会滚的地方。默认**不滚**（图是缩进这块里面的，整张都看得见）；
     放大之后才会超出，那时候才能拖 / 滚。
     `align-items: safe center`：放大后比这块高的图从**顶部**开始排，
     普通 center 在溢出时会把上半截顶到滚不到的地方（flexbox 的老毛病）。
   */
   .izoom__scroll {
-    position: absolute;
-    inset: 0;
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 0;
     display: flex;
     align-items: safe center;
     justify-content: center;
     overflow: auto;
     overscroll-behavior: contain;
-  }
-  /*
-    留白就是"给按钮留的地方"：
-      · 横版：下面那一截是那排按钮 + 图注，上面那一截是右上角那颗 ×；
-      · 竖版：右边那一列是按钮。
-    这两组数和脚本里量可用大小时读的是同一个 padding（脚本读实际值，不用手抄）。
-  */
-  .izoom[data-orient='landscape'] .izoom__scroll {
-    padding: clamp(2.6rem, 5vh, 3.4rem) clamp(0.8rem, 2vw, 1.6rem) 4.6rem;
-  }
-  .izoom[data-orient='portrait'] .izoom__scroll {
-    padding: clamp(2.6rem, 5vh, 3.4rem) 4.2rem 1.6rem clamp(0.8rem, 2vw, 1.6rem);
+    /* 这一圈留白是"图和边框之间那点空"，不再给按钮 / 图注让位置了（它们在右边那一栏） */
+    padding: clamp(0.4rem, 1vw, 0.9rem);
   }
   /* 放大之后可以拖着看：抓起手 */
   .izoom__scroll.is-panning {
@@ -472,12 +479,25 @@
   .izoom__scroll.is-panning .izoom__img {
     cursor: grabbing;
   }
-  /* 右上角那个小 ×（在滚动层外面，滚图时不会跟着跑） */
+
+  /* ---------------- 右边那一栏：关掉 / 图注 / 放大缩小 ----------------
+     从上到下：× · 图注（多了自己滚） · 那两颗按钮（贴底）。
+     宽一点（160~260）图注读着舒服；手机窄屏收到 34vw，仍然在照片右边。 */
+  .izoom__side {
+    flex: none;
+    width: clamp(150px, 15vw, 220px);
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.6rem;
+    min-height: 0;
+    padding: 0.5rem 0.55rem 0.6rem;
+    border: 1px solid rgba(255, 120, 190, 0.35);
+    border-radius: 14px;
+    background: linear-gradient(180deg, rgba(38, 6, 54, 0.92), rgba(18, 3, 28, 0.94));
+  }
   .izoom__close {
-    position: absolute;
-    z-index: 2;
-    top: max(0.6rem, env(safe-area-inset-top, 0px));
-    right: max(0.6rem, env(safe-area-inset-right, 0px));
+    align-self: flex-end;
     display: grid;
     place-items: center;
     width: 40px;
@@ -503,54 +523,38 @@
     outline: 2px solid rgba(255, 120, 190, 0.8);
     outline-offset: 2px;
   }
+  /*
+    图注：这一栏里唯一会滚的东西（手记那种长描述也不会把按钮顶出屏幕）。
+    它不在照片上，所以多少字都不会挡到画面。
+  */
   .izoom__cap {
-    position: absolute;
-    z-index: 2;
-    left: 50%;
-    /* 横版时那排按钮在正下方，图注压在它上面一层；竖版按钮在右边，图注可以贴底 */
-    bottom: 3.4rem;
-    max-width: min(52rem, 90vw);
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
     margin: 0;
-    padding: 0.3rem 0.7rem;
-    font-size: 0.82rem;
-    line-height: 1.6;
-    text-align: center;
+    padding: 0.1rem 0.15rem;
+    font-size: 0.84rem;
+    line-height: 1.75;
+    text-align: left;
     color: rgba(255, 236, 248, 0.9);
-    background: rgb(24 3 36 / 0.8);
-    border-radius: 999px;
-    transform: translateX(-50%);
-  }
-  .izoom[data-orient='portrait'] .izoom__cap {
-    bottom: 0.7rem;
-    max-width: min(52rem, calc(100vw - 5.4rem));
+    scrollbar-width: thin;
   }
   .izoom__cap[hidden] {
     display: none;
   }
 
-  /* ---------------- 放大 / 缩小 ----------------
-     「下方（横版照片）或侧方（竖版照片）预留按钮」—— 位置跟着照片朝向换。 */
+  /* ---------------- 放大 / 缩小（统一贴在右边那一栏的底部） ---------------- */
   .izoom__tools {
-    position: absolute;
-    z-index: 2;
+    flex: none;
     display: flex;
     align-items: center;
+    justify-content: center;
     gap: 0.4rem;
-    padding: 0.3rem 0.4rem;
+    padding: 0.28rem 0.35rem;
     border: 1px solid rgba(255, 120, 190, 0.42);
     border-radius: 999px;
     background: rgb(24 3 36 / 0.88);
-  }
-  .izoom[data-orient='landscape'] .izoom__tools {
-    left: 50%;
-    bottom: 0.7rem;
-    transform: translateX(-50%);
-  }
-  .izoom[data-orient='portrait'] .izoom__tools {
-    right: 0.7rem;
-    top: 50%;
-    flex-direction: column;
-    transform: translateY(-50%);
   }
   .izoom__tool {
     display: grid;
@@ -588,23 +592,42 @@
     text-align: center;
     color: rgba(255, 226, 244, 0.8);
   }
-  /* 手机上没地方放"侧方"那一列（竖版照片一放，宽只剩一半）：一律放下面 */
+  /*
+    窄屏：还是两栏（按钮 / 图注都在右边那一栏，照样不压画面），
+    只是那一栏收窄、字收小 —— 竖版照片本来就要靠放大按钮看，栏太宽就更没地方给图了。
+  */
   @media (max-width: 760px) {
-    .izoom[data-orient='landscape'] .izoom__scroll,
-    .izoom[data-orient='portrait'] .izoom__scroll {
-      padding: 2.8rem 0.6rem 4.4rem;
+    .izoom {
+      gap: 0.4rem;
+      padding: 0.4rem;
     }
-    .izoom[data-orient='portrait'] .izoom__tools {
-      right: auto;
-      left: 50%;
-      top: auto;
-      bottom: 0.7rem;
-      flex-direction: row;
-      transform: translateX(-50%);
+    .izoom__side {
+      width: clamp(96px, 26vw, 150px);
+      gap: 0.4rem;
+      padding: 0.35rem 0.4rem 0.45rem;
+      border-radius: 12px;
     }
-    .izoom[data-orient='portrait'] .izoom__cap {
-      bottom: 3.4rem;
-      max-width: min(52rem, 92vw);
+    .izoom__close {
+      width: 32px;
+      height: 32px;
+      font-size: 21px;
+    }
+    .izoom__cap {
+      font-size: 0.72rem;
+      line-height: 1.6;
+    }
+    .izoom__tool {
+      width: 30px;
+      height: 30px;
+      font-size: 17px;
+    }
+    .izoom__level {
+      font-size: 0.68rem;
+      min-width: 2em;
+    }
+    .izoom__tools {
+      gap: 0.25rem;
+      padding: 0.2rem 0.25rem;
     }
   }
 </style>

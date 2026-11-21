@@ -165,7 +165,7 @@
     {
       "id": "log-20261121",
       "date": "2026.11.21",
-      "text": "**圣经 34 天入库**（10-03～11-18，170 条）：认不出的号补进 `aliases.json`，条目从早到晚。\n\n**轴不跟滚**：名单只取一次、`tl:reindex` 不冒泡、param 按构建那天算（改成按 `data-tl-date` 现算、分块插进来也重算）、手动滚过轴或跳转后按「是不是同一条」早退（改成比 param；整簇换掉时作废缓存）。\n\n**分块装载不动位置**：插前记视口最上面那条、插完按元素钉回去，关掉 scroll anchoring；够不着顶时上滑受阻、中间塔吊转圈，取不到就一直转而画面不动。\n\n**这一轮**：手机端曼沫砾总线改回左右两栏（原来叠成上下、行被压扁）；`/feed/` 加时间轴 —— 只给当前这一页的条目打 `data-tl-param`、翻页重标，点轴翻页滚过去，右边一栏是推流者（点亮只看某人）；头像补 `contributors` 名单兜底（Shema-Sunf / EtherARM / MemoriMonita）；相册灯箱改成整张缩进屏幕 + 放大缩小按钮（横版在下、竖版在右，手机一律在下），放大之后才出现滚动；手机相册按容器算列数（整页宽仍三列）；涣愿终池在精华下面加「圣经」（正文 + 评语）；手机浮卡第一下只开卡、第二下才跳，成员名片点住不自己缩回。\n\n验收：feed-timeline 15、tap-gate 12、preview-parity 13（本地预览与产物逐像素一致）、cistern 56、image-zoom 44、album 17、smoke 166、home-cards 53、home-align 175、salon-chunks 61、bellie-timeline 34、chunk-guard 20 全过。"
+      "text": "**圣经 34 天入库**（10-03～11-18，170 条）：认不出的号补进 `aliases.json`，条目从早到晚。\n\n**轴不跟滚**：名单只取一次、`tl:reindex` 不冒泡、param 按构建那天算（改成按 `data-tl-date` 现算、分块插进来也重算）、手动滚过轴或跳转后按「是不是同一条」早退（改成比 param；整簇换掉时作废缓存）。\n\n**分块装载不动位置**：插前记视口最上面那条、插完按元素钉回去，关掉 scroll anchoring；够不着顶时上滑受阻、中间塔吊转圈，取不到就一直转而画面不动。\n\n**这一轮**：手机端曼沫砾总线改回左右两栏（原来叠成上下、行被压扁）；`/feed/` 加时间轴 —— **用花娅年代记那条总轴**（不另造），只给当前这一页的条目打 `data-tl-param`、翻页重标，点轴翻到最近那一条，右边一栏是推流者（点亮只看某人）；头像补 `contributors` 名单兜底（Shema-Sunf / EtherARM / MemoriMonita）；相册灯箱整张缩进屏幕，关掉 / 图注 / 放大缩小**统一收到右边那一栏**（不再压画面），放大之后才滚动；手机相册按容器算列数（整页宽仍三列）；涣愿终池在精华下面加「圣经」（正文 + 评语）；手机浮卡第一下只开卡、第二下才跳，成员名片点住不自己缩回。\n\n验收：feed-timeline 16、tap-gate 12、preview-parity 13（本地预览与产物逐像素一致）、cistern 56、image-zoom 46、album 17、smoke 166、home-cards 53、home-align 175、salon-chunks 61、bellie-timeline 34、chunk-guard 20 全过。"
     }
   ]
 }

@@ -229,6 +229,19 @@ const STATE = `(() => {
       outDisabled: !!box.querySelector('[data-izoom-out]')?.disabled,
       inDisabled: !!box.querySelector('[data-izoom-in]')?.disabled,
     } : null,
+    /* 右边那一栏（关掉 / 图注 / 按钮都在这儿）以及图注自己的位置：用来证明"界面不压画面" */
+    side: (() => {
+      const s = box && box.querySelector('[data-izoom-side]');
+      if (!s) return null;
+      const q = s.getBoundingClientRect();
+      return { l: Math.round(q.left), t: Math.round(q.top), r: Math.round(q.right), b: Math.round(q.bottom), inSide: !!s.querySelector('[data-izoom-cap]') };
+    })(),
+    cap: (() => {
+      const c = box && box.querySelector('[data-izoom-cap]');
+      if (!c || c.hidden) return null;
+      const q = c.getBoundingClientRect();
+      return { l: Math.round(q.left), t: Math.round(q.top), r: Math.round(q.right), b: Math.round(q.bottom) };
+    })(),
     boxZ: box ? getComputedStyle(box).zIndex : '',
     htmlLocked: document.documentElement.classList.contains('is-zoomed'),
     btn: b ? { x: Math.round(b.left + b.width / 2), y: Math.round(b.top + b.height / 2), w: Math.round(b.width), right: Math.round(b.right), top: Math.round(b.top) } : null,
@@ -457,9 +470,26 @@ if (notePage) {
   check('③★ 打开第一眼：整张竖长截图都在屏幕里（不溢出、不被裁）',
     inView(diaryOpen.rect) && diaryOpen.shown.h <= diaryOpen.vh,
     `图 ${JSON.stringify(diaryOpen.shown)} 位置 ${JSON.stringify(diaryOpen.rect)} 视口 ${diaryOpen.vw}×${diaryOpen.vh}`);
-  check('③★ 竖版照片的放大 / 缩小按钮在右边（侧方），不是压在图下面',
-    diaryOpen.zoom?.orient === 'portrait' && !!diaryOpen.zoom.tools && diaryOpen.zoom.tools.l > diaryOpen.rect.r - 2,
-    JSON.stringify({ orient: diaryOpen.zoom?.orient, tools: diaryOpen.zoom?.tools, img: diaryOpen.rect }));
+  /*
+    站长 2026-11-21：「将查看大图的按钮统一放到侧面吧 并且图片的描述简介也要调整位置到侧面
+    目前放在下面的图片描述会把占据一点图片画面 要保证UI和画面无重叠」——
+    所以这里不只量"在右边"，而是量"照片那一块和右边那一栏**不重叠**"：
+    照片的右沿必须 ≤ 那一栏的左沿，图注 / 按钮都在那一栏里面。
+  */
+  const noOverlap = !!diaryOpen.rect && !!diaryOpen.side &&
+    diaryOpen.rect.r <= diaryOpen.side.l + 1 &&
+    !!diaryOpen.zoom?.tools &&
+    diaryOpen.zoom.tools.l >= diaryOpen.side.l - 1 &&
+    diaryOpen.zoom.tools.l + diaryOpen.zoom.tools.w <= diaryOpen.side.r + 1;
+  check('★ 右边那一栏（关掉 / 图注 / 放大缩小）和照片**不重叠**：图的右沿在栏的左沿以内',
+    noOverlap,
+    JSON.stringify({ 图: diaryOpen.rect, 栏: diaryOpen.side, 按钮: diaryOpen.zoom?.tools }));
+  check('★ 图注也搬到了那一栏里（不再压在图下方）',
+    !!diaryOpen.side?.inSide && !!diaryOpen.cap && diaryOpen.cap.l >= diaryOpen.side.l - 1 && diaryOpen.cap.r <= diaryOpen.side.r + 1,
+    JSON.stringify({ cap: diaryOpen.cap, side: diaryOpen.side }));
+  check('★ 竖长截图的图注真的显示出来了（标题「那天的群分析报告」）',
+    !!diaryOpen.cap && /群分析报告/.test(await cdp.ev(`document.querySelector('[data-izoom-cap]').textContent`)),
+    await cdp.ev(`document.querySelector('[data-izoom-cap]').textContent`));
   check('③ 刚打开是 1×（缩小那颗是灰的、放大那颗能按）',
     diaryOpen.zoom?.level === '1' && diaryOpen.zoom.outDisabled === true && diaryOpen.zoom.inDisabled === false,
     JSON.stringify(diaryOpen.zoom));

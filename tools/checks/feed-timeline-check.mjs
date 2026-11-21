@@ -6,13 +6,15 @@
  *    时间轴跟着动态滚动 注意推流动态页用的是翻页模式 可能需要特殊适配」
  *   「为推流也右边也加上和精华 冰山一样的用户推流数统计」
  *   「推流动态页头像抓取依然不全 没有抓到 Shema_Sunf EtherARM Memori_Monita 等人的头像」
+ *   「推流动态也用花娅年代记 不要用自己做的时间轴」
  *
  * 所以这里盯这些事：
- *   ① 左边挂着一条常驻时间轴、右边一栏是推流者（头像 + 名字 + 条数）；
+ *   ① 左边挂着一条常驻时间轴 —— 而且就是**花娅年代记**（id 对得上、点也是它自己的）；
+ *      右边一栏是推流者（头像 + 名字 + 条数）；
  *   ② **只有当前这一页**的条目带 `data-tl-param`（翻页藏起来那些不能留在名单里）；
  *   ③ 滚页面 → 轴顶那个日期 = 视口中线那一条的日期；
  *   ④ 翻页 → 标记跟着换一批，轴照样对得上；
- *   ⑤ 点轴上的塔吊 → 翻到那一条所在的页、滚过去；
+ *   ⑤ 点轴上的塔吊 → 翻到**离那个位置最近**的那一条所在的页、滚过去；
  *   ⑥ 点亮一个推流者 → 只剩他的那些，翻页条收起；再点一下回到全部；
  *   ⑦ 头像：三个人（提交邮箱没绑 GitHub 的那几位）也有图和链接。
  *
@@ -174,6 +176,9 @@ try {
       hasTl: !!tl,
       pinned: tl ? tl.classList.contains('is-pinned') : false,
       side: !!document.querySelector('.feeds__side'),
+      tlId: tl ? tl.dataset.tlId || '' : '',
+      points: document.querySelectorAll('.tl__item').length,
+      firstPointDate: (document.querySelector('.tl__item') || {}).dataset ? (document.querySelector('.tl__item').dataset.date || '') : '',
       people,
       pager: !!document.querySelector('[data-pager]'),
       items: document.querySelectorAll('[data-pager-item]').length,
@@ -181,6 +186,15 @@ try {
   })()`);
   check('★ /feed/ 左边挂着一条常驻时间轴（和精华 / 圣经同一个摆法）',
     shell.hasTl === true && shell.pinned === true && shell.side === true, JSON.stringify({ hasTl: shell.hasTl, pinned: shell.pinned }));
+
+  /* 站长 2026-11-21：「推流动态也用花娅年代记 不要用自己做的时间轴」 */
+  const tlFile = path.resolve('src/data/timelines.json');
+  const tlRaw = fs.existsSync(tlFile) ? JSON.parse(fs.readFileSync(tlFile, 'utf8')) : { timelines: [] };
+  const huaya = (tlRaw.timelines || []).find((t) => t.title === '花娅年代记') || {};
+  const huayaPoints = (huaya.points || []).length;
+  check('★ 挂的就是**花娅年代记**那条轴（id 对得上、点也是它自己的，不是现造的）',
+    !!huaya.id && shell.tlId === huaya.id && shell.points === huayaPoints,
+    JSON.stringify({ 页面: shell.tlId, 花娅年代记: huaya.id, 页面点: shell.points, 轴的点: huayaPoints }));
   check('★ 右边有推流者那一栏（头像 + 名字 + 条数），条数和数据对得上',
     shell.people.length === new Set(meta.map((r) => r[2])).size &&
       shell.people.every((p) => /^\d+ 条$/.test(p.count)) &&
@@ -242,13 +256,26 @@ try {
     far.click();
     return { param, date };
   })()`);
-  check('轴上有可以点的刻度（一天一个点）', !!target && Number.isFinite(target.param), JSON.stringify(target));
+  check('轴上有可以点的塔吊 / 刻度（花娅年代记自己的那些点）', !!target && Number.isFinite(target.param), JSON.stringify(target));
   if (target) {
+    /*
+      花娅年代记上的点是**历史事件**的日期，推流只覆盖最近那两个月 ——
+      所以"点轴"的语义和精华页一样：跳到**离那个位置最近的那一条推流**，
+      不是"跳到那一天"（那一天可能根本没人推流）。期望值在这里按 meta 算好。
+    */
+    let wantIdx = 0;
+    let wantD = Infinity;
+    meta.forEach((r, i) => {
+      const d = Math.abs(Number(r[1]) - target.param);
+      if (d < wantD) { wantD = d; wantIdx = i; }
+    });
+    const wantDay = meta[wantIdx][0];
+    const wantPage = String(Math.floor(wantIdx / 37) + 1);
     await sleep(1900);
     const after = await cdp.ev(STATE);
-    check('★ 点轴上那一个刻度：翻到它所在的页，而且滚过去了（中线那一条就是那天）',
-      after.page !== s5.page && after.nearestDay === target.date && after.now === after.nearestDay,
-      JSON.stringify({ 点的是: target.date, 页: after.page, 轴: after.now, 列表: after.nearestDay }));
+    check('★ 点轴上的点：翻到**离那儿最近**的那一条所在的页，滚过去，轴和列表也对得上',
+      after.nearestDay === wantDay && after.now === after.nearestDay && after.page === wantPage,
+      JSON.stringify({ 点的是: target.date, 期望: { 天: wantDay, 页: wantPage }, 实到: { 天: after.nearestDay, 页: after.page, 轴: after.now } }));
   }
 
   /* ---------------- ⑥ 点亮一个推流者 = 只看他的 ---------------- */
