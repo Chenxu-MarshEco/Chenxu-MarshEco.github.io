@@ -17,6 +17,14 @@
  *   这和「推流动态读 git 提交说明」是同一个思路：各人写各人的文件，结构上不可能撞车。
  *   站点这边把整个目录按日期倒序读进来，不需要任何合并步骤。
  *
+ * 2026-11-22 加的第二条来源（站长：「每次收到lingyi的推流后都自动获取每天的这个json
+ * 并把里面的群圣经部分转录到铃忆圣经里」）：
+ *   lingyi 每天推上来的那份完整群总结（`public/data/group-summaries/*.json`）里
+ *   `analysis_result.statistics.golden_quotes` 就是当天的五条群圣经。这里在构建期
+ *   直接读它，**同一天已经有天文件就以天文件为准**（lingyi 自己投的那份更准，
+ *   推导出来的不覆盖它）。于是推送一上来、部署一跑，圣经页就有了，中间不需要任何人跑脚本。
+ *   想看某天会抄哪五条：`node tools/bellie/from-summary.mjs`。
+ *
  * 一条的形状：
  *   { time: "12:34", qq: "2567645574", text: "群友原句", comment: "铃忆的吐槽" }
  *   · time    发送时间（HH:MM，可省）
@@ -32,6 +40,11 @@ import path from 'node:path';
 import config from '../data/bellie.json';
 import { salonMembers, type SalonMember } from './salon';
 import { dayOf, paramOf, type Timeline } from './timelines';
+/*
+ * 群总结里的群圣经（2026-11-22 加）。解析规则在 tools/bellie/summary.mjs 一处，
+ * 构建期和 `node tools/bellie/from-summary.mjs` 共用，不会各写一套对不上。
+ */
+import { readSummaryDays } from '../../tools/bellie/summary.mjs';
 
 export interface BibleEntry {
   /** 稳定 id：`b` + 日期（去横线）+ 当天序号，例如 b20261120-3 */
@@ -56,6 +69,8 @@ export interface BibleEntry {
 
 interface DayFile {
   date?: string;
+  /** 这一天是从哪来的（群总结推导出来的会写那份 JSON 的路径；天文件没有这一项） */
+  source?: string;
   entries?: { time?: string; qq?: string | number; text?: string; comment?: string; name?: string }[];
 }
 
@@ -132,13 +147,13 @@ export function qqToNames(s: string): string {
 const str = (v: unknown): string => String(v ?? '').trim();
 
 function readDays(): DayFile[] {
+  const out: DayFile[] = [];
   let files: string[] = [];
   try {
     files = fs.readdirSync(DAYS_DIR).filter((f) => f.endsWith('.json'));
   } catch {
-    return [];
+    /* 目录还没建（比如刚克隆、还没人投过）：不算错，下面还会看群总结 */
   }
-  const out: DayFile[] = [];
   for (const f of files) {
     try {
       const data = JSON.parse(fs.readFileSync(path.join(DAYS_DIR, f), 'utf8')) as DayFile;
@@ -149,6 +164,17 @@ function readDays(): DayFile[] {
     } catch {
       /* 坏文件跳过：一天写坏了不该把整页弄没 */
     }
+  }
+  /*
+   * 群总结里的群圣经（2026-11-22）：lingyi 每天推上来的那份完整群总结里
+   * `statistics.golden_quotes` 就是当天的五条。**天文件优先** —— 同一天已经有人投过
+   * 天文件就跳过，推导永远不覆盖直接投递（那是机器人自己挑的，比按金句抄更准）。
+   * 只读不写：构建时一个字节都不往仓库里落。
+   */
+  const covered = new Set(out.map((d) => String(d.date)));
+  for (const day of readSummaryDays({ root: process.cwd() }).days) {
+    if (covered.has(day.date)) continue;
+    out.push({ date: day.date, source: day.file, entries: day.entries as DayFile['entries'] });
   }
   return out.sort((a, b) => String(b.date).localeCompare(String(a.date)));
 }

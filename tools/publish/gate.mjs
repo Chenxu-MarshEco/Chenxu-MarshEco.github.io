@@ -90,6 +90,14 @@ const ALLOW = [
   */
   { why: '群精华：数据（salon.json 和它的备份）', re: /^src\/data\/salon\.json(\.bak)?$/i },
   { why: '群精华：那几条的配图（精华 id + 序号）', re: /^public\/img\/salon\/e[0-9a-z-]+-\d+\.(jpe?g|png|webp|gif)$/i },
+  /*
+    群总结（2026-11-22 加）：lingyi 每天推「铃忆日记」时附带的那份完整群总结
+    （`public/data/group-summaries/2026-11-21-group_燃儿求开组_…json`）—— /bellie/
+    的群圣经就是从它推导出来的（见 src/utils/bellie.ts）。lingyi 现在按"人"（协作者）
+    就放行了；万一哪天不在名单里，漏了这一条 gate 会把**整次发布**拦下来：
+    日记进得了仓库、圣经页永远不出现 —— 那种"看起来跑成功了、其实没上线"最难查。
+  */
+  { why: '群总结：机器人每天附带的那份 JSON（群圣经从它来）', re: /^public\/data\/group-summaries\/[^/]+\.json$/i },
 ];
 
 /* ---------------------------------------------------------------- 参数 */

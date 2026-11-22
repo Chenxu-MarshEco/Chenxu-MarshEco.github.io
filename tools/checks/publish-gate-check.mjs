@@ -264,14 +264,35 @@ const cases = [
     allow: false,
   },
   {
+    /*
+     * ⚠ 这条原来拿 `src/data/salon.json` 当"越界"的例子 —— 2026-11-12 起它是**放行**的
+     *   （群精华每月同步要提交它），于是这条从那天起就一直在报 FAIL（不是功能坏了，
+     *   是例子过时了）。2026-11-22 换成真的越界文件：页面源码。
+     */
     name: '一个谁都不是的账号：日记 + 越界混在同一次推送里 → **拦住**（整次都要审）',
     args: {
       actor: 'random-guest',
       event: 'push',
-      files: ['src/content/notes/2026-10-06-a.md', 'src/data/salon.json'],
+      files: ['src/content/notes/2026-10-06-a.md', 'src/pages/index.astro'],
     },
     allow: false,
-    badIncludes: 'src/data/salon.json',
+    badIncludes: 'src/pages/index.astro',
+  },
+  /* ---- 群总结（2026-11-22 加）：lingyi 每天附带的那份 JSON，/bellie/ 的群圣经从它推导 ---- */
+  {
+    name: '★ 群总结的 JSON（lingyi 每天附带的那份）→ 放行（铃忆圣经从它来）',
+    args: {
+      actor: 'random-guest',
+      event: 'push',
+      files: ['public/data/group-summaries/2026-11-21-group_燃儿求开组_20261121_230000_x.json'],
+    },
+    allow: true,
+  },
+  {
+    name: '★ 群总结目录里塞一个不是 JSON 的东西 → 拦住',
+    args: { actor: 'random-guest', event: 'push', files: ['public/data/group-summaries/我自己写的.txt'] },
+    allow: false,
+    badIncludes: 'public/data/group-summaries/我自己写的.txt',
   },
   {
     name: '★ 免审名单里的人（机器人）改首页版块数据 → **放行**（用户 2026-10-07 的要求：协作者直接推流）',
