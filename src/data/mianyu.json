@@ -175,7 +175,7 @@
     {
       "id": "log-20261123",
       "date": "2026.11.23",
-      "text": "修 11-20 那条圣经评语里的 [user-004]：铃忆写评语点人用的是群总结导出时的匿名号（不是 QQ 号，qqToNames 认不出），原样露在卡片上。现在按同一份 JSON 的 user_analysis[user-00X].nickname 换成群名片、再经别名表换成站里的成员名，方括号一起去掉；号码按数字对齐（user_4 / user_0004 也认），对不出名字的原样留着并在解析时记一笔；--write 落成天文件时也带 users 表，推不推天文件都换得回来。验收：bellie-summary-check 18/18（新增：匿名号都找得到名字、数据 / 分块 / 页面零 user-00X、换出来的是人名，其余仍逐字对），cistern 56、bellie-timeline-sync 34、site-smoke 168、a11y 与裂图干净。"
+      "text": "修圣经评语里点人用的匿名号（user-00x）：铃忆写评语点人用的是群总结导出时的号（不是 QQ 号，qqToNames 认不出），于是原样露在卡片上，11-20 与 11-22 那两天都有。现在按同一份 JSON 的 user_analysis[user-00X].nickname 换成群名片、再经别名表换成站里的成员名，方括号一起去掉；号码按数字对齐（user_4 / user_0004 也认），对不出名字的原样留着并在解析时记一笔；--write 落成天文件时也带 users 表，推不推天文件都换得回来。今天 lingyi 的 11-22 群总结（含 3 处匿名号）已自动进来，圣经 185 条，页面上零残留。验收：bellie-summary-check 18/18（新增：匿名号都找得到名字、数据 / 分块 / 页面零 user-00X、换出来的是人名，其余仍逐字对），cistern 56、bellie-timeline-sync 34、site-smoke 168、a11y 与裂图干净。另外发布时 git add -A 把工作区里那份 pnpm-lock.yaml（去掉 @pnpm/exe 的 25 行）一起提交了（24336ca），当场 revert 还回去（391b157），线上已重新部署。"
     }
   ]
 }
