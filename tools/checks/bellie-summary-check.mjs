@@ -48,9 +48,59 @@ const raw = fs
     const quotes = Array.isArray(json?.analysis_result?.statistics?.golden_quotes)
       ? json.analysis_result.statistics.golden_quotes
       : [];
-    return { file: f, date, quotes };
+    /* 这份群总结自带的「匿名号 → 群名片」（评语里点人用的就是那个号） */
+    const names = {};
+    const namesByNum = {};
+    for (const [id, v] of Object.entries(json?.analysis_result?.user_analysis ?? {})) {
+      if (v?.nickname) {
+        names[id] = String(v.nickname);
+        namesByNum[String(Number((id.match(/\d+/) ?? [''])[0] || 0))] = String(v.nickname);
+      }
+    }
+    return { file: f, date, quotes, names, namesByNum };
   })
   .filter((s) => /^\d{4}-\d{2}-\d{2}$/.test(s.date) && s.quotes.length > 0);
+
+/** 站里的成员名（判断"换成了人"用；不从站点那边借解析逻辑） */
+const MEMBER_NAMES = (() => {
+  try {
+    const j = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'src', 'data', 'salon.json'), 'utf8'));
+    return (Array.isArray(j?.members) ? j.members : []).map((m) => String(m?.name ?? '')).filter(Boolean);
+  } catch {
+    return [];
+  }
+})();
+
+/** 把 `[user-004]` / 裸的 `user-004` 从文字里摘掉（两边都摘了再比，才看得见"别的字有没有被改"） */
+const stripIds = (s) =>
+  String(s ?? '')
+    .replace(/\[\s*user[-_]?\d+\s*\]/gi, ' ')
+    .replace(/(?<![\w-])user[-_]?\d+(?![\w-])/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+/** 匿名号写法可能不一样（`user-004` / `user_4`），一律按数字对齐 */
+const idsIn = (s) => [...String(s ?? '').matchAll(/\buser[-_]?\d+\b/gi)].map((m) => m[0]);
+const numOf = (id) => {
+  const m = String(id).match(/\d+/);
+  return m ? String(Number(m[0])) : '';
+};
+/** 这一天某个匿名号对应的群名片（先按原样查，再按数字查） */
+const nickOf = (day, id) => day.names?.[id] ?? day.namesByNum?.[numOf(id)] ?? '';
+
+/**
+ * 比对用的归一化：把匿名号和**人名**都抹掉再看剩下的字。
+ * 评语里那处 `[user-004]` 会被换成 `Raw`，两边都抹掉人名之后才能证明
+ * 「除了换名字，一个字都没动」。
+ */
+const NAME_POOL = [...new Set([...MEMBER_NAMES, ...raw.flatMap((s) => [...Object.values(s.names), ...Object.values(s.namesByNum)])])]
+  .filter((n) => n && n.length >= 2)
+  .sort((a, b) => b.length - a.length);
+const normalize = (s) => {
+  let t = stripIds(s);
+  for (const n of NAME_POOL) if (t.includes(n)) t = t.split(n).join(' ');
+  return t.replace(/\s+/g, ' ').trim();
+};
 
 const daysOnDisk = new Map();
 for (const f of fs.readdirSync(DAYS).filter((n) => n.endsWith('.json'))) {
@@ -107,6 +157,11 @@ try {
   check('条目 id 不重复（同一条没被抄两遍）', dupIds.length === 0, dupIds.slice(0, 5).join('、') || '无重复');
 
   /* ------------------------------ ② 正文/评语/署名：拿原始 JSON 逐字对一遍 */
+  /*
+   * ⚠ 2026-11-22 起评语里的 `[user-004]` 会被换成成员名（站长：「群成员都变成了
+   *   user-00x」）。所以比对时**两边都把匿名号摘掉**再比 —— 这样既证明"除了换名字，
+   *   一个字都没动"，也不会因为换名字就误报。
+   */
   const fieldBad = [];
   for (const s of raw) {
     if (daysOnDisk.has(s.date)) continue; // 天文件优先的那天不看推导
@@ -119,12 +174,57 @@ try {
     want.forEach((q, i) => {
       const g = got[i];
       if (!g) return fieldBad.push(`${s.date}#${i + 1} 少了`);
-      if (g.text.trim() !== String(q.content).trim()) fieldBad.push(`${s.date}#${i + 1} 正文对不上`);
-      if (g.comment.trim() !== String(q.reason).trim()) fieldBad.push(`${s.date}#${i + 1} 评语对不上`);
+      if (normalize(g.text) !== normalize(q.content)) fieldBad.push(`${s.date}#${i + 1} 正文对不上`);
+      if (normalize(g.comment) !== normalize(q.reason)) fieldBad.push(`${s.date}#${i + 1} 评语对不上`);
       if (!g.member || g.member === q.user_id) fieldBad.push(`${s.date}#${i + 1} 署名还是个匿名 user_id（${g.member}）`);
     });
   }
-  check('正文、评语跟群总结里的 content / reason 一字不差，署名认得出成员', fieldBad.length === 0, fieldBad.slice(0, 4).join('；') || `${raw.length} 天全对`);
+  check('正文、评语跟群总结里的 content / reason 一字不差（只允许匿名号换成名字），署名认得出成员', fieldBad.length === 0, fieldBad.slice(0, 4).join('；') || `${raw.length} 天全对`);
+
+  /* -------- ②b 匿名号 user-00X：先查数据够不够换，再查页面上真的换成了人 -------- */
+  const noName = [];
+  for (const s of raw) {
+    for (const q of s.quotes) {
+      for (const id of [...idsIn(q.content), ...idsIn(q.reason)]) {
+        if (!nickOf(s, id)) noName.push(`${s.date}:${id}`);
+      }
+    }
+  }
+  check(
+    '★★ 评语里点到的 user-00X 都能在同一份群总结里找到名字（找不到就一定会露在页面上）',
+    noName.length === 0,
+    noName.slice(0, 5).join('、') || '都有名字'
+  );
+
+  const notPerson = [];
+  let idQuotes = 0;
+  for (const s of raw) {
+    if (daysOnDisk.has(s.date)) continue;
+    const got = byDate.get(s.date) ?? [];
+    s.quotes.slice(0, 5).forEach((q, i) => {
+      const ids = [...idsIn(q.content), ...idsIn(q.reason)];
+      if (!ids.length) return;
+      idQuotes += 1;
+      const g = got[i];
+      if (!g) return;
+      const text = `${g.text} ${g.comment}`;
+      if (/\buser[-_]?\d+\b/i.test(text)) notPerson.push(`${s.date}#${i + 1} 还留着 user-00X`);
+      /* 换出来得是个"人"：成员名，或者那块群名片本身（认不出来的成员保留群名片） */
+      const known = ids.every((id) => {
+        const nick = nickOf(s, id);
+        return [nick, ...MEMBER_NAMES].some((t) => t && g.comment.includes(t));
+      });
+      if (!known) notPerson.push(`${s.date}#${i + 1} 评语里没换成名字（${ids.join('/')}）`);
+    });
+  }
+  check(
+    '★★ 评语里点到的群成员换成了名字（不是 user-00X，也不是空）',
+    notPerson.length === 0 && (idQuotes > 0 || raw.length === 0),
+    notPerson.slice(0, 4).join('；') || `${idQuotes} 条点过人的评语都换成了名字`
+  );
+
+  const strayInData = entries.filter((e) => /\buser[-_]?\d+\b/i.test(`${e.text} ${e.comment}`)).length;
+  check('★ /bellie.json 里一个 user-00X 都没有（正文 / 评语）', strayInData === 0, `${strayInData} 条`);
 
   /* ---------------------------- ③ 同一天已经有天文件时，以天文件为准（不覆盖） */
   const shadowed = [];
@@ -142,6 +242,7 @@ try {
 
   /* ------------------------------------- ④ /bellie.json 和分块接口对得上 */
   let chunkTotal = 0;
+  let chunkStray = 0;
   const chunkIds = new Set();
   for (let i = 0; ; i++) {
     let c;
@@ -152,6 +253,7 @@ try {
     }
     const html = String(c?.html ?? '');
     if (!html) break;
+    chunkStray += [...html.matchAll(/\buser[-_]?\d+\b/gi)].length;
     /* 分块接口给的是排好的标记（不是数组）：数卡片、抠 id */
     const ids = [...html.matchAll(/class="salon__item" id="([^"]+)"/g)].map((m) => m[1]);
     for (const id of ids) {
@@ -162,6 +264,7 @@ try {
   }
   check('分块接口里的条数和 /bellie.json 一致（推到站点上不会缺一块）', chunkTotal === entries.length, `${chunkTotal} vs ${entries.length}`);
   check('分块接口里也没有重复 id', chunkIds.size === chunkTotal, `${chunkIds.size} / ${chunkTotal}`);
+  check('★ 分块接口里也没有一个 user-00X', chunkStray === 0, `${chunkStray} 处`);
 
   /* ------------------------------------------------------------ ⑤ 真的渲染 */
   let target = null;
@@ -202,10 +305,12 @@ try {
       italic: cs ? cs.fontStyle : null,
       smaller: cs && ts ? parseFloat(cs.fontSize) < parseFloat(ts.fontSize) : null,
       tlId: (document.querySelector('[data-tl-id]') || {}).getAttribute?.('data-tl-id') ?? null,
+      stray: (document.body.innerText.match(/\\buser[-_]?\\d+\\b/gi) || []).length,
     };
   })()`);
   check('页面上真的渲染出今天这条（不是只在 JSON 里）', !!visible.found, JSON.stringify(visible));
   check('评语是卡片下面的小字斜体', visible.italic === 'italic' && visible.smaller === true, JSON.stringify({ italic: visible.italic, smaller: visible.smaller }));
+  check('★ 整页文字里没有一个 user-00X（评语里点的人都成了名字）', visible.stray === 0, `${visible.stray} 处`);
   const paramNum = Number(visible.param);
   check('这一条挂着时间轴的位置（0~1，点轴上刻度找得到它）', visible.param !== null && Number.isFinite(paramNum) && paramNum >= 0 && paramNum <= 1, `${visible.param}`);
   check('圣经页挂的还是那条时间轴', !!visible.tlId, `${visible.tlId}`);

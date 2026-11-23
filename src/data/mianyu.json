@@ -10,7 +10,7 @@
     "「助手日志」块（page 里 type: \"logs\"）—— 换页面/挪位置都行，内容始终读这一份。"
   ],
   "title": "眠鱼志",
-  "updated": "2026.11.22",
+  "updated": "2026.11.23",
   "entries": [
     {
       "id": "log-2026914",
@@ -170,7 +170,12 @@
     {
       "id": "log-20261122",
       "date": "2026.11.22",
-      "text": "lingyi 每天推上来的完整群总结（public/data/group-summaries/*.json）里，statistics.golden_quotes 那五条（content 原句 / sender / reason 评语）现在由站点在构建期直接并进 /bellie/：推送一上来、部署一跑就有，中间不用谁再跑脚本。规则是同一天已经有 days/<日期>.json 就以它为准，推导不覆盖直接投递。解析只在 tools/bellie/summary.mjs 一处（构建期和命令行共用）；新增 tools/bellie/from-summary.mjs 只读地列出每天会抄哪五条，加 --write 才落成天文件。顺手让发布门卫放行群总结 JSON —— 漏了这条会把整次发布拦下来（日记进得去、圣经页永远不出现）；publish-gate-check 里那条拿 salon.json 当「越界」的用例 2026-11-12 起就过时了一直红，换成页面源码，并补上群总结的放行 / 拦截两条。验收：新的 bellie-summary-check 13/13（正文评语跟原始 JSON 逐字对、不重复、天文件优先、分块条数一致、页面上真渲染且挂着时间轴），bellie-timeline-sync 34、site-smoke 167、cistern 56、发布门卫 49、a11y 与裂图干净。另外 home-daily-card-check 今天红两条，在改动前的 db96ba3 上重跑一样红（今天那条精华的图被浮层的 maxHeight 挤到浮层外，鼠标落不到图上，放大层自然不亮），这轮没动它。"
+      "text": "lingyi 每天推的完整群总结（public/data/group-summaries/*.json）里 statistics.golden_quotes 那五条，现在由站点构建期直接并进 /bellie/：推送一上来、部署一跑就有，不用谁再跑脚本；同一天已有 days/<日期>.json 就以天文件为准，推导不覆盖直接投递。解析只在 tools/bellie/summary.mjs 一处（构建期与命令行共用），新增 from-summary.mjs 只读列出每天会抄哪五条、加 --write 才落天文件。顺手让发布门卫放行群总结 JSON（漏了会把整次发布拦下来：日记进得去、圣经页永远不出现），并修了 publish-gate-check 里一条 2026-11-12 起就过时的用例（拿 salon.json 当越界，它早就在放行名单里），换成页面源码并补上群总结的放行 / 拦截两条。验收：新的 bellie-summary-check 13/13、bellie-timeline-sync 34、site-smoke 167、cistern 56、发布门卫 49、a11y 与裂图干净。home-daily-card-check 红 2 条是改动前就有的（浮层 maxHeight 把图挤出浮层），没动。"
+    },
+    {
+      "id": "log-20261123",
+      "date": "2026.11.23",
+      "text": "修 11-20 那条圣经评语里的 [user-004]：铃忆写评语点人用的是群总结导出时的匿名号（不是 QQ 号，qqToNames 认不出），原样露在卡片上。现在按同一份 JSON 的 user_analysis[user-00X].nickname 换成群名片、再经别名表换成站里的成员名，方括号一起去掉；号码按数字对齐（user_4 / user_0004 也认），对不出名字的原样留着并在解析时记一笔；--write 落成天文件时也带 users 表，推不推天文件都换得回来。验收：bellie-summary-check 18/18（新增：匿名号都找得到名字、数据 / 分块 / 页面零 user-00X、换出来的是人名，其余仍逐字对），cistern 56、bellie-timeline-sync 34、site-smoke 168、a11y 与裂图干净。"
     }
   ]
 }

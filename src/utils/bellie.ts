@@ -71,6 +71,11 @@ interface DayFile {
   date?: string;
   /** 这一天是从哪来的（群总结推导出来的会写那份 JSON 的路径；天文件没有这一项） */
   source?: string;
+  /**
+   * 群总结里那些匿名号 → 群名片（`user-001` → `🏗隰辰煦🏗`）。
+   * 只有从群总结推导出来的天才有；天文件直接投递的不需要（写的就是人）。
+   */
+  users?: Record<string, string>;
   entries?: { time?: string; qq?: string | number; text?: string; comment?: string; name?: string }[];
 }
 
@@ -144,6 +149,42 @@ export function qqToNames(s: string): string {
   });
 }
 
+/**
+ * 评语里的**匿名号**（`[user-004]` / 裸的 `user-004`）→ 成员名。
+ *
+ * 站长 2026-11-22：「11.22的圣经的评价里有问题 群成员都变成了user-00x」。
+ * 根子不在站点：lingyi 推的群总结为了隐私把发送者换成了 `user-001…`
+ * （`privacy.structured_user_ids`），铃忆写评语点人时写的就是这个号
+ * （`「群友们还在正常聊烤鱼…，[user-004] 突然……」`）。`qqToNames` 只认**数字 QQ 号**，
+ * `user-004` 不是数字，于是原样露在圣经卡片的评语里。
+ *
+ * 现在：群总结里自带的 `user_analysis[user-00X].nickname` 先把号对上群名片
+ * （见 `tools/bellie/summary.mjs` 的 `nicknamesOf`），这里再用站点那张别名表
+ * 换成**正式成员名**（`🏗隰辰煦🏗` → 隰辰煦、`妹妹大人（两个凡是版）` → Raw）。
+ * 对不上的号**原样留着**（括号也留着），不瞎编 —— 那种情况解析那边会记一笔。
+ * 方括号和 QQ 号那条一个道理：它只是"这是一个号"的记号，换成名字之后就多余了。
+ */
+function userIdsToNames(s: string, users: Record<string, string>): string {
+  /*
+   * 号按数字对齐：`user-004` 查不到时，`user_4` / `user0004` 这种写法也认
+   * （导出的写法变一下不该又漏回页面上）。
+   */
+  const byNum: Record<string, string> = {};
+  for (const [id, nick] of Object.entries(users)) {
+    const digits = String(id).match(/\d+/);
+    if (digits) byNum[String(Number(digits[0]))] = nick;
+  }
+  const name = (id: string) => {
+    const digits = id.match(/\d+/);
+    const nick = users[id] ?? (digits ? byNum[String(Number(digits[0]))] : undefined);
+    if (!nick) return '';
+    return resolveMember(nick)?.name ?? nick;
+  };
+  return String(s ?? '')
+    .replace(/\[\s*(user[-_]?\d+)\s*\]/gi, (all, id: string) => name(id) || all)
+    .replace(/(?<![\w-])(user[-_]?\d+)(?![\w-])/gi, (all, id: string) => name(id) || all);
+}
+
 const str = (v: unknown): string => String(v ?? '').trim();
 
 function readDays(): DayFile[] {
@@ -174,7 +215,7 @@ function readDays(): DayFile[] {
   const covered = new Set(out.map((d) => String(d.date)));
   for (const day of readSummaryDays({ root: process.cwd() }).days) {
     if (covered.has(day.date)) continue;
-    out.push({ date: day.date, source: day.file, entries: day.entries as DayFile['entries'] });
+    out.push({ date: day.date, source: day.file, users: day.users, entries: day.entries as DayFile['entries'] });
   }
   return out.sort((a, b) => String(b.date).localeCompare(String(a.date)));
 }
@@ -185,12 +226,14 @@ export const bellieEntries: BibleEntry[] = (() => {
   for (const day of readDays()) {
     const date = str(day.date);
     const list = Array.isArray(day.entries) ? day.entries : [];
+    const users = day.users ?? {};
     list.forEach((e, i) => {
       const text = str(e?.text);
       if (!text) return;
       /* 发送者三种写法都收：qq（新格式）/ name（老格式的群名片）/ 两个都给 */
       const qq = str(e?.qq);
-      const senderRaw = str(e?.name) || str(e?.qq);
+      /* 万一发送者被导出成了匿名号（正常情况下是群名片），也先换成名字再认人 */
+      const senderRaw = userIdsToNames(str(e?.name) || str(e?.qq), users);
       const member = resolveMember(qq) ?? resolveMember(senderRaw);
       out.push({
         id: `b${date.replace(/-/g, '')}-${i + 1}`,
@@ -199,8 +242,10 @@ export const bellieEntries: BibleEntry[] = (() => {
         qq,
         sender: senderRaw,
         memberIds: member ? [member.id] : [],
-        text,
-        comment: str(e?.comment),
+        /* 群总结推导出来的天，评语里点的是 `user-00X`：先换成成员名（正文同样处理，
+           原句里万一也点到号，不能让它原样露在页面上） */
+        text: userIdsToNames(text, users),
+        comment: userIdsToNames(str(e?.comment), users),
         rawName: member ? member.name : senderRaw,
       });
     });

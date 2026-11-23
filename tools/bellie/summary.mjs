@@ -90,6 +90,71 @@ function toEntry(q) {
 }
 
 /**
+ * 群总结里的 `user-001` 这样的匿名号 → 群名片（**同一份 JSON 里自带**）。
+ *
+ * 为什么要有这个（2026-11-22 站长发现的）：
+ *   导出时为了隐私把发送者换成了 `user-001 / user-002 …`（`privacy.structured_user_ids`），
+ *   而铃忆写评语时点人就是写这个号（`「群友们还在正常聊烤鱼…，[user-004] 突然……」`）。
+ *   站点只把 **QQ 号**换成成员名（`qqToNames`），`user-004` 不是数字，于是原样露在
+ *   圣经卡片的评语里 —— 站长看到的就是「群成员都变成了 user-00x」。
+ *
+ * 名字的来源（按可靠程度）：
+ *   ① `analysis_result.user_analysis[user-001].nickname`  ← 正常都有
+ *   ② `statistics.activity_visualization.user_activity_ranking[]`（只有前 10 名）
+ *   ③ `topics[].contributor_ids` 和 `contributors` **按下标配**（没有 nickname 时的兜底）
+ * 换不换得成站里的**正式成员名**由站点那边决定（它有 aliases 表）；这里只负责把
+ * 匿名号对上群名片 —— 匿名号本身绝不留在页面上。
+ */
+export function nicknamesOf(json) {
+  const map = {};
+  const ua = json?.analysis_result?.user_analysis;
+  if (ua && typeof ua === 'object') {
+    for (const [id, v] of Object.entries(ua)) {
+      /* 正常是 { nickname, message_count… }；也容一手「直接就是名字」的写法 */
+      const n = str(typeof v === 'string' ? v : v?.nickname ?? v?.name);
+      if (str(id) && n) map[str(id)] = n;
+    }
+  }
+  const rank = json?.analysis_result?.statistics?.activity_visualization?.user_activity_ranking;
+  if (Array.isArray(rank)) {
+    for (const r of rank) {
+      const id = str(r?.user_id);
+      const n = str(r?.nickname);
+      if (id && n && !map[id]) map[id] = n;
+    }
+  }
+  const topics = json?.analysis_result?.topics;
+  if (Array.isArray(topics)) {
+    for (const t of topics) {
+      const ids = Array.isArray(t?.contributor_ids) ? t.contributor_ids : [];
+      const names = Array.isArray(t?.contributors) ? t.contributors : [];
+      ids.forEach((id, i) => {
+        const k = str(id);
+        const n = str(names[i]);
+        if (k && n && !map[k]) map[k] = n;
+      });
+    }
+  }
+  return map;
+}
+
+/** 一段文字里点到哪些匿名号（`[user-004]` 和裸的 `user-004` 都算） */
+export function userIdsIn(s) {
+  const out = [];
+  for (const m of String(s ?? '').matchAll(/\buser[-_]?\d+\b/gi)) {
+    const id = m[0];
+    if (!out.some((x) => x.toLowerCase() === id.toLowerCase())) out.push(id);
+  }
+  return out;
+}
+
+/** `user-004` / `user_4` / `user0004` 都按「4」算 —— 导出的写法变一下也认得出 */
+export const userNum = (id) => {
+  const m = String(id).match(/\d+/);
+  return m ? String(Number(m[0])) : '';
+};
+
+/**
  * 扫一遍群总结目录，把每一天的圣经解析出来。
  *
  * 按文件名升序读；同一天出现两份时**后一份赢**（文件名里带 trace 的时间戳，
@@ -97,7 +162,7 @@ function toEntry(q) {
  *
  * @param {{ root?: string, dir?: string }} [opts]
  * @returns {{
- *   days: { date: string, file: string, entries: object[], over: number, long: string[] }[],
+ *   days: { date: string, file: string, entries: object[], over: number, long: string[], users: Record<string, string> }[],
  *   problems: string[],
  * }}
  */
@@ -159,8 +224,26 @@ export function readSummaryDays(opts = {}) {
     const over = Math.max(0, quotes.length - PER_DAY);
     if (over) problems.push(`${file}：金句有 ${quotes.length} 条，只抄前 ${PER_DAY} 条`);
 
+    /*
+     * 评语里点到的匿名号 → 群名片（见 nicknamesOf 头上的说明）。
+     * 只收**这一天真正用到的**那几个号；对不上的记一笔，让人知道为什么页面上
+     * 还留着一个 user-00x（站点那边没有名字可换时只能原样留着，不会瞎编）。
+     * 按号（`user-004` / `user_4` 都算 4）查，导出换个写法也认得出。
+     */
+    const nick = nicknamesOf(json);
+    const nickByNum = {};
+    for (const [id, n] of Object.entries(nick)) nickByNum[userNum(id)] = n;
+    const users = {};
+    for (const e of entries) {
+      for (const id of [...userIdsIn(e.text), ...userIdsIn(e.comment)]) {
+        const n = nick[id] ?? nickByNum[userNum(id)];
+        if (n) users[id] = n;
+        else problems.push(`${file}：${id} 在 user_analysis 里没有名字，评语里换不成人`);
+      }
+    }
+
     const at = days.findIndex((d) => d.date === date);
-    const day = { date, file: `${SUMMARY_REL_DIR}/${file}`.replace(/\\/g, '/'), entries, over, long };
+    const day = { date, file: `${SUMMARY_REL_DIR}/${file}`.replace(/\\/g, '/'), entries, over, long, users };
     if (at >= 0) days[at] = day;
     else days.push(day);
   }

@@ -98,6 +98,9 @@ for (const day of pick) {
     {
       date: day.date,
       source: { summary: day.file, tool: 'tools/bellie/from-summary.mjs' },
+      /* 匿名号 → 群名片要一起落下来：不然落成天文件之后，评语里的 `[user-004]`
+         就再没人能换成名字了（站点只认天文件里这一块）。 */
+      ...(Object.keys(day.users ?? {}).length ? { users: day.users } : {}),
       entries: day.entries,
     },
     null,
