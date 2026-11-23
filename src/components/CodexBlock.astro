@@ -1,0 +1,539 @@
+---
+/*
+ * ============================================================================
+ * 「图鉴」块（2026-11-23）
+ * ----------------------------------------------------------------------------
+ * 站长原话：
+ *   「图鉴的整体框架基本与相册一致 方便以正方形框展示大量图片 唯一不同的有两点：
+ *    1.图鉴点击后并不展示图片 而是直接跳转到一个新的页面来介绍图鉴角色
+ *       所以需要点击跳转链接的功能
+ *    2.图鉴可能会堆下大量图片 所以需要翻页功能 默认状态下每页展示36个图鉴
+ *       （手机电脑端自动适配最饱满的一排几个一共几排 例如电脑横屏下可以每排9个共4排
+ *        手机竖屏可以每排6个共6排 具体需要你自己测试一下）后就需要翻页
+ *       但是旁边有一个按钮 点开后可以选择每页36/每页108/每页216
+ *       图鉴页会自动拉长适配 例如该图鉴一共有300个条目 选择36/页就会有9页 …
+ *       如果选每页108就只会有3页 每页108个条目……以此类推」
+ * 后来又补：「另外图鉴允许新建条目时不上传图片只写名字 方便预留占位符」。
+ *
+ * 和相册的两处不同照做：
+ *   · 方块是**链接**（`href`），点了跳去介绍这个角色的页面，不打开展图；
+ *   · 条目可以只有名字没有图 → 站上画成虚线占位方块（名字照常写在下面）。
+ *
+ * 为什么翻页放在浏览器里做：300 个方块整份进 HTML 才几十 KB，比再开一套
+ * 「按页取数据」的接口简单，切 36/108/216 时也不用重新请求（和 Pager.astro 一个思路）。
+ *
+ * 首屏 HTML 只放第一页（36 个），其余带 `hidden` —— 没脚本时照样能看第一页；
+ * 有脚本时按你上次选的每页数重排（选择记在 localStorage 里，翻页不会丢）。
+ * ============================================================================
+ */
+import type { CodexItem } from '../utils/boards';
+import { withBase } from '../utils/url';
+
+interface Props {
+  /** 图鉴标题（可留空） */
+  text?: string;
+  items: CodexItem[];
+  /** 块的 id：只在 DOM 上做记号，方便调试 / 验收认这一块 */
+  uid?: string;
+}
+
+const { text, items = [], uid } = Astro.props;
+/** 首屏先按 36 个画（脚本起来后按你上次选的档重排） */
+const FIRST = 36;
+
+const str = (v: unknown) => String(v ?? '').trim();
+const isExternal = (href: string) => /^[a-z][a-z0-9+.-]*:/i.test(href) && !href.startsWith('/');
+const hrefOf = (href: string) => (isExternal(href) || href.startsWith('#') ? href : withBase(href));
+/** 没写名字时给读屏用的名字：从图片文件名退一个（不加任何说明文字） */
+const nameOfSrc = (src: string) =>
+  decodeURIComponent(src.split(/[?#]/)[0].split('/').pop() || '').replace(/\.[a-z0-9]+$/i, '');
+---
+
+<div class="codex" data-codex data-per={String(FIRST)} data-uid={uid}>
+  {text && <p class="codex__head">{text}</p>}
+
+  <ul class="codex__grid">
+    {items.map((it, i) => {
+      const src = str(it?.src);
+      const name = str(it?.name);
+      const href = str(it?.href);
+      const label = name || (src ? nameOfSrc(src) : '');
+      const body = (
+        <>
+          <span class="codex__frame">
+            {src ? (
+              <img class="codex__img" src={withBase(src)} alt="" loading="lazy" decoding="async" />
+            ) : (
+              <span class="codex__ph" aria-hidden="true" />
+            )}
+          </span>
+          {name && <span class="codex__name">{name}</span>}
+        </>
+      );
+      return (
+        <li class="codex__cell" data-codex-item hidden={i >= FIRST}>
+          {href ? (
+            <a
+              class="codex__tile"
+              href={hrefOf(href)}
+              aria-label={label || undefined}
+              {...isExternal(href) ? { target: '_blank', rel: 'noopener' } : {}}
+            >
+              {body}
+            </a>
+          ) : (
+            <span class="codex__tile">{body}</span>
+          )}
+        </li>
+      );
+    })}
+  </ul>
+
+  <div class="codex__bar" data-codex-bar>
+    <p class="codex__status" data-codex-status>
+      共 {items.length} 个 · 第 <b>1</b> / {Math.max(1, Math.ceil(items.length / FIRST))} 页
+    </p>
+    <nav class="codex__pages" data-codex-pages aria-label="图鉴翻页" />
+    <div class="codex__size">
+      <button
+        type="button"
+        class="codex__sizeBtn"
+        data-codex-sizebtn
+        aria-haspopup="listbox"
+        aria-expanded="false">每页 {FIRST}</button
+      >
+      <ul class="codex__sizes" data-codex-sizes role="listbox" hidden>
+        {[36, 108, 216].map((n) => (
+          <li role="none">
+            <button
+              type="button"
+              role="option"
+              class="codex__sizeItem"
+              data-codex-size={String(n)}
+              aria-selected={n === FIRST ? 'true' : 'false'}>每页 {n}</button
+            >
+          </li>
+        ))}
+      </ul>
+    </div>
+  </div>
+</div>
+
+<style>
+  /*
+    正方形方块墙。列数是钉死的两档（9 / 6）：
+      · 电脑横屏（>= 736px）：一排 9 个，36 个正好 4 排；
+      · 手机竖屏（< 736px）：一排 6 个，36 个正好 6 排。
+    这是站长点名的两个例子（「电脑横屏下可以每排9个共4排 手机竖屏可以每排6个共6排」），
+    所以不写成 auto-fill —— 那种算法在 390 宽上会算成 3~4 列，跟"每页 36"对不上。
+    选 108 / 216 时行数自然变成 12 / 24 排，页面跟着拉长，不用另写规则。
+  */
+  .codex {
+    --codex-cols: 9;
+    /* 翻页时滚到这一块顶上，别被站头那一条盖住 */
+    scroll-margin-top: 5rem;
+  }
+  .codex__head {
+    margin: 0 0 0.7rem;
+    color: #ffd9ef;
+  }
+  .codex__grid {
+    display: grid;
+    grid-template-columns: repeat(var(--codex-cols), minmax(0, 1fr));
+    gap: clamp(0.32rem, 0.55vw, 0.55rem);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .codex__cell {
+    margin: 0;
+    min-width: 0;
+  }
+  /* 翻页靠 hidden 摘掉不在这一页的方块；显式写一条，免得被别的 display 规则盖掉 */
+  .codex__cell[hidden] {
+    display: none;
+  }
+  .codex__tile {
+    display: block;
+    color: inherit;
+    text-decoration: none;
+    min-width: 0;
+  }
+  .codex__frame {
+    position: relative;
+    display: block;
+    aspect-ratio: 1 / 1;
+    overflow: hidden;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 120, 190, 0.28);
+    background: rgba(30, 5, 45, 0.55);
+    transition:
+      border-color 0.16s ease,
+      transform 0.16s ease;
+  }
+  a.codex__tile:hover .codex__frame,
+  a.codex__tile:focus-visible .codex__frame {
+    border-color: rgba(255, 140, 205, 0.85);
+    transform: translateY(-1px);
+  }
+  .codex__img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  /*
+    只有名字、没传图的占位方块：斜纹底（纯 CSS，不写字）。
+    站长要的就是"先占个位"——名字写在下面，图以后再补。
+  */
+  .codex__ph {
+    position: absolute;
+    inset: 0;
+    background: repeating-linear-gradient(
+      135deg,
+      rgba(255, 140, 205, 0.1) 0 6px,
+      rgba(255, 140, 205, 0) 6px 12px
+    );
+  }
+  .codex__name {
+    display: block;
+    margin-top: 0.28rem;
+    font-size: 0.74rem;
+    line-height: 1.35;
+    text-align: center;
+    color: #ffd9ef;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  /* 翻页条：状态左、页码中、每页几条右 */
+  .codex__bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4rem 0.8rem;
+    margin-top: 0.9rem;
+    padding: 0.45rem 0.6rem;
+    border: 1px solid rgba(255, 120, 190, 0.28);
+    border-radius: 10px;
+    background: rgba(40, 6, 55, 0.5);
+  }
+  .codex__status {
+    margin: 0;
+    font-size: 0.78rem;
+    line-height: 1.5;
+    color: rgba(255, 226, 244, 0.8);
+  }
+  .codex__status b {
+    color: #ffd9ef;
+  }
+  .codex__pages {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.25rem;
+    margin: 0 auto;
+  }
+  /*
+    ⚠ 下面这几条要用 :global()：页码按钮是**脚本建出来的**，身上没有 Astro 的
+    作用域标记（data-astro-cid-…），带作用域的规则一条都匹配不上 —— 2026-11-23
+    第一次截图就看出来了（一排数字是浏览器默认按钮样、灰扑扑的）。
+    `.codex__status b` 不用：它的父级是服务端渲染的，作用域还在。
+  */
+  :global(.codex__page) {
+    min-width: 1.9rem;
+    padding: 0.18rem 0.45rem;
+    border-radius: 6px;
+    border: 1px solid rgba(255, 120, 190, 0.3);
+    background: rgba(20, 3, 32, 0.6);
+    color: #ffd9ef;
+    font: inherit;
+    font-size: 0.8rem;
+    line-height: 1.5;
+    cursor: pointer;
+  }
+  :global(.codex__page:hover:not(:disabled)) {
+    border-color: rgba(255, 140, 205, 0.75);
+  }
+  :global(.codex__page.is-current) {
+    background: rgba(255, 140, 205, 0.85);
+    border-color: transparent;
+    color: #2a0438;
+    font-weight: 700;
+  }
+  :global(.codex__page:disabled) {
+    opacity: 0.4;
+    cursor: default;
+  }
+  :global(.codex__dots) {
+    padding: 0 0.2rem;
+    color: rgba(255, 226, 244, 0.55);
+    font-size: 0.8rem;
+  }
+  .codex__size {
+    position: relative;
+    margin-left: auto;
+  }
+  .codex__sizeBtn {
+    padding: 0.22rem 0.7rem;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 120, 190, 0.45);
+    background: rgba(60, 8, 82, 0.55);
+    color: #ffd9ef;
+    font: inherit;
+    font-size: 0.78rem;
+    line-height: 1.5;
+    cursor: pointer;
+  }
+  .codex__sizeBtn::after {
+    content: ' ▾';
+    opacity: 0.65;
+  }
+  .codex__sizeBtn[aria-expanded='true'] {
+    border-color: rgba(255, 140, 205, 0.85);
+  }
+  /* 菜单往按钮**上面**弹：图鉴常常很长，往下弹会被页面底部切掉 */
+  .codex__sizes {
+    position: absolute;
+    right: 0;
+    bottom: calc(100% + 0.35rem);
+    z-index: 20;
+    margin: 0;
+    padding: 0.25rem;
+    list-style: none;
+    min-width: 8.5rem;
+    border-radius: 10px;
+    border: 1px solid rgba(255, 140, 205, 0.5);
+    background: #2a0638;
+    box-shadow: 0 14px 34px -16px rgb(0 0 0 / 0.85);
+  }
+  .codex__sizes[hidden] {
+    display: none;
+  }
+  .codex__sizeItem {
+    display: block;
+    width: 100%;
+    padding: 0.34rem 0.6rem;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: #ffd9ef;
+    font: inherit;
+    font-size: 0.82rem;
+    text-align: left;
+    cursor: pointer;
+  }
+  .codex__sizeItem:hover {
+    background: rgba(255, 140, 205, 0.18);
+  }
+  .codex__sizeItem[aria-selected='true'] {
+    color: #ff8fce;
+    font-weight: 700;
+  }
+  @media (max-width: 46rem) {
+    .codex {
+      --codex-cols: 6;
+    }
+    .codex__grid {
+      gap: 0.28rem;
+    }
+    .codex__frame {
+      border-radius: 5px;
+    }
+    .codex__name {
+      margin-top: 0.2rem;
+      font-size: 0.62rem;
+      line-height: 1.3;
+    }
+    .codex__bar {
+      gap: 0.35rem 0.5rem;
+      padding: 0.4rem 0.5rem;
+    }
+    .codex__status {
+      font-size: 0.72rem;
+    }
+    .codex__size {
+      margin-left: 0;
+    }
+  }
+</style>
+
+<script>
+  /*
+   * 翻页 + 每页 36/108/216。
+   *
+   * 老实说这块就是"把不在本页的方块 hidden 掉"，加上一排页码按钮：
+   * 300 个方块全在 DOM 里，切档、翻页都只是改 hidden —— 没有任何请求，
+   * 所以不会出现"切完闪一下 / 页码和内容对不上"。
+   */
+  const SIZE_OPTIONS = [36, 108, 216] as const;
+  type Size = (typeof SIZE_OPTIONS)[number];
+  const STORE_KEY = 'codex:per';
+
+  /** 上次选的每页数（只认这三个数；读不到 / 被改成别的就当没选过） */
+  function readStored(): number {
+    try {
+      const n = Number(localStorage.getItem(STORE_KEY));
+      return SIZE_OPTIONS.includes(n as Size) ? n : 0;
+    } catch {
+      return 0;
+    }
+  }
+  function writeStored(n: number) {
+    try {
+      localStorage.setItem(STORE_KEY, String(n));
+    } catch {
+      /* 隐私模式 / 存满了：不影响这一趟的使用 */
+    }
+  }
+
+  function make(tag: string, cls: string, text?: string): HTMLElement {
+    const el = document.createElement(tag);
+    if (cls) el.className = cls;
+    if (text !== undefined) el.textContent = text;
+    return el;
+  }
+
+  document.querySelectorAll<HTMLElement>('[data-codex]').forEach((root) => {
+    const items = Array.from(root.querySelectorAll<HTMLElement>('[data-codex-item]'));
+    const bar = root.querySelector<HTMLElement>('[data-codex-bar]');
+    const status = root.querySelector<HTMLElement>('[data-codex-status]');
+    const pagesBox = root.querySelector<HTMLElement>('[data-codex-pages]');
+    const sizeBtn = root.querySelector<HTMLButtonElement>('[data-codex-sizebtn]');
+    const sizeBox = root.querySelector<HTMLElement>('[data-codex-sizes]');
+    if (!items.length || !bar || !status || !pagesBox || !sizeBtn || !sizeBox) return;
+
+    let per = readStored() || Number(root.dataset.per) || 36;
+    if (!SIZE_OPTIONS.includes(per as Size)) per = 36;
+    let page = 1;
+
+    const pageCount = () => Math.max(1, Math.ceil(items.length / per));
+
+    /** 页码：页数不多（≤12）就全列出来；太多才收成「当前前后各两页 + 首尾」 */
+    function pageNumbers(total: number): number[] {
+      if (total <= 12) return Array.from({ length: total }, (_, i) => i + 1);
+      const keep = new Set<number>([1, total]);
+      for (let n = page - 2; n <= page + 2; n += 1) if (n >= 1 && n <= total) keep.add(n);
+      const sorted = [...keep].sort((a, b) => a - b);
+      const out: number[] = [];
+      let prev = 0;
+      for (const n of sorted) {
+        if (prev && n - prev > 1) out.push(0);
+        out.push(n);
+        prev = n;
+      }
+      return out;
+    }
+
+    function draw() {
+      const total = pageCount();
+      if (page > total) page = total;
+      const from = (page - 1) * per;
+      items.forEach((it, i) => {
+        it.hidden = i < from || i >= from + per;
+      });
+
+      /* 状态：共 N 个 · 第 x / y 页（和 Pager.astro 一个句式） */
+      status.textContent = '';
+      status.append(document.createTextNode(`共 ${items.length} 个 · 第 `), make('b', '', String(page)), document.createTextNode(` / ${total} 页`));
+
+      /* 每页几条：按钮上写当前档，菜单里标出选中的那条 */
+      sizeBtn.textContent = `每页 ${per}`;
+      sizeBox.querySelectorAll<HTMLElement>('[data-codex-size]').forEach((b) => {
+        b.setAttribute('aria-selected', Number(b.dataset.codexSize) === per ? 'true' : 'false');
+      });
+
+      /* 页码条 */
+      pagesBox.textContent = '';
+      const step = (dir: -1 | 1, label: string, glyph: string) => {
+        const b = make('button', 'codex__page codex__step', glyph) as HTMLButtonElement;
+        b.type = 'button';
+        b.dataset.codexStep = String(dir);
+        b.setAttribute('aria-label', label);
+        b.disabled = dir < 0 ? page <= 1 : page >= total;
+        return b;
+      };
+      pagesBox.append(step(-1, '上一页', '‹'));
+      for (const n of pageNumbers(total)) {
+        if (!n) {
+          pagesBox.append(make('span', 'codex__dots', '…'));
+          continue;
+        }
+        const b = make('button', 'codex__page', String(n)) as HTMLButtonElement;
+        b.type = 'button';
+        b.dataset.codexPage = String(n);
+        b.setAttribute('aria-label', `第 ${n} 页`);
+        if (n === page) {
+          b.classList.add('is-current');
+          b.setAttribute('aria-current', 'page');
+        }
+        pagesBox.append(b);
+      }
+      pagesBox.append(step(1, '下一页', '›'));
+    }
+
+    /** 翻到第几页（用户点的才滚回这一块的顶上，首屏那次不滚） */
+    function go(n: number, scroll = true) {
+      const to = Math.min(Math.max(1, n), pageCount());
+      if (to === page) return;
+      page = to;
+      draw();
+      if (scroll) root.scrollIntoView({ block: 'start' });
+    }
+
+    pagesBox.addEventListener('click', (ev) => {
+      const t = ev.target as HTMLElement | null;
+      if (!t) return;
+      const stepBtn = t.closest<HTMLElement>('[data-codex-step]');
+      if (stepBtn) {
+        go(page + Number(stepBtn.dataset.codexStep || 0));
+        return;
+      }
+      const numBtn = t.closest<HTMLElement>('[data-codex-page]');
+      if (numBtn) go(Number(numBtn.dataset.codexPage || 1));
+    });
+
+    /* ---- 每页 36/108/216 的菜单 ---- */
+    const closeMenu = () => {
+      sizeBox.hidden = true;
+      sizeBtn.setAttribute('aria-expanded', 'false');
+    };
+    const openMenu = () => {
+      sizeBox.hidden = false;
+      sizeBtn.setAttribute('aria-expanded', 'true');
+    };
+    sizeBtn.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      if (sizeBox.hidden) openMenu();
+      else closeMenu();
+    });
+    sizeBox.addEventListener('click', (ev) => {
+      const t = ev.target as HTMLElement | null;
+      const btn = t?.closest<HTMLElement>('[data-codex-size]');
+      if (!btn) return;
+      const next = Number(btn.dataset.codexSize);
+      if (SIZE_OPTIONS.includes(next as Size) && next !== per) {
+        per = next;
+        writeStored(per);
+        page = 1;
+        draw();
+        root.scrollIntoView({ block: 'start' });
+      }
+      closeMenu();
+    });
+    document.addEventListener('click', (ev) => {
+      const t = ev.target as Node | null;
+      if (sizeBox.hidden || !t) return;
+      if (sizeBtn.contains(t) || sizeBox.contains(t)) return;
+      closeMenu();
+    });
+    document.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Escape' && !sizeBox.hidden) {
+        closeMenu();
+        sizeBtn.focus();
+      }
+    });
+
+    draw();
+  });
+</script>

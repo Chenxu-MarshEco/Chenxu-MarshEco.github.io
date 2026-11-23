@@ -2903,6 +2903,13 @@ function stripBlockForTemplate(b) {
     }
     case 'children':
       return { type, shape: b.shape ?? 'wide', size: b.size ?? 'l' };
+    case 'codex':
+      /*
+        图鉴（2026-11-23）：模版里只留"这一页有这么一块图鉴"（标题也留着），
+        条目（名字 / 图 / 链接）全是内容，一律不带 —— 和相册一个规矩。
+        整块打上空格子记号，导进来之后往里加条目即可。
+      */
+      return withPlaceholder({ type, items: [], ...(str(b.text) ? { text: str(b.text) } : {}) });
     case 'card':
       /* 卡片指向的是**原页面**的子节点 id，换一页就对不上了 → 清空，导入后自己挑 */
       return { type, ref: '', shape: b.shape ?? 'wide', size: b.size ?? 'l' };
@@ -3759,6 +3766,40 @@ function cleanBlocks(raw, ownerId) {
       if (head) block.text = head;
       const bg = String(b.bg || '').trim();
       if (bg) block.bg = bg;
+      pushBlock(block);
+      return;
+    }
+
+    if (type === 'codex') {
+      /*
+        图鉴（2026-11-23）：正方形方块墙，点一条跳去它自己的页面。
+        ⚠ 和 sidebar / album 同一个关口 —— 漏了这个分支，用户辛苦攒的几百条
+        一保存就**静默消失**（而且图鉴正是条目最多的那一种块，丢起来最心疼）。
+        条目规则：名字和图片**至少有一个**（站长 2026-11-23：「允许新建条目时不上传
+        图片只写名字 方便预留占位符」）；两个都没有的才丢。链接按站点那套白名单收。
+      */
+      const items = [];
+      for (const [i, it] of (Array.isArray(b.items) ? b.items : []).entries()) {
+        if (!it || typeof it !== 'object') continue;
+        const name = String(it.name ?? '').trim();
+        const src = String(it.src ?? '').trim();
+        if (!name && !src) continue;
+        const one = { id: String(it.id || '').trim() || `${id}-i${i + 1}`, name };
+        if (src) one.src = src;
+        const href = String(it.href ?? '').trim();
+        if (SAFE_LINK.test(href)) one.href = href;
+        items.push(one);
+        if (items.length >= 2000) break;
+      }
+      /*
+        ⚠ 一条都没有也**留着**（和相册那种"没图就丢"的做法不同）：
+        图鉴是"先加一块、再一条条攒"的东西，站点那边 `isBlankBlock` 本来就会把
+        空块藏起来；这里要是丢掉，用户加了块、还没来得及加条目就保存一次，
+        整块就没了 —— 正是 sidebar / album 那类"加了它自己消失"的坑。
+      */
+      const block = { id, type, items };
+      const head = String(b.text || '').trim();
+      if (head) block.text = head;
       pushBlock(block);
       return;
     }

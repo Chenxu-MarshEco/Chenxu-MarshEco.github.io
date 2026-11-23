@@ -61,6 +61,11 @@ export const isBlankBlock = (b: PageBlock): boolean => {
       return b.placeholder === true && !String(b.left ?? '').trim() && !String(b.right ?? '').trim();
     case 'map':
       return b.placeholder === true && !(b.pages ?? []).some((pg) => String(pg?.src ?? '').trim());
+    case 'codex':
+      /* 图鉴：一条都没有名字也没有图 = 这块画不出东西；有名字（哪怕没图）就算有内容 */
+      return !(b.items ?? []).some(
+        (it) => String(it?.name ?? '').trim() || String(it?.src ?? '').trim(),
+      );
     default:
       return false;
   }
@@ -207,6 +212,22 @@ export type PageBlock = (
    */
   | { id: string; type: 'album'; text?: string; photos: AlbumPhoto[] }
   /**
+   * **图鉴**块（2026-11-23）。站长原话：
+   *   「图鉴的整体框架基本与相册一致 方便以正方形框展示大量图片 唯一不同的有两点：
+   *    1.图鉴点击后并不展示图片 而是直接跳转到一个新的页面来介绍图鉴角色 所以需要
+   *      点击跳转链接的功能  2.图鉴可能会堆下大量图片 所以需要翻页功能 默认状态下
+   *      每页展示36个图鉴（手机电脑端自动适配最饱满的一排几个一共几排）后就需要翻页
+   *      但是旁边有一个按钮 点开后可以选择每页36/每页108/每页216 图鉴页会自动拉长适配」
+   *   后来又补：「另外图鉴允许新建条目时不上传图片只写名字 方便预留占位符」。
+   *
+   * 和相册的两处不同就落在这里：
+   *   · 每一条是**链接**（`href`）而不是大图 —— 点了跳去介绍这个角色的页面；
+   *   · 图可以没有（`src` 空着 = 站上一个虚线占位方块，名字照常写着）。
+   * 翻页是**浏览器里**做的（36/108/216 可切）：300 条也就 300 个方块，
+   * 整份进 HTML 完全划算（同 Pager 的老思路），不用为翻页再造一套接口。
+   */
+  | { id: string; type: 'codex'; text?: string; items: CodexItem[] }
+  /**
    * **涣愿终池·核心区**（2026-11-17 加）。
    *
    * 用户原话：「要保留一块核心功能区：显示每一年的这一天的冰室事件和精华 ……
@@ -238,6 +259,25 @@ export interface AlbumPhoto {
   alt?: string;
   /** 描述（可留空：留空就只显示图） */
   note?: string;
+}
+
+/**
+ * 图鉴里的一条。
+ *
+ * 和相册照片的区别：
+ *   · `name` 是**必填**（只有名字没有图 = 占位符，站长 2026-11-23 要的就是这个）；
+ *   · `src` 可空；
+ *   · `href` 是点了要跳去哪里（介绍这个图鉴角色的页面），站内 `/…` 或 http(s)。
+ *     留空的那条照样画出来，只是不可点。
+ */
+export interface CodexItem {
+  id: string;
+  /** 名字（站上写在方块下面；没有图时就靠它认） */
+  name: string;
+  /** 图（可留空：站上画成虚线占位方块） */
+  src?: string;
+  /** 点它跳去哪（可留空：那条就只展示） */
+  href?: string;
 }
 export type SidebarRowKind = 'text' | 'image' | 'link' | 'items';
 

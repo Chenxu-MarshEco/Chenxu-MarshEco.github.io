@@ -2660,6 +2660,7 @@ const BLOCK_LABEL = {
   recent: '近期更新',
   sidebar: '侧边栏',
   album: '相册',
+  codex: '图鉴',
   cistern: '涣愿终池',
 };
 const TEXT_HINT =
@@ -5546,6 +5547,205 @@ function albumFields(block) {
   wrap.append(hint);
   return wrap;
 }
+
+/**
+ * 「图鉴」块的面板（2026-11-23）
+ *
+ * 站长原话：「图鉴的整体框架基本与相册一致 方便以正方形框展示大量图片 唯一不同的有两点：
+ *  1.图鉴点击后并不展示图片 而是直接跳转到一个新的页面来介绍图鉴角色 所以需要点击跳转
+ *    链接的功能  2.图鉴可能会堆下大量图片 所以需要翻页功能 默认状态下每页展示36个……
+ *    旁边有一个按钮 点开后可以选择每页36/每页108/每页216」
+ * 后来又补：「另外图鉴允许新建条目时不上传图片只写名字 方便预留占位符」。
+ *
+ * 所以和相册面板的两处不同：
+ *   · 每条多一个「点它跳去哪」——这就是图鉴的用处（点了去角色页，不打开展图）；
+ *   · **可以不传图**：＋空白条目 / 清掉图，都还是条目，站上画成占位方块。
+ * 批量拖图进来仍然一次建一批（名字先用文件名），省得一个个点。
+ */
+function codexFields(block) {
+  const wrap = document.createElement('div');
+  wrap.className = 'pblock-edit__body';
+  if (!Array.isArray(block.items)) block.items = [];
+
+  wrap.append(boardInput(block.text ?? '', '图鉴标题（可留空）', (v) => { block.text = v; }));
+
+  /* ---- 一次拖一批图：一张图一个条目，名字先用文件名 ---- */
+  const drop = document.createElement('div');
+  drop.className = 'pblock-edit__row';
+  drop.style.cssText = 'min-height:4.5rem;display:flex;align-items:center;justify-content:center;'
+    + 'border:1px dashed rgba(255,120,190,.5);border-radius:8px;padding:.6rem;color:#ffd9ef;cursor:pointer;text-align:center';
+  drop.textContent = '拖图片到这里，或点这里选（可多选；一张图建一个条目，名字先用文件名）';
+  const file = document.createElement('input');
+  file.type = 'file';
+  file.accept = 'image/*';
+  file.multiple = true;
+  file.style.display = 'none';
+  wrap.append(drop, file);
+
+  /** 文件名去掉扩展名当条目名（之后可以改；不留空名） */
+  const nameFromFile = (f) => String(f?.name || '')
+    .replace(/\.[a-z0-9]+$/i, '')
+    .replace(/^\d{8}[-_]?/, '')
+    .trim();
+
+  const addFiles = async (files) => {
+    const list = [...(files || [])].filter((f) => /^image\//.test(String(f.type || '')));
+    if (!list.length) return;
+    const was = drop.textContent;
+    let ok = 0;
+    for (const [i, f] of list.entries()) {
+      drop.textContent = `正在上传第 ${i + 1} / ${list.length} 张…`;
+      try {
+        const src = await uploadImage(f);
+        block.items.push({ id: newBlockId(block.id), name: nameFromFile(f), src });
+        ok += 1;
+      } catch (err) {
+        toast(`「${f.name || '一张'}」没传上去：${err.message}`, true);
+      }
+    }
+    drop.textContent = was;
+    if (ok) {
+      renderPageEditor();
+      toast(`加了 ${ok} 个图鉴条目（名字先用文件名，可以在下面改）`);
+    }
+  };
+  attachImageIntake({
+    el: drop,
+    input: file,
+    multiple: true,
+    label: '图鉴',
+    title: '拖多张进来、或者点它选多张（一张一条）',
+    onFiles: addFiles,
+    onUrl: (url) => {
+      block.items.push({ id: newBlockId(block.id), name: '', src: url });
+      renderPageEditor();
+    },
+  });
+
+  /* ---- 只有名字的占位条目（不传图） ---- */
+  const addRow = document.createElement('div');
+  addRow.className = 'pblock-edit__row';
+  const addEmpty = document.createElement('button');
+  addEmpty.type = 'button';
+  addEmpty.className = 'btn btn--ghost';
+  addEmpty.textContent = '＋ 空白条目（只写名字，先占位）';
+  addEmpty.addEventListener('click', () => {
+    block.items.push({ id: newBlockId(block.id), name: '' });
+    renderPageEditor();
+  });
+  addRow.append(addEmpty);
+  wrap.append(addRow);
+
+  /* ---- 每个条目一行：预览 + 名字 + 链接 + 排序 / 去图 / 删除 ---- */
+  const list = document.createElement('div');
+  const mini = (label, title, fn, cls = '') => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = `btn btn--ghost boardedit__mini ${cls}`.trim();
+    b.textContent = label;
+    b.title = title;
+    b.addEventListener('click', fn);
+    return b;
+  };
+  block.items.forEach((it, i) => {
+    const row = document.createElement('div');
+    row.className = 'pblock-edit__row';
+    row.style.cssText = 'align-items:center;gap:.5rem;flex-wrap:wrap';
+
+    let thumb;
+    if (it.src) {
+      thumb = document.createElement('img');
+      thumb.src = it.src;
+      thumb.alt = '';
+      thumb.style.cssText = 'width:3rem;height:3rem;object-fit:cover;border-radius:6px;flex:0 0 auto';
+    } else {
+      /* 没图：画一个虚线小方块（和站上那个占位一个意思） */
+      thumb = document.createElement('span');
+      thumb.textContent = '占位';
+      thumb.title = '这条还没有图：站上会画成占位方块，名字照常显示';
+      thumb.style.cssText = 'width:3rem;height:3rem;display:flex;align-items:center;justify-content:center;'
+        + 'border:1px dashed rgba(255,120,190,.55);border-radius:6px;flex:0 0 auto;'
+        + 'font-size:.68rem;color:rgba(255,217,239,.75)';
+    }
+
+    const name = boardInput(it.name ?? '', '名字（必填：只有名字也能当占位）', (v) => {
+      if (v.trim()) it.name = v;
+      else delete it.name;
+    });
+    name.style.flex = '1 1 10rem';
+
+    const link = linkField(it.href ?? '', '点它跳去哪（/huaya/… 或 https://…；留空就只展示）', (v) => {
+      const t = v.trim();
+      if (t) it.href = t;
+      else delete it.href;
+    });
+    link.style.flex = '1 1 12rem';
+    /* 链接框可以从下面这张候选表里挑（都是现有页面的地址），手打也不会打错 */
+    link.setAttribute('list', 'codex-link-pages');
+
+    row.append(thumb, name, link);
+    if (it.src) {
+      row.append(
+        mini('去图', '删掉这张图，改回占位方块（条目和名字都留着）', () => {
+          delete it.src;
+          renderPageEditor();
+        })
+      );
+      row.append(
+        cropButton({
+          label: '图鉴图片',
+          get: () => String(it.src || ''),
+          set: (v) => {
+            it.src = v;
+          },
+          after: () => renderPageEditor(),
+        })
+      );
+    }
+    row.append(
+      mini('↑', '往前挪一个', () => {
+        if (i === 0) return;
+        [block.items[i - 1], block.items[i]] = [block.items[i], block.items[i - 1]];
+        renderPageEditor();
+      }),
+      mini('↓', '往后挪一个', () => {
+        if (i === block.items.length - 1) return;
+        [block.items[i + 1], block.items[i]] = [block.items[i], block.items[i + 1]];
+        renderPageEditor();
+      }),
+      mini('删除', '从图鉴里删掉这一条', () => {
+        block.items.splice(i, 1);
+        renderPageEditor();
+      }, 'boardedit__del')
+    );
+    list.append(row);
+  });
+  wrap.append(list);
+
+  /*
+    链接候选：整棵版块树里那些**会生成页面**的节点（链接版块是叶子，不算页面）。
+    用 datalist 而不是下拉：既能挑，也能直接贴外链。
+  */
+  const dl = document.createElement('datalist');
+  dl.id = 'codex-link-pages';
+  for (const p of flattenBoardNodes()) {
+    if (p.external) continue;
+    const opt = document.createElement('option');
+    opt.value = p.url;
+    opt.label = p.node?.title || p.node?.id || p.url;
+    dl.append(opt);
+  }
+  wrap.append(dl);
+
+  const withImg = block.items.filter((it) => it.src).length;
+  const hint = document.createElement('p');
+  hint.className = 'pblock-edit__hint';
+  hint.textContent = `这个图鉴有 ${block.items.length} 个条目（${withImg} 个有图、`
+    + `${block.items.length - withImg} 个只有名字）。站上默认每页 36 个，旁边可以切 36 / 108 / 216；`
+    + '点一个条目会跳到它的链接（不再打开大图）。条目可以只写名字不传图，站上就是占位方块。';
+  wrap.append(hint);
+  return wrap;
+}
 /** 一个块的字段区 */
 function blockFields(block) {
   const wrap = document.createElement('div');
@@ -5864,6 +6064,7 @@ function blockFields(block) {
   }
 
   if (block.type === 'album') return albumFields(block);
+  if (block.type === 'codex') return codexFields(block);
   if (block.type === 'cistern') return cisternFields(block);
   if (block.type === 'card') return cardBlockFields(block);
   if (block.type === 'cardbox') return cardboxBlockFields(block);
@@ -6606,6 +6807,10 @@ function renderPageEditor() {
     /* 相册（2026-11-11）：一个块装一组照片，批量上传、每张可带描述 */
     ['album', '相册', () => ({ id: newBlockId(pageNode.id), type: 'album', text: '', photos: [] }),
       '一组照片：可以一次拖/粘多张进来，点开看原图并显示描述；一页可以放好几个相册'],
+    /* 图鉴（2026-11-23）：正方形方块墙，点一个跳去角色页；每页 36/108/216 可切 */
+    ['codex', '图鉴', () => ({ id: newBlockId(pageNode.id), type: 'codex', text: '', items: [] }),
+      '大量正方形方块：一次拖多张图建一批，每条可以只写名字当占位；点一个跳去它的链接，'
+      + '每页默认 36 个（旁边可切 36 / 108 / 216，自动翻页）'],
     /* 涣愿终池的核心区（2026-11-17）：一块"每天自己换内容"的板块 */
     ['cistern', '涣愿终池', () => ({ id: newBlockId(pageNode.id), type: 'cistern', text: '涣愿终池', bg: '' }),
       '每天自动换内容的四个盘子（历年这一天的精华 / 事件与时刻 / 冰山词条 / 冰室日记），上面下面都能再写别的块'],
@@ -6862,6 +7067,8 @@ function commitPageBlocks() {
       b.type === 'sidebar' ||
       /* 相册：刚加进来还没传图时也得留着 */
       b.type === 'album' ||
+      /* 图鉴：同上（而且它本来就可以一条只有名字、连图都没有） */
+      b.type === 'codex' ||
       /* 涣愿终池的核心区：它自己不带内容（按"今天"现挑），永远算"有东西" */
       b.type === 'cistern' ||
       /* 单张卡 / 卡片框本身就是作者特意放的结构：还没挑子页面也得留着，

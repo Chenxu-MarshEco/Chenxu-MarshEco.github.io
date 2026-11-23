@@ -31,6 +31,7 @@ import SubCard from './SubCard.astro';
 import NavBlock from './NavBlock.astro';
 import NavItem from './NavItem.astro';
 import CisternCore from './CisternCore.astro';
+import CodexBlock from './CodexBlock.astro';
 import Pager from './Pager.astro';
 import { withBase } from '../utils/url';
 import { enhanceHtml, variantUrl, viewUrls } from '../utils/images';
@@ -618,6 +619,11 @@ function cardsForBlock(b: PageBlock): { list: BlockItem[]; missing: string[] } {
               </ul>
             </div>
           )}
+          {/*
+            图鉴（2026-11-23）：正方形方块墙，点一个跳到介绍那个角色的页面（不打开展图），
+            每页 36/108/216 可切。翻页在 CodexBlock 自己的脚本里做，这里只把数据递过去。
+          */}
+          {b.type === 'codex' && <CodexBlock text={b.text} items={b.items ?? []} uid={b.id} />}
           {b.type === 'divider' && (
             <div class="pdivider" role="separator">
               {b.text ? <span class="pdivider__text">{b.text}</span> : null}
