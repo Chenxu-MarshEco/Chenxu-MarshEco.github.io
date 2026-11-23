@@ -10,7 +10,7 @@
  *   ④ 最后一页少一些：第 9 页 12 个；
  *   ⑤ 只有名字的条目：站上没有 <img>、画的是占位方块、名字写着；
  *   ⑥ 点方块是**跳转**（href 能点、点击后真的到那一页），而且不挂 data-zoom（不打开展图）；
- *   ⑦ 窄屏（390）6 列 6 排；
+ *   ⑦ 窄屏（390）4 列 9 排（2026-11-23 从 6 列改成 4）；
  *   ⑧ 编辑器存一次盘：codex 块与 300 条都还在（白名单没把它吃掉），占位条目与链接也在。
  * 跑法：node tools/checks/codex-check.mjs
  */
@@ -334,11 +334,11 @@ try {
   check('点方块真的跳到它指向的页面（不是弹图看大图）', clickInfo.href === LINK && afterClick.path === LINK, JSON.stringify({ href: clickInfo.href, path: afterClick.path }));
   check('方块没挂 data-zoom；没写链接的条目不是链接（点了不跳）', clickInfo.zoom === false && clickInfo.noLinkIsAnchor === false, JSON.stringify(clickInfo));
 
-  /* ---- 窄屏：6 列 6 排 ---- */
+  /* ---- 窄屏：4 列 9 排 ---- */
   await cdp.ev('localStorage.clear()');
   await open(390, 844);
   const m1 = await snap();
-  check('窄屏（390）一排 6 个、6 排（36 个）', m1.cols === 6 && m1.rows === 6 && m1.visible === 36, JSON.stringify({ cols: m1.cols, rows: m1.rows, visible: m1.visible }));
+  check('窄屏（390）一排 4 个、9 排（36 个；站长 2026-11-23 从 6 改成 4）', m1.cols === 4 && m1.rows === 9 && m1.visible === 36, JSON.stringify({ cols: m1.cols, rows: m1.rows, visible: m1.visible }));
   check('窄屏状态还是「共 300 个 · 第 1 / 9 页」', /共 300 个\s*·\s*第 1 \/ 9 页/.test(m1.status || ''), m1.status);
 
   check('这一趟没有 JS 报错', cdp.errors.length === 0, cdp.errors.slice(0, 3).join(' | '));

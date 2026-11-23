@@ -121,12 +121,14 @@ const nameOfSrc = (src: string) =>
 
 <style>
   /*
-    正方形方块墙。列数是钉死的两档（9 / 6）：
+    正方形方块墙。列数是钉死的两档（9 / 4）：
       · 电脑横屏（>= 736px）：一排 9 个，36 个正好 4 排；
-      · 手机竖屏（< 736px）：一排 6 个，36 个正好 6 排。
-    这是站长点名的两个例子（「电脑横屏下可以每排9个共4排 手机竖屏可以每排6个共6排」），
+      · 手机竖屏（< 736px）：一排 4 个，36 个是 9 排。
+    宽屏那档是站长点的例子（「电脑横屏下可以每排9个共4排」）；手机这档 2026-11-23
+    当天从 6 改成了 4（站长：「手机端可以改为一排四个 应当更合适」）—— 390 宽的屏上
+    一格约 90px，比 6 个一格的 ~58px 看得清。
     所以不写成 auto-fill —— 那种算法在 390 宽上会算成 3~4 列，跟"每页 36"对不上。
-    选 108 / 216 时行数自然变成 12 / 24 排，页面跟着拉长，不用另写规则。
+    选 108 / 216 时行数自然变成 12 / 24 排（手机上 27 / 54 排），页面跟着拉长，不用另写规则。
   */
   .codex {
     --codex-cols: 9;
@@ -332,17 +334,18 @@ const nameOfSrc = (src: string) =>
   }
   @media (max-width: 46rem) {
     .codex {
-      --codex-cols: 6;
+      --codex-cols: 4;
     }
     .codex__grid {
-      gap: 0.28rem;
+      gap: 0.32rem;
     }
     .codex__frame {
-      border-radius: 5px;
+      border-radius: 6px;
     }
+    /* 一排 4 个（一格约 90px）比原来 6 个宽敞，名字也跟着放大一号 */
     .codex__name {
-      margin-top: 0.2rem;
-      font-size: 0.62rem;
+      margin-top: 0.24rem;
+      font-size: 0.68rem;
       line-height: 1.3;
     }
     .codex__bar {
