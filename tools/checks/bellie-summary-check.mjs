@@ -161,14 +161,32 @@ try {
    * ⚠ 2026-11-22 起评语里的 `[user-004]` 会被换成成员名（站长：「群成员都变成了
    *   user-00x」）。所以比对时**两边都把匿名号摘掉**再比 —— 这样既证明"除了换名字，
    *   一个字都没动"，也不会因为换名字就误报。
+   * ⚠ 2026-11-23 起还有**查重**（站长：「正文内容完全一样……只保留时间最早的一条」）：
+   *   某天的一条要是跟更早的某条正文一样，站上只留最早那条 —— 所以逐条比的时候
+   *   按"这条正文最早出现在哪一天"筛一遍，只比该留的那些。
    */
+  const keyOf = (s) => String(s ?? '').replace(/\s+/g, ' ').trim();
+  /** 每条正文最早出现在哪天（天文件优先：被天文件盖住的那天群总结不进站，也不算） */
+  const earliest = new Map();
+  const bumpEarliest = (text, date) => {
+    const k = keyOf(text);
+    if (!k) return;
+    const cur = earliest.get(k);
+    if (!cur || date < cur) earliest.set(k, date);
+  };
+  for (const [date, list] of daysOnDisk) for (const e of list) bumpEarliest(e.text, date);
+  for (const s of raw) {
+    if (daysOnDisk.has(s.date)) continue;
+    for (const q of s.quotes) bumpEarliest(q.content, s.date);
+  }
+
   const fieldBad = [];
   for (const s of raw) {
     if (daysOnDisk.has(s.date)) continue; // 天文件优先的那天不看推导
     const got = byDate.get(s.date) ?? [];
-    const want = s.quotes.slice(0, 5);
+    const want = s.quotes.slice(0, 5).filter((q) => earliest.get(keyOf(q.content)) === s.date);
     if (got.length !== want.length) {
-      fieldBad.push(`${s.date} 条数 ${got.length}≠${want.length}`);
+      fieldBad.push(`${s.date} 条数 ${got.length}≠${want.length}（查重后该留 ${want.length}）`);
       continue;
     }
     want.forEach((q, i) => {
@@ -179,7 +197,18 @@ try {
       if (!g.member || g.member === q.user_id) fieldBad.push(`${s.date}#${i + 1} 署名还是个匿名 user_id（${g.member}）`);
     });
   }
-  check('正文、评语跟群总结里的 content / reason 一字不差（只允许匿名号换成名字），署名认得出成员', fieldBad.length === 0, fieldBad.slice(0, 4).join('；') || `${raw.length} 天全对`);
+  check('正文、评语跟群总结里的 content / reason 一字不差（只允许匿名号换成名字、复读的只留最早），署名认得出成员', fieldBad.length === 0, fieldBad.slice(0, 4).join('；') || `${raw.length} 天全对`);
+
+  /* ---- ②a 查重：任何一条正文在整页里最多出现一次（复读的只留最早那条） ---- */
+  const seenText = new Map();
+  const textDups = [];
+  for (const e of entries) {
+    const k = keyOf(e.text);
+    if (!k) continue;
+    if (seenText.has(k)) textDups.push(`${seenText.get(k).date}/${e.date}`);
+    else seenText.set(k, e);
+  }
+  check('★★ 正文查重：没有任何一条正文出现两次（复读的只留最早那条）', textDups.length === 0, textDups.slice(0, 4).join('、') || `全站 ${entries.length} 条各不相同`);
 
   /* -------- ②b 匿名号 user-00X：先查数据够不够换，再查页面上真的换成了人 -------- */
   const noName = [];
@@ -227,18 +256,26 @@ try {
   check('★ /bellie.json 里一个 user-00X 都没有（正文 / 评语）', strayInData === 0, `${strayInData} 条`);
 
   /* ---------------------------- ③ 同一天已经有天文件时，以天文件为准（不覆盖） */
+  /*
+   * ⚠ 2026-11-23 起这里也要按查重算：天文件里 5 条，其中一条跟更早那天正文一样，
+   *   站上就只剩 4 条 —— 那是查重删的，不是"被推导覆盖"，所以按"查重后该留的条数"比。
+   */
   const shadowed = [];
   for (const [date, list] of daysOnDisk) {
     if (!list.length) continue;
+    const expect = list.filter((e) => {
+      const k = keyOf(e.text);
+      return k ? earliest.get(k) === date : true;
+    });
     const got = byDate.get(date) ?? [];
-    if (got.length !== list.length) shadowed.push(`${date} 天文件 ${list.length} 条、页面 ${got.length} 条`);
+    if (got.length !== expect.length) shadowed.push(`${date} 天文件 ${list.length} 条（查重后该留 ${expect.length}）、页面 ${got.length} 条`);
     else {
-      const a = String(list[0].text).trim();
-      const b = String(got[0].text).trim();
+      const a = String(expect[0]?.text ?? '').trim();
+      const b = String(got[0]?.text ?? '').trim();
       if (a !== b) shadowed.push(`${date} 首条正文不是天文件里那条`);
     }
   }
-  check('同一天两边都有时以天文件为准（推导不覆盖直接投递）', shadowed.length === 0, shadowed.slice(0, 3).join('；') || '一致');
+  check('同一天两边都有时以天文件为准（推导不覆盖直接投递；复读的按查重算）', shadowed.length === 0, shadowed.slice(0, 3).join('；') || '一致');
 
   /* ------------------------------------- ④ /bellie.json 和分块接口对得上 */
   let chunkTotal = 0;

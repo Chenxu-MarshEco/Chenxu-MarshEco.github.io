@@ -45,6 +45,7 @@ import { dayOf, paramOf, type Timeline } from './timelines';
  * 构建期和 `node tools/bellie/from-summary.mjs` 共用，不会各写一套对不上。
  */
 import { readSummaryDays } from '../../tools/bellie/summary.mjs';
+import { dedupeByText } from '../../tools/bellie/dedupe.mjs';
 
 export interface BibleEntry {
   /** 稳定 id：`b` + 日期（去横线）+ 当天序号，例如 b20261120-3 */
@@ -261,11 +262,24 @@ export const bellieEntries: BibleEntry[] = (() => {
    *     刻度高亮和点击跳转全对不上。
    * 改成和精华一样升序：首页那条「每日圣经」按 `dailyIndex` 取，跟顺序无关。
    */
-  return out.sort(
+  const sorted = out.sort(
     (a, b) =>
       `${a.date} ${a.time || '00:00'}`.localeCompare(`${b.date} ${b.time || '00:00'}`) ||
       a.id.localeCompare(b.id),
   );
+  /*
+   * 查重（2026-11-23 站长：「发现这种正文内容完全一样的两条圣经时 应直接删去后录入的
+   * 只保留时间最早的一条」）。规则在 tools/bellie/dedupe.mjs —— 验收脚本用的是同一份。
+   * 先排好序再查：留下的就是日期（+时间）最早的那条，署名 / 头像 / 成员计数都跟着它。
+   */
+  const { kept, dropped } = dedupeByText(sorted) as { kept: BibleEntry[]; dropped: { kept: BibleEntry; dropped: BibleEntry }[] };
+  if (dropped.length) {
+    console.log(`[bellie] 正文查重：删掉后录入的 ${dropped.length} 条（只留最早那条）`);
+    for (const d of dropped.slice(0, 20)) {
+      console.log(`  · 留 ${d.kept.date}（${d.kept.id}），删 ${d.dropped.date}（${d.dropped.id}）：${str(d.kept.text).slice(0, 24)}…`);
+    }
+  }
+  return kept;
 })();
 
 export const bellieTitle: string = str((config as { title?: string }).title) || '铃忆的冰室圣经';
