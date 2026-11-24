@@ -138,6 +138,14 @@ check('10-09 / 10-11 那对真实复读：留 10-09、删 10-11',
   kept.some((e) => e.date === '2026-10-09' && normText(e.text).startsWith('有没有可能就是有人拉完屎不擦呢'))
   && !kept.some((e) => e.date === '2026-10-11' && normText(e.text).startsWith('有没有可能就是有人拉完屎不擦呢')),
   dropped.map((d) => `${d.dropped.date}→${d.kept.date}`).filter((s) => s.includes('2026-10-11')).join('') || '没有这一对');
+/*
+ * 站长点名的那一对（2026-11-23 那次）：11-22 Raw 的「梅莉家徒四壁…」被 11-23 隰辰煦
+ * 原样复读一遍、还被 bot 录了进来 —— 站上只能留 11-22 那条（署名也还是 Raw）。
+ */
+check('11-22 / 11-23 那对「梅莉家徒四壁…」：留 11-22（Raw）、删 11-23（隰辰煦）',
+  kept.some((e) => e.date === '2026-11-22' && normText(e.text).startsWith('梅莉家徒四壁'))
+  && !kept.some((e) => e.date === '2026-11-23' && normText(e.text).startsWith('梅莉家徒四壁')),
+  dropped.map((d) => `${d.dropped.date}→${d.kept.date}`).filter((s) => s.includes('2026-11-23')).join('') || '没有这一对');
 
 const distFile = path.join(DIST, 'bellie.json');
 if (!fs.existsSync(distFile)) {

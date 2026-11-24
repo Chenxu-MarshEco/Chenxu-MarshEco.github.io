@@ -323,13 +323,24 @@ try {
   }
   await sleep(2500);
 
+  /*
+   * 挑"今天那条"来量渲染：取最新那份群总结里**查重后还留着**的第一条
+   * （2026-11-23 起，最新那天的第一条也可能因为复读被删掉 —— 比如 11-23
+   * 复读 11-22 的「梅莉家徒四壁…」，站上留的是 11-22 那条，不能拿 11-23 去找）。
+   */
   const newest = raw.map((s) => s.date).sort().slice(-1)[0];
-  const quote = (raw.find((s) => s.date === newest)?.quotes ?? [])[0] ?? {};
+  const newestDay = raw.find((s) => s.date === newest);
+  const quote =
+    (newestDay?.quotes ?? []).find((q) => earliest.get(keyOf(q.content)) === newest)
+    ?? (newestDay?.quotes ?? [])[0]
+    ?? {};
   const wantText = String(quote.content || '').replace(/\s+/g, ' ').trim().slice(0, 16);
   const visible = await cdp.ev(`(() => {
     const items = [...document.querySelectorAll('.salon__item')];
+    /* 无论找没找到，都把"页面上还有没有 user-00X"数出来（不然那条会显示 undefined） */
+    const stray = (document.body.innerText.match(/\\buser[-_]?\\d+\\b/gi) || []).length;
     const hit = items.find((el) => el.textContent.replace(/\\s+/g, ' ').includes(${JSON.stringify(wantText)}));
-    if (!hit) return { found: false, items: items.length };
+    if (!hit) return { found: false, items: items.length, stray };
     const c = hit.querySelector('.salon__comment');
     const t = hit.querySelector('.salon__text') || hit;
     const cs = c ? getComputedStyle(c) : null;
@@ -337,6 +348,7 @@ try {
     return {
       found: true,
       items: items.length,
+      stray,
       param: hit.getAttribute('data-tl-param'),
       comment: c ? c.textContent.replace(/\\s+/g, ' ').trim().slice(0, 20) : null,
       italic: cs ? cs.fontStyle : null,
