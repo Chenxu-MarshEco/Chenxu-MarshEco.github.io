@@ -2286,7 +2286,7 @@ body.pblock-dragging * {
   color: var(--text-muted);
 }
 
-/* 模版那一行：内容块最下面的「存成模版 / 导入模版」，跟着内容走，不吸底 */
+/* 模版那两颗按钮：并进栏底那一排的最后一行右端（不再单独占一行） */
 .pblock-add__tpl {
   display: flex;
   align-items: center;
