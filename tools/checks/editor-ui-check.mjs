@@ -1004,55 +1004,77 @@ try {
     navSave.ok === true && !!navWritten,
     `${JSON.stringify(navSave)}｜盘上：${navWritten ?? '（没有）'}`);
 
-  /* ---------- ⑨ 「这一页的内容」那排「＋ 文字 / ＋ 图片 / …」一直吸在下方 ----------
+  /* ---------- ⑨ 「这一页的内容」那排「＋ 文字 / ＋ 图片 / …」永远在栏底 ----------
      用户原话：「在编辑【这一页的内容】时，不论怎样滚动滚轮 那些+文字 +图片 +链接等选项
      可以始终保持在UI下方 不需要在一个地方点加号插入 然后滚到最下面点+文字
-     然后又滚回去编辑了」。 */
-  const stickyBar = await cdp.ev(`(async () => {
+     然后又滚回去编辑了」。
+
+     2026-11-25 改了做法：那一排以前是内容块里的最后一个子块、靠 position: sticky 吸底，
+     可它后面还跟着「模版」那排（同样带 .pblock-add 类）——两排一起吸底，
+     后画的「模版」整个盖在上面，点「＋ 相册 / ＋ 图鉴」点到的全是模版那排
+     （站长的原话：「不翻到最底下鼠标完全点不到 +相册 +图鉴等」）。
+     现在中栏分成两层：#pw-scroll（会滚的那一叠）+ #pw-palette（钉在栏底的这一排）。
+     所以这条验收也换了量法：不量 sticky，量三件事 —— 底栏在滚动区下面、不压内容、
+     滚到哪儿每个「＋ …」都还点得到（逐个用 elementFromPoint 试，不是数个数）。 */
+  const paletteBar = await cdp.ev(`(async () => {
     const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     await window.__openWs('pages');
     await sleep(2000);
     const col = document.querySelector('.pstudio__col--edit');
-    const bar = document.querySelector('.pblock-add');
-    if (!col || !bar) return { ok: false, why: '找不到编辑区或那排按钮' };
+    const sc = document.querySelector('#pw-scroll');
+    const pal = document.querySelector('#pw-palette');
+    const bar = pal ? pal.querySelector('.pblock-add') : null;
+    if (!col || !sc || !pal || !bar) return { ok: false, why: '找不到编辑区 / 滚动层 / 底栏 / 那排按钮' };
     const boxOf = (el) => { const r = el.getBoundingClientRect(); return { top: Math.round(r.top), bottom: Math.round(r.bottom), h: Math.round(r.height) }; };
-    const cs = getComputedStyle(bar);
-    col.scrollTop = 0;
+    const snap = () => ({
+      col: boxOf(col), sc: boxOf(sc), pal: boxOf(pal),
+      /* 每个「＋ …」在它自己中心点上是不是它自己（被别的东西压住就 false） */
+      btns: [...bar.querySelectorAll('button')].map((b) => {
+        const r = b.getBoundingClientRect();
+        const hit = document.elementFromPoint(Math.round(r.left + r.width / 2), Math.round(r.top + r.height / 2));
+        return { t: b.textContent.trim(), self: !!hit && (hit === b || b.contains(hit)) };
+      }),
+    });
+    sc.scrollTop = 0;
     await sleep(250);
-    const atTop = { col: boxOf(col), bar: boxOf(bar), scrollTop: Math.round(col.scrollTop) };
-    /* 滚到最底下：这一排必须还在编辑区可见范围里 */
-    col.scrollTop = col.scrollHeight;
+    const atTop = snap();
+    sc.scrollTop = sc.scrollHeight;
     await sleep(400);
-    const atBottom = { col: boxOf(col), bar: boxOf(bar), scrollTop: Math.round(col.scrollTop), scrollH: Math.round(col.scrollHeight) };
-    /* 滚到中间：一样要在 */
-    col.scrollTop = Math.round(col.scrollHeight / 2);
+    const atBottom = snap();
+    sc.scrollTop = Math.round(sc.scrollHeight / 2);
     await sleep(400);
-    const atMid = { col: boxOf(col), bar: boxOf(bar), scrollTop: Math.round(col.scrollTop) };
-    /* 那个坐标上点得到的真是它（没被别的东西压住） */
-    const r = bar.getBoundingClientRect();
-    const hit = document.elementFromPoint(Math.round(r.left + r.width / 2), Math.round(r.top + r.height / 2));
-    const buttons = [...bar.querySelectorAll('button')].map((b) => b.textContent.trim());
+    const atMid = snap();
     return {
-      ok: true, position: cs.position, bottom: cs.bottom,
+      ok: true,
+      position: getComputedStyle(bar).position,
+      tplInPalette: !!document.querySelector('#pw-palette .pblock-add__tpl'),
+      overlaps: atTop.sc.bottom > atTop.pal.top + 1,
       atTop, atBottom, atMid,
-      hitInBar: !!hit && (hit === bar || bar.contains(hit)),
-      buttons,
     };
   })()`);
   console.log('\n================ 「这一页的内容」那排按钮 ================');
-  console.log(JSON.stringify(stickyBar));
-  const inView = (s) => s && s.bar.top >= s.col.top - 2 && s.bar.bottom <= s.col.bottom + 12;
-  check('⑨★ 那排「＋ 文字 / ＋ 图片 / …」是 sticky 贴在编辑区下方的',
-    stickyBar.ok === true && stickyBar.position === 'sticky',
-    `position=${stickyBar.position} bottom=${stickyBar.bottom}`);
-  check('⑨★ 滚到**最底下**它还在编辑区可见范围里（不用再滚回去找加号）',
-    inView(stickyBar.atBottom), JSON.stringify({ col: stickyBar.atBottom?.col, bar: stickyBar.atBottom?.bar }));
+  console.log(JSON.stringify(paletteBar).slice(0, 1600));
+  const barOut = (s) => (s?.btns ?? []).filter((b) => !b.self).map((b) => b.t);
+  const allBtns = (s) => (s?.btns ?? []).map((b) => b.t);
+  const inColumn = (s) => s && s.pal.top >= s.col.top - 2 && s.pal.bottom <= s.col.bottom + 2;
+  check('⑨★ 那排「＋ 文字 / ＋ 图片 / …」是栏底一条真底栏：不 sticky、在滚动区下面、不压内容',
+    paletteBar.ok === true && paletteBar.position !== 'sticky' && paletteBar.overlaps === false
+      && paletteBar.atTop.pal.top >= paletteBar.atTop.sc.bottom - 1,
+    `position=${paletteBar.position} overlap=${paletteBar.overlaps} sc=${JSON.stringify(paletteBar.atTop?.sc)} pal=${JSON.stringify(paletteBar.atTop?.pal)}`);
+  check('⑨★ 滚到**最上面**它也在编辑区可见范围里',
+    inColumn(paletteBar.atTop), JSON.stringify({ col: paletteBar.atTop?.col, pal: paletteBar.atTop?.pal }));
+  check('⑨★ 滚到**最底下**它还在（不用再滚回去找加号）',
+    inColumn(paletteBar.atBottom), JSON.stringify({ col: paletteBar.atBottom?.col, pal: paletteBar.atBottom?.pal }));
   check('⑨★ 滚到**中间**也在（编辑哪一段都够得着）',
-    inView(stickyBar.atMid), JSON.stringify({ col: stickyBar.atMid?.col, bar: stickyBar.atMid?.bar }));
-  check('⑨ 那个位置点得到的确实是这一排（没被内容压住），而且按钮齐（文字/图片/链接…）',
-    stickyBar.hitInBar === true && (stickyBar.buttons ?? []).length >= 10 &&
-      ['＋ 文字', '＋ 图片', '＋ 链接'].every((t) => (stickyBar.buttons ?? []).includes(t)),
-    JSON.stringify(stickyBar.buttons));
+    inColumn(paletteBar.atMid), JSON.stringify({ col: paletteBar.atMid?.col, pal: paletteBar.atMid?.pal }));
+  const need = ['＋ 文字', '＋ 图片', '＋ 链接', '＋ 相册', '＋ 图鉴'];
+  for (const [where, s] of [['最上面', paletteBar.atTop], ['最底下', paletteBar.atBottom], ['中间', paletteBar.atMid]]) {
+    check(`⑨★ 滚到${where}：每个「＋ …」都点得到（含 ＋ 相册 / ＋ 图鉴），没有谁被盖住`,
+      need.every((t) => allBtns(s).includes(t)) && barOut(s).length === 0 && allBtns(s).length >= 10,
+      `被盖住：${JSON.stringify(barOut(s))}；共 ${allBtns(s).length} 个`);
+  }
+  check('⑨ 「模版：存成模版 / 导入模版」也并在这条底栏里（不再单独占一行吸在内容末尾）',
+    paletteBar.tplInPalette === true, `tplInPalette=${paletteBar.tplInPalette}`);
 
   /* ---------- ⑩ 链接选择器里的「精华里的某一条」（用户要的那个例子） ----------
      原话：「可以跳转到某一条具体精华处，在编辑器内可以搜索对应精华选择跳转。

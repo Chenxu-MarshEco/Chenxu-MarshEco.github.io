@@ -105,6 +105,8 @@ const els = {
     独立页面面板中间就空着（踩过一次）。
   */
   pwEditCol: $('pw-edit-col'),
+  pwScroll: $('pw-scroll'),
+  pwPalette: $('pw-palette'),
   pwPreviewCol: $('pw-preview-col'),
   pwContentBlock: $('pw-content-block'),
   pwKidsBlock: $('pw-kids-block'),
@@ -127,6 +129,8 @@ const els = {
   soloAdd: $('solo-add'),
   soloList: $('solo-list'),
   soloEditCol: $('solo-edit-col'),
+  soloScroll: $('solo-scroll'),
+  soloPalette: $('solo-palette'),
   soloPreviewCol: $('solo-preview-col'),
   soloPanel: document.querySelector('#solo-modal .modal__panel'),
 
@@ -3136,6 +3140,8 @@ function clearStudioSelection() {
   if (els.soloTitle) els.soloTitle.textContent = '独立页面';
   els.pwFields.textContent = '';
   els.pageEditor.textContent = '';
+  // 栏底那排「＋ …」也清掉（两条底栏都清）：没选页面时它没有落点，留着点下去会插进空气里
+  for (const box of [els.pwPalette, els.soloPalette]) if (box) box.textContent = '';
   els.pwKids.textContent = '';
   els.pwUrl.textContent = '—';
   els.pwStatus.textContent = '';
@@ -3236,10 +3242,17 @@ let studioHost = 'pages';
 const STUDIO_MOVERS = [];
 
 function initStudioAnchors() {
+  /*
+    搬过去的落点：字段 / 内容块 / 子版块 → 独立页面那边的 .pstudio__scroll（那层才是会滚的）。
+    栏底那条「＋ 文字 / …」不搬 —— 两个面板各有一条空的底栏，renderPageEditor 往
+    当前那条里画（见 activePalette），搬容器会把它套成两层。
+    2026-11-25 起中栏分成了「滚的那叠」+「不滚的底栏」两层，落点也得分开写：
+    全塞进 #solo-edit-col 的话，底栏会被那层 overflow: hidden 裁掉。
+  */
   const pairs = [
-    [els.pwFields, els.soloEditCol],
-    [els.pwContentBlock, els.soloEditCol],
-    [els.pwKidsBlock, els.soloEditCol],
+    [els.pwFields, els.soloScroll],
+    [els.pwContentBlock, els.soloScroll],
+    [els.pwKidsBlock, els.soloScroll],
     [els.pwPreviewHead, els.soloPreviewCol],
     [els.pwFrameWrap, els.soloPreviewCol],
     [els.pwActions, els.soloPanel],
@@ -3260,7 +3273,14 @@ function mountStudioHost(which) {
     else if (m.anchor.parentNode) m.anchor.parentNode.insertBefore(m.el, m.anchor);
   }
   studioHost = which;
+  /* 底栏不搬容器：换工作面时把两条都清掉，紧接着的 renderPageEditor 往对的那条重画 */
+  for (const box of [els.pwPalette, els.soloPalette]) if (box) box.textContent = '';
   paintWorkspaceSwitch();
+}
+
+/** 这排「＋ 文字 / …」现在该画进哪条底栏：两个工作台各有一条（都钉在栏底） */
+function activePalette() {
+  return (studioHost === 'solo' ? els.soloPalette : els.pwPalette) || els.pwPalette;
 }
 
 /**
@@ -5451,6 +5471,8 @@ function albumFields(block) {
   file.multiple = true;
   file.style.display = 'none';
   wrap.append(drop, file);
+  /* 同上：那行「点这里选」得真能点开系统选择框（2026-11-25 补） */
+  drop.addEventListener('click', () => file.click());
 
   const addFiles = async (files) => {
     const list = [...(files || [])].filter((f) => /^image\//.test(String(f.type || '')));
@@ -5581,6 +5603,8 @@ function codexFields(block) {
   file.multiple = true;
   file.style.display = 'none';
   wrap.append(drop, file);
+  /* 「点这里选」要真能点开：attachImageIntake 不代管点击（2026-11-25 补） */
+  drop.addEventListener('click', () => file.click());
 
   /** 文件名去掉扩展名当条目名（之后可以改；不留空名） */
   const nameFromFile = (f) => String(f?.name || '')
@@ -5652,21 +5676,35 @@ function codexFields(block) {
     row.className = 'pblock-edit__row';
     row.style.cssText = 'align-items:center;gap:.5rem;flex-wrap:wrap';
 
+    /*
+      每一条自己的上传口（2026-11-25 补的）：
+      站长原话「如果先建好了带名字的条目不传图 那么这个条目就永远不能传图了」——
+      以前只有块顶上那个批量口，它只会**新加**条目，已经在列表里的那条再没地方塞图。
+      现在每一行自己就是一个接入口：点缩略图、点「传图」，或者把图直接拖到这一行上。
+    */
+    const file = document.createElement('input');
+    file.type = 'file';
+    file.accept = 'image/*';
+    file.hidden = true;
+
     let thumb;
     if (it.src) {
       thumb = document.createElement('img');
       thumb.src = it.src;
       thumb.alt = '';
-      thumb.style.cssText = 'width:3rem;height:3rem;object-fit:cover;border-radius:6px;flex:0 0 auto';
+      thumb.style.cssText = 'width:3rem;height:3rem;object-fit:cover;border-radius:6px;flex:0 0 auto;cursor:pointer';
     } else {
-      /* 没图：画一个虚线小方块（和站上那个占位一个意思） */
+      /* 没图：画一个虚线小方块（和站上那个占位一个意思），点它就是传图 */
       thumb = document.createElement('span');
       thumb.textContent = '占位';
-      thumb.title = '这条还没有图：站上会画成占位方块，名字照常显示';
       thumb.style.cssText = 'width:3rem;height:3rem;display:flex;align-items:center;justify-content:center;'
-        + 'border:1px dashed rgba(255,120,190,.55);border-radius:6px;flex:0 0 auto;'
+        + 'border:1px dashed rgba(255,120,190,.55);border-radius:6px;flex:0 0 auto;cursor:pointer;'
         + 'font-size:.68rem;color:rgba(255,217,239,.75)';
     }
+    thumb.title = it.src
+      ? '点它换这张图（也可以把图直接拖到这一行）'
+      : '这条还没有图：点它传一张（站上会画成占位方块，名字照常显示）';
+    thumb.addEventListener('click', () => file.click());
 
     const name = boardInput(it.name ?? '', '名字（必填：只有名字也能当占位）', (v) => {
       if (v.trim()) it.name = v;
@@ -5683,15 +5721,24 @@ function codexFields(block) {
     /* 链接框可以从下面这张候选表里挑（都是现有页面的地址），手打也不会打错 */
     link.setAttribute('list', 'codex-link-pages');
 
-    row.append(thumb, name, link);
+    /*
+      动作挤在一排（.pblock-edit__acts 不换行）：传图 / 换图、去图、截取、↑ ↓、删除。
+      以前有图的那几条会多出两个按钮，把「删除」顶到第二行去 ——
+      站长那边看到的就是「先传了图就删不掉，得先取图再删」。
+    */
+    const acts = document.createElement('span');
+    acts.className = 'pblock-edit__acts';
+    acts.append(
+      mini(it.src ? '换图' : '传图',
+        it.src ? '换掉这一条的图（也可以把图拖到这一行）' : '给这一条传一张图（也可以把图拖到这一行）',
+        () => file.click())
+    );
     if (it.src) {
-      row.append(
+      acts.append(
         mini('去图', '删掉这张图，改回占位方块（条目和名字都留着）', () => {
           delete it.src;
           renderPageEditor();
-        })
-      );
-      row.append(
+        }),
         cropButton({
           label: '图鉴图片',
           get: () => String(it.src || ''),
@@ -5702,7 +5749,7 @@ function codexFields(block) {
         })
       );
     }
-    row.append(
+    acts.append(
       mini('↑', '往前挪一个', () => {
         if (i === 0) return;
         [block.items[i - 1], block.items[i]] = [block.items[i], block.items[i - 1]];
@@ -5718,6 +5765,34 @@ function codexFields(block) {
         renderPageEditor();
       }, 'boardedit__del')
     );
+
+    row.append(thumb, name, link, acts, file);
+    /*
+      拖 / 粘到这一行 = 换这一条的图；块顶上那个口仍然是「一张图建一个新条目」。
+      两个口各管各的，drop 会 stopPropagation，不会一次进两份。
+    */
+    attachImageIntake({
+      el: row,
+      input: file,
+      label: '图鉴图片',
+      onFiles: async ([f]) => {
+        if (!f) return;
+        try {
+          it.src = await uploadImage(f);
+          markStudioDirty();
+          renderPageEditor();
+          toastUploaded('这一条的图传好了');
+        } catch (err) {
+          toast(`「${f.name || '一张'}」没传上去：${err.message}`, true);
+        }
+      },
+      onUrl: (url) => {
+        it.src = url;
+        markStudioDirty();
+        renderPageEditor();
+        toast('图片地址已填上这一条（拖进来的是链接）');
+      },
+    });
     list.append(row);
   });
   wrap.append(list);
@@ -6605,6 +6680,13 @@ function startPageBlockDrag(ev, blockId, box, grip) {
 
 function renderPageEditor() {
   els.pageEditor.textContent = '';
+  /*
+    栏底那排「＋ 文字 / ＋ 相册 / ＋ 图鉴 …」不再挂在内容末尾（2026-11-25）：
+    它挪进了栏底那条真底栏 —— 不跟着内容滚、也不盖住内容。
+    两个工作台各有一条空底栏（#pw-palette / #solo-palette），这里按当前那个画。
+    见 index.html 里 #pw-edit-col 的注释和 style.css 的 .pstudio__palette。
+  */
+  for (const box of [els.pwPalette, els.soloPalette]) if (box) box.textContent = '';
 
   if (!pageDraft.length) {
     const empty = document.createElement('p');
@@ -6863,15 +6945,16 @@ function renderPageEditor() {
     els.pageEditor.appendChild(tip);
   }
 
-  els.pageEditor.appendChild(addRow);
+  /* 这一排挂在栏底（#pw-palette），不挂在内容后面 —— 见函数开头那段注释 */
 
   /*
-    模版这一行（2026-09-28 加的）：把这一页的**结构**存下来，或把存过的导进来。
+    模版（2026-09-28 加的）并到「落点」那一行的右端，不再自己占一整行：
+    底栏每多一行，就少一行能看内容的地方。
     用户的原话：「隰辰煦家、虹星家结构完全一样 … 现在我要编写第三个【吉吉家】了
     如果再来一遍这些构筑很麻烦」—— 所以有了它。
   */
-  const tplRow = document.createElement('div');
-  tplRow.className = 'pblock-add pblock-tpl';
+  const tplRow = document.createElement('span');
+  tplRow.className = 'pblock-add__tpl';
   const tplLabel = document.createElement('span');
   tplLabel.className = 'pblock-add__label';
   tplLabel.textContent = '模版：';
@@ -6880,7 +6963,7 @@ function renderPageEditor() {
   const mkTplBtn = (text, title, onClick) => {
     const b = document.createElement('button');
     b.type = 'button';
-    b.className = 'btn btn--ghost';
+    b.className = 'btn btn--ghost boardedit__mini';
     b.textContent = text;
     b.title = title;
     b.addEventListener('click', onClick);
@@ -6890,7 +6973,10 @@ function renderPageEditor() {
     mkTplBtn('💾 存成模版', '把这一页的结构存成模版：块的顺序与类型、小标题、排版设置都会留着；正文和图片不存', () => void savePageTemplate()),
     mkTplBtn('📥 导入模版', '把存过的某一份结构导入到这一页（加在"当前插入点"，没点过「＋」就加在最后）', () => void openTemplateModal())
   );
-  els.pageEditor.appendChild(tplRow);
+  addRow.appendChild(tplRow);
+
+  const pal = activePalette();
+  if (pal) pal.appendChild(addRow);
 }
 
 /**

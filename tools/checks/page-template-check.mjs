@@ -539,7 +539,7 @@ check(`★ 左栏搜索能选中页面（选的确实是「${pageA.title}」）`
   pickA.ok === true && (pickA.field ?? []).includes(pageA.title), JSON.stringify(pickA));
 check(`★ 选中之后块列表画出来了（${pageA.blocks} 块）`, pickA.blocks === pageA.blocks, `${pickA.blocks} 块`);
 const picked = await cdp.ev(`(() => ({
-  tplBtns: [...document.querySelectorAll('.pblock-tpl button')].map((b) => b.textContent.trim()),
+  tplBtns: [...document.querySelectorAll('.pblock-add__tpl button')].map((b) => b.textContent.trim()),
 }))()`);
 check('「这一页的内容」下面有「存成模版 / 导入模版」两颗按钮',
   Array.isArray(picked.tplBtns) && picked.tplBtns.length === 2 &&
@@ -548,7 +548,7 @@ check('「这一页的内容」下面有「存成模版 / 导入模版」两颗�
 
 /* 点「存成模版」→ 面板里应该多一份「验收模板」 */
 const saved = await cdp.ev(`(async () => {
-  const btn = [...document.querySelectorAll('.pblock-tpl button')].find((b) => b.textContent.includes('存成模版'));
+  const btn = [...document.querySelectorAll('.pblock-add__tpl button')].find((b) => b.textContent.includes('存成模版'));
   btn.click();
   await new Promise((r) => setTimeout(r, 900));
   const t = document.getElementById('toast');
@@ -570,7 +570,7 @@ info(`选「${pageB.title}」：` + JSON.stringify(pickB));
 check(`★ 换到另一页「${pageB.title}」也选得中`, pickB.ok === true && pickB.blocks === pageB.blocks, JSON.stringify(pickB));
 const imported = await cdp.ev(`(async () => {
   const before = document.querySelectorAll('#page-editor .pblock-edit').length;
-  const open = [...document.querySelectorAll('.pblock-tpl button')].find((b) => b.textContent.includes('导入模版'));
+  const open = [...document.querySelectorAll('.pblock-add__tpl button')].find((b) => b.textContent.includes('导入模版'));
   open.click();
   await new Promise((r) => setTimeout(r, 800));
   const modal = document.getElementById('tpl-modal');
@@ -599,7 +599,7 @@ check('这一趟没有 JS 报错', cdp.errors.length === 0, cdp.errors.slice(0, 
 
 /* 面板里「删除」也要能用 */
 const deleted = await cdp.ev(`(async () => {
-  const open = [...document.querySelectorAll('.pblock-tpl button')].find((b) => b.textContent.includes('导入模版'));
+  const open = [...document.querySelectorAll('.pblock-add__tpl button')].find((b) => b.textContent.includes('导入模版'));
   open.click();
   await new Promise((r) => setTimeout(r, 700));
   const rows = [...document.querySelectorAll('#tpl-list .tplrow')];

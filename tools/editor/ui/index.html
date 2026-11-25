@@ -511,8 +511,17 @@
             <div id="pw-standalone"></div>
           </aside>
 
-          <!-- 中：这一页的全部字段 -->
+          <!--
+            中：这一页的全部字段
+            里面分两层（2026-11-25）：
+              · #pw-scroll   会滚动的那一叠（字段 / 内容块 / 子版块）
+              · #pw-palette  钉在栏底的「＋ 文字 / ＋ 相册 / ＋ 图鉴 …」
+            以前那一排也挂在内容块里靠 sticky 吸底，结果两排吸底互相压住、
+            内容滚到它底下就点不着了 —— 现在它是栏底的一条真底栏，
+            不盖内容、也不跟着滚。
+          -->
           <section class="pstudio__col pstudio__col--edit" id="pw-edit-col">
+            <div class="pstudio__scroll" id="pw-scroll">
             <div id="pw-fields"></div>
 
             <!--
@@ -558,6 +567,9 @@
                 </span>
               </div>
             </div>
+            </div>
+            <!-- 栏底那条「＋ 文字 / …」：由 renderPageEditor 画进来，永远在、不盖内容 -->
+            <div class="pstudio__palette" id="pw-palette"></div>
           </section>
 
           <!-- 右：这一页长什么样 -->
@@ -644,7 +656,10 @@
           </aside>
 
           <!-- 中 / 右：整块由 app.js 搬过来（见 mountStudioHost） -->
-          <section class="pstudio__col pstudio__col--edit" id="solo-edit-col"></section>
+          <section class="pstudio__col pstudio__col--edit" id="solo-edit-col">
+            <div class="pstudio__scroll" id="solo-scroll"></div>
+            <div class="pstudio__palette" id="solo-palette"></div>
+          </section>
           <section class="pstudio__col pstudio__col--preview" id="solo-preview-col"></section>
         </div>
       </div>
