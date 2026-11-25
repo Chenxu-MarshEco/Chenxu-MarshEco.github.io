@@ -1415,7 +1415,95 @@
             {
               "id": "huaya-hishitsu-pmu4wwwoq6",
               "type": "text",
-              "text": "## 冰室会员\n冰室的活跃成员们，冰室模因滋长的源动力。"
+              "text": "## 冰室会员\n冰室的主要活跃成员们，冰室模因滋长的源动力。"
+            },
+            {
+              "id": "huaya-hishitsu-pmwvj8z9x1",
+              "type": "codex",
+              "items": [
+                {
+                  "id": "huaya-hishitsu-pmwvj8z9x1-pmwvj913h2",
+                  "name": "Raw",
+                  "src": "/img/uploads/20261125-1057-04d8-027FA3A2220FA1FB9A5988EA38BE0E02.jpg"
+                },
+                {
+                  "id": "huaya-hishitsu-pmwvj8z9x1-pmwvj9wh23",
+                  "name": "隰辰煦",
+                  "src": "/img/uploads/20261125-1100-7961-9032a489aa54d3861ac290fc0c3c424f24ceb1e7.jpg",
+                  "href": "/huaya/character/xichenxu"
+                },
+                {
+                  "id": "huaya-hishitsu-pmwvj8z9x1-pmwvja5jb4",
+                  "name": "虹星",
+                  "src": "/img/uploads/20261125-1105-4c3f-avatar.jpg"
+                },
+                {
+                  "id": "huaya-hishitsu-pmwvj8z9x1-pmwvja8535",
+                  "name": "小石吉吉",
+                  "src": "/img/uploads/20261125-1105-a57e-JIJI.jpg"
+                },
+                {
+                  "id": "huaya-hishitsu-pmwvj8z9x1-pmwvjacny6",
+                  "name": "桑芙",
+                  "src": "/img/uploads/20261125-1105-3ee9-Sunf.jpg"
+                },
+                {
+                  "id": "huaya-hishitsu-pmwvj8z9x1-pmwvjadz27",
+                  "name": "SSW",
+                  "src": "/img/uploads/20261125-1105-ba82-SSW.jpg"
+                },
+                {
+                  "id": "huaya-hishitsu-pmwvj8z9x1-pmwvjaizy8",
+                  "name": "Airo",
+                  "src": "/img/uploads/20261125-1105-51cf-Airo.jpg"
+                },
+                {
+                  "id": "huaya-hishitsu-pmwvj8z9x1-pmwvjajkf9",
+                  "name": "沃伊德",
+                  "src": "/img/uploads/20261125-1108-9ddb-b_f1a47b9e8ead15b49cea83f3763c2840.jpg"
+                },
+                {
+                  "id": "huaya-hishitsu-pmwvj8z9x1-pmwvjaku710",
+                  "name": "WQ",
+                  "src": "/img/uploads/20261125-1106-c87a-b_00389e25a0c8648ef9c1dcc24759adcf.jpg"
+                },
+                {
+                  "id": "huaya-hishitsu-pmwvj8z9x1-pmwvjal6e11",
+                  "name": "羽之颂",
+                  "src": "/img/uploads/20261125-1106-1a66-YuZhiSong.jpg"
+                },
+                {
+                  "id": "huaya-hishitsu-pmwvj8z9x1-pmwvjalzj12",
+                  "name": "马斯",
+                  "src": "/img/uploads/20261125-1110-737a-072515E1C368085C91C2782166A075AD.jpg"
+                },
+                {
+                  "id": "huaya-hishitsu-pmwvj8z9x1-pmwvjanxz13",
+                  "name": "灵空",
+                  "src": "/img/uploads/20261125-1107-304e-LingKong.jpg"
+                },
+                {
+                  "id": "huaya-hishitsu-pmwvj8z9x1-pmwvjas2f14",
+                  "name": "皮丝",
+                  "src": "/img/uploads/20261125-1107-7cde-b_30d451fcf147e8aaf904de16d6808b1f.jpg"
+                },
+                {
+                  "id": "huaya-hishitsu-pmwvj8z9x1-pmwvjb0u716",
+                  "name": "OWQ"
+                },
+                {
+                  "id": "huaya-hishitsu-pmwvj8z9x1-pmwvjb3n317",
+                  "name": "盾返"
+                },
+                {
+                  "id": "huaya-hishitsu-pmwvj8z9x1-pmwvjb3so18",
+                  "name": "希尔"
+                },
+                {
+                  "id": "huaya-hishitsu-pmwvj8z9x1-pmwvjb5rr19",
+                  "name": "艾林森"
+                }
+              ]
             },
             {
               "id": "huaya-hishitsu-pmu54lotu1",
