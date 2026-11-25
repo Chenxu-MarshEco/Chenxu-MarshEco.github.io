@@ -4413,9 +4413,6 @@ body.pblock-dragging * {
 }
 
 /* ---------- 页面模版（2026-09-28）：列表一行一份 ---------- */
-.pblock-tpl {
-  margin-top: -0.35rem;
-}
 .tplrow {
   display: flex;
   align-items: center;
