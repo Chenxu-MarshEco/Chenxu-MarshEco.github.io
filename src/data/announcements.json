@@ -27,15 +27,14 @@
   "title": "曼沫砾总线",
   "subtitle": "",
   "latest": 6,
-  "updated": "2026-11-19",
+  "updated": "2026-11-26",
   "items": [
     {
       "id": "an-20261119-01",
       "kind": "update",
       "date": "2026-11-19",
       "title": "涣愿终池板块已上线！",
-      "href": "/memoriterminalcistern#blk-page-mwt0cistern-c1",
-      "pinned": true
+      "href": "/memoriterminalcistern#blk-page-mwt0cistern-c1"
     },
     {
       "id": "an-20261113-01",
@@ -50,6 +49,14 @@
       "date": "2026-11-11",
       "title": "2026冰室国庆大聚会相册已上传~",
       "href": "/huaya/bingshi/photo/20261001#blk-page-mwbs12vg-pmwbuy9xs61"
+    },
+    {
+      "id": "an-20261018-01",
+      "kind": "update",
+      "date": "2026-10-18",
+      "title": "篠花娅风尚持续建设中~点我跳转服务器网页地图",
+      "href": "http://43.248.77.159:38100/#world:-144:0:-96:1500:0:0:0:0:perspective",
+      "pinned": true
     },
     {
       "id": "an-20261010-01",
