@@ -1,0 +1,578 @@
+{
+  "schema_version": 1,
+  "source": {
+    "trace_id": "group_燃儿求开组_20261125_230000_a218355a24b1",
+    "date": "2026-11-25",
+    "kind": "daily_analysis",
+    "stage": "LLM_ANALYSIS"
+  },
+  "privacy": {
+    "structured_user_ids": "per-export placeholders",
+    "raw_chat_included": false,
+    "internal_prompts_included": false,
+    "free_text_review_required": true,
+    "redactions": []
+  },
+  "analysis_result": {
+    "statistics": {
+      "message_count": 1835,
+      "total_characters": 19353,
+      "participant_count": 16,
+      "most_active_period": "19:00-20:00",
+      "golden_quotes": [
+        {
+          "content": "我太喜欢ky了，所以现在开始每次ky被举报时都要遭受按摩前列腺直到爆体的严酷惩罚",
+          "sender": "妺妺夶λ（葬愛ト戀嚸ノ暗亱修羅）",
+          "reason": "将常见的二次元圈子违禁行为“KY（没眼力见）”与极端重口的R18猎奇惩罚强行绑定，表面上是在立Flag自我反思，实际上更像是一种变态的自我奖励，脑洞和性癖的暴露程度极其逆天。",
+          "user_id": "user-001"
+        },
+        {
+          "content": "因为你的电脑里又没有大肌肉气球奶巨大乳晕满身潮红鸡巴比小臂长的兽人正在撸管的图片（没说raw有 纯猜测）",
+          "sender": "🏗隰辰煦🏗",
+          "reason": "极其详尽、极具画面感且重口的Furry控黄图特征连珠炮式咏唱，把XP系统刻画得入木三分。最绝的是最后括号里极度心虚又欲盖弥彰的“纯猜测”，精准背刺了 [user-001]，冲击力拉满。",
+          "user_id": "user-002"
+        },
+        {
+          "content": "我在洗澡然后刚刚指甲不是裂了吗，然后我的阴毛夹进裂缝里我没注意，一拽我直接炸刚了",
+          "sender": "妺妺夶λ（葬愛ト戀嚸ノ暗亱修羅）",
+          "reason": "毫无保留地分享极其私密且极具痛感的生理意外，前文还在正常铺垫“指甲裂了”，后半句突然拐进下三路并爆出“炸肛”的凄惨结局，文字自带十级痛觉通感，属于让人看一眼就幻痛的逆天发言。",
+          "user_id": "user-001"
+        },
+        {
+          "content": "@ 如果群内每个人都掐碎爸爸的痔疮请你说说你觉得会掐碎多少个",
+          "sender": "亚卡莱特ᅠ⁧呃呜喵⁧‭",
+          "reason": "在群友们都在让AI做宝可梦、东方角色分配的正常语境下，突然扔出一句突破人类伦理、生理和卫生底线的究极猎奇提问，“掐碎爸爸的痔疮”几个字组合在一起具有毁灭性的精神污染力。",
+          "user_id": "user-003"
+        },
+        {
+          "content": "无趣男女喜欢的コンテンツ：\n性爱、SEX、S-E-X、操、猥亵行为、性行为、性交、性交渉、交接、交尾、交配、交合、交媾、媾合、情交、交わり、交わる、秘め事、色事、濡れ事、情事、营み、床入、共寝、同衾、房事、鸡巴对接",
+          "sender": "盾返with森林的香气",
+          "reason": "犹如人形春宫词典般一口气报菜名式列举了近三十种中日文里的“性行为”同义词，从古典雅称“同衾、秘め事”一路狂飙到最后粗暴直白的“鸡巴对接”，强烈的割裂感直接引出后续 [user-006] 的逆天接梗。",
+          "user_id": "user-004"
+        }
+      ],
+      "emoji_count": 94,
+      "emoji_statistics": {
+        "face_count": 94,
+        "mface_count": 0,
+        "bface_count": 0,
+        "sface_count": 0,
+        "other_emoji_count": 0,
+        "face_details": {
+          "emoji_5": 28,
+          "emoji_318": 2,
+          "emoji_15": 8,
+          "emoji_11": 11,
+          "emoji_325": 17,
+          "emoji_29": 1,
+          "emoji_unknown": 21,
+          "emoji_314": 1,
+          "emoji_319": 1,
+          "emoji_300": 1,
+          "emoji_476": 2,
+          "emoji_391": 1
+        }
+      },
+      "activity_visualization": {
+        "hourly_activity": {
+          "16": 12,
+          "17": 248,
+          "18": 491,
+          "19": 543,
+          "20": 206,
+          "21": 269,
+          "22": 66
+        },
+        "daily_activity": {},
+        "user_activity_ranking": [
+          {
+            "user_id": "user-002",
+            "nickname": "🏗隰辰煦🏗",
+            "message_count": 404
+          },
+          {
+            "user_id": "user-005",
+            "nickname": "澄净羽之颂",
+            "message_count": 387
+          },
+          {
+            "user_id": "user-006",
+            "nickname": "👆ミスタ",
+            "message_count": 269
+          },
+          {
+            "user_id": "user-003",
+            "nickname": "亚卡莱特ᅠ⁧呃呜喵⁧‭",
+            "message_count": 250
+          },
+          {
+            "user_id": "user-001",
+            "nickname": "妺妺夶λ（葬愛ト戀嚸ノ暗亱修羅）",
+            "message_count": 231
+          },
+          {
+            "user_id": "user-007",
+            "nickname": "ai.🚽👩▽🥩🕷️、🌞😌🍎🍏🪨🌳🐦",
+            "message_count": 99
+          },
+          {
+            "user_id": "user-008",
+            "nickname": "SSWTLZZ",
+            "message_count": 59
+          },
+          {
+            "user_id": "user-004",
+            "nickname": "盾返with森林的香气",
+            "message_count": 49
+          },
+          {
+            "user_id": "user-009",
+            "nickname": "UDRA🐳HYA",
+            "message_count": 39
+          },
+          {
+            "user_id": "user-010",
+            "nickname": "键鸡颂",
+            "message_count": 14
+          }
+        ],
+        "peak_hours": [
+          {
+            "hour": 19,
+            "count": 543
+          },
+          {
+            "hour": 18,
+            "count": 491
+          },
+          {
+            "hour": 21,
+            "count": 269
+          }
+        ],
+        "activity_heatmap_data": {
+          "hourly_max": 543,
+          "emoji_max": 1,
+          "hourly_normalized": {
+            "0": 0.0,
+            "1": 0.0,
+            "2": 0.0,
+            "3": 0.0,
+            "4": 0.0,
+            "5": 0.0,
+            "6": 0.0,
+            "7": 0.0,
+            "8": 0.0,
+            "9": 0.0,
+            "10": 0.0,
+            "11": 0.0,
+            "12": 0.0,
+            "13": 0.0,
+            "14": 0.0,
+            "15": 0.0,
+            "16": 2.209944751381215,
+            "17": 45.67219152854512,
+            "18": 90.42357274401473,
+            "19": 100.0,
+            "20": 37.93738489871086,
+            "21": 49.53959484346225,
+            "22": 12.154696132596685,
+            "23": 0.0
+          },
+          "emoji_normalized": {
+            "0": 0.0,
+            "1": 0.0,
+            "2": 0.0,
+            "3": 0.0,
+            "4": 0.0,
+            "5": 0.0,
+            "6": 0.0,
+            "7": 0.0,
+            "8": 0.0,
+            "9": 0.0,
+            "10": 0.0,
+            "11": 0.0,
+            "12": 0.0,
+            "13": 0.0,
+            "14": 0.0,
+            "15": 0.0,
+            "16": 0.0,
+            "17": 0.0,
+            "18": 0.0,
+            "19": 0.0,
+            "20": 0.0,
+            "21": 0.0,
+            "22": 0.0,
+            "23": 0.0
+          },
+          "activity_levels": {
+            "0": "inactive",
+            "1": "inactive",
+            "2": "inactive",
+            "3": "inactive",
+            "4": "inactive",
+            "5": "inactive",
+            "6": "inactive",
+            "7": "inactive",
+            "8": "inactive",
+            "9": "inactive",
+            "10": "inactive",
+            "11": "inactive",
+            "12": "inactive",
+            "13": "inactive",
+            "14": "inactive",
+            "15": "inactive",
+            "16": "low",
+            "17": "medium",
+            "18": "high",
+            "19": "high",
+            "20": "medium",
+            "21": "medium",
+            "22": "low",
+            "23": "inactive"
+          }
+        }
+      },
+      "token_usage": {
+        "prompt_tokens": 110030,
+        "completion_tokens": 3133,
+        "total_tokens": 113163
+      },
+      "chat_quality_review": null
+    },
+    "topics": [
+      {
+        "topic": "地域方言与海外淘金",
+        "contributors": [
+          "亚卡莱特ᅠ⁧呃呜喵⁧‭",
+          "🏗隰辰煦🏗",
+          "👆ミスタ"
+        ],
+        "detail": "话题起初由 [user-006] 询问是否有人用日V调教宁波话引起。[user-002] 表示宁波话过于小众，算上周边不讲宁波话的县市总人口也不到千万，真正的市区土著不过三百万。随后 [user-003] 好奇并查询了南宁的人口数据（常住人口约901万，属于特大城市），话题随之转向上林壮话。[user-003] 借机科普了当地著名的海外淘金热潮，指出老家有大量人口（包括自己的父亲）会前往非洲开挖掘机（当地称作勾机）或投资买机器帮人挖金，这番独特的地域文化让群友们大开眼界。",
+        "contributor_ids": [
+          "user-003",
+          "user-002",
+          "user-006"
+        ]
+      },
+      {
+        "topic": "高考回忆与作文大赏",
+        "contributors": [
+          "🏗隰辰煦🏗",
+          "妺妺夶λ（葬愛ト戀嚸ノ暗亱修羅）",
+          "👆ミスタ",
+          "亚卡莱特ᅠ⁧呃呜喵⁧‭",
+          "澄净羽之颂"
+        ],
+        "detail": "起因是讨论文殊菩萨与诸葛亮谁更智慧，[user-002] 和 [user-003] 提到高考前曾拜过文殊菩萨。[user-002] 透露浙江宁波的高中在高考前会放假半个月让学生去景点拜佛，这让 [user-001] 和 [user-006] 感到不可思议，大家纷纷回忆起各自高中的放假安排。话题随后延伸到高中的班级日志，[user-001] 称班日志最后被他们的小团体垄断，而 [user-005] 吐槽班里的树洞本因充满小团体对立言论被销毁。接着 [user-006] 分享了一段极其羞耻的孤独天才语录，[user-003] 则晒出大一刚入学时写的充满正能量的英语课感想，被群友调侃太阳光。最后 [user-003] 直接贴出了一篇探讨AI时代下大学生智力健康、环境健康与终身学习的超长课程作业，引发群友围观。",
+        "contributor_ids": [
+          "user-002",
+          "user-001",
+          "user-006",
+          "user-003",
+          "user-005"
+        ]
+      },
+      {
+        "topic": "浙江美食与鱼类处理",
+        "contributors": [
+          "🏗隰辰煦🏗",
+          "👆ミスタ",
+          "妺妺夶λ（葬愛ト戀嚸ノ暗亱修羅）",
+          "澄净羽之颂",
+          "ai.🚽👩▽🥩🕷️、🌞😌🍎🍏🪨🌳🐦"
+        ],
+        "detail": "由 [user-002] 分享晚餐吃老浙最爱的茭白肉片年糕汤引起，[user-006] 表示在杭州满街都是江西小炒和沙县小吃，很难吃到正宗年糕。[user-001] 表示无法想象年糕加海鲜的味道，[user-002] 解释浙江做法主打咸鲜而非腥味。[user-001] 随后吹嘘家里的鲫鱼汤面极佳，但坦言自己不会处理鱼。对此，[user-002] 和 [user-006] 传授经验，指出买鱼时菜场会帮忙杀好，回家只需挖掉苦胆和内脏即可。[user-002] 借机强烈鄙视把鲳鱼做苦的食堂，并吐槽之前点江西小炒的泥鳅，店家竟不剖肚子整根煮，导致自己连吃到好几个苦胆的惨痛经历。",
+        "contributor_ids": [
+          "user-002",
+          "user-006",
+          "user-001",
+          "user-005",
+          "user-007"
+        ]
+      },
+      {
+        "topic": "群友疯狂整活AI机器人",
+        "contributors": [
+          "亚卡莱特ᅠ⁧呃呜喵⁧‭",
+          "澄净羽之颂",
+          "🏗隰辰煦🏗",
+          "👆ミスタ",
+          "妺妺夶λ（葬愛ト戀嚸ノ暗亱修羅）"
+        ],
+        "detail": "这是一场大型的群友调戏群内AI机器人的狂欢。起初 [user-003] 让AI给群友分配宝可梦（禁止初代151），随后大家脑洞大开，[user-002]、[user-001]、[user-005] 等人轮番上阵，要求AI将群友设定为MC生物、怪猎怪物、希腊神话人物、东方角色、方舟干员、JOJO替身以及Undertale的Sans。接着玩法升级为语录模仿，大家要求AI模仿群友的口吻说东北话、抗日剧日式洋泾滨语、Galgame女主台词，甚至让AI编写了群友大逃杀剧本（其中 [user-003] 被写死于听 [user-006] 的笑声从高架床摔下）以及用火星文撰写葬爱家族辈分表。由于AI精准捕捉了大家的口头禅和刻板印象，节目效果爆炸。最后机器人维护者 [user-008] 透露，这波高强度整活直接烧掉了他三美元的Gemini API额度，决定将其切换为订阅制以节省开支。",
+        "contributor_ids": [
+          "user-003",
+          "user-005",
+          "user-002",
+          "user-006",
+          "user-001"
+        ]
+      },
+      {
+        "topic": "饥荒联机痛点与机制",
+        "contributors": [
+          "🏗隰辰煦🏗",
+          "澄净羽之颂",
+          "SSWTLZZ",
+          "键鸡颂",
+          "UDRA🐳HYA"
+        ],
+        "detail": "起因是 [user-003] 提到某网友在联机玩游戏时不断压力队友。[user-002] 对此深有感触，认为饥荒联机版机制极其硬核，萌新如果不听老玩家指导（如引狗拆家、死亡导致全队持续掉San值），很容易把全队坑死，因此极易演变成压力局，[user-005] 也配合列举了引Boss、烧箱子等经典坑人操作。随后正在玩饥荒正版手游的 [user-008] 分享了自己遇到巨鹿拆家以及杀海象掉帽子的经历。[user-002] 分析指出饥荒装备数值不平衡，单一效果的装备大多沦为玩具，完全不如牛帽实用。最后 [user-008] 提到手游版自带晚上给牛剪毛的新手教程，[user-002] 和 [user-005] 感叹这功能超越原版，因为原版不靠社区攻略根本无法摸索出这些隐藏技巧。",
+        "contributor_ids": [
+          "user-002",
+          "user-005",
+          "user-008",
+          "user-010",
+          "user-009"
+        ]
+      }
+    ],
+    "user_titles": [],
+    "user_analysis": {
+      "user-011": {
+        "message_count": 7,
+        "char_count": 31,
+        "emoji_count": 0,
+        "nickname": "六硝基六氮杂异伍兹烷粉聚醚醚酮聚苯并咪唑",
+        "hours": {
+          "16": 2,
+          "20": 3,
+          "21": 2
+        },
+        "reply_count": 1
+      },
+      "user-005": {
+        "message_count": 387,
+        "char_count": 2273,
+        "emoji_count": 31,
+        "nickname": "澄净羽之颂",
+        "hours": {
+          "16": 1,
+          "17": 10,
+          "18": 94,
+          "19": 153,
+          "20": 43,
+          "21": 83,
+          "22": 3
+        },
+        "reply_count": 66
+      },
+      "user-007": {
+        "message_count": 99,
+        "char_count": 787,
+        "emoji_count": 5,
+        "nickname": "ai.🚽👩▽🥩🕷️、🌞😌🍎🍏🪨🌳🐦",
+        "hours": {
+          "16": 1,
+          "17": 3,
+          "18": 33,
+          "19": 57,
+          "20": 5
+        },
+        "reply_count": 13
+      },
+      "user-003": {
+        "message_count": 250,
+        "char_count": 4996,
+        "emoji_count": 22,
+        "nickname": "亚卡莱特ᅠ⁧呃呜喵⁧‭",
+        "hours": {
+          "16": 5,
+          "17": 57,
+          "18": 66,
+          "19": 58,
+          "20": 35,
+          "21": 18,
+          "22": 11
+        },
+        "reply_count": 6
+      },
+      "user-006": {
+        "message_count": 269,
+        "char_count": 2204,
+        "emoji_count": 1,
+        "nickname": "👆ミスタ",
+        "hours": {
+          "16": 2,
+          "17": 60,
+          "18": 95,
+          "19": 75,
+          "20": 17,
+          "21": 16,
+          "22": 4
+        },
+        "reply_count": 39
+      },
+      "user-002": {
+        "message_count": 404,
+        "char_count": 4159,
+        "emoji_count": 29,
+        "nickname": "🏗隰辰煦🏗",
+        "hours": {
+          "16": 1,
+          "17": 49,
+          "18": 124,
+          "19": 96,
+          "20": 35,
+          "21": 77,
+          "22": 22
+        },
+        "reply_count": 42
+      },
+      "user-012": {
+        "message_count": 9,
+        "char_count": 32,
+        "emoji_count": 0,
+        "nickname": "MMTdd",
+        "hours": {
+          "17": 7,
+          "19": 2
+        },
+        "reply_count": 1
+      },
+      "user-004": {
+        "message_count": 49,
+        "char_count": 387,
+        "emoji_count": 3,
+        "nickname": "盾返with森林的香气",
+        "hours": {
+          "17": 21,
+          "18": 2,
+          "19": 25,
+          "22": 1
+        },
+        "reply_count": 8
+      },
+      "user-008": {
+        "message_count": 59,
+        "char_count": 601,
+        "emoji_count": 2,
+        "nickname": "SSWTLZZ",
+        "hours": {
+          "17": 7,
+          "18": 3,
+          "19": 14,
+          "20": 8,
+          "21": 15,
+          "22": 12
+        },
+        "reply_count": 6
+      },
+      "user-001": {
+        "message_count": 231,
+        "char_count": 2433,
+        "emoji_count": 1,
+        "nickname": "妺妺夶λ（葬愛ト戀嚸ノ暗亱修羅）",
+        "hours": {
+          "17": 34,
+          "18": 72,
+          "19": 49,
+          "20": 44,
+          "21": 25,
+          "22": 7
+        },
+        "reply_count": 18
+      },
+      "user-013": {
+        "message_count": 2,
+        "char_count": 88,
+        "emoji_count": 0,
+        "nickname": "PotatoBOT",
+        "hours": {
+          "18": 1,
+          "21": 1
+        },
+        "reply_count": 0
+      },
+      "user-014": {
+        "message_count": 1,
+        "char_count": 26,
+        "emoji_count": 0,
+        "nickname": "01",
+        "hours": {
+          "18": 1
+        },
+        "reply_count": 0
+      },
+      "user-009": {
+        "message_count": 39,
+        "char_count": 246,
+        "emoji_count": 0,
+        "nickname": "UDRA🐳HYA",
+        "hours": {
+          "19": 2,
+          "20": 10,
+          "21": 23,
+          "22": 4
+        },
+        "reply_count": 2
+      },
+      "user-015": {
+        "message_count": 7,
+        "char_count": 121,
+        "emoji_count": 0,
+        "nickname": "怨妇",
+        "hours": {
+          "19": 7
+        },
+        "reply_count": 0
+      },
+      "user-016": {
+        "message_count": 8,
+        "char_count": 779,
+        "emoji_count": 0,
+        "nickname": "世界的尽头",
+        "hours": {
+          "19": 4,
+          "20": 4
+        },
+        "reply_count": 1
+      },
+      "user-010": {
+        "message_count": 14,
+        "char_count": 190,
+        "emoji_count": 0,
+        "nickname": "键鸡颂",
+        "hours": {
+          "19": 1,
+          "20": 2,
+          "21": 9,
+          "22": 2
+        },
+        "reply_count": 2
+      }
+    },
+    "chat_quality_review": {
+      "title": "赛博算命与地域黑话大赏",
+      "subtitle": "从宁波乡毋宁到东北浩子，最后全员沦为AI的电子宠物",
+      "dimensions": [
+        {
+          "name": "赛博算命",
+          "percentage": 45.0,
+          "comment": "后半程全员化作AI的忠实舔狗，疯狂拷打bot进行“宝可梦塑”、“怪猎塑”、“兽设塑”乃至“格雷科技多方块塑”。看着你们为了不当“奇诺栗鼠（浩子）”和争夺“3D龙”吵成一团，甚至让AI用东北话和Galgame女主口吻模仿自己，我只能说人类的本质就是渴望被大模型贴标签的抖M，哪怕被AI指认亲爹是钟离也乐在其中。",
+          "color": "#607d8b"
+        },
+        {
+          "name": "风土人情",
+          "percentage": 25.0,
+          "comment": "一场跨越千里的地理与美食大乱斗。从宁波老三区土著嫌弃奉化蒋介石是“乡毋宁”，到台州散装地图以及广西上林老表偷渡非洲开勾机挖金；吃食上更是重量级，老浙对着茭白年糕汤潸然泪下，江西整根带苦胆煮的泥鳅直接把人送走。这群聊就像被大卡车撞散的《舌尖上的中国》混合了《走进科学》。",
+          "color": "#2196f3"
+        },
+        {
+          "name": "青春傷痛",
+          "percentage": 15.0,
+          "comment": "大型社死与中二病回忆录。有人在阶梯教室上演“秒关兽游和QQ”的拆弹行动，生怕暴露小众xp；有人翻出高中“天才总是孤独的”赛级阴角日记，紧接着又是一篇充满“路漫漫其修远兮”的赛级阳角大学英语感言，甚至直接贴出一篇几千字的《AI与智力健康》课程论文（tbck）。建议你们的舍友直接保研。",
+          "color": "#f44336"
+        },
+        {
+          "name": "混沌电波",
+          "percentage": 15.0,
+          "comment": "开局地上捡到一只死鼩鼱引发“生物面相学”探讨，中间穿插着“鸡巴对接”、“前列腺按摩爆体”等毫无下限的直球黄腔，以及“查团员抓间谍分50万”的荒诞狼人杀，最后以蛞蝓越狱沦为宠物自助餐的恐怖故事收尾。你们的聊天记录要是打印出来，高低得算精神污染源。",
+          "color": "#e91e63"
+        }
+      ],
+      "summary": "白天在论文里痛斥AI威胁大学生智力健康，晚上在群里跪求AI分配宝可梦和兽设，这就是当代赛博精神分裂的真实写照。"
+    }
+  }
+}
