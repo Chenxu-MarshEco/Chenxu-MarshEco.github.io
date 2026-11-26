@@ -1507,6 +1507,17 @@ function intakePanelOf(el) {
   return el.closest('.modal') || els.form || document.body;
 }
 
+/**
+ * 把已经不挂在文档上的接入口剔掉。
+ *
+ * ⚠ **只能在查表的时候调，不能在 attachImageIntake 里调**（2026-11-26 改）。
+ * 面板是一边造一边挂的：`imageSlot()` 造出来的那一刻它还没 append 进面板
+ * （`isConnected` 是假），下一个接入口注册时一 prune 就把它当成"重画带走的"
+ * 删掉了 —— 「成员」面板 24 个人正好只剩最后一个人那张「放大图」，
+ * 于是全局粘贴的兜底（面板里只有一个接入口）永远选中它，
+ * 站长看到的就成了「粘哪儿都进最下面那个成员的放大框」（他 11-26 报的第二个 bug）。
+ * 一个接入口被重画带走之后留着也不碍事：查表时按 isConnected 再剔。
+ */
 function pruneIntakes() {
   for (let i = IMAGE_INTAKES.length - 1; i >= 0; i -= 1) {
     if (!IMAGE_INTAKES[i].el.isConnected) IMAGE_INTAKES.splice(i, 1);
@@ -1619,7 +1630,7 @@ async function runIntake(entry, files) {
 function attachImageIntake(o) {
   const el = o && o.el;
   if (!el) return null;
-  pruneIntakes();
+  /* 这里**不要** prune：面板正一边造一边挂，刚造的还没进文档（见 pruneIntakes 的注释） */
 
   const entry = {
     el,
@@ -1701,6 +1712,23 @@ function intakeFromNode(node) {
   return IMAGE_INTAKES.find((e) => e.el === hit) || null;
 }
 
+/**
+ * 焦点在某个内容块里、而**这个块只有一个上传点** → 就是它。
+ *
+ * 相册整块只有顶上那一个口（标题、照片列表都围着它），在块里任何地方 Ctrl+V
+ * 都该进那个口。图鉴 / 成员这种一块里有好几个口的不猜 —— 猜错就会像以前那样
+ * 「粘到别的地方去了」，那种时候要么点那一格的「粘贴」，要么先点一下它。
+ */
+function intakeFromBlock(node) {
+  if (!(node instanceof Element)) return null;
+  const block = node.closest('.pblock-edit');
+  if (!block) return null;
+  const hits = IMAGE_INTAKES.filter(
+    (e) => block.contains(e.el) && intakeVisible(e.el) && e.countsForPaste,
+  );
+  return hits.length === 1 ? hits[0] : null;
+}
+
 /** 正文编辑器（连外壳）自己有拖 / 粘那一套，别抢它的活 */
 function isBodyEditorNode(node) {
   if (!(node instanceof Element)) return false;
@@ -1730,6 +1758,10 @@ function resolveImageIntake(node) {
   pruneIntakes();
   const direct = intakeFromNode(node) || intakeFromNode(document.activeElement);
   if (direct) return direct;
+
+  /* ② 就在某个块里、这个块又只有一个口（相册那种）→ 给它，比「最近点过谁」更近 */
+  const inBlock = intakeFromBlock(node) || intakeFromBlock(document.activeElement);
+  if (inBlock) return inBlock;
 
   if (lastIntake && intakeVisible(lastIntake.el)) return lastIntake;
 
@@ -1773,7 +1805,7 @@ function bindImagePasteToIntakes() {
     // 焦点在正文编辑器里又没有明确的上传点 → 交回给老的那套（插到光标处）
     if (!direct && (isBodyEditorNode(ev.target) || isBodyEditorNode(document.activeElement))) return;
 
-    const entry = direct || resolveImageIntake(null);
+    const entry = direct || resolveImageIntake(ev.target);
     if (!entry) {
       ev.preventDefault();
       toast('不知道该把这张图放哪儿：先点一下「上传 / 选图片」那个按钮，再按 Ctrl+V');
@@ -1783,6 +1815,79 @@ function bindImagePasteToIntakes() {
     lastIntake = entry;
     await runIntake(entry, files.map((f) => renamePasted(f)));
   });
+}
+
+/* ---------------------------------------------------------------
+   「粘贴」按钮（2026-11-26）
+
+   站长原话：「给所有有关图片上传的地方加一个按钮 按了以后会自动读取剪贴板的
+   图片并导入到旁边对应的框里」。
+
+   为什么非要有这个按钮：Ctrl+V 是**窗口级**的事件，编辑器里几十个上传点，
+   它不知道该给哪一个 —— 以前靠「焦点在哪个上传点里 / 最近点过哪一个 /
+   面板里只有一个上传点」去猜，猜不到就弹一句「不知道该把这张图放哪儿」，
+   猜歪了就写进别人的格子里（「粘哪儿都进最下面那个成员的放大框」）。
+   按钮不给它猜的机会：它长在哪一格，读到的图就交给哪一格。
+
+   `navigator.clipboard.read()` 只在用户手势里能用（点这个按钮就是手势），
+   第一次会弹一次浏览器的许可；读不到就明说，不静默吞。
+   --------------------------------------------------------------- */
+
+/** 读系统剪贴板里的图片：只认 image/*，文字 / HTML 一概不管 */
+async function readClipboardImages() {
+  if (!navigator.clipboard || typeof navigator.clipboard.read !== 'function') {
+    throw new Error('这个浏览器不让网页读剪贴板');
+  }
+  const items = await navigator.clipboard.read();
+  const files = [];
+  for (const item of items) {
+    const type = (item.types || []).find((t) => /^image\//i.test(t));
+    if (!type) continue;
+    const blob = await item.getType(type);
+    const ext = (type.split('/')[1] || 'png').replace('jpeg', 'jpg');
+    files.push(renamePasted(new File([blob], `clipboard.${ext}`, { type: blob.type || type })));
+  }
+  return files;
+}
+
+/** 点「粘贴」之后：读剪贴板 → 交给这个接入口原来那条上传路（和拖 / 选文件完全同一条） */
+async function pasteIntoIntake(entry) {
+  let files;
+  try {
+    files = await readClipboardImages();
+  } catch (err) {
+    toast(
+      err && err.name === 'NotAllowedError'
+        ? '浏览器没允许读剪贴板：点地址栏左边那个图标允许一下，或者在框里直接按 Ctrl+V'
+        : `读不了剪贴板里的图：${(err && err.message) || err}`,
+      true,
+    );
+    return;
+  }
+  if (!files.length) {
+    toast('剪贴板里没有图片', true);
+    return;
+  }
+  lastIntake = entry;
+  await runIntake(entry, files);
+}
+
+/**
+ * 某一格的「粘贴」按钮。参数是 attachImageIntake 的返回值 ——
+ * 图进哪一格，由按钮长在哪一格决定，不再靠全局猜。
+ */
+function clipboardButton(entry, label = '粘贴') {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'btn btn--ghost boardedit__mini intake__paste';
+  b.textContent = label;
+  b.title = '读剪贴板里的图，直接放进这一格（先截图 / 复制图片，再点这里）';
+  b.addEventListener('click', (ev) => {
+    ev.preventDefault();
+    ev.stopPropagation();       // 外层「点这一块 = 打开文件选择框」别跟着触发
+    if (entry) void pasteIntoIntake(entry);
+  });
+  return b;
 }
 
 function bindImageDropAndPaste() {
@@ -4034,8 +4139,8 @@ function mapFields(block) {
     pick.textContent = page.src ? '换一张地图' : '选地图图';
     pick.title = '也可以直接把图拖进来，或 QQ 截图后 Ctrl+V';
     pick.addEventListener('click', () => file.click());
-    // 点按钮 / 拖进来 / 粘进来，最后都走这个 onFiles（里面是同一个 uploadImage）
-    attachImageIntake({
+    // 点按钮 / 拖进来 / 粘进来 / 点「粘贴」，最后都走这个 onFiles（里面是同一个 uploadImage）
+    const entry = attachImageIntake({
       el: row,
       input: file,
       label: '地图图',
@@ -4070,6 +4175,7 @@ function mapFields(block) {
     row.append(
       thumb,
       pick,
+      clipboardButton(entry),
       cropButton({
         label: '地图图',
         get: () => String(page.src || ''),
@@ -5470,7 +5576,14 @@ function albumFields(block) {
   file.accept = 'image/*';
   file.multiple = true;
   file.style.display = 'none';
-  wrap.append(drop, file);
+  /* 虚线框和「粘贴」并排一行：框占满剩下的宽度，按钮立在右边 */
+  const dropRow = document.createElement('div');
+  dropRow.className = 'pblock-edit__row';
+  dropRow.style.cssText = 'align-items:center;gap:.5rem';
+  dropRow.append(drop);
+  drop.style.flex = '1 1 10rem';
+  drop.style.minWidth = '0';
+  wrap.append(dropRow, file);
   /* 同上：那行「点这里选」得真能点开系统选择框（2026-11-25 补） */
   drop.addEventListener('click', () => file.click());
 
@@ -5496,7 +5609,7 @@ function albumFields(block) {
     }
   };
   /* 拖 / 粘 / 点选都交给全站那个统一入口（它已经会认 file input 并接管点击） */
-  attachImageIntake({
+  const entry = attachImageIntake({
     el: drop,
     input: file,
     multiple: true,
@@ -5508,6 +5621,8 @@ function albumFields(block) {
       renderPageEditor();
     },
   });
+  /* 「粘贴」：Ctrl+V 得先把焦点弄进那个口里，按钮不用（站长 11-26 要的） */
+  dropRow.append(clipboardButton(entry));
 
   /* 一张一行：缩略图 + 描述 + 排序 + 删除 */
   const list = document.createElement('div');
@@ -5602,7 +5717,13 @@ function codexFields(block) {
   file.accept = 'image/*';
   file.multiple = true;
   file.style.display = 'none';
-  wrap.append(drop, file);
+  const dropRow = document.createElement('div');
+  dropRow.className = 'pblock-edit__row';
+  dropRow.style.cssText = 'align-items:center;gap:.5rem';
+  dropRow.append(drop);
+  drop.style.flex = '1 1 10rem';
+  drop.style.minWidth = '0';
+  wrap.append(dropRow, file);
   /* 「点这里选」要真能点开：attachImageIntake 不代管点击（2026-11-25 补） */
   drop.addEventListener('click', () => file.click());
 
@@ -5633,7 +5754,7 @@ function codexFields(block) {
       toast(`加了 ${ok} 个图鉴条目（名字先用文件名，可以在下面改）`);
     }
   };
-  attachImageIntake({
+  const entry = attachImageIntake({
     el: drop,
     input: file,
     multiple: true,
@@ -5645,6 +5766,8 @@ function codexFields(block) {
       renderPageEditor();
     },
   });
+  /* 同相册：点「粘贴」= 剪贴板里的图一张建一个条目（名字仍先用文件名） */
+  dropRow.append(clipboardButton(entry));
 
   /* ---- 只有名字的占位条目（不传图） ---- */
   const addRow = document.createElement('div');
@@ -5771,7 +5894,7 @@ function codexFields(block) {
       拖 / 粘到这一行 = 换这一条的图；块顶上那个口仍然是「一张图建一个新条目」。
       两个口各管各的，drop 会 stopPropagation，不会一次进两份。
     */
-    attachImageIntake({
+    const rowEntry = attachImageIntake({
       el: row,
       input: file,
       label: '图鉴图片',
@@ -5793,6 +5916,8 @@ function codexFields(block) {
         toast('图片地址已填上这一条（拖进来的是链接）');
       },
     });
+    /* 「粘贴」紧挨着「传图 / 换图」：Ctrl+V 要先把焦点点进这一行，按钮不用 */
+    acts.insertBefore(clipboardButton(rowEntry), acts.children[1] || null);
     list.append(row);
   });
   wrap.append(list);
@@ -5843,7 +5968,7 @@ function blockFields(block) {
       好几个，算进去的话「面板里只有一个上传点」那条就永远不成立，
       打开面板直接粘封面反而找不到地方了。
     */
-    attachImageIntake({
+    const entry = attachImageIntake({
       el: ta,
       multiple: true,
       countsForPaste: false,
@@ -5868,6 +5993,16 @@ function blockFields(block) {
         toast('图片地址已插进去（拖进来的是链接）');
       },
     });
+
+    /*
+      「粘贴图片」：剪贴板里的图按 Markdown 插到光标处（和焦点在框里按 Ctrl+V 一样）。
+      单独一行放在文本域下面 —— 「＋ 行内条目」那一块自己是个盒子（里面还有小图标上传），
+      塞进去会被挤到最下面。
+    */
+    const pasteRow = document.createElement('div');
+    pasteRow.className = 'pblock-edit__row';
+    pasteRow.append(clipboardButton(entry, '粘贴图片'));
+    wrap.appendChild(pasteRow);
 
     const hint = document.createElement('p');
     hint.className = 'pblock-edit__hint';
@@ -5908,7 +6043,7 @@ function blockFields(block) {
     pick.textContent = '选图片';
     pick.title = '也可以直接把图拖进来，或 QQ 截图后 Ctrl+V';
     pick.addEventListener('click', () => file.click());
-    attachImageIntake({
+    const entry = attachImageIntake({
       el: row,
       input: file,
       label: '图片块',
@@ -5939,6 +6074,7 @@ function blockFields(block) {
     row.append(
       thumb,
       pick,
+      clipboardButton(entry),
       cropButton({
         label: '图片块',
         get: () => String(block.src || ''),
@@ -7233,7 +7369,7 @@ function boardCoverControl(node, onChange = renderBoardsEditor, opts = {}) {
   pick.title = `${label.pickTitle}；也可以直接把图拖进来，或 QQ 截图后 Ctrl+V`;
   pick.addEventListener('click', () => file.click());
 
-  attachImageIntake({
+  const entry = attachImageIntake({
     el: wrap,
     input: file,
     label: label.pick,
@@ -7272,7 +7408,7 @@ function boardCoverControl(node, onChange = renderBoardsEditor, opts = {}) {
     onChange();
   });
 
-  wrap.append(thumb, pick, crop, clear, file);
+  wrap.append(thumb, pick, clipboardButton(entry), crop, clear, file);
   return wrap;
 }
 
@@ -12506,7 +12642,7 @@ function imageSlot({ label, getValue, setValue, onChanged, onValue, accept, mult
     ops.appendChild(clear);
   }
 
-  attachImageIntake({
+  const entry = attachImageIntake({
     el: wrap,
     input: file,
     multiple,
@@ -12523,6 +12659,8 @@ function imageSlot({ label, getValue, setValue, onChanged, onValue, accept, mult
       toast(`${label}地址已填上（拖进来的是链接）`);
     },
   });
+  /* 「粘贴」紧挨着「选图片」：头像 / 封面 / 放大图这些都是这个控件，一处加处处有 */
+  ops.insertBefore(clipboardButton(entry), pick.nextSibling);
 
   wrap.append(thumb, ops);
   if (hint) {
@@ -16358,7 +16496,7 @@ function openEssenceForm(host, status, existing = null) {
   file.hidden = true;
   const pick = panelBtn('＋ 加图片', '一次可以选多张；也可以直接把图拖进来，或截图后 Ctrl+V', () => file.click());
   imgSlot.append(pick, file);
-  attachImageIntake({
+  const entry = attachImageIntake({
     el: imgSlot,
     input: file,
     multiple: true,
@@ -16380,6 +16518,7 @@ function openEssenceForm(host, status, existing = null) {
     onUrl: () => toast('这里收图片文件：从网页拖过来的链接请用「选图片」上传', true),
   });
   form.appendChild(panelRow('图片', imgSlot, '上传后把 /img/uploads/... 追加进这一条的 images 里，一张一个格子。'));
+  imgSlot.insertBefore(clipboardButton(entry), pick.nextSibling);
   form.appendChild(imgWrap);
 
   const actions = document.createElement('div');
@@ -16758,7 +16897,9 @@ function renderMembersPanel() {
 
   /*
     头像接入口是挂在 DOM 上的，重画面板会把它们带走；被带走的那几个
-    在 pruneIntakes() 里会被剔掉，下次重画会自动重新注册，不用手动清理。
+    在查表（pruneIntakes）时会被剔掉，下次重画会自动重新注册，不用手动清理。
+    ⚠ 别在 attachImageIntake 里 prune：那个时刻这些格子还没 append 进面板，
+      prune 会把刚注册的当成"被带走"删掉（2026-11-26 的 bug，见 pruneIntakes）。
   */
 
   foot.append(
@@ -16881,7 +17022,7 @@ function bindEvents() {
   coverCropBtn.id = 'btn-cover-crop';
   els.btnCoverUpload.after(coverCropBtn);
   coverCropBtn.sync();
-  attachImageIntake({
+  const coverEntry = attachImageIntake({
     el: els.cover.closest('.cover') || els.cover,
     input: els.coverFile,
     label: '封面图',
@@ -16910,6 +17051,8 @@ function bindEvents() {
     updateCoverPreview();
     onFormChanged();
   });
+  /* 「粘贴」放在「上传」旁边：这一格的图也可以直接从剪贴板来 */
+  els.btnCoverUpload.after(clipboardButton(coverEntry));
 
   // 标签
   els.tagsInput.addEventListener('keydown', (ev) => {
@@ -17018,7 +17161,7 @@ function bindEvents() {
   els.modalPick.after(modalCrop);
   modalCropBtn = modalCrop;
   els.modalUrl.addEventListener('input', () => modalCrop.sync());
-  attachImageIntake({
+  const modalEntry = attachImageIntake({
     el: els.modalPick.closest('.field') || els.modalFile.parentNode,
     input: els.modalFile,
     label: '插入图片',
@@ -17040,6 +17183,8 @@ function bindEvents() {
       els.modalUploadHint.textContent = '已填上拖进来的图片链接';
     },
   });
+  /* 「粘贴」和「选择图片…」并排：剪贴板里的图直接进「图片地址」 */
+  modalCrop.after(clipboardButton(modalEntry));
   els.modalInsert.addEventListener('click', doInsertImage);
   els.imgModal.addEventListener('click', (ev) => {
     if (ev.target.dataset && ev.target.dataset.close) closeImageModal();
